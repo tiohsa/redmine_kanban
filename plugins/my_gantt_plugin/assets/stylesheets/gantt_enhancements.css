@@ -1,0 +1,40 @@
+.gantt-range-switcher {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 12px;
+}
+
+.gantt-range-switcher button {
+  padding: 4px 10px;
+  border: 1px solid #c0c0c0;
+  background: #f8f8f8;
+  cursor: pointer;
+}
+
+.gantt-range-switcher button:hover {
+  background: #eef4ff;
+}
+
+.gantt_ticket_info_container {
+  width: 220px;
+}
+
+.gantt_ticket_info_container .gantt_hdr {
+  width: 220px;
+}
+
+.gantt_ticket_info {
+  width: 220px;
+}
+
+.ticket-info-row {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.8em;
+}
+
+.ticket-info-row a {
+  color: #2a4b8d;
+}
