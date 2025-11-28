@@ -1,0 +1,3 @@
+= my_gantt_plugin
+
+Description goes here
