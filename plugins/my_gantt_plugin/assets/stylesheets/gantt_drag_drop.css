@@ -1,0 +1,23 @@
+.task_todo {
+  cursor: move;
+  z-index: 100;
+  /* Ensure it's above other things if needed */
+}
+
+.ui-resizable-e,
+.ui-resizable-w {
+  width: 10px;
+  background-color: rgba(0, 0, 0, 0.1);
+  /* Slight hint */
+  cursor: col-resize;
+  z-index: 101;
+  /* Above the task bar */
+}
+
+.ui-resizable-e {
+  right: 0;
+}
+
+.ui-resizable-w {
+  left: 0;
+}
