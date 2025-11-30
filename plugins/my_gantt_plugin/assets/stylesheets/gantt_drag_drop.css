@@ -2,6 +2,8 @@
   cursor: move;
   z-index: 100;
   /* Ensure it's above other things if needed */
+  position: absolute;
+  /* Usually set by Redmine, but ensuring it for positioning children */
 }
 
 .ui-resizable-e,
@@ -20,4 +22,49 @@
 
 .ui-resizable-w {
   left: 0;
+}
+
+/* Connectors */
+.task_todo .gantt_connector {
+  display: none;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  background-color: transparent;
+  cursor: crosshair;
+  z-index: 102;
+}
+
+.task_todo:hover .gantt_connector {
+  display: block;
+}
+
+.task_todo .gantt_connector::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin-top: -4px;
+  margin-left: -4px;
+  background-color: #666;
+  border-radius: 50%;
+  box-shadow: 0 0 2px white;
+}
+
+.task_todo .gantt_connector.left {
+  left: -6px;
+}
+
+.task_todo .gantt_connector.right {
+  right: -6px;
+}
+
+/* Drag line */
+#gantt_drag_line {
+  stroke: #666;
+  stroke-width: 2;
+  stroke-dasharray: 4;
 }
