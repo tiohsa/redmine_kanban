@@ -55,6 +55,18 @@ export function App({ dataUrl }: Props) {
   const openCreate = (ctx: CreateContext) => setCreate(ctx);
 
   const moveIssue = async (issueId: number, statusId: number, assignedToId: number | null) => {
+    // Optimistic update: immediately update local state
+    if (data) {
+      setData({
+        ...data,
+        issues: data.issues.map((issue) =>
+          issue.id === issueId
+            ? { ...issue, status_id: statusId, assigned_to_id: assignedToId }
+            : issue
+        ),
+      });
+    }
+
     try {
       setNotice(null);
       const res = await postJson<{ ok: boolean; message?: string; warning?: string }>(
@@ -355,11 +367,7 @@ function ColumnHeader({ column, canCreate, onCreate }: { column: Column; canCrea
       <div className="rk-col-title">{column.name}</div>
       <div className="rk-col-actions">
         <div className={`rk-wip ${over ? 'rk-wip-over' : ''}`}>{limit ? `${count} / ${limit}` : String(count)}</div>
-        {canCreate ? (
-          <button type="button" className="rk-btn rk-btn-ghost" onClick={onCreate} aria-label="この列に追加">
-            ＋
-          </button>
-        ) : null}
+        {/* Button removed as requested */}
       </div>
     </div>
   );
@@ -448,6 +456,7 @@ function Card({
     transform: transform ? CSS.Translate.toString(transform) : undefined,
     opacity: isDragging ? 0.6 : undefined,
     cursor: canMove ? (isDragging ? 'grabbing' : 'move') : undefined,
+    transition: 'none', // Disable animation to prevent snap-back effect
   };
 
   const column = statusInfo.get(issue.status_id);
