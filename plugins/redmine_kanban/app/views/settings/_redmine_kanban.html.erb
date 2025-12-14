@@ -1,0 +1,76 @@
+<fieldset class='box tabular settings'>
+  <legend>Redmine かんばん</legend>
+
+  <p>
+    <label>スイムレーン</label>
+    <%= select_tag('settings[lane_type]',
+                   options_for_select([['なし', 'none'], ['担当者', 'assignee']], @settings['lane_type'].to_s)) %>
+  </p>
+
+  <p>
+    <label>表示上限（チケット件数）</label>
+    <%= text_field_tag 'settings[issue_limit]', @settings['issue_limit'], size: 10 %>
+  </p>
+
+  <p>
+    <label>非表示ステータス</label>
+    <% IssueStatus.sorted.each do |st| %>
+      <label class='inline'>
+        <%= check_box_tag 'settings[hidden_status_ids][]',
+                          st.id,
+                          Array(@settings['hidden_status_ids']).map(&:to_i).include?(st.id) %>
+        <%= st.name %>
+      </label>
+    <% end %>
+  </p>
+
+  <p>
+    <label>WIP制限の単位</label>
+    <%= select_tag('settings[wip_limit_mode]',
+                   options_for_select([['列単位', 'column'], ['列×レーン単位', 'column_lane']], @settings['wip_limit_mode'].to_s)) %>
+  </p>
+
+  <p>
+    <label>WIP超過時</label>
+    <%= select_tag('settings[wip_exceed_behavior]',
+                   options_for_select([['禁止（ロールバック）', 'block'], ['警告のみ', 'warn']], @settings['wip_exceed_behavior'].to_s)) %>
+  </p>
+
+  <p>
+    <label>WIP上限（ステータス毎）</label>
+    <% limits = @settings['wip_limits'].is_a?(Hash) ? @settings['wip_limits'] : {} %>
+    <% IssueStatus.sorted.each do |st| %>
+      <span style='display:inline-block; min-width: 220px; margin-right: 8px;'>
+        <%= st.name %>:
+        <%= text_field_tag "settings[wip_limits][#{st.id}]", limits[st.id.to_s], size: 4 %>
+      </span>
+    <% end %>
+    <em>空/0 なら無制限</em>
+  </p>
+
+  <p>
+    <label>停滞（注意）日数</label>
+    <%= text_field_tag 'settings[aging_warn_days]', @settings['aging_warn_days'], size: 4 %>
+  </p>
+
+  <p>
+    <label>停滞（危険）日数</label>
+    <%= text_field_tag 'settings[aging_danger_days]', @settings['aging_danger_days'], size: 4 %>
+  </p>
+
+  <p>
+    <label>Closed の停滞強調を除外</label>
+    <%= check_box_tag 'settings[aging_exclude_closed]', '1', @settings['aging_exclude_closed'].to_s == '1' %>
+  </p>
+
+  <p>
+    <label>Blocked（bool）カスタムフィールドID</label>
+    <%= text_field_tag 'settings[blocked_bool_cf_id]', @settings['blocked_bool_cf_id'], size: 8 %>
+  </p>
+
+  <p>
+    <label>Blocked reason（text）カスタムフィールドID</label>
+    <%= text_field_tag 'settings[blocked_reason_cf_id]', @settings['blocked_reason_cf_id'], size: 8 %>
+  </p>
+</fieldset>
+
