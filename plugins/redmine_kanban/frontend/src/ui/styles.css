@@ -146,6 +146,12 @@
   min-height: 120px;
 }
 
+.rk-cell-over {
+  background: #f5f7ff;
+  outline: 2px solid rgba(37, 99, 235, 0.35);
+  outline-offset: -2px;
+}
+
 .rk-cell:first-child {
   border-left: none;
 }
@@ -292,4 +298,3 @@
   justify-content: flex-end;
   gap: 10px;
 }
-
