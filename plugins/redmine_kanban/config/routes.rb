@@ -1,4 +1,5 @@
 Rails.application.routes.draw do
+  get 'projects/:project_id/gantt', to: 'redmine_kanban/redirects#gantt'
   get 'projects/:project_id/kanban', to: 'redmine_kanban/boards#show', as: 'redmine_kanban'
 
   scope 'projects/:project_id/kanban', module: 'redmine_kanban' do
