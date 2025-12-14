@@ -1,16 +1,26 @@
 /* Modern Color Palette (Tailwind-like) */
 :root {
-  --rk-bg-main: #f8fafc; /* Slate 50 */
+  --rk-bg-main: #f8fafc;
+  /* Slate 50 */
   --rk-bg-surface: #ffffff;
-  --rk-border: #e2e8f0; /* Slate 200 */
-  --rk-text-primary: #1e293b; /* Slate 800 */
-  --rk-text-secondary: #64748b; /* Slate 500 */
-  --rk-primary: #4f46e5; /* Indigo 600 */
-  --rk-primary-hover: #4338ca; /* Indigo 700 */
-  --rk-danger: #ef4444; /* Red 500 */
-  --rk-danger-bg: #fef2f2; /* Red 50 */
-  --rk-warn: #f59e0b; /* Amber 500 */
-  --rk-warn-bg: #fffbeb; /* Amber 50 */
+  --rk-border: #e2e8f0;
+  /* Slate 200 */
+  --rk-text-primary: #1e293b;
+  /* Slate 800 */
+  --rk-text-secondary: #64748b;
+  /* Slate 500 */
+  --rk-primary: #4f46e5;
+  /* Indigo 600 */
+  --rk-primary-hover: #4338ca;
+  /* Indigo 700 */
+  --rk-danger: #ef4444;
+  /* Red 500 */
+  --rk-danger-bg: #fef2f2;
+  /* Red 50 */
+  --rk-warn: #f59e0b;
+  /* Amber 500 */
+  --rk-warn-bg: #fffbeb;
+  /* Amber 50 */
   --rk-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --rk-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
   --rk-shadow-md: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
@@ -50,20 +60,24 @@
   font-weight: 600;
   padding: 4px 12px;
   border-radius: 9999px;
-  background: #e0e7ff; /* Indigo 100 */
-  color: #3730a3; /* Indigo 800 */
+  background: #e0e7ff;
+  /* Indigo 100 */
+  color: #3730a3;
+  /* Indigo 800 */
   display: inline-flex;
   align-items: center;
 }
 
 .rk-pill-warn {
   background: var(--rk-warn-bg);
-  color: #92400e; /* Amber 800 */
+  color: #92400e;
+  /* Amber 800 */
 }
 
 .rk-pill-error {
   background: var(--rk-danger-bg);
-  color: #991b1b; /* Red 800 */
+  color: #991b1b;
+  /* Red 800 */
 }
 
 .rk-toolbar {
@@ -126,9 +140,11 @@
 
 .rk-board {
   border: 1px solid var(--rk-border);
-  background: var(--rk-bg-main); /* Slightly gray background for the board area */
+  background: var(--rk-bg-main);
+  /* Slightly gray background for the board area */
   border-radius: 12px;
-  overflow: hidden; /* For board corners */
+  overflow: hidden;
+  /* For board corners */
   overflow-x: auto;
   box-shadow: var(--rk-shadow);
 }
@@ -142,8 +158,10 @@
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(280px, 1fr);
-  gap: 1px; /* Gap for column separation if desired, or handle with borders */
-  background: var(--rk-border); /* Color of the gap lines */
+  gap: 1px;
+  /* Gap for column separation if desired, or handle with borders */
+  background: var(--rk-border);
+  /* Color of the gap lines */
 }
 
 .rk-header-row {
@@ -152,7 +170,8 @@
   z-index: 10;
   background: var(--rk-bg-surface);
   border-bottom: 1px solid var(--rk-border);
-  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05); /* Subtle shadow for header */
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05);
+  /* Subtle shadow for header */
 }
 
 .rk-col-header {
@@ -205,7 +224,8 @@
 
 .rk-lane-label {
   padding: 16px;
-  background: #f8fafc; /* Slightly different from cell */
+  background: #f8fafc;
+  /* Slightly different from cell */
   font-weight: 700;
   font-size: 0.9rem;
   display: flex;
@@ -215,7 +235,8 @@
 }
 
 .rk-cell {
-  background: var(--rk-bg-main); /* Default cell bg */
+  background: var(--rk-bg-main);
+  /* Default cell bg */
   padding: 12px;
   min-height: 160px;
   display: flex;
@@ -225,12 +246,13 @@
 }
 
 /* Ensure consistent borders even with gap */
-.rk-grid > .rk-cell {
+.rk-grid>.rk-cell {
   background: var(--rk-bg-main);
 }
 
 .rk-cell-over {
-  background: #eff6ff !important; /* Blue 50 */
+  background: #eff6ff !important;
+  /* Blue 50 */
   box-shadow: inset 0 0 0 2px var(--rk-primary);
 }
 
@@ -242,8 +264,9 @@
   background: var(--rk-bg-surface);
   box-shadow: var(--rk-shadow-sm);
   transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
-  cursor: grab; /* Explicit cursor */
   position: relative;
+  user-select: none;
+  /* Prevent text selection during drag */
 }
 
 /* Hover effect for cards */
@@ -253,7 +276,7 @@
   border-color: #cbd5e1;
 }
 
-.rk-card:active {
+.rk-card-dragging {
   cursor: grabbing;
 }
 
@@ -289,7 +312,8 @@
   gap: 4px;
   padding: 2px 8px;
   border-radius: 6px;
-  background: #f1f5f9; /* Slate 100 */
+  background: #f1f5f9;
+  /* Slate 100 */
   color: var(--rk-text-secondary);
   font-weight: 500;
   border: 1px solid transparent;
@@ -303,7 +327,8 @@
 
 .rk-aging-warn {
   background: var(--rk-warn-bg);
-  color: #b45309; /* Amber 700 */
+  color: #b45309;
+  /* Amber 700 */
   border-color: #fde68a;
 }
 
@@ -384,7 +409,8 @@
 .rk-modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.5); /* Backdrop blur feel */
+  background: rgba(15, 23, 42, 0.5);
+  /* Backdrop blur feel */
   backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
@@ -404,8 +430,15 @@
 }
 
 @keyframes rk-modal-in {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .rk-modal-head {

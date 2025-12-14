@@ -447,7 +447,7 @@ function Card({
   const style: React.CSSProperties = {
     transform: transform ? CSS.Translate.toString(transform) : undefined,
     opacity: isDragging ? 0.6 : undefined,
-    cursor: canMove ? 'grab' : 'default',
+    cursor: canMove ? (isDragging ? 'grabbing' : 'move') : undefined,
   };
 
   const column = statusInfo.get(issue.status_id);
@@ -466,7 +466,7 @@ function Card({
 
   return (
     <div
-      className={`rk-card ${issue.blocked ? 'rk-blocked' : ''}`}
+      className={`rk-card ${issue.blocked ? 'rk-blocked' : ''} ${isDragging ? 'rk-card-dragging' : ''}`}
       ref={setNodeRef}
       style={style}
       {...attributes}
