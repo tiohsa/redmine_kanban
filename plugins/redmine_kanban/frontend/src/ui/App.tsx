@@ -1,4 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
+import { DndContext, PointerSensor, useDroppable, useDraggable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { CSS } from '@dnd-kit/utilities';
 import type { BoardData, Column, Issue, Lane } from './types';
 import { getJson, postJson } from './http';
 
@@ -19,7 +21,6 @@ export function App({ dataUrl }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>({ assignee: 'all', q: '', due: 'all', blockedOnly: false });
-  const [drag, setDrag] = useState<{ issueId: number } | null>(null);
   const [create, setCreate] = useState<CreateContext | null>(null);
 
   const baseUrl = useMemo(() => dataUrl.replace(/\/data$/, ''), [dataUrl]);
@@ -100,8 +101,6 @@ export function App({ dataUrl }: Props) {
             statusInfo={statusInfo}
             canMove={canMove}
             canCreate={canCreate}
-            drag={drag}
-            setDrag={setDrag}
             onDrop={(p) => moveIssue(p.issueId, p.statusId, p.assignedToId)}
             onCreate={openCreate}
           />
@@ -261,8 +260,6 @@ function Board({
   statusInfo,
   canMove,
   canCreate,
-  drag,
-  setDrag,
   onDrop,
   onCreate,
 }: {
@@ -273,15 +270,29 @@ function Board({
   statusInfo: Map<number, Column>;
   canMove: boolean;
   canCreate: boolean;
-  drag: { issueId: number } | null;
-  setDrag: (d: { issueId: number } | null) => void;
   onDrop: (p: { issueId: number; statusId: number; assignedToId: number | null }) => void;
   onCreate: (ctx: CreateContext) => void;
 }) {
   const laneType = data.meta.lane_type;
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    if (!canMove) return;
+    const activeId = String(event.active.id);
+    const over = event.over;
+    if (!over) return;
+    if (!activeId.startsWith('issue:')) return;
+
+    const issueId = Number(activeId.replace('issue:', ''));
+    const target = over.data.current as { statusId: number; assignedToId: number | null } | undefined;
+    if (!target) return;
+
+    onDrop({ issueId, statusId: target.statusId, assignedToId: target.assignedToId });
+  };
 
   return (
-    <div className="rk-board-inner">
+    <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+      <div className="rk-board-inner">
       <div className="rk-grid rk-header-row">
         {columns.map((c) => (
           <ColumnHeader key={c.id} column={c} canCreate={canCreate} onCreate={() => onCreate({ statusId: c.id })} />
@@ -300,8 +311,6 @@ function Board({
               statusInfo={statusInfo}
               canMove={canMove}
               canCreate={canCreate}
-              drag={drag}
-              setDrag={setDrag}
               onDrop={onDrop}
               onCreate={onCreate}
             />
@@ -323,8 +332,6 @@ function Board({
                     statusInfo={statusInfo}
                     canMove={canMove}
                     canCreate={canCreate}
-                    drag={drag}
-                    setDrag={setDrag}
                     onDrop={onDrop}
                     onCreate={onCreate}
                   />
@@ -334,7 +341,8 @@ function Board({
           ))}
         </div>
       )}
-    </div>
+      </div>
+    </DndContext>
   );
 }
 
@@ -374,8 +382,6 @@ function Cell({
   statusInfo,
   canMove,
   canCreate,
-  drag,
-  setDrag,
   onDrop,
   onCreate,
 }: {
@@ -386,34 +392,29 @@ function Cell({
   statusInfo: Map<number, Column>;
   canMove: boolean;
   canCreate: boolean;
-  drag: { issueId: number } | null;
-  setDrag: (d: { issueId: number } | null) => void;
   onDrop: (p: { issueId: number; statusId: number; assignedToId: number | null }) => void;
   onCreate: (ctx: CreateContext) => void;
 }) {
   const laneId = lane ? lane.id : 'none';
 
-  const onDropHere = () => {
-    if (!drag) return;
-    const assignedToId =
-      data.meta.lane_type === 'assignee' && lane
-        ? lane.id === 'unassigned'
-          ? null
-          : (lane.assigned_to_id ?? null)
-        : null;
-    onDrop({ issueId: drag.issueId, statusId, assignedToId });
-    setDrag(null);
-  };
+  const assignedToId =
+    data.meta.lane_type === 'assignee' && lane
+      ? lane.id === 'unassigned'
+        ? null
+        : (lane.assigned_to_id ?? null)
+      : null;
+
+  const droppableId = `cell:${statusId}:${String(laneId)}`;
+  const { isOver, setNodeRef } = useDroppable({
+    id: droppableId,
+    data: { statusId, assignedToId },
+    disabled: !canMove,
+  });
 
   return (
     <div
-      className="rk-cell"
-      onDragOver={(e) => (canMove ? e.preventDefault() : undefined)}
-      onDrop={(e) => {
-        e.preventDefault();
-        if (!canMove) return;
-        onDropHere();
-      }}
+      ref={setNodeRef}
+      className={`rk-cell ${isOver ? 'rk-cell-over' : ''}`}
     >
       {canCreate ? (
         <button type="button" className="rk-btn rk-btn-dashed" onClick={() => onCreate({ statusId, laneId })}>
@@ -422,7 +423,7 @@ function Cell({
       ) : null}
 
       {issues.map((it) => (
-        <Card key={it.id} issue={it} data={data} statusInfo={statusInfo} canMove={canMove} onDrag={setDrag} />
+        <Card key={it.id} issue={it} data={data} statusInfo={statusInfo} canMove={canMove} />
       ))}
     </div>
   );
@@ -433,14 +434,22 @@ function Card({
   data,
   statusInfo,
   canMove,
-  onDrag,
 }: {
   issue: Issue;
   data: BoardData;
   statusInfo: Map<number, Column>;
   canMove: boolean;
-  onDrag: (d: { issueId: number } | null) => void;
 }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `issue:${issue.id}`,
+    disabled: !canMove,
+  });
+  const style: React.CSSProperties = {
+    transform: transform ? CSS.Translate.toString(transform) : undefined,
+    opacity: isDragging ? 0.6 : undefined,
+    cursor: canMove ? 'grab' : undefined,
+  };
+
   const column = statusInfo.get(issue.status_id);
   const isClosed = !!column?.is_closed;
   const agingEnabled = !(data.meta.aging_exclude_closed && isClosed);
@@ -458,9 +467,10 @@ function Card({
   return (
     <div
       className={`rk-card ${issue.blocked ? 'rk-blocked' : ''}`}
-      draggable={canMove}
-      onDragStart={() => onDrag({ issueId: issue.id })}
-      onDragEnd={() => onDrag(null)}
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
     >
       <div className="rk-card-title">
         <a href={issue.urls.issue} target="_blank" rel="noopener noreferrer">
@@ -631,4 +641,3 @@ function CreateModal({
     </div>
   );
 }
-
