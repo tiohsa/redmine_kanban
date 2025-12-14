@@ -93,9 +93,9 @@ end
 docker compose restart redmine
 ```
 
-
 ### 7. テストデータの投入
 
 ```bash
+docker compose exec -e REDMINE_LANG=ja redmine bundle exec rake db:fixtures:load 
 docker compose exec -e REDMINE_LANG=ja redmine bundle exec rake redmine:load_default_data
 ```
