@@ -80,23 +80,29 @@
   /* Red 800 */
 }
 
+/* Toolbar Adjustments */
 .rk-toolbar {
   margin-bottom: 20px;
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
   align-items: center;
+  /* Ensure vertical alignment */
   background: var(--rk-bg-surface);
   padding: 16px;
   border: 1px solid var(--rk-border);
   border-radius: 12px;
   box-shadow: var(--rk-shadow-sm);
+  min-height: 72px;
+  /* Ensure minimum height */
 }
 
 .rk-field {
   display: flex;
   gap: 8px;
   align-items: center;
+  height: 40px;
+  /* Explicit height for fields */
 }
 
 .rk-grow {
@@ -104,22 +110,19 @@
   min-width: 240px;
 }
 
-.rk-label {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--rk-text-secondary);
-  white-space: nowrap;
-}
-
 .rk-field input,
 .rk-field select {
-  padding: 8px 12px;
+  height: 40px;
+  /* Match field height */
+  padding: 0 12px;
   border: 1px solid var(--rk-border);
   border-radius: 6px;
   background: #fff;
   font-size: 0.875rem;
   color: var(--rk-text-primary);
   transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+  /* Proper box sizing */
 }
 
 .rk-field input:focus,
@@ -127,6 +130,16 @@
   outline: none;
   border-color: var(--rk-primary);
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+/* Ensure labels are vertically centered and visible */
+.rk-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--rk-text-secondary);
+  white-space: nowrap;
+  line-height: 40px;
+  /* Vertical align with inputs */
 }
 
 .rk-check {
@@ -278,6 +291,8 @@
 
 .rk-card-dragging {
   cursor: grabbing;
+  transition: none !important;
+  /* Disable transition during drag for instant movement */
 }
 
 .rk-card-title {
@@ -418,6 +433,7 @@
   z-index: 9999;
 }
 
+/* Modal Adjustments */
 .rk-modal {
   width: 600px;
   max-width: calc(100vw - 32px);
@@ -427,6 +443,13 @@
   padding: 24px;
   box-shadow: var(--rk-shadow-md);
   animation: rk-modal-in 0.2s ease-out;
+  /* Ensure modal content is visible */
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+  /* Prevent overflowing viewport height */
+  overflow-y: auto;
+  /* Scroll if too tall */
 }
 
 @keyframes rk-modal-in {
@@ -457,13 +480,14 @@
 .rk-form {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
+  /* increased gap for clarity */
 }
 
 .rk-row2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  gap: 20px;
 }
 
 .rk-error {
@@ -482,4 +506,36 @@
   gap: 12px;
   padding-top: 16px;
   border-top: 1px solid var(--rk-border);
+}
+
+/* Ensure textareas and inputs in modal have enough space */
+.rk-form textarea {
+  min-height: 100px;
+  padding: 12px;
+  border: 1px solid var(--rk-border);
+  border-radius: 6px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+/* Override previous rk-field for modal to be explicit */
+.rk-form .rk-field {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  height: auto;
+}
+
+.rk-form .rk-label {
+  line-height: normal;
+  /* Reset line height for stacked labels */
+  font-weight: 600;
+  color: var(--rk-text-primary);
+}
+
+.rk-form .rk-field input,
+.rk-form .rk-field select {
+  height: 40px;
+  width: 100%;
 }
