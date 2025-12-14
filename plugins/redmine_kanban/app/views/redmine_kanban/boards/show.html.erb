@@ -3,9 +3,10 @@
 <div id='redmine-kanban-root'
      data-project-id='<%= @project.id %>'
      data-data-url='<%= redmine_kanban_data_path(project_id: @project.identifier) %>'>
+  <p>フロントエンド（React SPA）をビルドしてください: <code>plugins/redmine_kanban/frontend</code></p>
 </div>
 
 <% content_for :header_tags do %>
-  <%= stylesheet_link_tag 'redmine_kanban', plugin: 'redmine_kanban' %>
-  <%= javascript_include_tag 'redmine_kanban', plugin: 'redmine_kanban' %>
+  <%= stylesheet_link_tag 'redmine_kanban_spa', plugin: 'redmine_kanban' %>
+  <%= javascript_include_tag 'redmine_kanban_spa', plugin: 'redmine_kanban' %>
 <% end %>
