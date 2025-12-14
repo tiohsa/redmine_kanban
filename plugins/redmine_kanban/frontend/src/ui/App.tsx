@@ -293,54 +293,54 @@ function Board({
   return (
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
       <div className="rk-board-inner">
-      <div className="rk-grid rk-header-row">
-        {columns.map((c) => (
-          <ColumnHeader key={c.id} column={c} canCreate={canCreate} onCreate={() => onCreate({ statusId: c.id })} />
-        ))}
-      </div>
-
-      {laneType === 'none' ? (
-        <div className="rk-grid">
+        <div className="rk-grid rk-header-row">
           {columns.map((c) => (
-            <Cell
-              key={c.id}
-              data={data}
-              statusId={c.id}
-              lane={null}
-              issues={issuesForCell(issues, null, c.id)}
-              statusInfo={statusInfo}
-              canMove={canMove}
-              canCreate={canCreate}
-              onDrop={onDrop}
-              onCreate={onCreate}
-            />
+            <ColumnHeader key={c.id} column={c} canCreate={canCreate} onCreate={() => onCreate({ statusId: c.id })} />
           ))}
         </div>
-      ) : (
-        <div className="rk-lanes">
-          {lanes.map((lane) => (
-            <div key={String(lane.id)} className="rk-lane">
-              <div className="rk-lane-label">{lane.name}</div>
-              <div className="rk-grid">
-                {columns.map((c) => (
-                  <Cell
-                    key={c.id}
-                    data={data}
-                    statusId={c.id}
-                    lane={lane}
-                    issues={issuesForCell(issues, lane, c.id)}
-                    statusInfo={statusInfo}
-                    canMove={canMove}
-                    canCreate={canCreate}
-                    onDrop={onDrop}
-                    onCreate={onCreate}
-                  />
-                ))}
+
+        {laneType === 'none' ? (
+          <div className="rk-grid">
+            {columns.map((c) => (
+              <Cell
+                key={c.id}
+                data={data}
+                statusId={c.id}
+                lane={null}
+                issues={issuesForCell(issues, null, c.id)}
+                statusInfo={statusInfo}
+                canMove={canMove}
+                canCreate={canCreate}
+                onDrop={onDrop}
+                onCreate={onCreate}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="rk-lanes">
+            {lanes.map((lane) => (
+              <div key={String(lane.id)} className="rk-lane">
+                <div className="rk-lane-label">{lane.name}</div>
+                <div className="rk-grid">
+                  {columns.map((c) => (
+                    <Cell
+                      key={c.id}
+                      data={data}
+                      statusId={c.id}
+                      lane={lane}
+                      issues={issuesForCell(issues, lane, c.id)}
+                      statusInfo={statusInfo}
+                      canMove={canMove}
+                      canCreate={canCreate}
+                      onDrop={onDrop}
+                      onCreate={onCreate}
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
       </div>
     </DndContext>
   );
@@ -447,7 +447,7 @@ function Card({
   const style: React.CSSProperties = {
     transform: transform ? CSS.Translate.toString(transform) : undefined,
     opacity: isDragging ? 0.6 : undefined,
-    cursor: canMove ? 'grab' : undefined,
+    cursor: canMove ? 'grab' : 'default',
   };
 
   const column = statusInfo.get(issue.status_id);
