@@ -1,11 +1,11 @@
 services:
   redmine:
     image: redmine:latest
-    container_name: redmine-dev
+    container_name: redmine-kanban
     ports:
-      - "8080:3000"
+      - "3002:3000"
     environment:
-      AILS_ENV: development
+      RAILS_ENV: development
       REDMINE_DB_MYSQL: db
       REDMINE_DB_PASSWORD: password
       REDMINE_SECRET_KEY_BASE: supersecretkey
@@ -18,7 +18,7 @@ services:
 
   db:
     image: mariadb:10
-    container_name: redmine-db
+    container_name: redmine-kanban-db
     environment:
       MYSQL_ROOT_PASSWORD: password
       MYSQL_DATABASE: redmine

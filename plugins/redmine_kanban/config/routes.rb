@@ -1,0 +1,10 @@
+Rails.application.routes.draw do
+  get 'projects/:project_id/gantt', to: 'redmine_kanban/redirects#gantt'
+  get 'projects/:project_id/kanban', to: 'redmine_kanban/boards#show', as: 'redmine_kanban'
+
+  scope 'projects/:project_id/kanban', module: 'redmine_kanban' do
+    get 'data', to: 'api#index', as: 'redmine_kanban_data'
+    patch 'issues/:id/move', to: 'api#move', as: 'redmine_kanban_move_issue'
+    post 'issues', to: 'api#create', as: 'redmine_kanban_create_issue'
+  end
+end
