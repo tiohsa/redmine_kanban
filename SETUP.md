@@ -93,9 +93,25 @@ end
 docker compose restart redmine
 ```
 
+### 6.1 `redmine_kanban`（SPA）のビルド
+
+`plugins/redmine_kanban` はフロントエンドを Vite でビルドし、`plugin_assets` として配信します。
+
+```bash
+cd plugins/redmine_kanban/frontend
+npm install
+npm run build
+```
+
+ビルド後に Redmine を再起動します。
+
+```bash
+docker compose restart redmine
+```
 
 ### 7. テストデータの投入
 
 ```bash
+docker compose exec -e REDMINE_LANG=ja redmine bundle exec rake db:fixtures:load 
 docker compose exec -e REDMINE_LANG=ja redmine bundle exec rake redmine:load_default_data
 ```

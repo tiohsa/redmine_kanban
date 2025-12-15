@@ -1,0 +1,55 @@
+module RedmineKanban
+  class ApiController < ApplicationController
+    before_action :require_move_permission, only: [:move]
+    before_action :require_create_permission, only: [:create]
+    before_action :find_issue, only: [:move]
+
+    def index
+      render json: BoardData.new(project: @project, user: User.current).to_h
+    end
+
+    def move
+      result = IssueMover.new(project: @project, issue: @issue, user: User.current).move(
+        status_id: params[:status_id],
+        assigned_to_id: params[:assigned_to_id]
+      )
+
+      if result[:ok]
+        render json: result
+      else
+        render json: result, status: :unprocessable_entity
+      end
+    end
+
+    def create
+      result = IssueCreator.new(project: @project, user: User.current).create(params: params)
+
+      if result[:ok]
+        render json: result
+      else
+        render json: result, status: :unprocessable_entity
+      end
+    end
+
+    private
+
+    def require_move_permission
+      return if User.current.allowed_to?(:manage_redmine_kanban, @project) && User.current.allowed_to?(:edit_issues, @project)
+
+      render json: { ok: false, message: '権限がありません' }, status: :forbidden
+    end
+
+    def require_create_permission
+      return if User.current.allowed_to?(:manage_redmine_kanban, @project) && User.current.allowed_to?(:add_issues, @project)
+
+      render json: { ok: false, message: '権限がありません' }, status: :forbidden
+    end
+
+    def find_issue
+      @issue = Issue.visible.find(params[:id])
+      render_404 unless @issue.project_id == @project.id
+    rescue ActiveRecord::RecordNotFound
+      render_404
+    end
+  end
+end
