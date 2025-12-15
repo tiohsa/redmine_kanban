@@ -1,6 +1,9 @@
 services:
   redmine:
-    image: redmine:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: redmine-kanban-dev:latest
     container_name: redmine-kanban
     ports:
       - "3002:3000"

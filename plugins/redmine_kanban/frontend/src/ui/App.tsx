@@ -13,7 +13,7 @@ type Filters = {
   blockedOnly: boolean;
 };
 
-type CreateContext = { statusId: number; laneId?: string | number };
+type ModalContext = { statusId: number; laneId?: string | number; issueId?: number };
 
 export function App({ dataUrl }: Props) {
   const [data, setData] = useState<BoardData | null>(null);
@@ -21,7 +21,9 @@ export function App({ dataUrl }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>({ assignee: 'all', q: '', due: 'all', blockedOnly: false });
-  const [create, setCreate] = useState<CreateContext | null>(null);
+  const [modal, setModal] = useState<ModalContext | null>(null);
+  const [confirmDeleteIssueId, setConfirmDeleteIssueId] = useState<number | null>(null);
+  const [deletingIssueId, setDeletingIssueId] = useState<number | null>(null);
 
   const baseUrl = useMemo(() => dataUrl.replace(/\/data$/, ''), [dataUrl]);
 
@@ -52,7 +54,12 @@ export function App({ dataUrl }: Props) {
     return m;
   }, [columns]);
 
-  const openCreate = (ctx: CreateContext) => setCreate(ctx);
+  const openCreate = (ctx: ModalContext) => setModal(ctx);
+  const openEdit = (issueId: number) => {
+    const issue = data?.issues.find((i) => i.id === issueId);
+    if (!issue) return;
+    setModal({ statusId: issue.status_id, issueId });
+  };
 
   const moveIssue = async (issueId: number, statusId: number, assignedToId: number | null) => {
     // Optimistic update: immediately update local state
@@ -86,15 +93,64 @@ export function App({ dataUrl }: Props) {
   const canMove = !!data?.meta.can_move;
   const canCreate = !!data?.meta.can_create;
 
+  const requestDelete = (issueId: number) => {
+    setConfirmDeleteIssueId(issueId);
+  };
+
+  const deleteIssue = async (issueId: number) => {
+    setDeletingIssueId(issueId);
+    try {
+      setNotice(null);
+      await postJson(`${baseUrl}/issues/${issueId}`, {}, 'DELETE');
+      setModal(null);
+      await refresh();
+    } catch (e: any) {
+      const p = e?.payload as any;
+      setError(p?.message || '削除に失敗しました');
+    } finally {
+      setDeletingIssueId(null);
+    }
+  };
+
   return (
     <div className="rk-root">
       <div className="rk-header">
         <h2 className="rk-title">かんばん</h2>
-        <div className="rk-status">
-          {loading ? <span className="rk-pill">読み込み中</span> : null}
-          {notice ? <span className="rk-pill rk-pill-warn">{notice}</span> : null}
-          {error ? <span className="rk-pill rk-pill-error">{error}</span> : null}
-        </div>
+      </div>
+
+      <div className="rk-popup-host" aria-live="polite" aria-relevant="additions text">
+        {loading ? (
+          <div className="rk-popup rk-popup-info" role="dialog" aria-label="読み込み中">
+            <div className="rk-popup-head">
+              <div className="rk-popup-title">読み込み中</div>
+            </div>
+            <div className="rk-popup-body">データを取得しています...</div>
+          </div>
+        ) : null}
+
+        {notice ? (
+          <div className="rk-popup rk-popup-warn" role="dialog" aria-label="通知">
+            <div className="rk-popup-head">
+              <div className="rk-popup-title">通知</div>
+              <button type="button" className="rk-icon-btn rk-popup-close" aria-label="閉じる" onClick={() => setNotice(null)}>
+                ×
+              </button>
+            </div>
+            <div className="rk-popup-body">{notice}</div>
+          </div>
+        ) : null}
+
+        {error ? (
+          <div className="rk-popup rk-popup-error" role="dialog" aria-label="エラー" aria-live="assertive">
+            <div className="rk-popup-head">
+              <div className="rk-popup-title">エラー</div>
+              <button type="button" className="rk-icon-btn rk-popup-close" aria-label="閉じる" onClick={() => setError(null)}>
+                ×
+              </button>
+            </div>
+            <div className="rk-popup-body">{error}</div>
+          </div>
+        ) : null}
       </div>
 
       {data ? (
@@ -115,28 +171,92 @@ export function App({ dataUrl }: Props) {
             canCreate={canCreate}
             onDrop={(p) => moveIssue(p.issueId, p.statusId, p.assignedToId)}
             onCreate={openCreate}
+            onTaskClick={openEdit}
+            onDelete={requestDelete}
           />
         ) : null}
       </div>
 
-      {data && create ? (
-        <CreateModal
+      {data && modal ? (
+        <IssueModal
           data={data}
-          ctx={create}
-          onClose={() => setCreate(null)}
-          onCreated={async (payload) => {
+          ctx={modal}
+          onClose={() => setModal(null)}
+          onSaved={async (payload, isEdit) => {
             try {
               setNotice(null);
-              await postJson(`${baseUrl}/issues`, payload, 'POST');
-              setCreate(null);
+              const method = isEdit ? 'PATCH' : 'POST';
+              const url = isEdit ? `${baseUrl}/issues/${modal.issueId}` : `${baseUrl}/issues`;
+              await postJson(url, payload, method);
+              setModal(null);
               await refresh();
             } catch (e: any) {
               const p = e?.payload as any;
-              throw new Error(p?.message || fieldError(p?.field_errors) || '作成に失敗しました');
+              throw new Error(p?.message || fieldError(p?.field_errors) || (isEdit ? '更新に失敗しました' : '作成に失敗しました'));
             }
+          }}
+          onDeleted={async (issueId) => {
+            requestDelete(issueId);
           }}
         />
       ) : null}
+
+      {confirmDeleteIssueId !== null ? (
+        <ConfirmDialog
+          title="削除確認"
+          message={`タスク #${confirmDeleteIssueId} を削除します。よろしいですか？`}
+          confirmText={deletingIssueId === confirmDeleteIssueId ? '削除中...' : '削除'}
+          confirmKind="danger"
+          confirmDisabled={deletingIssueId !== null}
+          onCancel={() => setConfirmDeleteIssueId(null)}
+          onConfirm={async () => {
+            const id = confirmDeleteIssueId;
+            await deleteIssue(id);
+            setConfirmDeleteIssueId(null);
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function ConfirmDialog({
+  title,
+  message,
+  confirmText,
+  confirmKind,
+  confirmDisabled,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  message: string;
+  confirmText: string;
+  confirmKind: 'danger' | 'primary';
+  confirmDisabled?: boolean;
+  onCancel: () => void;
+  onConfirm: () => void | Promise<void>;
+}) {
+  const confirmClass = confirmKind === 'danger' ? 'rk-btn rk-btn-danger' : 'rk-btn rk-btn-primary';
+  return (
+    <div className="rk-modal-backdrop" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="rk-modal rk-modal-sm">
+        <div className="rk-modal-head">
+          <h3>{title}</h3>
+          <button type="button" className="rk-btn rk-btn-ghost" onClick={onCancel} aria-label="閉じる">
+            ×
+          </button>
+        </div>
+        <div className="rk-confirm-body">{message}</div>
+        <div className="rk-modal-actions">
+          <button type="button" className="rk-btn" onClick={onCancel} disabled={!!confirmDisabled}>
+            キャンセル
+          </button>
+          <button type="button" className={confirmClass} onClick={onConfirm} disabled={!!confirmDisabled}>
+            {confirmText}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -274,6 +394,8 @@ function Board({
   canCreate,
   onDrop,
   onCreate,
+  onTaskClick,
+  onDelete,
 }: {
   data: BoardData;
   columns: Column[];
@@ -283,7 +405,9 @@ function Board({
   canMove: boolean;
   canCreate: boolean;
   onDrop: (p: { issueId: number; statusId: number; assignedToId: number | null }) => void;
-  onCreate: (ctx: CreateContext) => void;
+  onCreate: (ctx: ModalContext) => void;
+  onTaskClick: (issueId: number) => void;
+  onDelete: (issueId: number) => void;
 }) {
   const laneType = data.meta.lane_type;
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
@@ -325,6 +449,8 @@ function Board({
                 canCreate={canCreate}
                 onDrop={onDrop}
                 onCreate={onCreate}
+                onCardClick={onTaskClick}
+                onDelete={onDelete}
               />
             ))}
           </div>
@@ -346,6 +472,8 @@ function Board({
                       canCreate={canCreate}
                       onDrop={onDrop}
                       onCreate={onCreate}
+                      onCardClick={onTaskClick}
+                      onDelete={onDelete}
                     />
                   ))}
                 </div>
@@ -367,7 +495,11 @@ function ColumnHeader({ column, canCreate, onCreate }: { column: Column; canCrea
       <div className="rk-col-title">{column.name}</div>
       <div className="rk-col-actions">
         <div className={`rk-wip ${over ? 'rk-wip-over' : ''}`}>{limit ? `${count} / ${limit}` : String(count)}</div>
-        {/* Button removed as requested */}
+        {canCreate ? (
+          <button type="button" className="rk-btn rk-btn-ghost" onClick={onCreate}>
+            ＋
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -392,6 +524,8 @@ function Cell({
   canCreate,
   onDrop,
   onCreate,
+  onCardClick,
+  onDelete,
 }: {
   data: BoardData;
   statusId: number;
@@ -401,7 +535,9 @@ function Cell({
   canMove: boolean;
   canCreate: boolean;
   onDrop: (p: { issueId: number; statusId: number; assignedToId: number | null }) => void;
-  onCreate: (ctx: CreateContext) => void;
+  onCreate: (ctx: ModalContext) => void;
+  onCardClick: (issueId: number) => void;
+  onDelete: (issueId: number) => void;
 }) {
   const laneId = lane ? lane.id : 'none';
 
@@ -420,10 +556,7 @@ function Cell({
   });
 
   return (
-    <div
-      ref={setNodeRef}
-      className={`rk-cell ${isOver ? 'rk-cell-over' : ''}`}
-    >
+    <div ref={setNodeRef} className={`rk-cell ${isOver ? 'rk-cell-over' : ''}`}>
       {canCreate ? (
         <button type="button" className="rk-btn rk-btn-dashed" onClick={() => onCreate({ statusId, laneId })}>
           ＋ 追加
@@ -431,7 +564,15 @@ function Cell({
       ) : null}
 
       {issues.map((it) => (
-        <Card key={it.id} issue={it} data={data} statusInfo={statusInfo} canMove={canMove} />
+        <Card
+          key={it.id}
+          issue={it}
+          data={data}
+          statusInfo={statusInfo}
+          canMove={canMove}
+          onClick={() => onCardClick(it.id)}
+          onDelete={() => onDelete(it.id)}
+        />
       ))}
     </div>
   );
@@ -442,11 +583,15 @@ function Card({
   data,
   statusInfo,
   canMove,
+  onClick,
+  onDelete,
 }: {
   issue: Issue;
   data: BoardData;
   statusInfo: Map<number, Column>;
   canMove: boolean;
+  onClick: () => void;
+  onDelete: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `issue:${issue.id}`,
@@ -456,7 +601,7 @@ function Card({
     transform: transform ? CSS.Translate.toString(transform) : undefined,
     opacity: isDragging ? 0.6 : undefined,
     cursor: canMove ? (isDragging ? 'grabbing' : 'move') : undefined,
-    transition: 'none', // Disable animation to prevent snap-back effect
+    transition: 'none',
   };
 
   const column = statusInfo.get(issue.status_id);
@@ -478,9 +623,31 @@ function Card({
       className={`rk-card ${issue.blocked ? 'rk-blocked' : ''} ${isDragging ? 'rk-card-dragging' : ''}`}
       ref={setNodeRef}
       style={style}
+      onClick={() => {
+        if (!isDragging) onClick();
+      }}
       {...attributes}
       {...listeners}
     >
+      {data.meta.can_delete ? (
+        <button
+          type="button"
+          className="rk-icon-btn rk-card-delete-btn"
+          aria-label="削除"
+          title="削除"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M9 3a1 1 0 0 0-1 1v1H5.5a1 1 0 1 0 0 2H6v13a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7h.5a1 1 0 1 0 0-2H16V4a1 1 0 0 0-1-1H9Zm1 2h4v0H10v0Zm-2 2h8v13H8V7Zm2 3a1 1 0 0 0-1 1v6a1 1 0 1 0 2 0v-6a1 1 0 0 0-1-1Zm4 0a1 1 0 0 0-1 1v6a1 1 0 1 0 2 0v-6a1 1 0 0 0-1-1Z"
+            />
+          </svg>
+        </button>
+      ) : null}
       <div className="rk-card-title">
         <a href={issue.urls.issue} target="_blank" rel="noopener noreferrer">
           #{issue.id}
@@ -492,7 +659,9 @@ function Card({
         <span className={`rk-badge ${overdue ? 'rk-overdue' : ''}`}>{issue.due_date || '未設定'}</span>
         {issue.priority_name ? <span className="rk-badge">{issue.priority_name}</span> : null}
         <span className={`rk-badge ${agingClass}`}>{`${agingDays}d`}</span>
-        {issue.blocked ? <span className="rk-badge">{`Blocked${issue.blocked_reason ? ` ${issue.blocked_reason}` : ''}`}</span> : null}
+        {issue.blocked ? (
+          <span className="rk-badge">{`Blocked${issue.blocked_reason ? ` ${issue.blocked_reason}` : ''}`}</span>
+        ) : null}
       </div>
     </div>
   );
@@ -507,64 +676,95 @@ function isOverdue(due: string | null): boolean {
   return dt < today0;
 }
 
-function CreateModal({
+function IssueModal({
   data,
   ctx,
   onClose,
-  onCreated,
+  onSaved,
+  onDeleted,
 }: {
   data: BoardData;
-  ctx: CreateContext;
+  ctx: ModalContext;
   onClose: () => void;
-  onCreated: (payload: Record<string, unknown>) => Promise<void>;
+  onSaved: (payload: Record<string, unknown>, isEdit: boolean) => Promise<void>;
+  onDeleted: (issueId: number) => Promise<void>;
 }) {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const issue = ctx.issueId ? data.issues.find((i) => i.id === ctx.issueId) : null;
+  const isEdit = !!issue;
+  const canDelete = isEdit && data.meta.can_delete;
+
   const defaultTracker = data.lists.trackers?.[0]?.id ?? '';
   const defaultAssignee = (() => {
+    if (isEdit) return issue?.assigned_to_id ? String(issue.assigned_to_id) : '';
     if (data.meta.lane_type !== 'assignee') return '';
     if (!ctx.laneId) return '';
     if (ctx.laneId === 'unassigned' || ctx.laneId === 'none') return '';
     return String(ctx.laneId);
   })();
 
-  const [subject, setSubject] = useState('');
-  const [trackerId, setTrackerId] = useState(String(defaultTracker));
-  const [assigneeId, setAssigneeId] = useState(defaultAssignee);
-  const [dueDate, setDueDate] = useState('');
-  const [priorityId, setPriorityId] = useState('');
-  const [blocked, setBlocked] = useState(false);
-  const [blockedReason, setBlockedReason] = useState('');
-  const [description, setDescription] = useState('');
+  const [subject, setSubject] = useState(issue?.subject ?? '');
+  const [trackerId, setTrackerId] = useState(issue?.tracker_id ? String(issue.tracker_id) : String(defaultTracker));
+  const [assigneeId, setAssigneeId] = useState(issue?.assigned_to_id ? String(issue.assigned_to_id) : defaultAssignee);
+  const [dueDate, setDueDate] = useState(issue?.due_date ?? '');
+  const [priorityId, setPriorityId] = useState(issue?.priority_id ? String(issue.priority_id) : '');
+  const [blocked, setBlocked] = useState(issue?.blocked ?? false);
+  const [blockedReason, setBlockedReason] = useState(issue?.blocked_reason ?? '');
+  const [description, setDescription] = useState(issue?.description ?? '');
 
   const submit = async () => {
-    setSaving(true);
     setErr(null);
+    const trackerIdNum = Number(trackerId);
+    if (!Number.isFinite(trackerIdNum) || trackerIdNum <= 0) {
+      setErr('トラッカーを選択してください');
+      return;
+    }
+
+    const assigneeIdNum = assigneeId === '' ? null : Number(assigneeId);
+    if (assigneeIdNum !== null && (!Number.isFinite(assigneeIdNum) || assigneeIdNum <= 0)) {
+      setErr('担当者の値が不正です');
+      return;
+    }
+
+    const priorityIdNum = priorityId === '' ? null : Number(priorityId);
+    if (priorityIdNum !== null && (!Number.isFinite(priorityIdNum) || priorityIdNum <= 0)) {
+      setErr('優先度の値が不正です');
+      return;
+    }
+
+    setSaving(true);
     try {
-      await onCreated({
+      await onSaved({
         subject,
-        tracker_id: trackerId,
-        assigned_to_id: assigneeId,
-        due_date: dueDate,
-        priority_id: priorityId,
+        tracker_id: trackerIdNum,
+        assigned_to_id: assigneeIdNum,
+        due_date: dueDate.trim() ? dueDate : null,
+        priority_id: priorityIdNum,
         blocked: blocked ? '1' : '0',
         blocked_reason: blockedReason,
         description,
         status_id: ctx.statusId,
-      });
+      }, isEdit);
     } catch (e: any) {
-      setErr(e?.message ?? '作成に失敗しました');
+      setErr(e?.message ?? (isEdit ? '更新に失敗しました' : '作成に失敗しました'));
     } finally {
       setSaving(false);
     }
+  };
+
+  const remove = () => {
+    if (!issue) return;
+    setErr(null);
+    void onDeleted(issue.id);
   };
 
   return (
     <div className="rk-modal-backdrop" role="dialog" aria-modal="true">
       <div className="rk-modal">
         <div className="rk-modal-head">
-          <h3>タスク追加</h3>
+          <h3>{isEdit ? 'タスク編集' : 'タスク追加'}</h3>
           <button type="button" className="rk-btn rk-btn-ghost" onClick={onClose} aria-label="閉じる">
             ×
           </button>
@@ -639,11 +839,22 @@ function CreateModal({
         </div>
 
         <div className="rk-modal-actions">
+          {canDelete ? (
+            <button
+              type="button"
+              className="rk-btn rk-btn-danger"
+              onClick={remove}
+              disabled={saving}
+              style={{ marginRight: 'auto' }}
+            >
+              削除
+            </button>
+          ) : null}
           <button type="button" className="rk-btn" onClick={onClose} disabled={saving}>
             キャンセル
           </button>
           <button type="button" className="rk-btn rk-btn-primary" onClick={submit} disabled={saving}>
-            {saving ? '作成中...' : '作成'}
+            {saving ? '保存中...' : (isEdit ? '保存' : '作成')}
           </button>
         </div>
       </div>
