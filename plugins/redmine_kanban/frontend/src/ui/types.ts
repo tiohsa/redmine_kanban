@@ -16,9 +16,12 @@ export type Issue = {
   id: number;
   subject: string;
   status_id: number;
+  tracker_id: number;
+  description: string;
   assigned_to_id: number | null;
   assigned_to_name?: string | null;
   due_date?: string | null;
+  priority_id?: number | null;
   priority_name?: string | null;
   updated_on?: string | null;
   aging_days?: number;
@@ -40,6 +43,7 @@ export type Meta = {
   current_user_id: number;
   can_move: boolean;
   can_create: boolean;
+  can_delete: boolean;
   lane_type: 'none' | 'assignee';
   wip_limit_mode: 'column' | 'column_lane';
   wip_exceed_behavior: 'block' | 'warn';

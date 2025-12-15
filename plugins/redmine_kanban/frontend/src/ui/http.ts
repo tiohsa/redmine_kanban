@@ -9,7 +9,7 @@ export async function getJson<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function postJson<T>(url: string, body: Record<string, unknown>, method: 'POST' | 'PATCH' = 'POST'): Promise<T> {
+export async function postJson<T>(url: string, body: Record<string, unknown>, method: 'POST' | 'PATCH' | 'PUT' | 'DELETE' = 'POST'): Promise<T> {
   const token = csrfToken();
   const res = await fetch(url, {
     method,

@@ -33,6 +33,66 @@
   line-height: 1.5;
 }
 
+.rk-popup-host {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: min(420px, calc(100vw - 32px));
+}
+
+.rk-popup {
+  background: var(--rk-bg-surface);
+  border: 1px solid var(--rk-border);
+  border-left-width: 4px;
+  border-radius: 12px;
+  box-shadow: var(--rk-shadow-md);
+  padding: 12px 12px;
+}
+
+.rk-popup-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.rk-popup-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.rk-popup-body {
+  font-size: 0.875rem;
+  color: var(--rk-text-secondary);
+  word-break: break-word;
+}
+
+.rk-popup-close {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.rk-popup-info {
+  border-left-color: var(--rk-primary);
+}
+
+.rk-popup-warn {
+  border-left-color: var(--rk-warn);
+  background: var(--rk-warn-bg);
+}
+
+.rk-popup-error {
+  border-left-color: var(--rk-danger);
+  background: var(--rk-danger-bg);
+}
+
 .rk-header {
   display: flex;
   justify-content: space-between;
@@ -289,6 +349,42 @@
   border-color: #cbd5e1;
 }
 
+.rk-icon-btn {
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  cursor: pointer;
+  color: var(--rk-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.rk-icon-btn:hover {
+  background: #f1f5f9;
+  color: var(--rk-text-primary);
+}
+
+.rk-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rk-card-delete-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.rk-card-delete-btn:hover {
+  background: var(--rk-danger-bg);
+  color: var(--rk-danger);
+}
+
 .rk-card-dragging {
   cursor: grabbing;
   transition: none !important;
@@ -396,6 +492,18 @@
   border-color: var(--rk-primary-hover);
 }
 
+.rk-btn-danger {
+  background: var(--rk-danger);
+  border-color: var(--rk-danger);
+  color: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+}
+
+.rk-btn-danger:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
 .rk-btn-ghost {
   border-color: transparent;
   background: transparent;
@@ -450,6 +558,16 @@
   /* Prevent overflowing viewport height */
   overflow-y: auto;
   /* Scroll if too tall */
+}
+
+.rk-modal-sm {
+  width: 420px;
+}
+
+.rk-confirm-body {
+  font-size: 0.95rem;
+  color: var(--rk-text-primary);
+  padding: 4px 0;
 }
 
 @keyframes rk-modal-in {

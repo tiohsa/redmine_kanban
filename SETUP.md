@@ -16,7 +16,10 @@ mkdir themes
 ```yaml
 services:
   redmine:
-    image: redmine:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: redmine-kanban-dev:latest
     container_name: redmine-dev
     ports:
       - "8080:3000"
@@ -47,6 +50,19 @@ services:
 
 volumes:
   db-data:
+```
+
+### 2.1 `Dockerfile` の作成
+
+`RAILS_ENV: development` で起動する場合、Rails のファイル監視に `listen` gem が必要になるため、
+Redmine の公式イメージを拡張します。
+
+```Dockerfile
+FROM redmine:latest
+
+RUN set -eux; \
+  bundle add listen --group development --skip-install; \
+  bundle install
 ```
 
 ### 3. コンテナの起動
