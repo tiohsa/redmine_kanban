@@ -19,7 +19,8 @@ module RedmineKanban
         'assigned_to_id' => normalize_assigned_to_id(params[:assigned_to_id]),
         'priority_id' => normalize_priority_id(params[:priority_id]),
         'due_date' => normalize_due_date(params[:due_date]),
-        'tracker_id' => normalize_tracker_id(params[:tracker_id])
+        'tracker_id' => normalize_tracker_id(params[:tracker_id]),
+        'done_ratio' => normalize_done_ratio(params[:done_ratio])
       }
 
       # Handle status change if provided
@@ -84,6 +85,12 @@ module RedmineKanban
       Date.parse(v)
     rescue ArgumentError
       nil
+    end
+
+    def normalize_done_ratio(value)
+      return nil if value.nil? || value.to_s.strip.empty?
+      v = value.to_i
+      v.clamp(0, 100)
     end
 
     def blocked_custom_field_values(params)

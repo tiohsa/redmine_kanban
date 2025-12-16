@@ -894,9 +894,23 @@ function Card({
         </a>
       </div>
       <div className="rk-card-meta">
-        <span className="rk-badge">{issue.assigned_to_name || '未割当'}</span>
+        <span className="rk-badge">{issue.done_ratio}%</span>
         <span className={`rk-badge ${overdue ? 'rk-overdue' : ''}`}>{issue.due_date || '未設定'}</span>
-        {issue.priority_name ? <span className="rk-badge">{issue.priority_name}</span> : null}
+        {issue.priority_name ? (
+          <span
+            className={`rk-badge ${(() => {
+              const p = (issue.priority_name || '').toLowerCase();
+              if (p === 'low') return 'rk-badge-priority-low';
+              if (p === 'normal') return 'rk-badge-priority-normal';
+              if (p === 'high') return 'rk-badge-priority-high';
+              if (p === 'urgent') return 'rk-badge-priority-urgent';
+              if (p === 'immediate') return 'rk-badge-priority-immediate';
+              return '';
+            })()}`}
+          >
+            {issue.priority_name}
+          </span>
+        ) : null}
         <span className={`rk-badge ${agingClass}`}>{`${agingDays}d`}</span>
         {issue.blocked ? (
           <span className="rk-badge">{`Blocked${issue.blocked_reason ? ` ${issue.blocked_reason}` : ''}`}</span>
@@ -978,8 +992,8 @@ function IssueModal({
   const [assigneeId, setAssigneeId] = useState(issue?.assigned_to_id ? String(issue.assigned_to_id) : defaultAssignee);
   const [dueDate, setDueDate] = useState(issue?.due_date ?? '');
   const [priorityId, setPriorityId] = useState(issue?.priority_id ? String(issue.priority_id) : '');
+  const [doneRatio, setDoneRatio] = useState(issue?.done_ratio ?? 0);
   const [blocked, setBlocked] = useState(issue?.blocked ?? false);
-  const [blockedReason, setBlockedReason] = useState(issue?.blocked_reason ?? '');
   const [description, setDescription] = useState(issue?.description ?? '');
   const hasDescriptionPreview = description.trim().length > 0 && /https?:\/\//.test(description);
 
@@ -1011,8 +1025,8 @@ function IssueModal({
         assigned_to_id: assigneeIdNum,
         due_date: dueDate.trim() ? dueDate : null,
         priority_id: priorityIdNum,
+        done_ratio: doneRatio,
         blocked: blocked ? '1' : '0',
-        blocked_reason: blockedReason,
         description,
         status_id: ctx.statusId,
       }, isEdit);
@@ -1063,6 +1077,17 @@ function IssueModal({
                 ))}
               </select>
             </label>
+
+            <label className="rk-field">
+              <span className="rk-label">進捗率</span>
+              <select value={doneRatio} onChange={(e) => setDoneRatio(Number(e.target.value))}>
+                {[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map((r) => (
+                  <option key={r} value={r}>
+                    {r}%
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
 
           <div className="rk-row2">
@@ -1088,10 +1113,6 @@ function IssueModal({
             <label className="rk-check">
               <input type="checkbox" checked={blocked} onChange={(e) => setBlocked(e.target.checked)} />
               Blocked
-            </label>
-            <label className="rk-field">
-              <span className="rk-label">理由</span>
-              <input value={blockedReason} onChange={(e) => setBlockedReason(e.target.value)} disabled={!blocked} />
             </label>
           </div>
 
