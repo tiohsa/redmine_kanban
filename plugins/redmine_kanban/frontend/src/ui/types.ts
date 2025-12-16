@@ -29,6 +29,7 @@ export type Issue = {
   blocked_reason?: string | null;
   urls: {
     issue: string;
+    issue_edit: string;
   };
 };
 
@@ -60,4 +61,3 @@ export type BoardData = {
   lists: Lists;
   issues: Issue[];
 };
-

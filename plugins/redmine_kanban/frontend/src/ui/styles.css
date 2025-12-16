@@ -396,6 +396,12 @@
   font-size: 0.95rem;
   margin-bottom: 8px;
   line-height: 1.4;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.rk-card-has-delete .rk-card-title {
+  padding-right: 28px;
 }
 
 .rk-card-title a {
@@ -513,6 +519,65 @@
 .rk-btn-ghost:hover {
   background: #f1f5f9;
   color: var(--rk-text-primary);
+}
+
+.rk-btn-sm {
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  height: 32px;
+}
+
+.rk-btn-toggle-active {
+  background: #e0e7ff;
+  border-color: #c7d2fe;
+  color: #3730a3;
+}
+
+.rk-sort {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rk-toolbar-spacer {
+  flex: 1;
+  min-width: 8px;
+}
+
+.rk-root-fullwindow {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.rk-root-fullwindow .rk-board {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Full-window mode: hide Redmine chrome and pin the SPA to the viewport. */
+body.rk-kanban-fullwindow {
+  overflow: hidden;
+}
+
+body.rk-kanban-fullwindow #top-menu,
+body.rk-kanban-fullwindow #header,
+body.rk-kanban-fullwindow #main-menu,
+body.rk-kanban-fullwindow #sidebar,
+body.rk-kanban-fullwindow #footer {
+  display: none !important;
+}
+
+body.rk-kanban-fullwindow #redmine-kanban-root {
+  position: fixed;
+  inset: 0;
+  z-index: 9990;
+  padding: 12px;
+  box-sizing: border-box;
+  background: var(--rk-bg-main);
+  overflow: hidden;
 }
 
 .rk-btn-dashed {
@@ -656,4 +721,31 @@
 .rk-form .rk-field select {
   height: 40px;
   width: 100%;
+}
+
+.rk-desc-preview {
+  border: 1px solid var(--rk-border);
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.rk-desc-preview-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--rk-text-secondary);
+  margin-bottom: 8px;
+}
+
+.rk-desc-preview-body {
+  font-size: 0.9rem;
+  color: var(--rk-text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.rk-desc-preview-body a {
+  color: var(--rk-primary);
+  text-decoration: underline;
 }
