@@ -114,9 +114,7 @@ export function App({ dataUrl }: Props) {
 
   return (
     <div className="rk-root">
-      <div className="rk-header">
-        <h2 className="rk-title">かんばん</h2>
-      </div>
+
 
       <div className="rk-popup-host" aria-live="polite" aria-relevant="additions text">
         {loading ? (
@@ -431,7 +429,7 @@ function Board({
       <div className="rk-board-inner">
         <div className="rk-grid rk-header-row">
           {columns.map((c) => (
-            <ColumnHeader key={c.id} column={c} canCreate={canCreate} onCreate={() => onCreate({ statusId: c.id })} />
+            <ColumnHeader key={c.id} column={c} />
           ))}
         </div>
 
@@ -486,7 +484,7 @@ function Board({
   );
 }
 
-function ColumnHeader({ column, canCreate, onCreate }: { column: Column; canCreate: boolean; onCreate: () => void }) {
+function ColumnHeader({ column }: { column: Column }) {
   const limit = column.wip_limit ?? null;
   const count = column.count ?? 0;
   const over = limit && count > limit;
@@ -495,11 +493,6 @@ function ColumnHeader({ column, canCreate, onCreate }: { column: Column; canCrea
       <div className="rk-col-title">{column.name}</div>
       <div className="rk-col-actions">
         <div className={`rk-wip ${over ? 'rk-wip-over' : ''}`}>{limit ? `${count} / ${limit}` : String(count)}</div>
-        {canCreate ? (
-          <button type="button" className="rk-btn rk-btn-ghost" onClick={onCreate}>
-            ＋
-          </button>
-        ) : null}
       </div>
     </div>
   );
