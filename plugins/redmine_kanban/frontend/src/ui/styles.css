@@ -247,12 +247,26 @@
   /* Subtle shadow for header */
 }
 
+.rk-header-lane-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+}
+
 .rk-col-header {
   background: var(--rk-bg-surface);
-  padding: 16px;
+  padding: 8px 12px;
   display: flex;
   justify-content: space-between;
   gap: 12px;
+  align-items: center;
+  min-height: 40px;
+}
+
+.rk-header-lane-label {
+  font-weight: 700;
+  color: var(--rk-text-secondary);
+  border-right: 1px solid var(--rk-border);
+  display: flex;
   align-items: center;
 }
 
