@@ -1,4 +1,4 @@
-require File.expand_path('../../../../test/test_helper', __FILE__)
+require File.expand_path('../../../../test/test_helper', File.expand_path(__dir__))
 require_relative '../../lib/redmine_kanban/settings'
 
 class RedmineKanbanSettingsTest < ActiveSupport::TestCase

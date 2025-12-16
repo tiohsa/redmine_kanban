@@ -26,7 +26,7 @@ module RedmineKanban
           current_user_id: @user.id,
           can_move: @user.allowed_to?(:manage_redmine_kanban, @project) && @user.allowed_to?(:edit_issues, @project),
           can_create: @user.allowed_to?(:manage_redmine_kanban, @project) && @user.allowed_to?(:add_issues, @project),
-          can_delete: @user.allowed_to?(:manage_redmine_kanban, @project) && @user.allowed_to?(:delete_issues, @project),
+          can_delete: @user.allowed_to?(:delete_issues, @project),
           lane_type: @settings.lane_type,
           wip_limit_mode: @settings.wip_limit_mode,
           wip_exceed_behavior: @settings.wip_exceed_behavior,
