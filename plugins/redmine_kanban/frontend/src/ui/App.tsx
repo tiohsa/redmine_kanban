@@ -32,6 +32,7 @@ export function App({ dataUrl }: Props) {
   const [modal, setModal] = useState<ModalContext | null>(null);
   const [confirmDeleteIssueId, setConfirmDeleteIssueId] = useState<number | null>(null);
   const [deletingIssueId, setDeletingIssueId] = useState<number | null>(null);
+  const [iframeEditUrl, setIframeEditUrl] = useState<string | null>(null);
   const [fullWindow, setFullWindow] = useState(() => {
     try {
       return localStorage.getItem('rk_fullwindow') === '1';
@@ -246,6 +247,7 @@ export function App({ dataUrl }: Props) {
             onCreate={openCreate}
             onTaskClick={openEdit}
             onDelete={requestDelete}
+            onEditClick={setIframeEditUrl}
           />
         ) : null}
       </div>
@@ -272,6 +274,10 @@ export function App({ dataUrl }: Props) {
             requestDelete(issueId);
           }}
         />
+      ) : null}
+
+      {iframeEditUrl ? (
+        <IframeEditDialog url={iframeEditUrl} onClose={() => { setIframeEditUrl(null); refresh(); }} />
       ) : null}
 
       {confirmDeleteIssueId !== null ? (
@@ -536,6 +542,7 @@ function Board({
   onCreate,
   onTaskClick,
   onDelete,
+  onEditClick,
 }: {
   data: BoardData;
   columns: Column[];
@@ -550,6 +557,7 @@ function Board({
   onCreate: (ctx: ModalContext) => void;
   onTaskClick: (issueId: number) => void;
   onDelete: (issueId: number) => void;
+  onEditClick: (editUrl: string) => void;
 }) {
   const laneType = data.meta.lane_type;
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
@@ -593,6 +601,7 @@ function Board({
                 onCreate={onCreate}
                 onCardClick={onTaskClick}
                 onDelete={onDelete}
+                onEditClick={onEditClick}
               />
             ))}
           </div>
@@ -616,6 +625,7 @@ function Board({
                       onCreate={onCreate}
                       onCardClick={onTaskClick}
                       onDelete={onDelete}
+                      onEditClick={onEditClick}
                     />
                   ))}
                 </div>
@@ -718,6 +728,7 @@ function Cell({
   onCreate,
   onCardClick,
   onDelete,
+  onEditClick,
 }: {
   data: BoardData;
   statusId: number;
@@ -730,6 +741,7 @@ function Cell({
   onCreate: (ctx: ModalContext) => void;
   onCardClick: (issueId: number) => void;
   onDelete: (issueId: number) => void;
+  onEditClick: (editUrl: string) => void;
 }) {
   const laneId = lane ? lane.id : 'none';
 
@@ -764,6 +776,7 @@ function Cell({
           canMove={canMove}
           onClick={() => onCardClick(it.id)}
           onDelete={() => onDelete(it.id)}
+          onEditClick={() => onEditClick(it.urls.issue_edit)}
         />
       ))}
     </div>
@@ -777,6 +790,7 @@ function Card({
   canMove,
   onClick,
   onDelete,
+  onEditClick,
 }: {
   issue: Issue;
   data: BoardData;
@@ -784,6 +798,7 @@ function Card({
   canMove: boolean;
   onClick: () => void;
   onDelete: () => void;
+  onEditClick: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `issue:${issue.id}`,
@@ -847,10 +862,12 @@ function Card({
         </a>{' '}
         <a
           href={issue.urls.issue_edit}
-          target="_blank"
-          rel="noopener noreferrer"
           onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onEditClick();
+          }}
         >
           {issue.subject}
         </a>
@@ -1095,6 +1112,28 @@ function IssueModal({
             {saving ? '保存中...' : (isEdit ? '保存' : '作成')}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function IframeEditDialog({ url, onClose }: { url: string; onClose: () => void }) {
+  return (
+    <div
+      className="rk-modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label="チケット編集"
+      onClick={onClose}
+    >
+      <div className="rk-iframe-dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="rk-iframe-dialog-header">
+          <span>チケット編集</span>
+          <button type="button" className="rk-btn rk-btn-ghost" onClick={onClose} aria-label="閉じる">
+            ×
+          </button>
+        </div>
+        <iframe className="rk-iframe-dialog-frame" src={url} />
       </div>
     </div>
   );
