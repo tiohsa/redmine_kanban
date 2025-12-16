@@ -450,6 +450,44 @@
   border: 1px solid transparent;
 }
 
+.rk-badge-priority-low {
+  background: #e0f2fe;
+  /* Sky 100 */
+  color: #0369a1;
+  /* Sky 700 */
+}
+
+.rk-badge-priority-normal {
+  background: #f1f5f9;
+  /* Slate 100 (Default) */
+  color: var(--rk-text-secondary);
+}
+
+.rk-badge-priority-high {
+  background: #fef9c3;
+  /* Yellow 100 */
+  color: #a16207;
+  /* Yellow 700 */
+  border-color: #fde047;
+}
+
+.rk-badge-priority-urgent {
+  background: #ffedd5;
+  /* Orange 100 */
+  color: #c2410c;
+  /* Orange 700 */
+  border-color: #fdba74;
+}
+
+.rk-badge-priority-immediate {
+  background: #fee2e2;
+  /* Red 100 */
+  color: #b91c1c;
+  /* Red 700 */
+  border-color: #fca5a5;
+  font-weight: 700;
+}
+
 .rk-overdue {
   background: var(--rk-danger-bg);
   color: var(--rk-danger);
@@ -665,7 +703,7 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 8px;
 }
 
 .rk-modal-head h3 {
@@ -677,14 +715,14 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 .rk-form {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
   /* increased gap for clarity */
 }
 
 .rk-row2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px;
+  gap: 12px;
 }
 
 .rk-error {
@@ -697,7 +735,7 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 }
 
 .rk-modal-actions {
-  margin-top: 24px;
+  margin-top: 16px;
   display: flex;
   justify-content: flex-end;
   gap: 12px;

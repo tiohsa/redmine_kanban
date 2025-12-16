@@ -107,6 +107,7 @@ module RedmineKanban
         due_date: issue.due_date&.to_s,
         priority_id: issue.priority_id,
         priority_name: issue.priority&.name,
+        done_ratio: issue.done_ratio,
         updated_on: issue.updated_on&.iso8601,
         aging_days: aging_days(issue),
         blocked: blocked[:blocked],
