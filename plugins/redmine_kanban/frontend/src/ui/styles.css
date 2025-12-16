@@ -759,16 +759,32 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
 }
 
-.rk-iframe-dialog-header {
+.rk-iframe-dialog-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  font-size: 20px;
+  cursor: pointer;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--rk-border);
-  font-weight: 700;
-  font-size: 1rem;
+  justify-content: center;
+  color: var(--rk-text-secondary);
+  box-shadow: var(--rk-shadow-sm);
+  transition: background 0.2s, color 0.2s;
+}
+
+.rk-iframe-dialog-close:hover {
+  background: var(--rk-danger-bg);
+  color: var(--rk-danger);
 }
 
 .rk-iframe-dialog-frame {

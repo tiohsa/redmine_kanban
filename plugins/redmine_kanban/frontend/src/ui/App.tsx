@@ -857,9 +857,6 @@ function Card({
         </button>
       ) : null}
       <div className="rk-card-title">
-        <a href={issue.urls.issue} target="_blank" rel="noopener noreferrer">
-          #{issue.id}
-        </a>{' '}
         <a
           href={issue.urls.issue_edit}
           onPointerDown={(e) => e.stopPropagation()}
@@ -867,6 +864,17 @@ function Card({
             e.preventDefault();
             e.stopPropagation();
             onEditClick();
+          }}
+        >
+          #{issue.id}
+        </a>{' '}
+        <a
+          href={issue.urls.issue}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onClick();
           }}
         >
           {issue.subject}
@@ -1009,10 +1017,9 @@ function IssueModal({
   };
 
   return (
-    <div className="rk-modal-backdrop" role="dialog" aria-modal="true">
-      <div className="rk-modal">
+    <div className="rk-modal-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
+      <div className="rk-modal" onClick={(e) => e.stopPropagation()}>
         <div className="rk-modal-head">
-          <h3>{isEdit ? 'タスク編集' : 'タスク追加'}</h3>
           <button type="button" className="rk-btn rk-btn-ghost" onClick={onClose} aria-label="閉じる">
             ×
           </button>
@@ -1127,14 +1134,17 @@ function IframeEditDialog({ url, onClose }: { url: string; onClose: () => void }
       onClick={onClose}
     >
       <div className="rk-iframe-dialog" onClick={(e) => e.stopPropagation()}>
-        <div className="rk-iframe-dialog-header">
-          <span>チケット編集</span>
-          <button type="button" className="rk-btn rk-btn-ghost" onClick={onClose} aria-label="閉じる">
-            ×
-          </button>
-        </div>
+        <button
+          type="button"
+          className="rk-iframe-dialog-close"
+          onClick={onClose}
+          aria-label="閉じる"
+        >
+          ×
+        </button>
         <iframe className="rk-iframe-dialog-frame" src={url} />
       </div>
     </div>
   );
 }
+
