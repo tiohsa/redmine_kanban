@@ -112,7 +112,8 @@ module RedmineKanban
         blocked: blocked[:blocked],
         blocked_reason: blocked[:reason],
         urls: {
-          issue: Rails.application.routes.url_helpers.issue_path(issue)
+          issue: Rails.application.routes.url_helpers.issue_path(issue),
+          issue_edit: Rails.application.routes.url_helpers.edit_issue_path(issue)
         }
       }
     end

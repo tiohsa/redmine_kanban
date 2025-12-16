@@ -15,6 +15,14 @@ type Filters = {
 
 type ModalContext = { statusId: number; laneId?: string | number; issueId?: number };
 
+type SortKey =
+  | 'updated_desc'
+  | 'updated_asc'
+  | 'due_asc'
+  | 'due_desc'
+  | 'priority_desc'
+  | 'priority_asc';
+
 export function App({ dataUrl }: Props) {
   const [data, setData] = useState<BoardData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -24,6 +32,31 @@ export function App({ dataUrl }: Props) {
   const [modal, setModal] = useState<ModalContext | null>(null);
   const [confirmDeleteIssueId, setConfirmDeleteIssueId] = useState<number | null>(null);
   const [deletingIssueId, setDeletingIssueId] = useState<number | null>(null);
+  const [fullWindow, setFullWindow] = useState(() => {
+    try {
+      return localStorage.getItem('rk_fullwindow') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [sortKey, setSortKey] = useState<SortKey>(() => {
+    try {
+      const v = localStorage.getItem('rk_sortkey');
+      if (
+        v === 'updated_desc' ||
+        v === 'updated_asc' ||
+        v === 'due_asc' ||
+        v === 'due_desc' ||
+        v === 'priority_desc' ||
+        v === 'priority_asc'
+      ) {
+        return v;
+      }
+    } catch {
+      // ignore
+    }
+    return 'updated_desc';
+  });
 
   const baseUrl = useMemo(() => dataUrl.replace(/\/data$/, ''), [dataUrl]);
 
@@ -44,9 +77,41 @@ export function App({ dataUrl }: Props) {
     void refresh();
   }, [refresh]);
 
+  React.useEffect(() => {
+    const className = 'rk-kanban-fullwindow';
+    if (fullWindow) {
+      document.body.classList.add(className);
+    } else {
+      document.body.classList.remove(className);
+    }
+
+    try {
+      localStorage.setItem('rk_fullwindow', fullWindow ? '1' : '0');
+    } catch {
+      // ignore
+    }
+
+    return () => {
+      document.body.classList.remove(className);
+    };
+  }, [fullWindow]);
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('rk_sortkey', sortKey);
+    } catch {
+      // ignore
+    }
+  }, [sortKey]);
+
   const columns = data?.columns ?? [];
   const lanes = data?.lanes ?? [];
   const issues = useMemo(() => filterIssues(data?.issues ?? [], data, filters), [data, filters]);
+  const priorityRank = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const [idx, p] of (data?.lists.priorities ?? []).entries()) m.set(p.id, idx);
+    return m;
+  }, [data]);
 
   const statusInfo = useMemo(() => {
     const m = new Map<number, Column>();
@@ -113,7 +178,7 @@ export function App({ dataUrl }: Props) {
   };
 
   return (
-    <div className="rk-root">
+    <div className={`rk-root${fullWindow ? ' rk-root-fullwindow' : ''}`}>
 
 
       <div className="rk-popup-host" aria-live="polite" aria-relevant="additions text">
@@ -152,7 +217,15 @@ export function App({ dataUrl }: Props) {
       </div>
 
       {data ? (
-        <Toolbar data={data} filters={filters} onChange={setFilters} />
+        <Toolbar
+          data={data}
+          filters={filters}
+          onChange={setFilters}
+          sortKey={sortKey}
+          onChangeSort={setSortKey}
+          fullWindow={fullWindow}
+          onToggleFullWindow={() => setFullWindow((v) => !v)}
+        />
       ) : (
         <div className="rk-empty">データ取得中...</div>
       )}
@@ -164,6 +237,8 @@ export function App({ dataUrl }: Props) {
             columns={columns}
             lanes={lanes}
             issues={issues}
+            sortKey={sortKey}
+            priorityRank={priorityRank}
             statusInfo={statusInfo}
             canMove={canMove}
             canCreate={canCreate}
@@ -329,10 +404,18 @@ function Toolbar({
   data,
   filters,
   onChange,
+  sortKey,
+  onChangeSort,
+  fullWindow,
+  onToggleFullWindow,
 }: {
   data: BoardData;
   filters: Filters;
   onChange: (f: Filters) => void;
+  sortKey: SortKey;
+  onChangeSort: (k: SortKey) => void;
+  fullWindow: boolean;
+  onToggleFullWindow: () => void;
 }) {
   const assignees = data.lists.assignees ?? [];
   const options = [
@@ -378,7 +461,64 @@ function Toolbar({
         />
         Blockedのみ
       </label>
+
+      <div className="rk-sort">
+        <span className="rk-label">並び替え</span>
+        <SortButton
+          active={sortKey.startsWith('due_')}
+          direction={sortKey === 'due_asc' ? 'asc' : sortKey === 'due_desc' ? 'desc' : null}
+          label="期日"
+          onClick={() => {
+            if (sortKey === 'due_asc') onChangeSort('due_desc');
+            else onChangeSort('due_asc');
+          }}
+        />
+        <SortButton
+          active={sortKey.startsWith('priority_')}
+          direction={sortKey === 'priority_asc' ? 'asc' : sortKey === 'priority_desc' ? 'desc' : null}
+          label="優先度"
+          onClick={() => {
+            if (sortKey === 'priority_desc') onChangeSort('priority_asc');
+            else onChangeSort('priority_desc');
+          }}
+        />
+        <SortButton
+          active={sortKey.startsWith('updated_')}
+          direction={sortKey === 'updated_asc' ? 'asc' : sortKey === 'updated_desc' ? 'desc' : null}
+          label="更新"
+          onClick={() => {
+            if (sortKey === 'updated_desc') onChangeSort('updated_asc');
+            else onChangeSort('updated_desc');
+          }}
+        />
+      </div>
+
+      <div className="rk-toolbar-spacer" />
+
+      <button type="button" className="rk-btn" onClick={onToggleFullWindow}>
+        {fullWindow ? '通常表示' : '全画面表示'}
+      </button>
     </div>
+  );
+}
+
+function SortButton({
+  active,
+  direction,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  direction: 'asc' | 'desc' | null;
+  label: string;
+  onClick: () => void;
+}) {
+  const suffix = direction === 'asc' ? '↑' : direction === 'desc' ? '↓' : '';
+  return (
+    <button type="button" className={`rk-btn rk-btn-sm ${active ? 'rk-btn-toggle-active' : ''}`} onClick={onClick}>
+      {label}
+      {suffix}
+    </button>
   );
 }
 
@@ -387,6 +527,8 @@ function Board({
   columns,
   lanes,
   issues,
+  sortKey,
+  priorityRank,
   statusInfo,
   canMove,
   canCreate,
@@ -399,6 +541,8 @@ function Board({
   columns: Column[];
   lanes: Lane[];
   issues: Issue[];
+  sortKey: SortKey;
+  priorityRank: Map<number, number>;
   statusInfo: Map<number, Column>;
   canMove: boolean;
   canCreate: boolean;
@@ -441,7 +585,7 @@ function Board({
                 data={data}
                 statusId={c.id}
                 lane={null}
-                issues={issuesForCell(issues, null, c.id)}
+                issues={sortIssues(issuesForCell(issues, null, c.id), sortKey, priorityRank)}
                 statusInfo={statusInfo}
                 canMove={canMove}
                 canCreate={canCreate}
@@ -464,7 +608,7 @@ function Board({
                       data={data}
                       statusId={c.id}
                       lane={lane}
-                      issues={issuesForCell(issues, lane, c.id)}
+                      issues={sortIssues(issuesForCell(issues, lane, c.id), sortKey, priorityRank)}
                       statusInfo={statusInfo}
                       canMove={canMove}
                       canCreate={canCreate}
@@ -505,6 +649,61 @@ function issuesForCell(issues: Issue[], lane: Lane | null, statusId: number) {
     if (lane.id === 'unassigned') return it.assigned_to_id === null;
     return String(it.assigned_to_id) === String(lane.assigned_to_id);
   });
+}
+
+function sortIssues(issues: Issue[], sortKey: SortKey, priorityRank: Map<number, number>) {
+  const arr = [...issues];
+  const cmp = buildIssueComparator(sortKey, priorityRank);
+  arr.sort(cmp);
+  return arr;
+}
+
+function buildIssueComparator(sortKey: SortKey, priorityRank: Map<number, number>) {
+  const dueTime = (it: Issue) => {
+    const v = it.due_date;
+    if (!v) return null;
+    const t = Date.parse(v);
+    return Number.isFinite(t) ? t : null;
+  };
+
+  const updatedTime = (it: Issue) => {
+    const v = it.updated_on;
+    if (!v) return null;
+    const t = Date.parse(v);
+    return Number.isFinite(t) ? t : null;
+  };
+
+  const priority = (it: Issue) => {
+    const id = it.priority_id;
+    if (!id) return null;
+    const r = priorityRank.get(id);
+    return typeof r === 'number' ? r : null;
+  };
+
+  const nullsLast = (a: number | null, b: number | null, dir: 'asc' | 'desc') => {
+    if (a === null && b === null) return 0;
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return dir === 'asc' ? a - b : b - a;
+  };
+
+  const tie = (a: Issue, b: Issue) => a.id - b.id;
+
+  switch (sortKey) {
+    case 'due_asc':
+      return (a, b) => nullsLast(dueTime(a), dueTime(b), 'asc') || tie(a, b);
+    case 'due_desc':
+      return (a, b) => nullsLast(dueTime(a), dueTime(b), 'desc') || tie(a, b);
+    case 'priority_asc':
+      return (a, b) => nullsLast(priority(a), priority(b), 'asc') || tie(a, b);
+    case 'priority_desc':
+      return (a, b) => nullsLast(priority(a), priority(b), 'desc') || tie(a, b);
+    case 'updated_asc':
+      return (a, b) => nullsLast(updatedTime(a), updatedTime(b), 'asc') || tie(a, b);
+    case 'updated_desc':
+    default:
+      return (a, b) => nullsLast(updatedTime(a), updatedTime(b), 'desc') || tie(a, b);
+  }
 }
 
 function Cell({
@@ -613,7 +812,8 @@ function Card({
 
   return (
     <div
-      className={`rk-card ${issue.blocked ? 'rk-blocked' : ''} ${isDragging ? 'rk-card-dragging' : ''}`}
+      className={`rk-card ${issue.blocked ? 'rk-blocked' : ''} ${isDragging ? 'rk-card-dragging' : ''} ${data.meta.can_delete ? 'rk-card-has-delete' : ''
+        }`}
       ref={setNodeRef}
       style={style}
       onClick={() => {
@@ -645,7 +845,15 @@ function Card({
         <a href={issue.urls.issue} target="_blank" rel="noopener noreferrer">
           #{issue.id}
         </a>{' '}
-        {issue.subject}
+        <a
+          href={issue.urls.issue_edit}
+          target="_blank"
+          rel="noopener noreferrer"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {issue.subject}
+        </a>
       </div>
       <div className="rk-card-meta">
         <span className="rk-badge">{issue.assigned_to_name || '未割当'}</span>
@@ -667,6 +875,35 @@ function isOverdue(due: string | null): boolean {
   const now = new Date();
   const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   return dt < today0;
+}
+
+function linkifyText(text: string): React.ReactNode[] {
+  const re = /https?:\/\/[^\s<>()]+/g;
+  const nodes: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let m: RegExpExecArray | null;
+
+  while ((m = re.exec(text)) !== null) {
+    const start = m.index;
+    const raw = m[0];
+    if (start > lastIndex) nodes.push(text.slice(lastIndex, start));
+
+    let url = raw;
+    while (/[),.;:!?]$/.test(url)) url = url.slice(0, -1);
+    const trailing = raw.slice(url.length);
+
+    nodes.push(
+      <a key={`${start}:${url}`} href={url} target="_blank" rel="noopener noreferrer">
+        {url}
+      </a>
+    );
+    if (trailing) nodes.push(trailing);
+
+    lastIndex = start + raw.length;
+  }
+
+  if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
+  return nodes;
 }
 
 function IssueModal({
@@ -706,6 +943,7 @@ function IssueModal({
   const [blocked, setBlocked] = useState(issue?.blocked ?? false);
   const [blockedReason, setBlockedReason] = useState(issue?.blocked_reason ?? '');
   const [description, setDescription] = useState(issue?.description ?? '');
+  const hasDescriptionPreview = description.trim().length > 0 && /https?:\/\//.test(description);
 
   const submit = async () => {
     setErr(null);
@@ -827,6 +1065,13 @@ function IssueModal({
             <span className="rk-label">説明</span>
             <textarea rows={4} value={description} onChange={(e) => setDescription(e.target.value)} />
           </label>
+
+          {hasDescriptionPreview ? (
+            <div className="rk-desc-preview" aria-label="説明プレビュー">
+              <div className="rk-desc-preview-title">プレビュー（URLをクリックできます）</div>
+              <div className="rk-desc-preview-body">{linkifyText(description)}</div>
+            </div>
+          ) : null}
 
           {err ? <div className="rk-error">{err}</div> : null}
         </div>
