@@ -579,11 +579,24 @@ function Board({
   return (
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
       <div className="rk-board-inner">
-        <div className="rk-grid rk-header-row">
-          {columns.map((c) => (
-            <ColumnHeader key={c.id} column={c} />
-          ))}
-        </div>
+        {laneType !== 'none' ? (
+          <div className="rk-header-row rk-header-lane-layout">
+            <div className="rk-col-header rk-header-lane-label">
+              {laneType === 'assignee' ? '担当者' : ''}
+            </div>
+            <div className="rk-grid">
+              {columns.map((c) => (
+                <ColumnHeader key={c.id} column={c} />
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="rk-grid rk-header-row">
+            {columns.map((c) => (
+              <ColumnHeader key={c.id} column={c} />
+            ))}
+          </div>
+        )}
 
         {laneType === 'none' ? (
           <div className="rk-grid">
