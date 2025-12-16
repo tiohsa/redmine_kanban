@@ -1,5 +1,7 @@
 module RedmineKanban
   class ApiController < ApplicationController
+    skip_before_action :authorize, only: [:update, :destroy]
+
     before_action :require_move_permission, only: [:move]
     before_action :require_create_permission, only: [:create]
     before_action :require_update_permission, only: [:update]
@@ -67,13 +69,13 @@ module RedmineKanban
     end
 
     def require_update_permission
-      return if User.current.allowed_to?(:manage_redmine_kanban, @project) && User.current.allowed_to?(:edit_issues, @project)
+      return if User.current.allowed_to?(:view_redmine_kanban, @project) && User.current.allowed_to?(:edit_issues, @project)
 
       render json: { ok: false, message: '権限がありません' }, status: :forbidden
     end
 
     def require_delete_permission
-      return if User.current.allowed_to?(:manage_redmine_kanban, @project) && User.current.allowed_to?(:delete_issues, @project)
+      return if User.current.allowed_to?(:view_redmine_kanban, @project) && User.current.allowed_to?(:delete_issues, @project)
 
       render json: { ok: false, message: '権限がありません' }, status: :forbidden
     end
