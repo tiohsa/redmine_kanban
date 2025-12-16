@@ -1033,9 +1033,6 @@ function IssueModal({
     <div className="rk-modal-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
       <div className="rk-modal" onClick={(e) => e.stopPropagation()}>
         <div className="rk-modal-head">
-          <button type="button" className="rk-btn rk-btn-ghost" onClick={onClose} aria-label="閉じる">
-            ×
-          </button>
         </div>
 
         <div className="rk-form">
