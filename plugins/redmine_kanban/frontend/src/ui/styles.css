@@ -27,7 +27,7 @@
 }
 
 .rk-root {
-  margin-top: 16px;
+  margin-top: 4px;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   color: var(--rk-text-primary);
   line-height: 1.5;
@@ -142,18 +142,18 @@
 
 /* Toolbar Adjustments */
 .rk-toolbar {
-  margin-bottom: 20px;
+  margin-bottom: 12px;
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 12px;
   align-items: center;
   /* Ensure vertical alignment */
   background: var(--rk-bg-surface);
-  padding: 16px;
+  padding: 8px 16px;
   border: 1px solid var(--rk-border);
   border-radius: 12px;
   box-shadow: var(--rk-shadow-sm);
-  min-height: 72px;
+  min-height: auto;
   /* Ensure minimum height */
 }
 
@@ -161,7 +161,7 @@
   display: flex;
   gap: 8px;
   align-items: center;
-  height: 40px;
+  height: 32px;
   /* Explicit height for fields */
 }
 
@@ -172,7 +172,7 @@
 
 .rk-field input,
 .rk-field select {
-  height: 40px;
+  height: 32px;
   /* Match field height */
   padding: 0 12px;
   border: 1px solid var(--rk-border);
@@ -198,7 +198,7 @@
   font-weight: 500;
   color: var(--rk-text-secondary);
   white-space: nowrap;
-  line-height: 40px;
+  line-height: 32px;
   /* Vertical align with inputs */
 }
 

@@ -144,8 +144,8 @@
         ),
         '</select></span>',
         "<span class='rk-field'><label class='inline'><input id='rk-filter-blocked' type='checkbox' " +
-          (state.filters.blockedOnly ? "checked='checked'" : '') +
-          " /> Blockedのみ</label></span>",
+        (state.filters.blockedOnly ? "checked='checked'" : '') +
+        " /> Blockedのみ</label></span>",
       ].join('');
     }
 
@@ -209,7 +209,6 @@
             "<div class='rk-col-title'>" + escapeHtml(c.name) + "</div>",
             "<div style='display:flex; gap:6px; align-items:center;'>",
             "<div class='rk-wip " + (over ? 'rk-wip-over' : '') + "' title='WIP'>" + escapeHtml(wipText) + '</div>',
-            canCreate ? "<button type='button' class='rk-add rk-add-col' data-status-id='" + c.id + "'>＋</button>" : '',
             '</div>',
             '</div>',
           ].join('');
@@ -261,7 +260,6 @@
           "<div class='rk-col-title'>" + escapeHtml(column.name) + "</div>",
           "<div style='display:flex; gap:6px; align-items:center;'>",
           "<div class='rk-wip " + (over ? 'rk-wip-over' : '') + "' title='WIP'>" + escapeHtml(wipText) + '</div>',
-          canCreate ? "<button type='button' class='rk-add rk-add-col' data-status-id='" + column.id + "'>＋</button>" : '',
           '</div>',
           '</div>',
         ].join('');
