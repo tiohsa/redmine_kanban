@@ -103,6 +103,7 @@ module RedmineKanban
         description: issue.description,
         assigned_to_id: issue.assigned_to_id,
         assigned_to_name: issue.assigned_to&.name,
+        start_date: issue.start_date&.to_s,
         due_date: issue.due_date&.to_s,
         priority_id: issue.priority_id,
         priority_name: issue.priority&.name,

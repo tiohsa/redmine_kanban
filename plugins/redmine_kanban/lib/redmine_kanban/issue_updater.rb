@@ -18,7 +18,8 @@ module RedmineKanban
         'description' => params[:description].to_s,
         'assigned_to_id' => normalize_assigned_to_id(params[:assigned_to_id]),
         'priority_id' => normalize_priority_id(params[:priority_id]),
-        'due_date' => normalize_due_date(params[:due_date]),
+        'start_date' => normalize_date(params[:start_date]),
+        'due_date' => normalize_date(params[:due_date]),
         'tracker_id' => normalize_tracker_id(params[:tracker_id]),
         'done_ratio' => normalize_done_ratio(params[:done_ratio])
       }
@@ -76,7 +77,7 @@ module RedmineKanban
       v.to_i
     end
 
-    def normalize_due_date(value)
+    def normalize_date(value)
       v = value.to_s.strip
       return nil if v.empty?
       Date.parse(v)

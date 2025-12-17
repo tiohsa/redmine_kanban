@@ -23,6 +23,7 @@ export type Issue = {
   due_date?: string | null;
   priority_id?: number | null;
   priority_name?: string | null;
+  start_date?: string | null;
   updated_on?: string | null;
   aging_days?: number;
   done_ratio?: number;

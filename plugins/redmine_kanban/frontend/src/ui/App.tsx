@@ -1082,6 +1082,7 @@ function IssueModal({
   const [trackerId, setTrackerId] = useState(issue?.tracker_id ? String(issue.tracker_id) : String(defaultTracker));
   const [assigneeId, setAssigneeId] = useState(issue?.assigned_to_id ? String(issue.assigned_to_id) : defaultAssignee);
   const [dueDate, setDueDate] = useState(issue?.due_date ?? '');
+  const [startDate, setStartDate] = useState(issue?.start_date ?? '');
   const [priorityId, setPriorityId] = useState(issue?.priority_id ? String(issue.priority_id) : '');
   const [doneRatio, setDoneRatio] = useState(issue?.done_ratio ?? 0);
   const [description, setDescription] = useState(issue?.description ?? '');
@@ -1113,6 +1114,7 @@ function IssueModal({
         subject,
         tracker_id: trackerIdNum,
         assigned_to_id: assigneeIdNum,
+        start_date: startDate.trim() ? startDate : null,
         due_date: dueDate.trim() ? dueDate : null,
         priority_id: priorityIdNum,
         done_ratio: doneRatio,
@@ -1166,7 +1168,9 @@ function IssueModal({
                 ))}
               </select>
             </label>
+          </div>
 
+          <div className="rk-row2">
             <label className="rk-field">
               <span className="rk-label">進捗率</span>
               <select value={doneRatio} onChange={(e) => setDoneRatio(Number(e.target.value))}>
@@ -1176,13 +1180,6 @@ function IssueModal({
                   </option>
                 ))}
               </select>
-            </label>
-          </div>
-
-          <div className="rk-row2">
-            <label className="rk-field">
-              <span className="rk-label">期日</span>
-              <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </label>
 
             <label className="rk-field">
@@ -1195,6 +1192,18 @@ function IssueModal({
                   </option>
                 ))}
               </select>
+            </label>
+          </div>
+
+          <div className="rk-row2">
+            <label className="rk-field">
+              <span className="rk-label">開始日</span>
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            </label>
+
+            <label className="rk-field">
+              <span className="rk-label">期日</span>
+              <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </label>
           </div>
 

@@ -426,8 +426,9 @@
         "<div class='rk-row'><label>件名</label><input id='rk-new-subject' type='text' /></div>",
         "<div class='rk-row'><label>トラッカー</label><select id='rk-new-tracker'></select></div>",
         "<div class='rk-row'><label>担当者</label><select id='rk-new-assignee'></select></div>",
-        "<div class='rk-row'><label>期日</label><input id='rk-new-due' type='date' /></div>",
         "<div class='rk-row'><label>優先度</label><select id='rk-new-priority'></select></div>",
+        "<div class='rk-row'><label>開始日</label><input id='rk-new-start-date' type='date' /></div>",
+        "<div class='rk-row'><label>期日</label><input id='rk-new-due' type='date' /></div>",
         "<div class='rk-row'><label>説明</label><textarea id='rk-new-desc' rows='4'></textarea></div>",
         "<div class='rk-error' id='rk-new-error' style='display:none;'></div>",
         "<div class='rk-actions'>",
@@ -458,12 +459,14 @@
       var subject = document.getElementById('rk-new-subject');
       var tracker = document.getElementById('rk-new-tracker');
       var assignee = document.getElementById('rk-new-assignee');
+      var startDate = document.getElementById('rk-new-start-date');
       var due = document.getElementById('rk-new-due');
       var priority = document.getElementById('rk-new-priority');
       var desc = document.getElementById('rk-new-desc');
       var err = document.getElementById('rk-new-error');
 
       subject.value = '';
+      startDate.value = '';
       due.value = '';
       desc.value = '';
       err.style.display = 'none';
@@ -508,6 +511,7 @@
         subject: document.getElementById('rk-new-subject').value,
         tracker_id: document.getElementById('rk-new-tracker').value,
         assigned_to_id: document.getElementById('rk-new-assignee').value,
+        start_date: document.getElementById('rk-new-start-date').value,
         due_date: document.getElementById('rk-new-due').value,
         priority_id: document.getElementById('rk-new-priority').value,
         description: document.getElementById('rk-new-desc').value,
