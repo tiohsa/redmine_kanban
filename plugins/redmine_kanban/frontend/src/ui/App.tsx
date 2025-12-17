@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { DndContext, PointerSensor, useDroppable, useDraggable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import type { BoardData, Column, Issue, Lane } from './types';
@@ -66,7 +67,6 @@ function AiAnalysisModal({
             <div
               className="rk-analysis-result"
               style={{
-                whiteSpace: 'pre-wrap',
                 lineHeight: '1.6',
                 color: 'var(--rk-text-primary)',
                 fontSize: '0.95rem',
@@ -78,7 +78,7 @@ function AiAnalysisModal({
                 border: '1px solid var(--rk-border)',
               }}
             >
-              {result}
+              <ReactMarkdown>{result || ''}</ReactMarkdown>
             </div>
           )}
         </div>
@@ -397,9 +397,6 @@ export function App({ dataUrl }: Props) {
           <div className="rk-modal" onClick={(e) => e.stopPropagation()}>
             <div className="rk-modal-head">
               <h3>⚡ AI分析</h3>
-              <button type="button" className="rk-btn rk-btn-ghost" onClick={() => setAnalysisOpen(false)} disabled={analyzing} aria-label="閉じる">
-                ×
-              </button>
             </div>
 
             <div className="rk-form">
@@ -410,8 +407,8 @@ export function App({ dataUrl }: Props) {
                   <div style={{ marginTop: '8px', fontSize: '0.8rem' }}>これには数秒から数十秒かかる場合があります</div>
                 </div>
               ) : analysisResult ? (
-                <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, fontSize: '0.95rem', userSelect: 'text' }}>
-                  {analysisResult}
+                <div style={{ lineHeight: 1.6, fontSize: '0.95rem', userSelect: 'text' }}>
+                  <ReactMarkdown>{analysisResult}</ReactMarkdown>
                 </div>
               ) : (
                 <div style={{ padding: '20px', textAlign: 'center' }}>結果がありません</div>
