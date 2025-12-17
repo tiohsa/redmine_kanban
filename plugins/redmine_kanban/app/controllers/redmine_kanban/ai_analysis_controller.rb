@@ -13,6 +13,8 @@ module RedmineKanban
         return
       end
 
+      Rails.logger.info("AiAnalysisController#analyze called. Issues count: #{issues.size}")
+
       # Initialize Service (assuming API KEY is in ENV)
       service = LlmService.new
       

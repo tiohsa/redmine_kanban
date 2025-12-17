@@ -391,6 +391,41 @@ export function App({ dataUrl }: Props) {
           }}
         />
       ) : null}
+
+      {analysisOpen ? (
+        <div className="rk-modal-backdrop" role="dialog" aria-modal="true" aria-label="AI分析" onClick={() => !analyzing && setAnalysisOpen(false)}>
+          <div className="rk-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="rk-modal-head">
+              <h3>⚡ AI分析</h3>
+              <button type="button" className="rk-btn rk-btn-ghost" onClick={() => setAnalysisOpen(false)} disabled={analyzing} aria-label="閉じる">
+                ×
+              </button>
+            </div>
+
+            <div className="rk-form">
+              {analyzing ? (
+                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--rk-text-secondary)' }}>
+                  <div style={{ fontSize: '1.2rem', marginBottom: '16px' }}>🤖</div>
+                  <div>AIがタスクを分析しています...</div>
+                  <div style={{ marginTop: '8px', fontSize: '0.8rem' }}>これには数秒から数十秒かかる場合があります</div>
+                </div>
+              ) : analysisResult ? (
+                <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, fontSize: '0.95rem', userSelect: 'text' }}>
+                  {analysisResult}
+                </div>
+              ) : (
+                <div style={{ padding: '20px', textAlign: 'center' }}>結果がありません</div>
+              )}
+            </div>
+
+            <div className="rk-modal-actions">
+              <button type="button" className="rk-btn" onClick={() => setAnalysisOpen(false)} disabled={analyzing}>
+                閉じる
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

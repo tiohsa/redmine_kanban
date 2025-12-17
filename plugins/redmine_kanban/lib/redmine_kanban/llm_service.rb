@@ -23,6 +23,7 @@ module RedmineKanban
       http.use_ssl = true
 
       request = Net::HTTP::Post.new(uri.request_uri)
+      Rails.logger.info("LlmService: Analyzing #{issues.size rescue 0} issues with model #{@model}")
       request['Content-Type'] = 'application/json'
 
       # Gemini API Request Body
@@ -41,11 +42,14 @@ module RedmineKanban
       begin
         response = http.request(request)
         if response.code == '200'
+          Rails.logger.info("LlmService: Success response from Gemini API")
           parse_response(response.body)
         else
+          Rails.logger.error("LlmService: API Error #{response.code} - #{response.message}")
           { error: "API Error: #{response.code} - #{response.message}", details: response.body }
         end
       rescue StandardError => e
+        Rails.logger.error("LlmService: Connection Error: #{e.message}")
         { error: "Connection Error: #{e.message}" }
       end
     end
@@ -93,15 +97,30 @@ module RedmineKanban
     end
 
     def load_env_local
-      env_file = File.join(Rails.root, '.env.local')
-      return unless File.exist?(env_file)
-
-      File.foreach(env_file) do |line|
-        next if line.strip.start_with?('#') || line.strip.empty?
-        key, value = line.strip.split('=', 2)
-        ENV[key] = value if key && value && !ENV.key?(key)
+      # Try multiple locations for .env.local
+      possible_paths = []
+      
+      begin
+        possible_paths << File.join(Rails.root, '.env.local')
+      rescue NameError
+        # Rails.root might not be defined
       end
-    rescue NameError # Handle case where Rails.root might not be defined
+      
+      # Also check plugin directory (for development convenience)
+      plugin_dir = File.expand_path('../../../../..', __FILE__)
+      possible_paths << File.join(plugin_dir, '.env.local')
+      
+      possible_paths.each do |env_file|
+        next unless File.exist?(env_file)
+        
+        Rails.logger.info("LlmService: Loading environment from #{env_file}") rescue nil
+        File.foreach(env_file) do |line|
+          next if line.strip.start_with?('#') || line.strip.empty?
+          key, value = line.strip.split('=', 2)
+          ENV[key] = value if key && value && !ENV.key?(key)
+        end
+        break # Only load the first found file
+      end
     end
   end
 end
