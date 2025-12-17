@@ -45,9 +45,6 @@ module RedmineKanban
 
       # Remove empty/nil values to avoid overwriting with defaults if not intended (though here we intend to update)
       # Actually safe_attributes handles this, but for some normalization we did above.
-      
-      cf_values = blocked_custom_field_values(params)
-      attributes['custom_field_values'] = cf_values if cf_values.any?
 
       issue.safe_attributes = attributes
 
@@ -91,22 +88,6 @@ module RedmineKanban
       return nil if value.nil? || value.to_s.strip.empty?
       v = value.to_i
       v.clamp(0, 100)
-    end
-
-    def blocked_custom_field_values(params)
-      bool_id = @settings.blocked_bool_cf_id
-      reason_id = @settings.blocked_reason_cf_id
-      return {} if bool_id <= 0
-
-      # Check if blocked status is being updated
-      return {} unless params.key?(:blocked)
-
-      blocked = params[:blocked].to_s == '1' || params[:blocked].to_s == 'true'
-      values = { bool_id.to_s => (blocked ? '1' : '0') }
-      if reason_id > 0
-        values[reason_id.to_s] = blocked ? params[:blocked_reason].to_s : ''
-      end
-      values
     end
 
     def status_allowed?(issue, status_id)

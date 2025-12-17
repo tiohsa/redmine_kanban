@@ -62,15 +62,5 @@
     <label>Closed の停滞強調を除外</label>
     <%= check_box_tag 'settings[aging_exclude_closed]', '1', @settings['aging_exclude_closed'].to_s == '1' %>
   </p>
-
-  <p>
-    <label>Blocked（bool）カスタムフィールドID</label>
-    <%= text_field_tag 'settings[blocked_bool_cf_id]', @settings['blocked_bool_cf_id'], size: 8 %>
-  </p>
-
-  <p>
-    <label>Blocked reason（text）カスタムフィールドID</label>
-    <%= text_field_tag 'settings[blocked_reason_cf_id]', @settings['blocked_reason_cf_id'], size: 8 %>
-  </p>
 </fieldset>
 

@@ -507,11 +507,6 @@
   border-color: #fecaca;
 }
 
-.rk-blocked {
-  border-left: 4px solid var(--rk-danger);
-  padding-left: 12px;
-}
-
 .rk-btn {
   border: 1px solid var(--rk-border);
   background: #fff;

@@ -10,7 +10,6 @@ type Filters = {
   assignee: 'all' | 'me' | 'unassigned' | string;
   q: string;
   due: 'all' | 'overdue' | 'thisweek' | 'none';
-  blockedOnly: boolean;
 };
 
 type ModalContext = { statusId: number; laneId?: string | number; issueId?: number };
@@ -23,15 +22,88 @@ type SortKey =
   | 'priority_desc'
   | 'priority_asc';
 
+function AiAnalysisModal({
+  onClose,
+  result,
+  loading,
+}: {
+  onClose: () => void;
+  result: string | null;
+  loading: boolean;
+}) {
+  return (
+    <div className="rk-modal-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
+      <div className="rk-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="rk-modal-head">
+          <h3>AI分析レポート</h3>
+          <button type="button" className="rk-btn rk-btn-ghost" onClick={onClose} aria-label="閉じる">
+            ×
+          </button>
+        </div>
+        <div className="rk-form">
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: '40px' }}>
+              <div
+                style={{
+                  display: 'inline-block',
+                  width: '40px',
+                  height: '40px',
+                  border: '4px solid #f3f3f3',
+                  borderTop: '4px solid var(--rk-primary)',
+                  borderRadius: '50%',
+                  animation: 'rk-spin 1s linear infinite',
+                }}
+              />
+              <p style={{ marginTop: '16px', color: 'var(--rk-text-secondary)' }}>分析中...</p>
+              <style>{`
+                @keyframes rk-spin {
+                  0% { transform: rotate(0deg); }
+                  100% { transform: rotate(360deg); }
+                }
+              `}</style>
+            </div>
+          ) : (
+            <div
+              className="rk-analysis-result"
+              style={{
+                whiteSpace: 'pre-wrap',
+                lineHeight: '1.6',
+                color: 'var(--rk-text-primary)',
+                fontSize: '0.95rem',
+                maxHeight: '60vh',
+                overflowY: 'auto',
+                padding: '12px',
+                background: '#f8fafc',
+                borderRadius: '8px',
+                border: '1px solid var(--rk-border)',
+              }}
+            >
+              {result}
+            </div>
+          )}
+        </div>
+        <div className="rk-modal-actions">
+          <button type="button" className="rk-btn" onClick={onClose}>
+            閉じる
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function App({ dataUrl }: Props) {
   const [data, setData] = useState<BoardData | null>(null);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [filters, setFilters] = useState<Filters>({ assignee: 'all', q: '', due: 'all', blockedOnly: false });
+  const [filters, setFilters] = useState<Filters>({ assignee: 'all', q: '', due: 'all' });
   const [modal, setModal] = useState<ModalContext | null>(null);
   const [confirmDeleteIssueId, setConfirmDeleteIssueId] = useState<number | null>(null);
   const [deletingIssueId, setDeletingIssueId] = useState<number | null>(null);
+  const [analysisOpen, setAnalysisOpen] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<string | null>(null);
   const [iframeEditUrl, setIframeEditUrl] = useState<string | null>(null);
   const [fullWindow, setFullWindow] = useState(() => {
     try {
@@ -65,14 +137,37 @@ export function App({ dataUrl }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const json = await getJson<BoardData>(dataUrl);
+      const json = await getJson<BoardData>(`${baseUrl}/data`);
       setData(json);
     } catch (e) {
       setError('読み込みに失敗しました');
     } finally {
       setLoading(false);
     }
-  }, [dataUrl]);
+  }, [baseUrl]);
+
+  const handleAnalyze = async () => {
+    if (!data) return;
+    setAnalysisOpen(true);
+    if (analysisResult) return; // cache previous result or clear it elsewhere
+
+    setAnalyzing(true);
+    setAnalysisResult(null);
+    try {
+      // Filter current view issues
+      const currentIssues = filterIssues(data.issues, data, filters);
+      const res = await postJson<{ result?: string; error?: string }>(`${baseUrl}/analyze`, { issues: currentIssues });
+      if (res.error) {
+        setAnalysisResult(`エラーが発生しました: ${res.error}`);
+      } else {
+        setAnalysisResult(res.result ?? '結果が空でした');
+      }
+    } catch (e: any) {
+      setAnalysisResult(`通信エラー: ${e.message}`);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
   React.useEffect(() => {
     void refresh();
@@ -226,6 +321,7 @@ export function App({ dataUrl }: Props) {
           onChangeSort={setSortKey}
           fullWindow={fullWindow}
           onToggleFullWindow={() => setFullWindow((v) => !v)}
+          onAnalyze={handleAnalyze}
         />
       ) : (
         <div className="rk-empty">データ取得中...</div>
@@ -353,7 +449,6 @@ function filterIssues(issues: Issue[], data: BoardData | null, filters: Filters)
   const end = endOfWeek(now);
 
   return issues.filter((it) => {
-    if (filters.blockedOnly && !it.blocked) return false;
     if (q && !it.subject.toLowerCase().includes(q)) return false;
 
     if (filters.assignee !== 'all') {
@@ -414,6 +509,7 @@ function Toolbar({
   onChangeSort,
   fullWindow,
   onToggleFullWindow,
+  onAnalyze,
 }: {
   data: BoardData;
   filters: Filters;
@@ -422,6 +518,7 @@ function Toolbar({
   onChangeSort: (k: SortKey) => void;
   fullWindow: boolean;
   onToggleFullWindow: () => void;
+  onAnalyze: () => void;
 }) {
   const assignees = data.lists.assignees ?? [];
   const options = [
@@ -459,14 +556,7 @@ function Toolbar({
         </select>
       </label>
 
-      <label className="rk-check">
-        <input
-          type="checkbox"
-          checked={filters.blockedOnly}
-          onChange={(e) => onChange({ ...filters, blockedOnly: e.target.checked })}
-        />
-        Blockedのみ
-      </label>
+
 
       <div className="rk-sort">
         <span className="rk-label">並び替え</span>
@@ -500,6 +590,10 @@ function Toolbar({
       </div>
 
       <div className="rk-toolbar-spacer" />
+
+      <button type="button" className="rk-btn" onClick={onAnalyze} style={{ marginRight: '8px' }}>
+        ✨ 分析
+      </button>
 
       <button type="button" className="rk-btn" onClick={onToggleFullWindow}>
         {fullWindow ? '通常表示' : '全画面表示'}
@@ -840,7 +934,7 @@ function Card({
 
   return (
     <div
-      className={`rk-card ${issue.blocked ? 'rk-blocked' : ''} ${isDragging ? 'rk-card-dragging' : ''} ${data.meta.can_delete ? 'rk-card-has-delete' : ''
+      className={`rk-card ${isDragging ? 'rk-card-dragging' : ''} ${data.meta.can_delete ? 'rk-card-has-delete' : ''
         }`}
       ref={setNodeRef}
       style={style}
@@ -912,9 +1006,6 @@ function Card({
           </span>
         ) : null}
         <span className={`rk-badge ${agingClass}`}>{`${agingDays}d`}</span>
-        {issue.blocked ? (
-          <span className="rk-badge">{`Blocked${issue.blocked_reason ? ` ${issue.blocked_reason}` : ''}`}</span>
-        ) : null}
       </div>
     </div>
   );
@@ -993,7 +1084,6 @@ function IssueModal({
   const [dueDate, setDueDate] = useState(issue?.due_date ?? '');
   const [priorityId, setPriorityId] = useState(issue?.priority_id ? String(issue.priority_id) : '');
   const [doneRatio, setDoneRatio] = useState(issue?.done_ratio ?? 0);
-  const [blocked, setBlocked] = useState(issue?.blocked ?? false);
   const [description, setDescription] = useState(issue?.description ?? '');
   const hasDescriptionPreview = description.trim().length > 0 && /https?:\/\//.test(description);
 
@@ -1026,7 +1116,6 @@ function IssueModal({
         due_date: dueDate.trim() ? dueDate : null,
         priority_id: priorityIdNum,
         done_ratio: doneRatio,
-        blocked: blocked ? '1' : '0',
         description,
         status_id: ctx.statusId,
       }, isEdit);
@@ -1109,12 +1198,7 @@ function IssueModal({
             </label>
           </div>
 
-          <div className="rk-row2">
-            <label className="rk-check">
-              <input type="checkbox" checked={blocked} onChange={(e) => setBlocked(e.target.checked)} />
-              Blocked
-            </label>
-          </div>
+
 
           <label className="rk-field">
             <span className="rk-label">説明</span>

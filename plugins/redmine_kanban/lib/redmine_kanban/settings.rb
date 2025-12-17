@@ -50,12 +50,5 @@ module RedmineKanban
       @raw['aging_exclude_closed'].to_s == '1'
     end
 
-    def blocked_bool_cf_id
-      @raw['blocked_bool_cf_id'].to_s.strip.to_i
-    end
-
-    def blocked_reason_cf_id
-      @raw['blocked_reason_cf_id'].to_s.strip.to_i
-    end
   end
 end

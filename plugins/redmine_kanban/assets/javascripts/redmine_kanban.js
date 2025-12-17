@@ -60,8 +60,7 @@
       filters: {
         assignee: 'all',
         q: '',
-        due: 'all',
-        blockedOnly: false,
+        due: 'all'
       },
       drag: null,
     };
@@ -143,9 +142,6 @@
           state.filters.due
         ),
         '</select></span>',
-        "<span class='rk-field'><label class='inline'><input id='rk-filter-blocked' type='checkbox' " +
-        (state.filters.blockedOnly ? "checked='checked'" : '') +
-        " /> Blockedのみ</label></span>",
       ].join('');
     }
 
@@ -156,8 +152,6 @@
       var thisWeekEnd = endOfWeek(now);
 
       return (issues || []).filter(function (it) {
-        if (state.filters.blockedOnly && !it.blocked) return false;
-
         if (q) {
           if ((it.subject || '').toLowerCase().indexOf(q) === -1) return false;
         }
@@ -308,14 +302,10 @@
           if (typeof it.aging_days === 'number') {
             badges.push("<span class='rk-badge " + agingClass + "' title='停滞'>" + escapeHtml(String(it.aging_days) + 'd') + '</span>');
           }
-          if (it.blocked) {
-            var reason = it.blocked_reason ? ' ' + escapeHtml(it.blocked_reason) : '';
-            badges.push("<span class='rk-badge' title='Blocked'>Blocked" + reason + '</span>');
-          }
           var assignee = it.assigned_to_name ? it.assigned_to_name : '未割当';
 
           return [
-            "<div class='rk-card " + (it.blocked ? 'rk-blocked' : '') + "' draggable='" + (canMove ? 'true' : 'false') + "' data-issue-id='" + it.id + "' data-status-id='" + it.status_id + "' data-assigned-to-id='" + (it.assigned_to_id === null ? '' : it.assigned_to_id) + "'>",
+            "<div class='rk-card' draggable='" + (canMove ? 'true' : 'false') + "' data-issue-id='" + it.id + "' data-status-id='" + it.status_id + "' data-assigned-to-id='" + (it.assigned_to_id === null ? '' : it.assigned_to_id) + "'>",
             "<div class='rk-card-title'><a href='" + escapeHtml(it.urls.issue) + "' target='_blank' rel='noopener noreferrer'>#" + it.id + '</a> ' + escapeHtml(it.subject) + '</div>',
             "<div class='rk-card-meta'><span class='rk-badge' title='担当者'>" + escapeHtml(assignee) + '</span>' + badges.join('') + '</div>',
             '</div>',
@@ -334,7 +324,6 @@
       var assignee = document.getElementById('rk-filter-assignee');
       var q = document.getElementById('rk-filter-q');
       var due = document.getElementById('rk-filter-due');
-      var blocked = document.getElementById('rk-filter-blocked');
 
       if (assignee) {
         assignee.addEventListener('change', function () {
@@ -351,12 +340,6 @@
       if (due) {
         due.addEventListener('change', function () {
           state.filters.due = due.value;
-          render();
-        });
-      }
-      if (blocked) {
-        blocked.addEventListener('change', function () {
-          state.filters.blockedOnly = blocked.checked;
           render();
         });
       }
@@ -445,8 +428,6 @@
         "<div class='rk-row'><label>担当者</label><select id='rk-new-assignee'></select></div>",
         "<div class='rk-row'><label>期日</label><input id='rk-new-due' type='date' /></div>",
         "<div class='rk-row'><label>優先度</label><select id='rk-new-priority'></select></div>",
-        "<div class='rk-row'><label class='inline'><input id='rk-new-blocked' type='checkbox' /> Blocked</label></div>",
-        "<div class='rk-row'><label>Blocked理由</label><input id='rk-new-blocked-reason' type='text' /></div>",
         "<div class='rk-row'><label>説明</label><textarea id='rk-new-desc' rows='4'></textarea></div>",
         "<div class='rk-error' id='rk-new-error' style='display:none;'></div>",
         "<div class='rk-actions'>",
@@ -479,16 +460,12 @@
       var assignee = document.getElementById('rk-new-assignee');
       var due = document.getElementById('rk-new-due');
       var priority = document.getElementById('rk-new-priority');
-      var blocked = document.getElementById('rk-new-blocked');
-      var blockedReason = document.getElementById('rk-new-blocked-reason');
       var desc = document.getElementById('rk-new-desc');
       var err = document.getElementById('rk-new-error');
 
       subject.value = '';
       due.value = '';
       desc.value = '';
-      blocked.checked = false;
-      blockedReason.value = '';
       err.style.display = 'none';
       err.textContent = '';
 
@@ -533,8 +510,6 @@
         assigned_to_id: document.getElementById('rk-new-assignee').value,
         due_date: document.getElementById('rk-new-due').value,
         priority_id: document.getElementById('rk-new-priority').value,
-        blocked: document.getElementById('rk-new-blocked').checked ? '1' : '0',
-        blocked_reason: document.getElementById('rk-new-blocked-reason').value,
         description: document.getElementById('rk-new-desc').value,
         status_id: context.statusId,
       };

@@ -1,6 +1,7 @@
 # Repository Guidelines
 
 日本語で回答する。
+標準のRedmineのデータベースは変更しない。
 
 ## Project Structure & Module Organization
 - Root contains `docker-compose.yml` for the Redmine dev stack.

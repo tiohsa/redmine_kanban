@@ -25,8 +25,7 @@ export type Issue = {
   priority_name?: string | null;
   updated_on?: string | null;
   aging_days?: number;
-  blocked?: boolean;
-  blocked_reason?: string | null;
+  done_ratio?: number;
   urls: {
     issue: string;
     issue_edit: string;

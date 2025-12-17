@@ -93,7 +93,6 @@ module RedmineKanban
     end
 
     def issue_to_h(issue)
-      blocked = blocked_state(issue)
       {
         id: issue.id,
         subject: issue.subject,
@@ -110,8 +109,6 @@ module RedmineKanban
         done_ratio: issue.done_ratio,
         updated_on: issue.updated_on&.iso8601,
         aging_days: aging_days(issue),
-        blocked: blocked[:blocked],
-        blocked_reason: blocked[:reason],
         urls: {
           issue: Rails.application.routes.url_helpers.issue_path(issue),
           issue_edit: Rails.application.routes.url_helpers.edit_issue_path(issue)
@@ -123,18 +120,6 @@ module RedmineKanban
       return 0 unless issue.updated_on
 
       (Date.current - issue.updated_on.to_date).to_i
-    end
-
-    def blocked_state(issue)
-      bool_id = @settings.blocked_bool_cf_id
-      reason_id = @settings.blocked_reason_cf_id
-      return { blocked: false, reason: nil } if bool_id <= 0
-
-      raw = issue.custom_field_value(bool_id).to_s
-      blocked = %w[1 true yes].include?(raw.downcase)
-      reason = (reason_id > 0 ? issue.custom_field_value(reason_id).to_s.strip : '')
-      reason = nil if reason.empty?
-      { blocked: blocked, reason: reason }
     end
   end
 end
