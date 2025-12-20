@@ -1,9 +1,10 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { DndContext, PointerSensor, useDroppable, useDraggable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
-import { CSS } from '@dnd-kit/utilities';
-import type { BoardData, Column, Issue, Lane } from './types';
+import type { BoardData, Issue } from './types';
 import { getJson, postJson } from './http';
+import { CanvasBoard } from './board/CanvasBoard';
+import { buildBoardState } from './board/state';
+import { type SortKey } from './board/sort';
 
 type Props = { dataUrl: string };
 
@@ -14,14 +15,6 @@ type Filters = {
 };
 
 type ModalContext = { statusId: number; laneId?: string | number; issueId?: number };
-
-type SortKey =
-  | 'updated_desc'
-  | 'updated_asc'
-  | 'due_asc'
-  | 'due_desc'
-  | 'priority_desc'
-  | 'priority_asc';
 
 function AiAnalysisModal({
   onClose,
@@ -200,20 +193,16 @@ export function App({ dataUrl }: Props) {
     }
   }, [sortKey]);
 
-  const columns = data?.columns ?? [];
-  const lanes = data?.lanes ?? [];
   const issues = useMemo(() => filterIssues(data?.issues ?? [], data, filters), [data, filters]);
   const priorityRank = useMemo(() => {
     const m = new Map<number, number>();
     for (const [idx, p] of (data?.lists.priorities ?? []).entries()) m.set(p.id, idx);
     return m;
   }, [data]);
-
-  const statusInfo = useMemo(() => {
-    const m = new Map<number, Column>();
-    for (const c of columns) m.set(c.id, c);
-    return m;
-  }, [columns]);
+  const boardState = useMemo(() => {
+    if (!data) return null;
+    return buildBoardState(data, issues, sortKey, priorityRank);
+  }, [data, issues, sortKey, priorityRank]);
 
   const openCreate = (ctx: ModalContext) => setModal(ctx);
   const openEdit = (issueId: number) => {
@@ -328,20 +317,19 @@ export function App({ dataUrl }: Props) {
       )}
 
       <div className="rk-board">
-        {data ? (
-          <Board
+        {data && boardState ? (
+          <CanvasBoard
             data={data}
-            columns={columns}
-            lanes={lanes}
-            issues={issues}
-            sortKey={sortKey}
-            priorityRank={priorityRank}
-            statusInfo={statusInfo}
+            state={boardState}
             canMove={canMove}
             canCreate={canCreate}
-            onDrop={(p) => moveIssue(p.issueId, p.statusId, p.assignedToId)}
+            onCommand={(command) => {
+              if (command.type === 'move_issue') {
+                void moveIssue(command.issueId, command.statusId, command.assignedToId);
+              }
+            }}
             onCreate={openCreate}
-            onTaskClick={openEdit}
+            onCardOpen={openEdit}
             onDelete={requestDelete}
             onEditClick={setIframeEditUrl}
           />
@@ -654,404 +642,6 @@ function SortButton({
   );
 }
 
-function Board({
-  data,
-  columns,
-  lanes,
-  issues,
-  sortKey,
-  priorityRank,
-  statusInfo,
-  canMove,
-  canCreate,
-  onDrop,
-  onCreate,
-  onTaskClick,
-  onDelete,
-  onEditClick,
-}: {
-  data: BoardData;
-  columns: Column[];
-  lanes: Lane[];
-  issues: Issue[];
-  sortKey: SortKey;
-  priorityRank: Map<number, number>;
-  statusInfo: Map<number, Column>;
-  canMove: boolean;
-  canCreate: boolean;
-  onDrop: (p: { issueId: number; statusId: number; assignedToId: number | null }) => void;
-  onCreate: (ctx: ModalContext) => void;
-  onTaskClick: (issueId: number) => void;
-  onDelete: (issueId: number) => void;
-  onEditClick: (editUrl: string) => void;
-}) {
-  const laneType = data.meta.lane_type;
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    if (!canMove) return;
-    const activeId = String(event.active.id);
-    const over = event.over;
-    if (!over) return;
-    if (!activeId.startsWith('issue:')) return;
-
-    const issueId = Number(activeId.replace('issue:', ''));
-    const target = over.data.current as { statusId: number; assignedToId: number | null } | undefined;
-    if (!target) return;
-
-    onDrop({ issueId, statusId: target.statusId, assignedToId: target.assignedToId });
-  };
-
-  return (
-    <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-      <div className="rk-board-inner">
-        {laneType !== 'none' ? (
-          <div className="rk-header-row rk-header-lane-layout">
-            <div className="rk-col-header rk-header-lane-label">
-              {laneType === 'assignee' ? '担当者' : ''}
-            </div>
-            <div className="rk-grid">
-              {columns.map((c) => (
-                <ColumnHeader key={c.id} column={c} />
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="rk-grid rk-header-row">
-            {columns.map((c) => (
-              <ColumnHeader key={c.id} column={c} />
-            ))}
-          </div>
-        )}
-
-        {laneType === 'none' ? (
-          <div className="rk-grid">
-            {columns.map((c) => (
-              <Cell
-                key={c.id}
-                data={data}
-                statusId={c.id}
-                lane={null}
-                issues={sortIssues(issuesForCell(issues, null, c.id), sortKey, priorityRank)}
-                statusInfo={statusInfo}
-                canMove={canMove}
-                canCreate={canCreate}
-                onDrop={onDrop}
-                onCreate={onCreate}
-                onCardClick={onTaskClick}
-                onDelete={onDelete}
-                onEditClick={onEditClick}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="rk-lanes">
-            {lanes.map((lane) => (
-              <div key={String(lane.id)} className="rk-lane">
-                <div className="rk-lane-label">{lane.name}</div>
-                <div className="rk-grid">
-                  {columns.map((c) => (
-                    <Cell
-                      key={c.id}
-                      data={data}
-                      statusId={c.id}
-                      lane={lane}
-                      issues={sortIssues(issuesForCell(issues, lane, c.id), sortKey, priorityRank)}
-                      statusInfo={statusInfo}
-                      canMove={canMove}
-                      canCreate={canCreate}
-                      onDrop={onDrop}
-                      onCreate={onCreate}
-                      onCardClick={onTaskClick}
-                      onDelete={onDelete}
-                      onEditClick={onEditClick}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </DndContext>
-  );
-}
-
-function ColumnHeader({ column }: { column: Column }) {
-  const limit = column.wip_limit ?? null;
-  const count = column.count ?? 0;
-  const over = limit && count > limit;
-  return (
-    <div className="rk-col-header">
-      <div className="rk-col-title">{column.name}</div>
-      <div className="rk-col-actions">
-        <div className={`rk-wip ${over ? 'rk-wip-over' : ''}`}>{limit ? `${count} / ${limit}` : String(count)}</div>
-      </div>
-    </div>
-  );
-}
-
-function issuesForCell(issues: Issue[], lane: Lane | null, statusId: number) {
-  return issues.filter((it) => {
-    if (it.status_id !== statusId) return false;
-    if (!lane) return true;
-    if (lane.id === 'unassigned') return it.assigned_to_id === null;
-    return String(it.assigned_to_id) === String(lane.assigned_to_id);
-  });
-}
-
-function sortIssues(issues: Issue[], sortKey: SortKey, priorityRank: Map<number, number>) {
-  const arr = [...issues];
-  const cmp = buildIssueComparator(sortKey, priorityRank);
-  arr.sort(cmp);
-  return arr;
-}
-
-function buildIssueComparator(sortKey: SortKey, priorityRank: Map<number, number>) {
-  const dueTime = (it: Issue) => {
-    const v = it.due_date;
-    if (!v) return null;
-    const t = Date.parse(v);
-    return Number.isFinite(t) ? t : null;
-  };
-
-  const updatedTime = (it: Issue) => {
-    const v = it.updated_on;
-    if (!v) return null;
-    const t = Date.parse(v);
-    return Number.isFinite(t) ? t : null;
-  };
-
-  const priority = (it: Issue) => {
-    const id = it.priority_id;
-    if (!id) return null;
-    const r = priorityRank.get(id);
-    return typeof r === 'number' ? r : null;
-  };
-
-  const nullsLast = (a: number | null, b: number | null, dir: 'asc' | 'desc') => {
-    if (a === null && b === null) return 0;
-    if (a === null) return 1;
-    if (b === null) return -1;
-    return dir === 'asc' ? a - b : b - a;
-  };
-
-  const tie = (a: Issue, b: Issue) => a.id - b.id;
-
-  switch (sortKey) {
-    case 'due_asc':
-      return (a, b) => nullsLast(dueTime(a), dueTime(b), 'asc') || tie(a, b);
-    case 'due_desc':
-      return (a, b) => nullsLast(dueTime(a), dueTime(b), 'desc') || tie(a, b);
-    case 'priority_asc':
-      return (a, b) => nullsLast(priority(a), priority(b), 'asc') || tie(a, b);
-    case 'priority_desc':
-      return (a, b) => nullsLast(priority(a), priority(b), 'desc') || tie(a, b);
-    case 'updated_asc':
-      return (a, b) => nullsLast(updatedTime(a), updatedTime(b), 'asc') || tie(a, b);
-    case 'updated_desc':
-    default:
-      return (a, b) => nullsLast(updatedTime(a), updatedTime(b), 'desc') || tie(a, b);
-  }
-}
-
-function Cell({
-  data,
-  statusId,
-  lane,
-  issues,
-  statusInfo,
-  canMove,
-  canCreate,
-  onDrop,
-  onCreate,
-  onCardClick,
-  onDelete,
-  onEditClick,
-}: {
-  data: BoardData;
-  statusId: number;
-  lane: Lane | null;
-  issues: Issue[];
-  statusInfo: Map<number, Column>;
-  canMove: boolean;
-  canCreate: boolean;
-  onDrop: (p: { issueId: number; statusId: number; assignedToId: number | null }) => void;
-  onCreate: (ctx: ModalContext) => void;
-  onCardClick: (issueId: number) => void;
-  onDelete: (issueId: number) => void;
-  onEditClick: (editUrl: string) => void;
-}) {
-  const laneId = lane ? lane.id : 'none';
-
-  const assignedToId =
-    data.meta.lane_type === 'assignee' && lane
-      ? lane.id === 'unassigned'
-        ? null
-        : (lane.assigned_to_id ?? null)
-      : null;
-
-  const droppableId = `cell:${statusId}:${String(laneId)}`;
-  const { isOver, setNodeRef } = useDroppable({
-    id: droppableId,
-    data: { statusId, assignedToId },
-    disabled: !canMove,
-  });
-
-  return (
-    <div ref={setNodeRef} className={`rk-cell ${isOver ? 'rk-cell-over' : ''}`}>
-      {canCreate ? (
-        <button type="button" className="rk-btn rk-btn-dashed" onClick={() => onCreate({ statusId, laneId })}>
-          ＋ 追加
-        </button>
-      ) : null}
-
-      {issues.map((it) => (
-        <Card
-          key={it.id}
-          issue={it}
-          data={data}
-          statusInfo={statusInfo}
-          canMove={canMove}
-          onClick={() => onCardClick(it.id)}
-          onDelete={() => onDelete(it.id)}
-          onEditClick={() => onEditClick(it.urls.issue_edit)}
-        />
-      ))}
-    </div>
-  );
-}
-
-function Card({
-  issue,
-  data,
-  statusInfo,
-  canMove,
-  onClick,
-  onDelete,
-  onEditClick,
-}: {
-  issue: Issue;
-  data: BoardData;
-  statusInfo: Map<number, Column>;
-  canMove: boolean;
-  onClick: () => void;
-  onDelete: () => void;
-  onEditClick: () => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: `issue:${issue.id}`,
-    disabled: !canMove,
-  });
-  const style: React.CSSProperties = {
-    transform: transform ? CSS.Translate.toString(transform) : undefined,
-    opacity: isDragging ? 0.6 : undefined,
-    cursor: canMove ? (isDragging ? 'grabbing' : 'move') : undefined,
-    transition: 'none',
-  };
-
-  const column = statusInfo.get(issue.status_id);
-  const isClosed = !!column?.is_closed;
-  const agingEnabled = !(data.meta.aging_exclude_closed && isClosed);
-  const agingDays = issue.aging_days ?? 0;
-  const agingClass = agingEnabled
-    ? agingDays >= data.meta.aging_danger_days
-      ? 'rk-aging-danger'
-      : agingDays >= data.meta.aging_warn_days
-        ? 'rk-aging-warn'
-        : ''
-    : '';
-
-  const overdue = isOverdue(issue.due_date ?? null);
-
-  return (
-    <div
-      className={`rk-card ${isDragging ? 'rk-card-dragging' : ''} ${data.meta.can_delete ? 'rk-card-has-delete' : ''
-        }`}
-      ref={setNodeRef}
-      style={style}
-      onClick={() => {
-        if (!isDragging) onClick();
-      }}
-      {...attributes}
-      {...listeners}
-    >
-      {data.meta.can_delete ? (
-        <button
-          type="button"
-          className="rk-icon-btn rk-card-delete-btn"
-          aria-label="削除"
-          title="削除"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-        >
-          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-            <path
-              fill="currentColor"
-              d="M9 3a1 1 0 0 0-1 1v1H5.5a1 1 0 1 0 0 2H6v13a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7h.5a1 1 0 1 0 0-2H16V4a1 1 0 0 0-1-1H9Zm1 2h4v0H10v0Zm-2 2h8v13H8V7Zm2 3a1 1 0 0 0-1 1v6a1 1 0 1 0 2 0v-6a1 1 0 0 0-1-1Zm4 0a1 1 0 0 0-1 1v6a1 1 0 1 0 2 0v-6a1 1 0 0 0-1-1Z"
-            />
-          </svg>
-        </button>
-      ) : null}
-      <div className="rk-card-title">
-        <a
-          href={issue.urls.issue_edit}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onEditClick();
-          }}
-        >
-          #{issue.id}
-        </a>{' '}
-        <a
-          href={issue.urls.issue}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onClick();
-          }}
-        >
-          {issue.subject}
-        </a>
-      </div>
-      <div className="rk-card-meta">
-        <span className="rk-badge">{issue.done_ratio}%</span>
-        <span className={`rk-badge ${overdue ? 'rk-overdue' : ''}`}>{issue.due_date || '未設定'}</span>
-        {issue.priority_name ? (
-          <span
-            className={`rk-badge ${(() => {
-              const p = (issue.priority_name || '').toLowerCase();
-              if (p === 'low') return 'rk-badge-priority-low';
-              if (p === 'normal') return 'rk-badge-priority-normal';
-              if (p === 'high') return 'rk-badge-priority-high';
-              if (p === 'urgent') return 'rk-badge-priority-urgent';
-              if (p === 'immediate') return 'rk-badge-priority-immediate';
-              return '';
-            })()}`}
-          >
-            {issue.priority_name}
-          </span>
-        ) : null}
-        <span className={`rk-badge ${agingClass}`}>{`${agingDays}d`}</span>
-      </div>
-    </div>
-  );
-}
-
-function isOverdue(due: string | null): boolean {
-  if (!due) return false;
-  const dt = parseISODate(due);
-  if (!dt) return false;
-  const now = new Date();
-  const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return dt < today0;
-}
-
 function linkifyText(text: string): React.ReactNode[] {
   const re = /https?:\/\/[^\s<>()]+/g;
   const nodes: React.ReactNode[] = [];
@@ -1303,4 +893,3 @@ function IframeEditDialog({ url, onClose }: { url: string; onClose: () => void }
     </div>
   );
 }
-
