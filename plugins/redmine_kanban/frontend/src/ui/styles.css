@@ -218,23 +218,23 @@
   border-radius: 12px;
   overflow: hidden;
   /* For board corners */
-  overflow-x: auto;
+  position: relative;
+  min-height: 480px;
+  height: 70vh;
   box-shadow: var(--rk-shadow);
 }
 
-.rk-board-inner {
-  min-width: 1000px;
-  padding-bottom: 16px;
+.rk-canvas-board {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background: transparent;
 }
 
-.rk-grid {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(280px, 1fr);
-  gap: 1px;
-  /* Gap for column separation if desired, or handle with borders */
-  background: var(--rk-border);
-  /* Color of the gap lines */
+.rk-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .rk-header-row {
@@ -601,7 +601,8 @@
 .rk-root-fullwindow .rk-board {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
+  height: auto;
 }
 
 /* Full-window mode: hide Redmine chrome and pin the SPA to the viewport. */
