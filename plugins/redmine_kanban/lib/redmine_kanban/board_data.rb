@@ -54,9 +54,7 @@ module RedmineKanban
     private
 
     def default_hidden_status_ids(statuses)
-      return [] if @settings.hidden_status_ids.any?
-
-      statuses.select(&:is_closed).map(&:id)
+      []
     end
 
     def fetch_issues(status_ids)

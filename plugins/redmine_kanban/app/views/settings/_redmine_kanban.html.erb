@@ -64,3 +64,50 @@
   </p>
 </fieldset>
 
+<fieldset class='box tabular settings'>
+  <legend>ステータス変更時の自動更新</legend>
+  <div class="wiki">
+    <p>かんばんボードでチケットを移動（ステータス変更）した際、以下の属性を自動的に更新します。</p>
+  </div>
+
+  <table class="list">
+    <thead>
+    <tr>
+      <th>移動先ステータス</th>
+      <th>進捗率</th>
+      <th>開始日</th>
+      <th>期日</th>
+    </tr>
+    </thead>
+    <tbody>
+    <%
+      auto_updates = @settings['status_auto_updates'] || {}
+      # Users, Priorities, Trackers for select options
+      ratios = [['（変更しない）', '']] + (0..10).map { |i| ["#{i * 10}%", (i * 10).to_s] }
+      dates = [['（変更しない）', '__no_change__'], ['移動日（当日）を設定', '__today__'], ['（クリアする）', '']]
+    %>
+    <% IssueStatus.sorted.each do |status| %>
+      <%
+        sid = status.id.to_s
+        attrs = auto_updates[sid] || {}
+        ratios_opts = [['（変更しない）', '__no_change__']] + (0..10).map { |i| ["#{i * 10}%", (i * 10).to_s] }
+      %>
+      <tr class="<%= cycle('odd', 'even') %>">
+        <td><%= status.name %></td>
+        <td>
+          <%= select_tag "settings[status_auto_updates][#{sid}][done_ratio]",
+                         options_for_select(ratios_opts, attrs['done_ratio'] || '__no_change__') %>
+        </td>
+        <td>
+          <%= select_tag "settings[status_auto_updates][#{sid}][start_date]",
+                         options_for_select(dates, attrs['start_date'] || '__no_change__') %>
+        </td>
+        <td>
+          <%= select_tag "settings[status_auto_updates][#{sid}][due_date]",
+                         options_for_select(dates, attrs['due_date'] || '__no_change__') %>
+        </td>
+      </tr>
+    <% end %>
+    </tbody>
+  </table>
+

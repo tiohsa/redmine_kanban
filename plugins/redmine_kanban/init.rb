@@ -30,6 +30,7 @@ Redmine::Plugin.register :redmine_kanban do
              'wip_limits' => {},
              'aging_warn_days' => 3,
              'aging_danger_days' => 7,
-             'aging_exclude_closed' => '1'
+             'aging_exclude_closed' => '1',
+             'status_auto_updates' => {}
            }
 end

@@ -50,5 +50,22 @@ module RedmineKanban
       @raw['aging_exclude_closed'].to_s == '1'
     end
 
+    # Returns auto-update rules for status transitions
+    # Format: { status_id => { 'assigned_to_id' => value, 'priority_id' => value, ... } }
+    def status_auto_updates
+      raw = @raw['status_auto_updates']
+      return {} unless raw.is_a?(Hash)
+
+      raw.transform_keys(&:to_i).transform_values do |attrs|
+        next {} unless attrs.is_a?(Hash)
+
+        # Filter out "no change" markers from UI
+        filtered = attrs.reject { |_, v| v == '__no_change__' }
+
+        # Whitelist allowed attributes
+        filtered.slice('done_ratio', 'start_date', 'due_date')
+      end
+    end
+
   end
 end

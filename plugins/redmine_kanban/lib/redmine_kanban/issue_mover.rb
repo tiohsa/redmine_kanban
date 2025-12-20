@@ -33,6 +33,19 @@ module RedmineKanban
         # 明示的にnilを設定して未割当にする（空文字列を使用）
         attrs['assigned_to_id'] = assigned_to_id.nil? ? '' : assigned_to_id
       end
+
+      # Apply auto-update rules for the target status
+      auto_attrs = @settings.status_auto_updates[status_id] || {}
+      auto_attrs.each do |key, value|
+        # Skip if already set by explicit user action (e.g., assigned_to_id from lane)
+        next if attrs.key?(key)
+
+        # Handle magic values
+        final_value = value == '__today__' ? Date.current : value
+
+        attrs[key] = final_value
+      end
+
       @issue.safe_attributes = attrs
 
       if @issue.save
