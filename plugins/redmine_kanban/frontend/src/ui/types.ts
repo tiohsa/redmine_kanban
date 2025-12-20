@@ -12,6 +12,13 @@ export type Lane = {
   assigned_to_id: number | null;
 };
 
+export type Subtask = {
+  id: number;
+  subject: string;
+  status_id: number;
+  is_closed: boolean;
+};
+
 export type Issue = {
   id: number;
   subject: string;
@@ -27,6 +34,7 @@ export type Issue = {
   updated_on?: string | null;
   aging_days?: number;
   done_ratio?: number;
+  subtasks?: Subtask[];
   urls: {
     issue: string;
     issue_edit: string;

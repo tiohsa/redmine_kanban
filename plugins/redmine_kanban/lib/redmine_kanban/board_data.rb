@@ -111,6 +111,14 @@ module RedmineKanban
         done_ratio: issue.done_ratio,
         updated_on: issue.updated_on&.iso8601,
         aging_days: aging_days(issue),
+        subtasks: issue.children.visible.map { |child|
+          {
+            id: child.id,
+            subject: child.subject,
+            status_id: child.status_id,
+            is_closed: child.status.is_closed?
+          }
+        },
         urls: {
           issue: Rails.application.routes.url_helpers.issue_path(issue),
           issue_edit: Rails.application.routes.url_helpers.edit_issue_path(issue)

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { BoardData, Column, Issue, Lane } from '../types';
+import type { BoardData, Column, Issue, Lane, Subtask } from '../types';
 import type { BoardCommand } from './commands';
 import type { BoardState } from './state';
 import { cellKey } from './state';
@@ -12,10 +12,9 @@ const metrics = {
   laneTitleHeight: 40,
   laneGap: 0,
   cellPadding: 12,
-  cardHeight: 84,
+  cardBaseHeight: 84, // Changed from cardHeight to cardBaseHeight
+  subtaskHeight: 24,  // Height per subtask
   cardGap: 8,
-  // addButtonHeight: 28, // Removed
-  // addButtonGap: 8,     // Removed
   boardPaddingBottom: 24,
 };
 
@@ -29,6 +28,7 @@ type RectMap = {
   addButtons: Map<string, Rect>;
   deleteButtons: Map<number, Rect>;
   editButtons: Map<number, Rect>;
+  subtaskChecks: Map<string, Rect>; // key: "issueId:subtaskId"
 };
 
 type CanvasTheme = {
@@ -62,6 +62,7 @@ type HitResult =
   | { kind: 'add'; statusId: number; laneId: string | number }
   | { kind: 'delete'; issueId: number }
   | { kind: 'edit'; issueId: number }
+  | { kind: 'subtask_check'; issueId: number; subtaskId: number }
   | { kind: 'cell'; statusId: number; laneId: string | number }
   | { kind: 'empty' };
 
@@ -75,6 +76,7 @@ type Props = {
   onCardOpen: (issueId: number) => void;
   onDelete: (issueId: number) => void;
   onEditClick: (editUrl: string) => void;
+  onSubtaskToggle?: (subtaskId: number, currentClosed: boolean) => void;
   labels: Record<string, string>;
   fitToScreen?: boolean;
 };
@@ -89,6 +91,7 @@ export function CanvasBoard({
   onCardOpen,
   onDelete,
   onEditClick,
+  onSubtaskToggle,
   labels,
   fitToScreen = false,
 }: Props) {
@@ -100,6 +103,7 @@ export function CanvasBoard({
     addButtons: new Map(),
     deleteButtons: new Map(),
     editButtons: new Map(),
+    subtaskChecks: new Map(),
   });
   const scrollRef = useRef({ x: 0, y: 0 });
   const boardSizeRef = useRef({ width: 0, height: 0 });
@@ -115,27 +119,17 @@ export function CanvasBoard({
 
   const theme = useMemo(() => readTheme(containerRef.current), [size.width, size.height]);
 
-  // Compute scale based on fitToScreen
   useEffect(() => {
     if (fitToScreen && size.width > 0 && size.height > 0) {
       const scaleX = size.width / layout.boardWidth;
-
-      // Calculate height scale, but ensure we don't zoom out excessively for very tall boards just to fit height.
-      // Usually "Fit" means checking width mostly, but users might want whole view.
-      // Let's fit to contain (both width and height).
       const scaleY = size.height / layout.boardHeight;
-
-      // Use the smaller scale to fit everything, but cap at 1 (don't zoom IN if board is small)
       scaleRef.current = Math.min(scaleX, scaleY, 1);
-
-      // Reset scroll when fitting
       scrollRef.current = { x: 0, y: 0 };
     } else {
       scaleRef.current = 1;
     }
     scheduleRender();
   }, [fitToScreen, size, layout.boardWidth, layout.boardHeight]);
-
 
   useEffect(() => {
     const node = containerRef.current;
@@ -169,7 +163,6 @@ export function CanvasBoard({
   }, [cursor]);
 
   useEffect(() => {
-    // Re-render when fonts are loaded (important for Canvas icons)
     void document.fonts.ready.then(() => {
       scheduleRender();
     });
@@ -202,8 +195,6 @@ export function CanvasBoard({
     const scroll = scrollRef.current;
     const scale = scaleRef.current;
 
-    // Adjust viewRect for HitTest (in logical coordinates)
-    // Visible area in logical coords:
     const viewRect = {
       x: scroll.x / scale,
       y: scroll.y / scale,
@@ -211,10 +202,6 @@ export function CanvasBoard({
       height: size.height / scale
     };
 
-    // However, when fitting, scroll is 0.
-    // When NOT fitting, scale is 1. so scroll.x / 1 = scroll.x. Correct.
-
-    // boardSizeRef is logical size
     boardSizeRef.current = { width: layout.boardWidth, height: layout.boardHeight };
 
     rectMapRef.current = {
@@ -223,32 +210,12 @@ export function CanvasBoard({
       addButtons: new Map(),
       deleteButtons: new Map(),
       editButtons: new Map(),
+      subtaskChecks: new Map(),
     };
 
     ctx.save();
-    // Apply transform: translate then scale? No, usually scale then translate or logic depends.
-    // If we want to zoom content:
-    // ctx.scale(scale, scale);
-    // ctx.translate(-scroll.x, -scroll.y);
-
-    // Actually, if we fit to screen, we typically center or align top-left.
-    // Let's implement standard pan-zoom transform:
-    // ScreenX = (WorldX - ScrollX) * Scale
-    //         = WorldX * Scale - ScrollX * Scale
-
-    // So transform is:
-    // Translate(-ScrollX, -ScrollY)
-    // Scale(Scale, Scale)
-
-    // ctx.scale(scale, scale);
-    // ctx.translate(-scroll.x, -scroll.y);
-    // NOTE: Order matters in Canvas. transform multiplies current matrix.
-    // convert x_screen = scale * (x_world - scroll_x)
-
     ctx.scale(scale, scale);
     ctx.translate(-scroll.x, -scroll.y);
-
-    const layoutLabels = { stagnation: labels.stagnation, add: labels.add };
 
     drawHeaders(ctx, layout, state.columns, theme, data.meta);
 
@@ -287,11 +254,8 @@ export function CanvasBoard({
   const updateScroll = (x: number, y: number) => {
     const board = boardSizeRef.current;
     const scale = scaleRef.current;
-
-    // Visible logical width/height
     const visibleW = size.width / scale;
     const visibleH = size.height / scale;
-
     const maxX = Math.max(0, board.width - visibleW);
     const maxY = Math.max(0, board.height - visibleH);
 
@@ -302,9 +266,6 @@ export function CanvasBoard({
     scheduleRender();
   };
 
-  // ... (middle parts handled by previous edits context or untouched)
-
-  // Update toBoardPoint at bottom
   function toBoardPoint(
     event: React.PointerEvent,
     scroll: { x: number; y: number },
@@ -314,14 +275,8 @@ export function CanvasBoard({
     const rect = canvas?.getBoundingClientRect();
     const clientX = event.clientX;
     const clientY = event.clientY;
-
     const offsetX = rect ? clientX - rect.left : clientX;
     const offsetY = rect ? clientY - rect.top : clientY;
-
-    // Screen to World:
-    // x_screen = scale * (x_world - scroll_x)
-    // x_screen / scale = x_world - scroll_x
-    // x_world = x_screen / scale + scroll_x
 
     return {
       x: offsetX / scale + scroll.x,
@@ -332,6 +287,17 @@ export function CanvasBoard({
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const point = toBoardPoint(event, scrollRef.current, canvasRef.current, scaleRef.current);
     const hit = hitTest(point, rectMapRef.current, state, data);
+
+    if (hit.kind === 'subtask_check') {
+      const issue = state.cardsById.get(hit.issueId);
+      if (issue && onSubtaskToggle) {
+        const subtask = issue.subtasks?.find(s => s.id === hit.subtaskId);
+        if (subtask) {
+           onSubtaskToggle(hit.subtaskId, subtask.is_closed);
+        }
+      }
+      return;
+    }
 
     if (hit.kind === 'add') {
       onCreate({ statusId: hit.statusId, laneId: hit.laneId });
@@ -376,7 +342,7 @@ export function CanvasBoard({
       const hit = hitTest(point, rectMapRef.current, state, data);
       if (hit.kind === 'card') {
         setCursor(canMove ? 'grab' : 'pointer');
-      } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'edit') {
+      } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'edit' || hit.kind === 'subtask_check') {
         setCursor('pointer');
       } else {
         setCursor('default');
@@ -420,7 +386,14 @@ export function CanvasBoard({
         });
       }
     } else {
-      onCardOpen(drag.issueId);
+      // If we released on the same card and didn't drag, open it.
+      // But check if we were clicking a button.
+      // Since buttons are checked in PointerDown, this is fine.
+      // But we should re-check hit to ensure we are still on the card.
+      const hit = hitTest(point, rectMapRef.current, state, data);
+      if (hit.kind === 'card' && hit.issueId === drag.issueId) {
+         onCardOpen(drag.issueId);
+      }
     }
 
     dragRef.current = null;
@@ -481,6 +454,15 @@ function computeLayout(state: BoardState, data: BoardData, canCreate: boolean) {
   };
 }
 
+function measureCardHeight(issue: Issue): number {
+  let h = metrics.cardBaseHeight;
+  if (issue.subtasks && issue.subtasks.length > 0) {
+    h += 8; // Padding before subtasks
+    h += issue.subtasks.length * metrics.subtaskHeight;
+  }
+  return h;
+}
+
 function computeLaneHeight(
   state: BoardState,
   data: BoardData,
@@ -491,8 +473,19 @@ function computeLaneHeight(
 
   for (const statusId of state.columnOrder) {
     const key = cellKey(statusId, laneId);
-    const count = state.cardsByCell.get(key)?.length ?? 0;
-    const height = cellContentHeight(count, canCreate);
+    const cardIds = state.cardsByCell.get(key) ?? [];
+
+    let height = metrics.cellPadding * 2;
+    if (cardIds.length > 0) {
+      for (const cardId of cardIds) {
+        const issue = state.cardsById.get(cardId);
+        if (issue) {
+           height += measureCardHeight(issue);
+        }
+      }
+      height += (cardIds.length - 1) * metrics.cardGap;
+    }
+
     maxCellHeight = Math.max(maxCellHeight, height);
   }
 
@@ -500,14 +493,6 @@ function computeLaneHeight(
   return Math.max(maxCellHeight, metrics.laneTitleHeight);
 }
 
-function cellContentHeight(cardCount: number, _canCreate: boolean) {
-  // const createHeight = canCreate ? metrics.addButtonHeight + metrics.addButtonGap : 0;
-  const cardsHeight =
-    cardCount === 0
-      ? 0
-      : cardCount * metrics.cardHeight + Math.max(0, cardCount - 1) * metrics.cardGap;
-  return metrics.cellPadding * 2 + cardsHeight;
-}
 
 function drawHeaders(
   ctx: CanvasRenderingContext2D,
@@ -517,19 +502,16 @@ function drawHeaders(
   meta: BoardData['meta']
 ) {
   ctx.save();
-  // Unified header background
-  ctx.fillStyle = '#f8fafc'; // Light gray for header background
+  ctx.fillStyle = '#f8fafc';
   ctx.fillRect(0, 0, layout.gridStartX + layout.gridWidth, layout.headerHeight);
 
-  // Bottom border
   ctx.strokeStyle = theme.border;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(0, layout.headerHeight - 0.5); // Adjust for sharp line
+  ctx.moveTo(0, layout.headerHeight - 0.5);
   ctx.lineTo(layout.gridStartX + layout.gridWidth, layout.headerHeight - 0.5);
   ctx.stroke();
 
-  // Draw lane header area border if needed
   if (layout.gridStartX > 0) {
     ctx.beginPath();
     ctx.moveTo(layout.gridStartX, 0);
@@ -543,12 +525,10 @@ function drawHeaders(
   columns.forEach((column, index) => {
     const x = layout.gridStartX + index * metrics.columnWidth;
 
-    // Column Name
     ctx.font = '600 14px Inter, sans-serif';
     ctx.fillStyle = theme.textPrimary;
     ctx.fillText(column.name, x + 12, layout.headerHeight / 2);
 
-    // WIP Badge
     const limit = column.wip_limit ?? null;
     const count = column.count ?? 0;
     const over = limit && count > limit;
@@ -561,7 +541,7 @@ function drawHeaders(
       const badgeX = x + metrics.columnWidth - badgeWidth - 12;
       const badgeY = (layout.headerHeight - badgeHeight) / 2;
 
-      ctx.fillStyle = over ? theme.dangerBg : '#e2e8f0'; // Slightly darker for badge bg
+      ctx.fillStyle = over ? theme.dangerBg : '#e2e8f0';
       ctx.strokeStyle = over ? theme.danger : 'transparent';
       if (over) ctx.lineWidth = 1;
 
@@ -575,7 +555,6 @@ function drawHeaders(
       ctx.textAlign = 'left';
     }
 
-    // Vertical boundary line
     ctx.strokeStyle = theme.border;
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -607,7 +586,6 @@ function drawLaneLabels(
     ctx.fillStyle = theme.textPrimary;
     ctx.fillText(lane.name, 12, laneLayout.y + metrics.laneTitleHeight / 2);
 
-    // Vertical separator
     ctx.strokeStyle = theme.border;
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -615,7 +593,6 @@ function drawLaneLabels(
     ctx.lineTo(metrics.laneHeaderWidth + 0.5, laneLayout.y + laneLayout.height);
     ctx.stroke();
 
-    // Bottom lane border (Stronger)
     ctx.strokeStyle = theme.borderStrong;
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -627,10 +604,10 @@ function drawLaneLabels(
     if (canCreate && defaultStatusId !== undefined) {
       const buttonWidth = 24;
       const buttonHeight = 24;
-      const buttonX = metrics.laneHeaderWidth - buttonWidth - 8; // Right aligned
+      const buttonX = metrics.laneHeaderWidth - buttonWidth - 8;
       const buttonY = laneLayout.y + (metrics.laneTitleHeight - buttonHeight) / 2;
       const addRect = { x: buttonX, y: buttonY, width: buttonWidth, height: buttonHeight };
-      const key = cellKey(defaultStatusId, lane.id); // Use default status (first column)
+      const key = cellKey(defaultStatusId, lane.id);
       if (rectMap) rectMap.addButtons.set(key, addRect);
 
       drawIconBox(ctx, addRect, theme.textSecondary, '+');
@@ -659,10 +636,6 @@ function drawCells(
   ctx.textBaseline = 'top';
 
   layout.laneLayouts.forEach((laneLayout) => {
-    const laneId = laneLayout.laneId;
-    const laneContentY = laneLayout.y;
-    const laneHeight = laneLayout.height;
-
     if (!rectIntersects({ x: 0, y: laneLayout.y, width: layout.gridStartX + layout.gridWidth, height: laneLayout.height }, viewRect)) {
       return;
     }
@@ -671,14 +644,14 @@ function drawCells(
       const colX = layout.gridStartX + colIndex * (metrics.columnWidth + metrics.columnGap);
       const cellRect = {
         x: colX,
-        y: laneContentY,
+        y: laneLayout.y,
         width: metrics.columnWidth,
-        height: laneHeight,
+        height: laneLayout.height,
       };
 
       if (!rectIntersects(cellRect, viewRect)) return;
 
-      const key = cellKey(statusId, laneId);
+      const key = cellKey(statusId, laneLayout.laneId);
       rectMap.cells.set(key, cellRect);
 
       const colBg = theme.columnBgs[colIndex % theme.columnBgs.length];
@@ -686,7 +659,6 @@ function drawCells(
       ctx.fillStyle = isTarget ? '#e0f2fe' : colBg;
       ctx.fillRect(cellRect.x, cellRect.y, cellRect.width, cellRect.height);
 
-      // Horizontal lane border (Stronger)
       ctx.strokeStyle = theme.borderStrong;
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -694,7 +666,6 @@ function drawCells(
       ctx.lineTo(cellRect.x + cellRect.width, cellRect.y + cellRect.height);
       ctx.stroke();
 
-      // Vertical grid line
       ctx.strokeStyle = theme.border;
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -702,32 +673,28 @@ function drawCells(
       ctx.lineTo(cellRect.x + cellRect.width, cellRect.y + cellRect.height);
       ctx.stroke();
 
-      let cursorY = cellRect.y + metrics.cellPadding;
-
-      // Removed Add Button loop for cells
-
       const cardIds = state.cardsByCell.get(key) ?? [];
-      const cardStartY = cursorY;
-      const cardStride = metrics.cardHeight + metrics.cardGap;
-      const visibleStart = Math.max(0, Math.floor((viewRect.y - cardStartY) / cardStride));
-      const visibleEnd = Math.min(
-        cardIds.length,
-        Math.ceil((viewRect.y + viewRect.height - cardStartY) / cardStride)
-      );
+      let currentY = cellRect.y + metrics.cellPadding;
 
-      for (let index = visibleStart; index < visibleEnd; index += 1) {
+      for (let index = 0; index < cardIds.length; index += 1) {
         const cardId = cardIds[index];
         const issue = state.cardsById.get(cardId);
         if (!issue) continue;
-        const cardY = cardStartY + index * cardStride;
+
+        const cardH = measureCardHeight(issue);
         const cardRect = {
           x: cellRect.x + metrics.cellPadding,
-          y: cardY,
+          y: currentY,
           width: cellRect.width - metrics.cellPadding * 2,
-          height: metrics.cardHeight,
+          height: cardH,
         };
-        rectMap.cards.set(issue.id, cardRect);
-        drawCard(ctx, cardRect, issue, data, theme, canMove, labels, rectMap);
+
+        currentY += cardH + metrics.cardGap;
+
+        if (rectIntersects(cardRect, viewRect)) {
+             rectMap.cards.set(issue.id, cardRect);
+             drawCard(ctx, cardRect, issue, data, theme, canMove, labels, rectMap);
+        }
       }
     });
   });
@@ -764,7 +731,7 @@ function drawCard(
   const w = rect.width;
   const h = rect.height;
 
-  // 1. Draw Card Shadow (Subtle)
+  // 1. Draw Card Shadow
   ctx.shadowColor = 'rgba(0, 0, 0, 0.08)';
   ctx.shadowBlur = 4;
   ctx.shadowOffsetY = 2;
@@ -774,10 +741,9 @@ function drawCard(
   roundedRect(ctx, x, y, w, h, radius);
   ctx.fill();
 
-  // Reset shadow
   ctx.shadowColor = 'transparent';
 
-  // 3. Left Strip (Tracker Color)
+  // 3. Left Strip
   const stripWidth = 5;
   const trackerColor = getCardColor(issue.tracker_id, theme);
   ctx.fillStyle = trackerColor;
@@ -791,11 +757,10 @@ function drawCard(
   ctx.quadraticCurveTo(x, y, x + radius, y);
   ctx.fill();
 
-  // Content Area
   const contentX = x + stripWidth + 8;
   const contentW = w - stripWidth - 16;
 
-  // 4. Subject & ID
+  // 4. Subject
   ctx.fillStyle = theme.textPrimary;
   ctx.font = '600 13px Inter, sans-serif';
   ctx.textBaseline = 'top';
@@ -803,49 +768,29 @@ function drawCard(
   const subjectY = y + 8;
   const subject = issue.subject;
   const idText = `#${issue.id}`;
-
-  // Check fit - Account for buttons in top right (edit = 20, delete = 20, gaps = 12 total approx)
   const buttonAreaWidth = 52;
   ctx.fillText(truncateText(ctx, subject, contentW - buttonAreaWidth), contentX, subjectY);
-
-  // ID (smaller, top right or next to title? Let's put slightly above or keep minimal)
-  // Let's put ID in small gray next to subject if fits, or just leave it since subject is key
-  // We can put ID at top right
-  ctx.save();
-  ctx.font = '400 11px Inter, sans-serif';
-  ctx.fillStyle = theme.textSecondary;
-  const idW = ctx.measureText(idText).width;
-  // If we want it top-right:
-  // ctx.fillText(idText, x + w - idW - 8, y + 8);
-  // But let's append to title line if truncated logic handled better, simpler to put below or keep simple.
-  // Actually, let's put it on the second line with assignee
-  ctx.restore();
 
   // 5. Metadata Row 1: ID | Assignee
   const row1Y = y + 30;
   ctx.font = '400 11px Inter, sans-serif';
   ctx.fillStyle = theme.textSecondary;
 
-  // ID
   ctx.fillText(idText, contentX, row1Y);
-
   let currentX = contentX + ctx.measureText(idText).width + 12;
 
-  // Assignee
   if (issue.assigned_to_name) {
     drawIcon(ctx, 'person', currentX, row1Y, 14, theme.textSecondary);
     currentX += 16;
     ctx.fillText(truncateText(ctx, issue.assigned_to_name, 80), currentX, row1Y);
-    // currentX += ctx.measureText(issue.assigned_to_name).width + 12; // Update if more items
   }
 
   // 6. Metadata Row 2: Due Date | Priority | Aging
   const row2Y = y + 48;
   currentX = contentX;
 
-  // Due Date
   if (issue.due_date) {
-    const isOverdue = new Date(issue.due_date) < new Date(); // Simple check, ideally compare days
+    const isOverdue = new Date(issue.due_date) < new Date();
     const dateColor = isOverdue ? theme.danger : theme.textSecondary;
     drawIcon(ctx, 'calendar_today', currentX, row2Y, 14, dateColor);
     currentX += 16;
@@ -854,24 +799,17 @@ function drawCard(
     currentX += ctx.measureText(issue.due_date).width + 12;
   }
 
-  // Priority (if high)
-  // Assuming priority_id > 2 is 'High' or check name
   if (issue.priority_id && issue.priority_id > 2) {
-    // This is a guess, ideally we know which is high. Or just show all.
-    // Let's just show it.
-    const prioColor = issue.priority_id >= 4 ? theme.danger : theme.warn; // example heuristic
+    const prioColor = issue.priority_id >= 4 ? theme.danger : theme.warn;
     drawIcon(ctx, 'priority_high', currentX, row2Y, 14, prioColor);
     currentX += 16;
     ctx.fillStyle = prioColor;
-    // ctx.fillText(issue.priority_name || '!', currentX, row2Y);
-    // Just icon might be enough for space, or truncate
     if (issue.priority_name) {
       ctx.fillText(truncateText(ctx, issue.priority_name, 60), currentX, row2Y);
       currentX += ctx.measureText(issue.priority_name).width + 12;
     }
   }
 
-  // Aging
   if (agingEnabled && agingDays > 0) {
     const ageColor = agingClass === 'danger' ? theme.danger : agingClass === 'warn' ? theme.warn : theme.textSecondary;
     drawIcon(ctx, 'history', currentX, row2Y, 14, ageColor);
@@ -880,7 +818,92 @@ function drawCard(
     ctx.fillText(`${agingDays}d`, currentX, row2Y);
   }
 
-  // 7. Edit Button (Pencil Icon top right)
+  // 7. Progress Donut (New)
+  if (issue.done_ratio !== undefined) {
+    const donutX = x + w - 24;
+    const donutY = y + h - 24; // Bottom right corner if not obstructed by subtasks.
+    // Actually, if we have subtasks, h is taller.
+    // If we want it in metadata line, we can put it there.
+    // Let's put it at row 1 right side?
+    // User requested "Information display", usually with metadata.
+    // Let's place it to the right of Row 1.
+
+    // Let's calculate free space.
+    // Row 1 starts at Y+30.
+    const donutSize = 14;
+    const donutRadius = donutSize / 2;
+    // Let's put it after Assignee or at the end of Row 1.
+    // Or maybe near the top right?
+
+    // Let's try to put it next to assignee.
+    // But we are drawing sequentially.
+    // Let's draw it at the end of Row 1, right aligned?
+    // Row 1 contains ID + Assignee.
+    // There is usually space.
+
+    // Better: Right aligned on Row 2 (Metadata).
+    const donutRightX = x + w - 30; // 30px from right edge
+    drawProgressDonut(ctx, donutRightX, row2Y + 6, donutRadius, issue.done_ratio, theme);
+  }
+
+  // 8. Subtasks (New)
+  if (issue.subtasks && issue.subtasks.length > 0) {
+    const subtaskStartY = y + metrics.cardBaseHeight; // Start after base content
+
+    // Draw separator line
+    ctx.beginPath();
+    ctx.strokeStyle = theme.border;
+    ctx.lineWidth = 1;
+    ctx.moveTo(x, subtaskStartY - 4);
+    ctx.lineTo(x + w, subtaskStartY - 4);
+    ctx.stroke();
+
+    issue.subtasks.forEach((subtask, idx) => {
+      const sy = subtaskStartY + idx * metrics.subtaskHeight;
+      const sx = x + 12;
+
+      // Checkbox
+      const checkSize = 14;
+      const checkRect = { x: sx, y: sy, width: checkSize, height: checkSize };
+
+      // Store hit rect
+      if (rectMap) {
+        rectMap.subtaskChecks.set(`${issue.id}:${subtask.id}`, checkRect);
+      }
+
+      ctx.save();
+      if (subtask.is_closed) {
+        ctx.fillStyle = theme.primary; // or green
+        roundedRect(ctx, sx, sy, checkSize, checkSize, 3);
+        ctx.fill();
+
+        // Tick mark
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(sx + 3, sy + 7);
+        ctx.lineTo(sx + 6, sy + 10);
+        ctx.lineTo(sx + 11, sy + 4);
+        ctx.stroke();
+      } else {
+        ctx.strokeStyle = theme.borderStrong;
+        ctx.lineWidth = 1.5;
+        roundedRect(ctx, sx, sy, checkSize, checkSize, 3);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // Text
+      ctx.fillStyle = subtask.is_closed ? theme.textSecondary : theme.textPrimary;
+      ctx.font = '12px Inter, sans-serif';
+      if (subtask.is_closed) {
+        // Strikethrough? or just gray. Gray is fine.
+      }
+      ctx.fillText(truncateText(ctx, subtask.subject, w - 40), sx + 20, sy + 1);
+    });
+  }
+
+  // 9. Buttons (Edit/Delete)
   const iconSize = 20;
   const editRect = {
     x: x + w - iconSize - 4,
@@ -896,7 +919,6 @@ function drawCard(
   ctx.textBaseline = 'top';
   ctx.fillText('edit', editRect.x, editRect.y);
 
-  // 8. Delete Button (Trash Icon to the left of Edit)
   if (data.meta.can_delete && rectMap) {
     const deleteRect = {
       x: editRect.x - iconSize - 4,
@@ -913,27 +935,41 @@ function drawCard(
   ctx.restore();
 }
 
+function drawProgressDonut(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  radius: number,
+  percent: number,
+  theme: CanvasTheme
+) {
+  ctx.save();
+  // Background circle
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = theme.border;
+  ctx.stroke();
+
+  // Progress arc
+  const startAngle = -Math.PI / 2;
+  const endAngle = startAngle + (Math.PI * 2 * percent) / 100;
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, startAngle, endAngle);
+  ctx.strokeStyle = percent === 100 ? '#22c55e' : theme.primary; // Green if done, else primary
+  ctx.stroke();
+
+  // Text inside? Too small. Donut is enough indication.
+  ctx.restore();
+}
+
 function drawIcon(ctx: CanvasRenderingContext2D, icon: string, x: number, y: number, size: number, color: string) {
   ctx.save();
   ctx.font = `${size}px "Material Symbols Outlined"`;
   ctx.fillStyle = color;
   ctx.textBaseline = 'top';
-  ctx.fillText(icon, x, y - 2); // Slight adjustment for alignment
-  ctx.restore();
-}
-
-function drawAddButton(ctx: CanvasRenderingContext2D, rect: Rect, theme: CanvasTheme, label: string) {
-  ctx.save();
-  ctx.strokeStyle = theme.border;
-  ctx.fillStyle = '#f8fafc';
-  roundedRect(ctx, rect.x, rect.y, rect.width, rect.height, 8);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = theme.textSecondary;
-  ctx.font = '600 12px Inter, sans-serif';
-  ctx.textBaseline = 'middle';
-  const textWidth = ctx.measureText(label).width;
-  ctx.fillText(label, rect.x + (rect.width - textWidth) / 2, rect.y + rect.height / 2);
+  ctx.fillText(icon, x, y - 2);
   ctx.restore();
 }
 
@@ -969,7 +1005,7 @@ function drawDragOverlay(
     x: drag.current.x - offsetX,
     y: drag.current.y - offsetY,
     width: metrics.columnWidth - metrics.cellPadding * 2,
-    height: metrics.cardHeight,
+    height: measureCardHeight(issue),
   };
   ctx.save();
   ctx.globalAlpha = 0.9;
@@ -983,6 +1019,12 @@ function hitTest(
   state: BoardState,
   data: BoardData
 ): HitResult {
+  for (const [key, rect] of rectMap.subtaskChecks) {
+    if (pointInRect(point, rect)) {
+        const [issueIdStr, subtaskIdStr] = key.split(':');
+        return { kind: 'subtask_check', issueId: parseInt(issueIdStr), subtaskId: parseInt(subtaskIdStr) };
+    }
+  }
   for (const [issueId, rect] of rectMap.deleteButtons) {
     if (pointInRect(point, rect)) return { kind: 'delete', issueId };
   }
@@ -1095,28 +1137,7 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
-function toBoardPoint(
-  event: React.PointerEvent,
-  scroll: { x: number; y: number },
-  canvas: HTMLCanvasElement | null,
-  scale: number = 1
-) {
-  const rect = canvas?.getBoundingClientRect();
-  const clientX = event.clientX;
-  const clientY = event.clientY;
-
-  const offsetX = rect ? clientX - rect.left : clientX;
-  const offsetY = rect ? clientY - rect.top : clientY;
-
-  return {
-    x: offsetX / scale + scroll.x,
-    y: offsetY / scale + scroll.y,
-  };
-}
-
-// Helper to get consistent color for tracker
 function getCardColor(trackerId: number, theme: CanvasTheme): string {
-  // Simple module hash to pick a color
   const index = trackerId % theme.noteColors.length;
   return theme.noteColors[index];
 }
