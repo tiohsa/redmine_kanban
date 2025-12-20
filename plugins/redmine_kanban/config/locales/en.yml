@@ -35,6 +35,8 @@ en:
   label_kanban_stagnation: "Aging"
   label_kanban_not_set: "Not set"
   label_kanban_this_week: "This week"
+  label_kanban_within_3_days: "Within 3 days"
+  label_kanban_within_1_week: "Within 1 week"
   label_kanban_overdue: "Overdue"
   label_kanban_select_tracker: "Please select a tracker"
   label_kanban_invalid_assignee: "Invalid assignee"

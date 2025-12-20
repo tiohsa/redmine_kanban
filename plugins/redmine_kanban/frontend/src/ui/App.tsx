@@ -11,7 +11,8 @@ type Props = { dataUrl: string };
 type Filters = {
   assignee: 'all' | 'me' | 'unassigned' | string;
   q: string;
-  due: 'all' | 'overdue' | 'thisweek' | 'none';
+  due: 'all' | 'overdue' | 'thisweek' | '3days' | '7days' | 'none';
+  priority: string[]; // Multiple selection
 };
 
 type ModalContext = { statusId: number; laneId?: string | number; issueId?: number };
@@ -89,11 +90,19 @@ export function App({ dataUrl }: Props) {
   const [filters, setFilters] = useState<Filters>(() => {
     try {
       const v = localStorage.getItem('rk_filters');
-      if (v) return JSON.parse(v) as Filters;
+      if (v) {
+        const parsed = JSON.parse(v);
+        return {
+          assignee: parsed.assignee || 'all',
+          q: parsed.q || '',
+          due: parsed.due || 'all',
+          priority: Array.isArray(parsed.priority) ? parsed.priority : []
+        };
+      }
     } catch {
       // ignore
     }
-    return { assignee: 'all', q: '', due: 'all' };
+    return { assignee: 'all', q: '', due: 'all', priority: [] };
   });
   const [modal, setModal] = useState<ModalContext | null>(null);
   const [pendingDeleteIssue, setPendingDeleteIssue] = useState<Issue | null>(null);
@@ -532,49 +541,6 @@ function fieldError(fieldErrors: any): string | null {
   return null;
 }
 
-function filterIssues(issues: Issue[], data: BoardData | null, filters: Filters): Issue[] {
-  const q = filters.q.trim().toLowerCase();
-  const now = new Date();
-  const start = startOfWeek(now);
-  const end = endOfWeek(now);
-
-  return issues.filter((it) => {
-    if (q && !it.subject.toLowerCase().includes(q)) return false;
-
-    if (filters.assignee !== 'all') {
-      if (filters.assignee === 'me') {
-        if (String(it.assigned_to_id) !== String(data?.meta.current_user_id)) return false;
-      } else if (filters.assignee === 'unassigned') {
-        if (it.assigned_to_id !== null) return false;
-      } else {
-        if (String(it.assigned_to_id) !== String(filters.assignee)) return false;
-      }
-    }
-
-    if (filters.due !== 'all') {
-      if (!it.due_date) return filters.due === 'none';
-      if (filters.due === 'none') return false;
-
-      const due = parseISODate(it.due_date);
-      if (!due) return false;
-      const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-      if (filters.due === 'overdue') return due < today0;
-      if (filters.due === 'thisweek') return due >= start && due <= end;
-    }
-
-    return true;
-  });
-}
-
-function parseISODate(dateString: string): Date | null {
-  const parts = dateString.split('-');
-  if (parts.length !== 3) return null;
-  const [y, m, d] = parts.map((x) => Number(x));
-  if (!y || !m || !d) return null;
-  return new Date(y, m - 1, d);
-}
-
 function startOfWeek(date: Date): Date {
   const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   const day = (d.getDay() + 6) % 7;
@@ -591,6 +557,65 @@ function endOfWeek(date: Date): Date {
   return e;
 }
 
+function filterIssues(issues: Issue[], data: BoardData | null, filters: Filters): Issue[] {
+  const q = filters.q.trim().toLowerCase();
+  const now = new Date();
+  const now0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const start = startOfWeek(now);
+  const end = endOfWeek(now);
+
+  return issues.filter((it) => {
+    if (q && !it.subject.toLowerCase().includes(q)) return false;
+
+    if (filters.assignee !== 'all') {
+      if (filters.assignee === 'me') {
+        if (String(it.assigned_to_id) !== String(data?.meta.current_user_id)) return false;
+      } else if (filters.assignee === 'unassigned') {
+        if (it.assigned_to_id !== null) return false;
+      } else {
+        if (String(it.assigned_to_id) !== String(filters.assignee)) return false;
+      }
+    }
+
+    if (filters.priority.length > 0) {
+      if (!filters.priority.includes(String(it.priority_id))) return false;
+    }
+
+    if (filters.due !== 'all') {
+      if (!it.due_date) return filters.due === 'none';
+      if (filters.due === 'none') return false;
+
+      const due = parseISODate(it.due_date);
+      if (!due) return false;
+
+      if (filters.due === 'overdue') return due < now0;
+      if (filters.due === 'thisweek') return due >= start && due <= end;
+
+      if (filters.due === '3days') {
+        const limit = new Date(now0);
+        limit.setDate(now0.getDate() + 3);
+        return due >= now0 && due < limit;
+      }
+
+      if (filters.due === '7days') {
+        const limit = new Date(now0);
+        limit.setDate(now0.getDate() + 7);
+        return due >= now0 && due < limit;
+      }
+    }
+
+    return true;
+  });
+}
+
+function parseISODate(dateString: string): Date | null {
+  const parts = dateString.split('-');
+  if (parts.length !== 3) return null;
+  const [y, m, d] = parts.map((x) => Number(x));
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+}
+
 // Custom Dropdown Component
 function Dropdown<T extends string>({
   label,
@@ -600,6 +625,7 @@ function Dropdown<T extends string>({
   onChange,
   onReset,
   width = '240px',
+  closeOnSelect = true,
 }: {
   label: string;
   icon: string;
@@ -608,6 +634,7 @@ function Dropdown<T extends string>({
   onChange: (id: T) => void;
   onReset?: () => void;
   width?: string;
+  closeOnSelect?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = React.useRef<HTMLDivElement>(null);
@@ -658,7 +685,105 @@ function Dropdown<T extends string>({
                   className={`rk-dropdown-item ${checked ? 'selected' : ''}`}
                   onClick={() => {
                     onChange(option.id);
-                    setOpen(false);
+                    if (closeOnSelect) setOpen(false);
+                  }}
+                >
+                  <div className="rk-dropdown-checkbox" />
+                  <span>{option.name}</span>
+                </div>
+              );
+            })}
+          </div>
+          {onReset && (
+            <div className="rk-dropdown-footer">
+              <button
+                type="button"
+                className="rk-dropdown-link"
+                onClick={() => {
+                  onReset();
+                  setOpen(false);
+                }}
+              >
+                リセット
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Multi-select Dropdown Component
+function MultiSelectDropdown({
+  label,
+  icon,
+  options,
+  value,
+  onChange,
+  onReset,
+  width = '240px',
+}: {
+  label: string;
+  icon: string;
+  options: { id: string; name: string }[];
+  value: string[];
+  onChange: (ids: string[]) => void;
+  onReset?: () => void;
+  width?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = React.useRef<HTMLDivElement>(null);
+  const menuRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => {
+      if (
+        triggerRef.current &&
+        !triggerRef.current.contains(e.target as Node) &&
+        menuRef.current &&
+        !menuRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  const selectedCount = value.length;
+
+  return (
+    <div className="rk-dropdown-container">
+      <div
+        ref={triggerRef}
+        className={`rk-dropdown-trigger ${open ? 'rk-active' : ''}`}
+        onClick={() => setOpen(!open)}
+        title={value.length > 0 ? value.map(v => options.find(o => o.id === v)?.name).join(', ') : label}
+      >
+        <span className="rk-icon">{icon}</span>
+        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }}>
+          {label}{selectedCount > 0 ? ` (${selectedCount})` : ''}
+        </span>
+      </div>
+
+      {open && (
+        <div ref={menuRef} className="rk-dropdown-menu" style={{ width }}>
+          <div className="rk-dropdown-title">{label}</div>
+          <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+            {options.map((option) => {
+              const checked = value.includes(option.id);
+              return (
+                <div
+                  key={option.id}
+                  className={`rk-dropdown-item ${checked ? 'selected' : ''}`}
+                  onClick={() => {
+                    if (checked) {
+                      onChange(value.filter((v) => v !== option.id));
+                    } else {
+                      onChange([...value, option.id]);
+                    }
                   }}
                 >
                   <div className="rk-dropdown-checkbox" />
@@ -789,7 +914,14 @@ function Toolbar({
     { id: 'all', name: labels.all },
     { id: 'overdue', name: labels.overdue },
     { id: 'thisweek', name: labels.this_week },
+    { id: '3days', name: labels.within_3_days },
+    { id: '7days', name: labels.within_1_week },
     { id: 'none', name: labels.not_set },
+  ];
+
+  const priorityOptions = [
+    { id: 'all', name: labels.all },
+    ...(data.lists.priorities ?? []).map(p => ({ id: String(p.id), name: p.name }))
   ];
 
   return (
@@ -816,6 +948,16 @@ function Toolbar({
           onReset={() => onChange({ ...filters, assignee: 'all' })}
         />
 
+        <MultiSelectDropdown
+          label={labels.issue_priority}
+          icon="priority_high"
+          options={priorityOptions}
+          value={filters.priority}
+          onChange={(val) => onChange({ ...filters, priority: val })}
+          onReset={() => onChange({ ...filters, priority: [] })}
+          width="160px"
+        />
+
         <Dropdown
           label={labels.due}
           icon="calendar_month"
@@ -824,6 +966,7 @@ function Toolbar({
           onChange={(val) => onChange({ ...filters, due: val as any })}
           onReset={() => onChange({ ...filters, due: 'all' })}
           width="180px"
+          closeOnSelect={false}
         />
       </div>
 

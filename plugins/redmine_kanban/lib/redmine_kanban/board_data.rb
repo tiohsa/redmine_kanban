@@ -162,6 +162,8 @@ module RedmineKanban
         stagnation: l(:label_kanban_stagnation),
         not_set: l(:label_kanban_not_set),
         this_week: l(:label_kanban_this_week),
+        within_3_days: l(:label_kanban_within_3_days),
+        within_1_week: l(:label_kanban_within_1_week),
         overdue: l(:label_kanban_overdue),
         select_tracker: l(:label_kanban_select_tracker),
         invalid_assignee: l(:label_kanban_invalid_assignee),

@@ -329,13 +329,15 @@
 .rk-dropdown-checkbox {
   width: 18px;
   height: 18px;
-  border: 2px solid #cbd5e1;
+  border: 2px solid #94a3b8;
   border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
   box-sizing: border-box;
+  background: #fff;
+  flex-shrink: 0;
 }
 
 .rk-dropdown-item.selected .rk-dropdown-checkbox {
@@ -346,9 +348,10 @@
 .rk-dropdown-item.selected .rk-dropdown-checkbox::after {
   content: "check";
   font-family: 'Material Symbols Outlined';
-  font-size: 14px;
+  font-size: 16px;
   color: #fff;
   font-weight: 700;
+  display: block;
 }
 
 .rk-dropdown-footer {
