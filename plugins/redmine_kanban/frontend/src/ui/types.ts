@@ -60,4 +60,5 @@ export type BoardData = {
   lanes: Lane[];
   lists: Lists;
   issues: Issue[];
+  labels: Record<string, string>;
 };

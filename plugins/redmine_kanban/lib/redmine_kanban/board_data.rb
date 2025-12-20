@@ -46,7 +46,8 @@ module RedmineKanban
           trackers: trackers_list,
           priorities: priorities_list
         },
-        issues: issues.map { |issue| issue_to_h(issue) }
+        issues: issues.map { |issue| issue_to_h(issue) },
+        labels: labels
       }
     end
 
@@ -65,18 +66,18 @@ module RedmineKanban
     end
 
     def build_lanes(issues)
-      return [{ id: 'none', name: 'すべて', assigned_to_id: nil }] if @settings.lane_type == 'none'
+      return [{ id: 'none', name: l(:label_kanban_all), assigned_to_id: nil }] if @settings.lane_type == 'none'
 
       ids = issues.map(&:assigned_to_id).uniq.compact
       users = User.where(id: ids).sorted.to_a
-      lanes = [{ id: 'unassigned', name: '未割当', assigned_to_id: nil }]
+      lanes = [{ id: 'unassigned', name: l(:label_kanban_unassigned), assigned_to_id: nil }]
       lanes.concat(users.map { |u| { id: u.id, name: u.name, assigned_to_id: u.id } })
       lanes
     end
 
     def assignees_list
       users = @project.assignable_users.sorted.to_a
-      [{ id: nil, name: '未割当' }] + users.map { |u| { id: u.id, name: u.name } }
+      [{ id: nil, name: l(:label_kanban_unassigned) }] + users.map { |u| { id: u.id, name: u.name } }
     end
 
     def trackers_list
@@ -121,6 +122,61 @@ module RedmineKanban
       return 0 unless issue.updated_on
 
       (Date.current - issue.updated_on.to_date).to_i
+    end
+
+    def labels
+      {
+        all: l(:label_kanban_all),
+        me: l(:label_kanban_me),
+        unassigned: l(:label_kanban_unassigned),
+        summary: l(:label_kanban_summary),
+        analyzing: l(:label_kanban_analyzing),
+        assignee: l(:label_kanban_assignee),
+        search: l(:label_kanban_search),
+        due: l(:label_kanban_due),
+        sort: l(:label_kanban_sort),
+        analyze: l(:label_kanban_analyze),
+        normal_view: l(:label_kanban_normal_view),
+        fullscreen_view: l(:label_kanban_fullscreen),
+        add: l(:label_kanban_add),
+        title_ai_analysis: l(:label_kanban_title_ai_analysis),
+        close: l(:label_kanban_close),
+        loading: l(:label_kanban_loading),
+        fetching_data: l(:label_kanban_fetching_data),
+        notice: l(:label_kanban_notice),
+        error: l(:label_kanban_error),
+        data_fetching: l(:label_kanban_data_fetching),
+        delete_confirm_title: l(:label_kanban_delete_confirm_title),
+        delete_confirm_message: l(:label_kanban_delete_confirm_message),
+        deleting: l(:label_kanban_deleting),
+        delete: l(:label_kanban_delete),
+        cancel: l(:label_kanban_cancel),
+        issue_subject: l(:label_kanban_issue_subject),
+        issue_tracker: l(:label_kanban_issue_tracker),
+        issue_assignee: l(:label_kanban_issue_assignee),
+        issue_done_ratio: l(:label_kanban_issue_done_ratio),
+        issue_due_date: l(:label_kanban_issue_due_date),
+        issue_start_date: l(:label_kanban_issue_start_date),
+        issue_priority: l(:label_kanban_issue_priority),
+        issue_description: l(:label_kanban_issue_description),
+        stagnation: l(:label_kanban_stagnation),
+        not_set: l(:label_kanban_not_set),
+        this_week: l(:label_kanban_this_week),
+        overdue: l(:label_kanban_overdue),
+        select_tracker: l(:label_kanban_select_tracker),
+        invalid_assignee: l(:label_kanban_invalid_assignee),
+        invalid_priority: l(:label_kanban_invalid_priority),
+        update_failed: l(:label_kanban_update_failed),
+        create_failed: l(:label_kanban_create_failed),
+        delete_failed: l(:label_kanban_delete_failed),
+        move_failed: l(:label_kanban_move_failed),
+        load_failed: l(:label_kanban_load_failed),
+        no_result: l(:label_kanban_no_result)
+      }
+    end
+
+    def l(key, options = {})
+      ::I18n.t(key, **options)
     end
   end
 end

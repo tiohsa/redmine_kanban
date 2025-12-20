@@ -20,17 +20,19 @@ function AiAnalysisModal({
   onClose,
   result,
   loading,
+  labels,
 }: {
   onClose: () => void;
   result: string | null;
   loading: boolean;
+  labels: Record<string, string>;
 }) {
   return (
     <div className="rk-modal-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
       <div className="rk-modal" onClick={(e) => e.stopPropagation()}>
         <div className="rk-modal-head">
-          <h3>AI分析レポート</h3>
-          <button type="button" className="rk-btn rk-btn-ghost" onClick={onClose} aria-label="閉じる">
+          <h3>{labels.summary}</h3>
+          <button type="button" className="rk-btn rk-btn-ghost" onClick={onClose} aria-label={labels.close}>
             ×
           </button>
         </div>
@@ -48,7 +50,7 @@ function AiAnalysisModal({
                   animation: 'rk-spin 1s linear infinite',
                 }}
               />
-              <p style={{ marginTop: '16px', color: 'var(--rk-text-secondary)' }}>分析中...</p>
+              <p style={{ marginTop: '16px', color: 'var(--rk-text-secondary)' }}>{labels.analyzing}</p>
               <style>{`
                 @keyframes rk-spin {
                   0% { transform: rotate(0deg); }
@@ -77,7 +79,7 @@ function AiAnalysisModal({
         </div>
         <div className="rk-modal-actions">
           <button type="button" className="rk-btn" onClick={onClose}>
-            閉じる
+            {labels.close}
           </button>
         </div>
       </div>
@@ -133,7 +135,7 @@ export function App({ dataUrl }: Props) {
       const json = await getJson<BoardData>(`${baseUrl}/data`);
       setData(json);
     } catch (e) {
-      setError('読み込みに失敗しました');
+      setError(data?.labels.load_failed ?? '読み込みに失敗しました');
     } finally {
       setLoading(false);
     }
@@ -151,12 +153,12 @@ export function App({ dataUrl }: Props) {
       const currentIssues = filterIssues(data.issues, data, filters);
       const res = await postJson<{ result?: string; error?: string }>(`${baseUrl}/analyze`, { issues: currentIssues });
       if (res.error) {
-        setAnalysisResult(`エラーが発生しました: ${res.error}`);
+        setAnalysisResult(`${data.labels.error}: ${res.error}`);
       } else {
-        setAnalysisResult(res.result ?? '結果が空でした');
+        setAnalysisResult(res.result ?? data.labels.no_result);
       }
     } catch (e: any) {
-      setAnalysisResult(`通信エラー: ${e.message}`);
+      setAnalysisResult(`${data.labels.error}: ${e.message}`);
     } finally {
       setAnalyzing(false);
     }
@@ -235,7 +237,7 @@ export function App({ dataUrl }: Props) {
       await refresh();
     } catch (e: any) {
       const payload = e?.payload as any;
-      setNotice(payload?.message ?? '移動に失敗しました');
+      setNotice(payload?.message ?? data.labels.move_failed);
       await refresh(); // ロールバック目的
     }
   };
@@ -268,19 +270,19 @@ export function App({ dataUrl }: Props) {
 
       <div className="rk-popup-host" aria-live="polite" aria-relevant="additions text">
         {loading ? (
-          <div className="rk-popup rk-popup-info" role="dialog" aria-label="読み込み中">
+          <div className="rk-popup rk-popup-info" role="dialog" aria-label={data?.labels.loading}>
             <div className="rk-popup-head">
-              <div className="rk-popup-title">読み込み中</div>
+              <div className="rk-popup-title">{data?.labels.loading}</div>
             </div>
-            <div className="rk-popup-body">データを取得しています...</div>
+            <div className="rk-popup-body">{data?.labels.fetching_data}</div>
           </div>
         ) : null}
 
         {notice ? (
-          <div className="rk-popup rk-popup-warn" role="dialog" aria-label="通知">
+          <div className="rk-popup rk-popup-warn" role="dialog" aria-label={data?.labels.notice}>
             <div className="rk-popup-head">
-              <div className="rk-popup-title">通知</div>
-              <button type="button" className="rk-icon-btn rk-popup-close" aria-label="閉じる" onClick={() => setNotice(null)}>
+              <div className="rk-popup-title">{data?.labels.notice}</div>
+              <button type="button" className="rk-icon-btn rk-popup-close" aria-label={data?.labels.close} onClick={() => setNotice(null)}>
                 ×
               </button>
             </div>
@@ -289,10 +291,10 @@ export function App({ dataUrl }: Props) {
         ) : null}
 
         {error ? (
-          <div className="rk-popup rk-popup-error" role="dialog" aria-label="エラー" aria-live="assertive">
+          <div className="rk-popup rk-popup-error" role="dialog" aria-label={data?.labels.error} aria-live="assertive">
             <div className="rk-popup-head">
-              <div className="rk-popup-title">エラー</div>
-              <button type="button" className="rk-icon-btn rk-popup-close" aria-label="閉じる" onClick={() => setError(null)}>
+              <div className="rk-popup-title">{data?.labels.error}</div>
+              <button type="button" className="rk-icon-btn rk-popup-close" aria-label={data?.labels.close} onClick={() => setError(null)}>
                 ×
               </button>
             </div>
@@ -313,7 +315,7 @@ export function App({ dataUrl }: Props) {
           onAnalyze={handleAnalyze}
         />
       ) : (
-        <div className="rk-empty">データ取得中...</div>
+        <div className="rk-empty">データを取得しています...</div>
       )}
 
       <div className="rk-board">
@@ -323,6 +325,7 @@ export function App({ dataUrl }: Props) {
             state={boardState}
             canMove={canMove}
             canCreate={canCreate}
+            labels={data.labels}
             onCommand={(command) => {
               if (command.type === 'move_issue') {
                 void moveIssue(command.issueId, command.statusId, command.assignedToId);
@@ -351,7 +354,7 @@ export function App({ dataUrl }: Props) {
               await refresh();
             } catch (e: any) {
               const p = e?.payload as any;
-              throw new Error(p?.message || fieldError(p?.field_errors) || (isEdit ? '更新に失敗しました' : '作成に失敗しました'));
+              throw new Error(p?.message || fieldError(p?.field_errors) || (isEdit ? data.labels.update_failed : data.labels.create_failed));
             }
           }}
           onDeleted={async (issueId) => {
@@ -360,17 +363,18 @@ export function App({ dataUrl }: Props) {
         />
       ) : null}
 
-      {iframeEditUrl ? (
-        <IframeEditDialog url={iframeEditUrl} onClose={() => { setIframeEditUrl(null); refresh(); }} />
+      {iframeEditUrl && data ? (
+        <IframeEditDialog url={iframeEditUrl} labels={data.labels} onClose={() => { setIframeEditUrl(null); refresh(); }} />
       ) : null}
 
       {confirmDeleteIssueId !== null ? (
         <ConfirmDialog
-          title="削除確認"
-          message={`タスク #${confirmDeleteIssueId} を削除します。よろしいですか？`}
-          confirmText={deletingIssueId === confirmDeleteIssueId ? '削除中...' : '削除'}
+          title={data.labels.delete_confirm_title}
+          message={data.labels.delete_confirm_message.replace('%{id}', String(confirmDeleteIssueId))}
+          confirmText={deletingIssueId === confirmDeleteIssueId ? data.labels.deleting : data.labels.delete}
           confirmKind="danger"
           confirmDisabled={deletingIssueId !== null}
+          labels={data.labels}
           onCancel={() => setConfirmDeleteIssueId(null)}
           onConfirm={async () => {
             const id = confirmDeleteIssueId;
@@ -380,36 +384,13 @@ export function App({ dataUrl }: Props) {
         />
       ) : null}
 
-      {analysisOpen ? (
-        <div className="rk-modal-backdrop" role="dialog" aria-modal="true" aria-label="AI分析" onClick={() => !analyzing && setAnalysisOpen(false)}>
-          <div className="rk-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="rk-modal-head">
-              <h3>⚡ AI分析</h3>
-            </div>
-
-            <div className="rk-form">
-              {analyzing ? (
-                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--rk-text-secondary)' }}>
-                  <div style={{ fontSize: '1.2rem', marginBottom: '16px' }}>🤖</div>
-                  <div>AIがタスクを分析しています...</div>
-                  <div style={{ marginTop: '8px', fontSize: '0.8rem' }}>これには数秒から数十秒かかる場合があります</div>
-                </div>
-              ) : analysisResult ? (
-                <div style={{ lineHeight: 1.6, fontSize: '0.95rem', userSelect: 'text' }}>
-                  <ReactMarkdown>{analysisResult}</ReactMarkdown>
-                </div>
-              ) : (
-                <div style={{ padding: '20px', textAlign: 'center' }}>結果がありません</div>
-              )}
-            </div>
-
-            <div className="rk-modal-actions">
-              <button type="button" className="rk-btn" onClick={() => setAnalysisOpen(false)} disabled={analyzing}>
-                閉じる
-              </button>
-            </div>
-          </div>
-        </div>
+      {analysisOpen && data ? (
+        <AiAnalysisModal
+          onClose={() => setAnalysisOpen(false)}
+          result={analysisResult}
+          loading={analyzing}
+          labels={data.labels}
+        />
       ) : null}
     </div>
   );
@@ -421,6 +402,7 @@ function ConfirmDialog({
   confirmText,
   confirmKind,
   confirmDisabled,
+  labels,
   onCancel,
   onConfirm,
 }: {
@@ -429,6 +411,7 @@ function ConfirmDialog({
   confirmText: string;
   confirmKind: 'danger' | 'primary';
   confirmDisabled?: boolean;
+  labels: Record<string, string>;
   onCancel: () => void;
   onConfirm: () => void | Promise<void>;
 }) {
@@ -438,14 +421,14 @@ function ConfirmDialog({
       <div className="rk-modal rk-modal-sm">
         <div className="rk-modal-head">
           <h3>{title}</h3>
-          <button type="button" className="rk-btn rk-btn-ghost" onClick={onCancel} aria-label="閉じる">
+          <button type="button" className="rk-btn rk-btn-ghost" onClick={onCancel} aria-label={labels.close}>
             ×
           </button>
         </div>
         <div className="rk-confirm-body">{message}</div>
         <div className="rk-modal-actions">
           <button type="button" className="rk-btn" onClick={onCancel} disabled={!!confirmDisabled}>
-            キャンセル
+            {labels.cancel}
           </button>
           <button type="button" className={confirmClass} onClick={onConfirm} disabled={!!confirmDisabled}>
             {confirmText}
@@ -541,17 +524,18 @@ function Toolbar({
   onAnalyze: () => void;
 }) {
   const assignees = data.lists.assignees ?? [];
+  const labels = data.labels;
   const options = [
-    { id: 'all', name: '全員' },
-    { id: 'me', name: '自分' },
-    { id: 'unassigned', name: '未割当' },
+    { id: 'all', name: labels.all },
+    { id: 'me', name: labels.me },
+    { id: 'unassigned', name: labels.unassigned },
     ...assignees.filter((a) => a.id !== null).map((a) => ({ id: String(a.id), name: a.name })),
   ];
 
   return (
     <div className="rk-toolbar">
       <label className="rk-field">
-        <span className="rk-label">担当</span>
+        <span className="rk-label">{labels.assignee}</span>
         <select value={filters.assignee} onChange={(e) => onChange({ ...filters, assignee: e.target.value as any })}>
           {options.map((o) => (
             <option key={o.id} value={o.id}>
@@ -562,28 +546,26 @@ function Toolbar({
       </label>
 
       <label className="rk-field rk-grow">
-        <span className="rk-label">検索</span>
-        <input value={filters.q} onChange={(e) => onChange({ ...filters, q: e.target.value })} placeholder="件名" />
+        <span className="rk-label">{labels.search}</span>
+        <input value={filters.q} onChange={(e) => onChange({ ...filters, q: e.target.value })} placeholder={labels.issue_subject} />
       </label>
 
       <label className="rk-field">
-        <span className="rk-label">期限</span>
+        <span className="rk-label">{labels.due}</span>
         <select value={filters.due} onChange={(e) => onChange({ ...filters, due: e.target.value as any })}>
-          <option value="all">すべて</option>
-          <option value="overdue">期限切れ</option>
-          <option value="thisweek">今週</option>
-          <option value="none">未設定</option>
+          <option value="all">{labels.all}</option>
+          <option value="overdue">{labels.overdue}</option>
+          <option value="thisweek">{labels.this_week}</option>
+          <option value="none">{labels.not_set}</option>
         </select>
       </label>
 
-
-
       <div className="rk-sort">
-        <span className="rk-label">並び替え</span>
+        <span className="rk-label">{labels.sort}</span>
         <SortButton
           active={sortKey.startsWith('due_')}
           direction={sortKey === 'due_asc' ? 'asc' : sortKey === 'due_desc' ? 'desc' : null}
-          label="期日"
+          label={labels.issue_due_date}
           onClick={() => {
             if (sortKey === 'due_asc') onChangeSort('due_desc');
             else onChangeSort('due_asc');
@@ -592,7 +574,7 @@ function Toolbar({
         <SortButton
           active={sortKey.startsWith('priority_')}
           direction={sortKey === 'priority_asc' ? 'asc' : sortKey === 'priority_desc' ? 'desc' : null}
-          label="優先度"
+          label={labels.issue_priority}
           onClick={() => {
             if (sortKey === 'priority_desc') onChangeSort('priority_asc');
             else onChangeSort('priority_desc');
@@ -601,7 +583,7 @@ function Toolbar({
         <SortButton
           active={sortKey.startsWith('updated_')}
           direction={sortKey === 'updated_asc' ? 'asc' : sortKey === 'updated_desc' ? 'desc' : null}
-          label="更新"
+          label={data.labels.updated ?? '更新'}
           onClick={() => {
             if (sortKey === 'updated_desc') onChangeSort('updated_asc');
             else onChangeSort('updated_desc');
@@ -612,11 +594,11 @@ function Toolbar({
       <div className="rk-toolbar-spacer" />
 
       <button type="button" className="rk-btn" onClick={onAnalyze} style={{ marginRight: '8px' }}>
-        ✨ 分析
+        {labels.analyze}
       </button>
 
       <button type="button" className="rk-btn" onClick={onToggleFullWindow}>
-        {fullWindow ? '通常表示' : '全画面表示'}
+        {fullWindow ? labels.normal_view : labels.fullscreen_view}
       </button>
     </div>
   );
@@ -686,6 +668,7 @@ function IssueModal({
 }) {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const labels = data.labels;
 
   const issue = ctx.issueId ? data.issues.find((i) => i.id === ctx.issueId) : null;
   const isEdit = !!issue;
@@ -714,19 +697,19 @@ function IssueModal({
     setErr(null);
     const trackerIdNum = Number(trackerId);
     if (!Number.isFinite(trackerIdNum) || trackerIdNum <= 0) {
-      setErr('トラッカーを選択してください');
+      setErr(labels.select_tracker);
       return;
     }
 
     const assigneeIdNum = assigneeId === '' ? null : Number(assigneeId);
     if (assigneeIdNum !== null && (!Number.isFinite(assigneeIdNum) || assigneeIdNum <= 0)) {
-      setErr('担当者の値が不正です');
+      setErr(labels.invalid_assignee);
       return;
     }
 
     const priorityIdNum = priorityId === '' ? null : Number(priorityId);
     if (priorityIdNum !== null && (!Number.isFinite(priorityIdNum) || priorityIdNum <= 0)) {
-      setErr('優先度の値が不正です');
+      setErr(labels.invalid_priority);
       return;
     }
 
@@ -744,7 +727,7 @@ function IssueModal({
         status_id: ctx.statusId,
       }, isEdit);
     } catch (e: any) {
-      setErr(e?.message ?? (isEdit ? '更新に失敗しました' : '作成に失敗しました'));
+      setErr(e?.message ?? (isEdit ? labels.update_failed : labels.create_failed));
     } finally {
       setSaving(false);
     }
@@ -764,13 +747,13 @@ function IssueModal({
 
         <div className="rk-form">
           <label className="rk-field">
-            <span className="rk-label">件名</span>
+            <span className="rk-label">{labels.issue_subject}</span>
             <input value={subject} onChange={(e) => setSubject(e.target.value)} autoFocus />
           </label>
 
           <div className="rk-row2">
             <label className="rk-field">
-              <span className="rk-label">トラッカー</span>
+              <span className="rk-label">{labels.issue_tracker}</span>
               <select value={trackerId} onChange={(e) => setTrackerId(e.target.value)}>
                 {data.lists.trackers.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -781,7 +764,7 @@ function IssueModal({
             </label>
 
             <label className="rk-field">
-              <span className="rk-label">担当者</span>
+              <span className="rk-label">{labels.issue_assignee}</span>
               <select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
                 {data.lists.assignees.map((a) => (
                   <option key={String(a.id)} value={a.id ?? ''}>
@@ -794,7 +777,7 @@ function IssueModal({
 
           <div className="rk-row2">
             <label className="rk-field">
-              <span className="rk-label">進捗率</span>
+              <span className="rk-label">{labels.issue_done_ratio}</span>
               <select value={doneRatio} onChange={(e) => setDoneRatio(Number(e.target.value))}>
                 {[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map((r) => (
                   <option key={r} value={r}>
@@ -805,9 +788,9 @@ function IssueModal({
             </label>
 
             <label className="rk-field">
-              <span className="rk-label">優先度</span>
+              <span className="rk-label">{labels.issue_priority}</span>
               <select value={priorityId} onChange={(e) => setPriorityId(e.target.value)}>
-                <option value="">（未設定）</option>
+                <option value="">（{labels.not_set}）</option>
                 {data.lists.priorities.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
@@ -819,12 +802,12 @@ function IssueModal({
 
           <div className="rk-row2">
             <label className="rk-field">
-              <span className="rk-label">開始日</span>
+              <span className="rk-label">{labels.issue_start_date}</span>
               <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
             </label>
 
             <label className="rk-field">
-              <span className="rk-label">期日</span>
+              <span className="rk-label">{labels.issue_due_date}</span>
               <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </label>
           </div>
@@ -832,13 +815,13 @@ function IssueModal({
 
 
           <label className="rk-field">
-            <span className="rk-label">説明</span>
+            <span className="rk-label">{labels.issue_description}</span>
             <textarea rows={4} value={description} onChange={(e) => setDescription(e.target.value)} />
           </label>
 
           {hasDescriptionPreview ? (
-            <div className="rk-desc-preview" aria-label="説明プレビュー">
-              <div className="rk-desc-preview-title">プレビュー（URLをクリックできます）</div>
+            <div className="rk-desc-preview" aria-label={labels.issue_description}>
+              <div className="rk-desc-preview-title">{labels.no_result}（URLをクリックできます）</div>
               <div className="rk-desc-preview-body">{linkifyText(description)}</div>
             </div>
           ) : null}
@@ -870,13 +853,13 @@ function IssueModal({
   );
 }
 
-function IframeEditDialog({ url, onClose }: { url: string; onClose: () => void }) {
+function IframeEditDialog({ url, labels, onClose }: { url: string; labels: Record<string, string>; onClose: () => void }) {
   return (
     <div
       className="rk-modal-backdrop"
       role="dialog"
       aria-modal="true"
-      aria-label="チケット編集"
+      aria-label={labels.issue_priority}
       onClick={onClose}
     >
       <div className="rk-iframe-dialog" onClick={(e) => e.stopPropagation()}>
@@ -884,7 +867,7 @@ function IframeEditDialog({ url, onClose }: { url: string; onClose: () => void }
           type="button"
           className="rk-iframe-dialog-close"
           onClick={onClose}
-          aria-label="閉じる"
+          aria-label={labels.close}
         >
           ×
         </button>

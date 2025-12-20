@@ -72,6 +72,7 @@ type Props = {
   onCardOpen: (issueId: number) => void;
   onDelete: (issueId: number) => void;
   onEditClick: (editUrl: string) => void;
+  labels: Record<string, string>;
 };
 
 export function CanvasBoard({
@@ -84,6 +85,7 @@ export function CanvasBoard({
   onCardOpen,
   onDelete,
   onEditClick,
+  labels,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -175,6 +177,7 @@ export function CanvasBoard({
 
     ctx.save();
     ctx.translate(-scroll.x, -scroll.y);
+    const layoutLabels = { stagnation: labels.stagnation, add: labels.add };
 
     drawHeaders(ctx, layout, state.columns, theme, data.meta);
 
@@ -192,10 +195,11 @@ export function CanvasBoard({
       canCreate,
       canMove,
       rectMapRef.current,
-      dragRef.current
+      dragRef.current,
+      labels
     );
 
-    drawDragOverlay(ctx, state, data, theme, dragRef.current);
+    drawDragOverlay(ctx, state, data, theme, dragRef.current, labels);
 
     ctx.restore();
   };
@@ -331,7 +335,7 @@ export function CanvasBoard({
       className="rk-canvas-board"
       onWheel={handleWheel}
       role="region"
-      aria-label="かんばんボード"
+      aria-label={labels.board || 'かんばんボード'}
     >
       <canvas
         ref={canvasRef}
@@ -487,7 +491,8 @@ function drawCells(
   canCreate: boolean,
   canMove: boolean,
   rectMap: RectMap,
-  drag: DragState | null
+  drag: DragState | null,
+  labels: Record<string, string>
 ) {
   const columns = state.columnOrder;
 
@@ -536,7 +541,7 @@ function drawCells(
           height: metrics.addButtonHeight,
         };
         rectMap.addButtons.set(key, addRect);
-        drawAddButton(ctx, addRect, theme);
+        drawAddButton(ctx, addRect, theme, labels.add);
         cursorY += metrics.addButtonHeight + metrics.addButtonGap;
       }
 
@@ -561,7 +566,7 @@ function drawCells(
           height: metrics.cardHeight,
         };
         rectMap.cards.set(issue.id, cardRect);
-        drawCard(ctx, cardRect, issue, data, theme, canMove, rectMap);
+        drawCard(ctx, cardRect, issue, data, theme, canMove, labels, rectMap);
       }
     });
   });
@@ -576,6 +581,7 @@ function drawCard(
   data: BoardData,
   theme: CanvasTheme,
   canMove: boolean,
+  labels: Record<string, string>,
   rectMap?: RectMap
 ) {
   const column = data.columns.find((c) => c.id === issue.status_id);
@@ -608,16 +614,16 @@ function drawCard(
 
   ctx.font = '500 12px Inter, sans-serif';
   ctx.fillStyle = theme.textSecondary;
-  const dueLabel = issue.due_date ?? '未設定';
-  ctx.fillText(`期限: ${dueLabel}`, rect.x + 8, rect.y + 32);
+  const dueLabel = issue.due_date ?? labels.not_set;
+  ctx.fillText(`${labels.issue_due_date}: ${dueLabel}`, rect.x + 8, rect.y + 32);
 
   const agingLabel = `${agingDays}d`;
   ctx.fillStyle = agingClass === 'danger' ? theme.danger : agingClass === 'warn' ? theme.warn : theme.textSecondary;
-  ctx.fillText(`停滞: ${agingLabel}`, rect.x + 8, rect.y + 50);
+  ctx.fillText(`${labels.stagnation}: ${agingLabel}`, rect.x + 8, rect.y + 50);
 
   if (issue.priority_name) {
     ctx.fillStyle = theme.textSecondary;
-    ctx.fillText(`優先度: ${issue.priority_name}`, rect.x + 8, rect.y + 66);
+    ctx.fillText(`${labels.issue_priority}: ${issue.priority_name}`, rect.x + 8, rect.y + 66);
   }
 
   const editRect = {
@@ -647,7 +653,7 @@ function drawCard(
   ctx.restore();
 }
 
-function drawAddButton(ctx: CanvasRenderingContext2D, rect: Rect, theme: CanvasTheme) {
+function drawAddButton(ctx: CanvasRenderingContext2D, rect: Rect, theme: CanvasTheme, label: string) {
   ctx.save();
   ctx.strokeStyle = theme.border;
   ctx.fillStyle = '#f8fafc';
@@ -657,7 +663,6 @@ function drawAddButton(ctx: CanvasRenderingContext2D, rect: Rect, theme: CanvasT
   ctx.fillStyle = theme.textSecondary;
   ctx.font = '600 12px Inter, sans-serif';
   ctx.textBaseline = 'middle';
-  const label = '＋ 追加';
   const textWidth = ctx.measureText(label).width;
   ctx.fillText(label, rect.x + (rect.width - textWidth) / 2, rect.y + rect.height / 2);
   ctx.restore();
@@ -683,7 +688,8 @@ function drawDragOverlay(
   state: BoardState,
   data: BoardData,
   theme: CanvasTheme,
-  drag: DragState | null
+  drag: DragState | null,
+  labels: Record<string, string>
 ) {
   if (!drag || !drag.dragging) return;
   const issue = state.cardsById.get(drag.issueId);
@@ -698,7 +704,7 @@ function drawDragOverlay(
   };
   ctx.save();
   ctx.globalAlpha = 0.9;
-  drawCard(ctx, rect, issue, data, theme, true);
+  drawCard(ctx, rect, issue, data, theme, true, labels);
   ctx.restore();
 }
 
@@ -851,4 +857,4 @@ function readTheme(container: HTMLDivElement | null): CanvasTheme {
   };
 }
 
- 
+
