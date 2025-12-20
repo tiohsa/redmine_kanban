@@ -92,7 +92,15 @@ export function App({ dataUrl }: Props) {
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [filters, setFilters] = useState<Filters>({ assignee: 'all', q: '', due: 'all' });
+  const [filters, setFilters] = useState<Filters>(() => {
+    try {
+      const v = localStorage.getItem('rk_filters');
+      if (v) return JSON.parse(v) as Filters;
+    } catch {
+      // ignore
+    }
+    return { assignee: 'all', q: '', due: 'all' };
+  });
   const [modal, setModal] = useState<ModalContext | null>(null);
   const [confirmDeleteIssueId, setConfirmDeleteIssueId] = useState<number | null>(null);
   const [deletingIssueId, setDeletingIssueId] = useState<number | null>(null);
@@ -194,6 +202,14 @@ export function App({ dataUrl }: Props) {
       // ignore
     }
   }, [sortKey]);
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('rk_filters', JSON.stringify(filters));
+    } catch {
+      // ignore
+    }
+  }, [filters]);
 
   const issues = useMemo(() => filterIssues(data?.issues ?? [], data, filters), [data, filters]);
   const priorityRank = useMemo(() => {
@@ -593,12 +609,13 @@ function Toolbar({
 
       <div className="rk-toolbar-spacer" />
 
-      <button type="button" className="rk-btn" onClick={onAnalyze} style={{ marginRight: '8px' }}>
+      <button type="button" className="rk-btn rk-btn-primary" onClick={onAnalyze} style={{ minWidth: '40px' }} title={labels.analyze}>
+        <span className="rk-icon">auto_awesome</span>
         {labels.analyze}
       </button>
 
-      <button type="button" className="rk-btn" onClick={onToggleFullWindow}>
-        {fullWindow ? labels.normal_view : labels.fullscreen_view}
+      <button type="button" className="rk-btn" onClick={onToggleFullWindow} title={fullWindow ? labels.normal_view : labels.fullscreen_view}>
+        <span className="rk-icon">{fullWindow ? 'fullscreen_exit' : 'fullscreen'}</span>
       </button>
     </div>
   );
@@ -615,11 +632,11 @@ function SortButton({
   label: string;
   onClick: () => void;
 }) {
-  const suffix = direction === 'asc' ? '↑' : direction === 'desc' ? '↓' : '';
+  const suffix = direction === 'asc' ? 'arrow_upward' : direction === 'desc' ? 'arrow_downward' : '';
   return (
     <button type="button" className={`rk-btn rk-btn-sm ${active ? 'rk-btn-toggle-active' : ''}`} onClick={onClick}>
       {label}
-      {suffix}
+      {suffix && <span className="rk-icon" style={{ fontSize: '14px' }}>{suffix}</span>}
     </button>
   );
 }

@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+
 /* Modern Color Palette (Tailwind-like) */
 :root {
   --rk-bg-main: #ffffff;
@@ -177,44 +179,53 @@
   margin-bottom: 12px;
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;
   align-items: center;
-  /* Ensure vertical alignment */
   background: var(--rk-bg-surface);
-  padding: 8px 16px;
+  padding: 8px 12px;
   border: 1px solid var(--rk-border);
   border-radius: 12px;
   box-shadow: var(--rk-shadow-sm);
-  min-height: auto;
-  /* Ensure minimum height */
+}
+
+.rk-icon {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 20px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
 }
 
 .rk-field {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
-  height: 32px;
-  /* Explicit height for fields */
+  height: 36px;
 }
 
 .rk-grow {
   flex: 1;
-  min-width: 240px;
+  min-width: 200px;
 }
 
 .rk-field input,
 .rk-field select {
-  height: 32px;
-  /* Match field height */
-  padding: 0 12px;
+  height: 36px;
+  padding: 0 10px;
   border: 1px solid var(--rk-border);
-  border-radius: 6px;
+  border-radius: 8px;
   background: #fff;
   font-size: 0.875rem;
   color: var(--rk-text-primary);
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: all 0.2s;
   box-sizing: border-box;
-  /* Proper box sizing */
 }
 
 .rk-field input:focus,
@@ -543,7 +554,8 @@
   border: 1px solid var(--rk-border);
   background: #fff;
   border-radius: 8px;
-  padding: 8px 16px;
+  padding: 0 12px;
+  height: 36px;
   cursor: pointer;
   font-size: 0.875rem;
   font-weight: 500;
@@ -601,9 +613,15 @@
 }
 
 .rk-btn-sm {
-  padding: 6px 10px;
+  padding: 0 10px;
   font-size: 0.8rem;
   height: 32px;
+}
+
+.rk-btn-toggle-active {
+  background: #e0e7ff;
+  border-color: #c7d2fe;
+  color: #3730a3;
 }
 
 .rk-btn-toggle-active {
