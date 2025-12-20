@@ -14,8 +14,8 @@ const metrics = {
   cellPadding: 12,
   cardHeight: 84,
   cardGap: 8,
-  addButtonHeight: 28,
-  addButtonGap: 8,
+  // addButtonHeight: 28, // Removed
+  // addButtonGap: 8,     // Removed
   boardPaddingBottom: 24,
 };
 
@@ -182,7 +182,7 @@ export function CanvasBoard({
     drawHeaders(ctx, layout, state.columns, theme, data.meta);
 
     if (laneType !== 'none') {
-      drawLaneLabels(ctx, layout, state.lanes, theme);
+      drawLaneLabels(ctx, layout, state.lanes, theme, canCreate, state.columns[0]?.id, rectMapRef.current, labels);
     }
 
     drawCells(
@@ -399,13 +399,13 @@ function computeLaneHeight(
   return contentTop + maxCellHeight;
 }
 
-function cellContentHeight(cardCount: number, canCreate: boolean) {
-  const createHeight = canCreate ? metrics.addButtonHeight + metrics.addButtonGap : 0;
+function cellContentHeight(cardCount: number, _canCreate: boolean) {
+  // const createHeight = canCreate ? metrics.addButtonHeight + metrics.addButtonGap : 0;
   const cardsHeight =
     cardCount === 0
       ? 0
       : cardCount * metrics.cardHeight + Math.max(0, cardCount - 1) * metrics.cardGap;
-  return metrics.cellPadding * 2 + createHeight + cardsHeight;
+  return metrics.cellPadding * 2 + cardsHeight;
 }
 
 function drawHeaders(
@@ -460,7 +460,11 @@ function drawLaneLabels(
   ctx: CanvasRenderingContext2D,
   layout: ReturnType<typeof computeLayout>,
   lanes: Lane[],
-  theme: CanvasTheme
+  theme: CanvasTheme,
+  canCreate: boolean,
+  defaultStatusId: number | undefined,
+  rectMap: RectMap | undefined,
+  labels: Record<string, string>
 ) {
   ctx.save();
   ctx.font = '600 13px Inter, sans-serif';
@@ -477,6 +481,18 @@ function drawLaneLabels(
     ctx.moveTo(metrics.laneHeaderWidth + 0.5, laneLayout.y);
     ctx.lineTo(metrics.laneHeaderWidth + 0.5, laneLayout.y + laneLayout.height);
     ctx.stroke();
+
+    if (canCreate && defaultStatusId !== undefined) {
+      const buttonWidth = 24;
+      const buttonHeight = 24;
+      const buttonX = metrics.laneHeaderWidth - buttonWidth - 8; // Right aligned
+      const buttonY = laneLayout.y + (metrics.laneTitleHeight - buttonHeight) / 2;
+      const addRect = { x: buttonX, y: buttonY, width: buttonWidth, height: buttonHeight };
+      const key = cellKey(defaultStatusId, lane.id); // Use default status (first column)
+      if (rectMap) rectMap.addButtons.set(key, addRect);
+
+      drawIconBox(ctx, addRect, theme.textSecondary, '+');
+    }
   });
   ctx.restore();
 }
@@ -533,17 +549,7 @@ function drawCells(
 
       let cursorY = cellRect.y + metrics.cellPadding;
 
-      if (canCreate) {
-        const addRect = {
-          x: cellRect.x + metrics.cellPadding,
-          y: cursorY,
-          width: cellRect.width - metrics.cellPadding * 2,
-          height: metrics.addButtonHeight,
-        };
-        rectMap.addButtons.set(key, addRect);
-        drawAddButton(ctx, addRect, theme, labels.add);
-        cursorY += metrics.addButtonHeight + metrics.addButtonGap;
-      }
+      // Removed Add Button loop for cells
 
       const cardIds = state.cardsByCell.get(key) ?? [];
       const cardStartY = cursorY;
