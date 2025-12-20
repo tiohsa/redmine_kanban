@@ -387,6 +387,16 @@
   }
 }
 
+@keyframes rk-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
 /* Updated Search Input to match Dropdown trigger */
 .rk-search-box {
   display: flex;

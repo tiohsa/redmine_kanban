@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { BoardData, Issue } from './types';
 import { getJson, postJson } from './http';
@@ -51,12 +51,6 @@ function AiAnalysisModal({
                 }}
               />
               <p style={{ marginTop: '16px', color: 'var(--rk-text-secondary)' }}>{labels.analyzing}</p>
-              <style>{`
-                @keyframes rk-spin {
-                  0% { transform: rotate(0deg); }
-                  100% { transform: rotate(360deg); }
-                }
-              `}</style>
             </div>
           ) : (
             <div
@@ -432,14 +426,23 @@ function ConfirmDialog({
   onConfirm: () => void | Promise<void>;
 }) {
   const confirmClass = confirmKind === 'danger' ? 'rk-btn rk-btn-danger' : 'rk-btn rk-btn-primary';
+
+  // Close on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !confirmDisabled) {
+        onCancel();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onCancel, confirmDisabled]);
+
   return (
     <div className="rk-modal-backdrop" role="dialog" aria-modal="true" aria-label={title}>
       <div className="rk-modal rk-modal-sm">
         <div className="rk-modal-head">
           <h3>{title}</h3>
-          <button type="button" className="rk-btn rk-btn-ghost" onClick={onCancel} aria-label={labels.close}>
-            ×
-          </button>
         </div>
         <div className="rk-confirm-body">{message}</div>
         <div className="rk-modal-actions">
@@ -894,6 +897,17 @@ function IssueModal({
   const [description, setDescription] = useState(issue?.description ?? '');
   const hasDescriptionPreview = description.trim().length > 0 && /https?:\/\//.test(description);
 
+  // Close on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !saving) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose, saving]);
+
   const submit = async () => {
     setErr(null);
     const trackerIdNum = Number(trackerId);
@@ -1055,6 +1069,17 @@ function IssueModal({
 }
 
 function IframeEditDialog({ url, labels, onClose }: { url: string; labels: Record<string, string>; onClose: () => void }) {
+  // Close on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   return (
     <div
       className="rk-modal-backdrop"
