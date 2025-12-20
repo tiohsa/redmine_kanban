@@ -96,8 +96,8 @@ export function App({ dataUrl }: Props) {
     return { assignee: 'all', q: '', due: 'all' };
   });
   const [modal, setModal] = useState<ModalContext | null>(null);
-  const [confirmDeleteIssueId, setConfirmDeleteIssueId] = useState<number | null>(null);
-  const [deletingIssueId, setDeletingIssueId] = useState<number | null>(null);
+  const [pendingDeleteIssue, setPendingDeleteIssue] = useState<Issue | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
   const [analysisOpen, setAnalysisOpen] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
@@ -197,15 +197,13 @@ export function App({ dataUrl }: Props) {
     }
   }, [sortKey]);
 
-  React.useEffect(() => {
-    try {
-      localStorage.setItem('rk_filters', JSON.stringify(filters));
-    } catch {
-      // ignore
+  const issues = useMemo(() => {
+    let filtered = filterIssues(data?.issues ?? [], data, filters);
+    if (pendingDeleteIssue) {
+      filtered = filtered.filter((i) => i.id !== pendingDeleteIssue.id);
     }
-  }, [filters]);
-
-  const issues = useMemo(() => filterIssues(data?.issues ?? [], data, filters), [data, filters]);
+    return filtered;
+  }, [data, filters, pendingDeleteIssue]);
   const priorityRank = useMemo(() => {
     const m = new Map<number, number>();
     for (const [idx, p] of (data?.lists.priorities ?? []).entries()) m.set(p.id, idx);
@@ -247,7 +245,7 @@ export function App({ dataUrl }: Props) {
       await refresh();
     } catch (e: any) {
       const payload = e?.payload as any;
-      setNotice(payload?.message ?? data.labels.move_failed);
+      setNotice(payload?.message ?? (data ? data.labels.move_failed : '移動に失敗しました'));
       await refresh(); // ロールバック目的
     }
   };
@@ -256,21 +254,59 @@ export function App({ dataUrl }: Props) {
   const canCreate = !!data?.meta.can_create;
 
   const requestDelete = (issueId: number) => {
-    setConfirmDeleteIssueId(issueId);
+    const issue = data?.issues.find((i) => i.id === issueId);
+    if (!issue) return;
+
+    setPendingDeleteIssue(issue);
+    setNotice(null);
+
+    // Call API immediately
+    void deleteIssue(issueId);
+  };
+
+  const handleUndo = async () => {
+    if (!pendingDeleteIssue || isRestoring) return;
+    setIsRestoring(true);
+
+    try {
+      // Re-create the issue
+      const res = await postJson<{ ok: boolean; issue?: Issue; message?: string }>(
+        `${baseUrl}/issues`,
+        {
+          subject: pendingDeleteIssue.subject,
+          description: pendingDeleteIssue.description,
+          status_id: pendingDeleteIssue.status_id,
+          assigned_to_id: pendingDeleteIssue.assigned_to_id,
+          tracker_id: pendingDeleteIssue.tracker_id,
+          priority_id: pendingDeleteIssue.priority_id,
+          start_date: pendingDeleteIssue.start_date,
+          due_date: pendingDeleteIssue.due_date,
+        },
+        'POST'
+      );
+
+      if (res.ok) {
+        setPendingDeleteIssue(null);
+        await refresh();
+      } else {
+        setError(res.message || '復元に失敗しました');
+      }
+    } catch (e: any) {
+      setError('復元中にエラーが発生しました');
+    } finally {
+      setIsRestoring(false);
+    }
   };
 
   const deleteIssue = async (issueId: number) => {
-    setDeletingIssueId(issueId);
     try {
-      setNotice(null);
       await postJson(`${baseUrl}/issues/${issueId}`, {}, 'DELETE');
-      setModal(null);
-      await refresh();
+      // We keep pendingDeleteIssue for the snackbar to allow Undo (re-creation)
     } catch (e: any) {
       const p = e?.payload as any;
-      setError(p?.message || '削除に失敗しました');
-    } finally {
-      setDeletingIssueId(null);
+      setError(p?.message || (data ? data.labels.delete_failed : '削除に失敗しました'));
+      setPendingDeleteIssue(null);
+      await refresh();
     }
   };
 
@@ -288,15 +324,45 @@ export function App({ dataUrl }: Props) {
           </div>
         ) : null}
 
-        {notice ? (
-          <div className="rk-popup rk-popup-warn" role="dialog" aria-label={data?.labels.notice}>
+        {notice || pendingDeleteIssue ? (
+          <div className={`rk-popup ${pendingDeleteIssue ? 'rk-popup-info' : 'rk-popup-warn'}`} role="dialog">
             <div className="rk-popup-head">
-              <div className="rk-popup-title">{data?.labels.notice}</div>
-              <button type="button" className="rk-icon-btn rk-popup-close" aria-label={data?.labels.close} onClick={() => setNotice(null)}>
+              <div className="rk-popup-title">
+                {pendingDeleteIssue ? data?.labels.notice : data?.labels.notice}
+              </div>
+              <button
+                type="button"
+                className="rk-icon-btn rk-popup-close"
+                aria-label={data?.labels.close}
+                onClick={() => {
+                  if (pendingDeleteIssue) {
+                    void deleteIssue(pendingDeleteIssue.id);
+                  } else {
+                    setNotice(null);
+                  }
+                }}
+              >
                 ×
               </button>
             </div>
-            <div className="rk-popup-body">{notice}</div>
+            <div className="rk-popup-body">
+              {pendingDeleteIssue ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                  <span>{`#${pendingDeleteIssue.id} を削除しました（Undoで再作成）`}</span>
+                  <button
+                    type="button"
+                    className="rk-btn rk-btn-primary"
+                    style={{ height: '24px', fontSize: '11px', padding: '0 8px' }}
+                    onClick={handleUndo}
+                    disabled={isRestoring}
+                  >
+                    {isRestoring ? '復元中...' : '元に戻す'}
+                  </button>
+                </div>
+              ) : (
+                notice
+              )}
+            </div>
           </div>
         ) : null}
 
@@ -377,22 +443,6 @@ export function App({ dataUrl }: Props) {
         <IframeEditDialog url={iframeEditUrl} labels={data.labels} onClose={() => { setIframeEditUrl(null); refresh(); }} />
       ) : null}
 
-      {confirmDeleteIssueId !== null ? (
-        <ConfirmDialog
-          title={data.labels.delete_confirm_title}
-          message={data.labels.delete_confirm_message.replace('%{id}', String(confirmDeleteIssueId))}
-          confirmText={deletingIssueId === confirmDeleteIssueId ? data.labels.deleting : data.labels.delete}
-          confirmKind="danger"
-          confirmDisabled={deletingIssueId !== null}
-          labels={data.labels}
-          onCancel={() => setConfirmDeleteIssueId(null)}
-          onConfirm={async () => {
-            const id = confirmDeleteIssueId;
-            await deleteIssue(id);
-            setConfirmDeleteIssueId(null);
-          }}
-        />
-      ) : null}
 
       {analysisOpen && data ? (
         <AiAnalysisModal

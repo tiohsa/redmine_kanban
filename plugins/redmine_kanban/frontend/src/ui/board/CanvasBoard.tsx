@@ -775,24 +775,33 @@ function drawCard(
   }
 
   // 7. Edit Button (Pencil Icon top right)
-  const editSize = 20;
+  const iconSize = 20;
   const editRect = {
-    x: x + w - editSize - 4,
+    x: x + w - iconSize - 4,
     y: y + 4,
-    width: editSize,
-    height: editSize,
+    width: iconSize,
+    height: iconSize,
   };
   if (rectMap) rectMap.editButtons.set(issue.id, editRect);
 
-  // Icon only
-  // drawIcon(ctx, 'edit', editRect.x + 2, editRect.y + 2, 16, theme.textSecondary);
-  // Or slight hover effect logic? For now just static 
-  // We can use drawIconBox with transparent bg
   ctx.save();
   ctx.font = '16px "Material Symbols Outlined"';
   ctx.fillStyle = theme.textSecondary;
   ctx.textBaseline = 'top';
   ctx.fillText('edit', editRect.x, editRect.y);
+
+  // 8. Delete Button (Trash Icon to the left of Edit)
+  if (data.meta.can_delete && rectMap) {
+    const deleteRect = {
+      x: editRect.x - iconSize - 4,
+      y: y + 4,
+      width: iconSize,
+      height: iconSize,
+    };
+    rectMap.deleteButtons.set(issue.id, deleteRect);
+    ctx.fillStyle = theme.danger;
+    ctx.fillText('delete', deleteRect.x, deleteRect.y);
+  }
   ctx.restore();
 
   ctx.restore();
