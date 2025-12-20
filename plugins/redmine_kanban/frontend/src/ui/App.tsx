@@ -4,6 +4,7 @@ import { DndContext, PointerSensor, useDroppable, useDraggable, useSensor, useSe
 import { CSS } from '@dnd-kit/utilities';
 import type { BoardData, Column, Issue, Lane } from './types';
 import { getJson, postJson } from './http';
+import { CanvasBoard } from './components/CanvasBoard';
 
 type Props = { dataUrl: string };
 
@@ -327,24 +328,10 @@ export function App({ dataUrl }: Props) {
         <div className="rk-empty">データ取得中...</div>
       )}
 
-      <div className="rk-board">
+      <div className="rk-board" style={{ height: 'calc(100vh - 100px)', overflow: 'hidden' }}>
         {data ? (
-          <Board
-            data={data}
-            columns={columns}
-            lanes={lanes}
-            issues={issues}
-            sortKey={sortKey}
-            priorityRank={priorityRank}
-            statusInfo={statusInfo}
-            canMove={canMove}
-            canCreate={canCreate}
-            onDrop={(p) => moveIssue(p.issueId, p.statusId, p.assignedToId)}
-            onCreate={openCreate}
-            onTaskClick={openEdit}
-            onDelete={requestDelete}
-            onEditClick={setIframeEditUrl}
-          />
+           // Switch to CanvasBoard
+           <CanvasBoard initialData={data} baseUrl={baseUrl} />
         ) : null}
       </div>
 
@@ -840,18 +827,18 @@ function buildIssueComparator(sortKey: SortKey, priorityRank: Map<number, number
 
   switch (sortKey) {
     case 'due_asc':
-      return (a, b) => nullsLast(dueTime(a), dueTime(b), 'asc') || tie(a, b);
+      return (a: Issue, b: Issue) => nullsLast(dueTime(a), dueTime(b), 'asc') || tie(a, b);
     case 'due_desc':
-      return (a, b) => nullsLast(dueTime(a), dueTime(b), 'desc') || tie(a, b);
+      return (a: Issue, b: Issue) => nullsLast(dueTime(a), dueTime(b), 'desc') || tie(a, b);
     case 'priority_asc':
-      return (a, b) => nullsLast(priority(a), priority(b), 'asc') || tie(a, b);
+      return (a: Issue, b: Issue) => nullsLast(priority(a), priority(b), 'asc') || tie(a, b);
     case 'priority_desc':
-      return (a, b) => nullsLast(priority(a), priority(b), 'desc') || tie(a, b);
+      return (a: Issue, b: Issue) => nullsLast(priority(a), priority(b), 'desc') || tie(a, b);
     case 'updated_asc':
-      return (a, b) => nullsLast(updatedTime(a), updatedTime(b), 'asc') || tie(a, b);
+      return (a: Issue, b: Issue) => nullsLast(updatedTime(a), updatedTime(b), 'asc') || tie(a, b);
     case 'updated_desc':
     default:
-      return (a, b) => nullsLast(updatedTime(a), updatedTime(b), 'desc') || tie(a, b);
+      return (a: Issue, b: Issue) => nullsLast(updatedTime(a), updatedTime(b), 'desc') || tie(a, b);
   }
 }
 
