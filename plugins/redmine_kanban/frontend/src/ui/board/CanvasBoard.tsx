@@ -698,8 +698,9 @@ function drawCard(
   const subject = issue.subject;
   const idText = `#${issue.id}`;
 
-  // Check fit
-  ctx.fillText(truncateText(ctx, subject, contentW), contentX, subjectY);
+  // Check fit - Account for buttons in top right (edit = 20, delete = 20, gaps = 12 total approx)
+  const buttonAreaWidth = 52;
+  ctx.fillText(truncateText(ctx, subject, contentW - buttonAreaWidth), contentX, subjectY);
 
   // ID (smaller, top right or next to title? Let's put slightly above or keep minimal)
   // Let's put ID in small gray next to subject if fits, or just leave it since subject is key
