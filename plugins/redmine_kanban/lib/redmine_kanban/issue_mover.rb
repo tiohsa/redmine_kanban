@@ -29,7 +29,10 @@ module RedmineKanban
 
       @issue.init_journal(@user)
       attrs = { 'status_id' => status_id }
-      attrs['assigned_to_id'] = assigned_to_id if should_update_assignee?
+      if should_update_assignee?
+        # 明示的にnilを設定して未割当にする（空文字列を使用）
+        attrs['assigned_to_id'] = assigned_to_id.nil? ? '' : assigned_to_id
+      end
       @issue.safe_attributes = attrs
 
       if @issue.save
