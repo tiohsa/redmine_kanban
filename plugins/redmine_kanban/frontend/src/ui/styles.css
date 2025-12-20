@@ -21,6 +21,22 @@
   /* Amber 500 */
   --rk-warn-bg: #fffbeb;
   /* Amber 50 */
+  /* Sticky Note Colors (Post-it like) */
+  --rk-note-lime: #bef264;
+  /* Lime 300 */
+  --rk-note-orange: #fdba74;
+  /* Orange 300 */
+  --rk-note-blue: #93c5fd;
+  /* Blue 300 */
+  --rk-note-pink: #f9a8d4;
+  /* Pink 300 */
+  --rk-note-yellow: #fde047;
+  /* Yellow 300 */
+  --rk-note-purple: #d8b4fe;
+  /* Purple 300 */
+  --rk-note-teal: #5eead4;
+  /* Teal 300 */
+
   --rk-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --rk-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
   --rk-shadow-md: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);

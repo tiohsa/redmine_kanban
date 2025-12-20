@@ -43,6 +43,7 @@ type CanvasTheme = {
   warnBg: string;
   dangerBg: string;
   shadow: string;
+  noteColors: string[];
 };
 
 type DragState = {
@@ -289,12 +290,8 @@ export function CanvasBoard({
     }
 
     if (drag.dragging) {
-      const hit = hitTest(point, rectMapRef.current, state, data);
-      if (hit.kind === 'cell') {
-        drag.targetCellKey = cellKey(hit.statusId, hit.laneId);
-      } else {
-        drag.targetCellKey = null;
-      }
+      const hit = hitTestCell(point, rectMapRef.current, data);
+      drag.targetCellKey = hit ? cellKey(hit.statusId, hit.laneId) : null;
       setCursor('grabbing');
     }
 
@@ -307,18 +304,16 @@ export function CanvasBoard({
     if (!drag) return;
 
     if (drag.dragging) {
-      const hit = hitTest(point, rectMapRef.current, state, data);
-      if (hit.kind === 'cell') {
+      const hit = hitTestCell(point, rectMapRef.current, data);
+      if (hit && canMove) {
         const assignedToId = laneIdToAssignee(data, hit.laneId);
-        if (canMove) {
-          onCommand({
-            type: 'move_issue',
-            issueId: drag.issueId,
-            statusId: hit.statusId,
-            laneId: hit.laneId,
-            assignedToId,
-          });
-        }
+        onCommand({
+          type: 'move_issue',
+          issueId: drag.issueId,
+          statusId: hit.statusId,
+          laneId: hit.laneId,
+          assignedToId,
+        });
       }
     } else {
       onCardOpen(drag.issueId);
@@ -360,9 +355,11 @@ function computeLayout(state: BoardState, data: BoardData, canCreate: boolean) {
   const headerHeight = metrics.headerHeight;
   const lanes = data.meta.lane_type === 'none' ? ['none'] : state.laneOrder;
 
-  const laneLayouts = lanes.map((laneId, index) => {
+  let currentY = headerHeight;
+  const laneLayouts = lanes.map((laneId) => {
     const laneHeight = computeLaneHeight(state, data, laneId, canCreate);
-    const y = headerHeight + index * (laneHeight + metrics.laneGap);
+    const y = currentY;
+    currentY += laneHeight + metrics.laneGap;
     return { laneId, y, height: laneHeight };
   });
 
@@ -386,7 +383,6 @@ function computeLaneHeight(
   laneId: string | number,
   canCreate: boolean
 ) {
-  const contentTop = data.meta.lane_type === 'none' ? 0 : metrics.laneTitleHeight;
   let maxCellHeight = 0;
 
   for (const statusId of state.columnOrder) {
@@ -396,7 +392,8 @@ function computeLaneHeight(
     maxCellHeight = Math.max(maxCellHeight, height);
   }
 
-  return contentTop + maxCellHeight;
+  if (data.meta.lane_type === 'none') return maxCellHeight;
+  return Math.max(maxCellHeight, metrics.laneTitleHeight);
 }
 
 function cellContentHeight(cardCount: number, _canCreate: boolean) {
@@ -480,6 +477,9 @@ function drawLaneLabels(
     ctx.beginPath();
     ctx.moveTo(metrics.laneHeaderWidth + 0.5, laneLayout.y);
     ctx.lineTo(metrics.laneHeaderWidth + 0.5, laneLayout.y + laneLayout.height);
+    // Draw bottom border
+    ctx.moveTo(0, laneLayout.y + laneLayout.height);
+    ctx.lineTo(metrics.laneHeaderWidth, laneLayout.y + laneLayout.height);
     ctx.stroke();
 
     if (canCreate && defaultStatusId !== undefined) {
@@ -518,9 +518,8 @@ function drawCells(
 
   layout.laneLayouts.forEach((laneLayout) => {
     const laneId = laneLayout.laneId;
-    const laneContentY =
-      data.meta.lane_type === 'none' ? laneLayout.y : laneLayout.y + metrics.laneTitleHeight;
-    const laneHeight = laneLayout.height - (data.meta.lane_type === 'none' ? 0 : metrics.laneTitleHeight);
+    const laneContentY = laneLayout.y;
+    const laneHeight = laneLayout.height;
 
     if (!rectIntersects({ x: 0, y: laneLayout.y, width: layout.gridStartX + layout.gridWidth, height: laneLayout.height }, viewRect)) {
       return;
@@ -541,10 +540,22 @@ function drawCells(
       rectMap.cells.set(key, cellRect);
 
       const isTarget = drag?.dragging && drag.targetCellKey === key;
-      ctx.fillStyle = isTarget ? '#e0f2fe' : theme.surface;
-      roundedRect(ctx, cellRect.x, cellRect.y, cellRect.width, cellRect.height, 12);
-      ctx.fill();
-      ctx.strokeStyle = isTarget ? theme.primary : theme.border;
+      // Whiteboard look: no cell background, just grid lines
+      if (isTarget) {
+        ctx.fillStyle = '#e0f2fe';
+        ctx.fillRect(cellRect.x, cellRect.y, cellRect.width, cellRect.height);
+      }
+
+      // Grid lines (stronger)
+      ctx.strokeStyle = theme.border;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      // Right border
+      ctx.moveTo(cellRect.x + cellRect.width, cellRect.y);
+      ctx.lineTo(cellRect.x + cellRect.width, cellRect.y + cellRect.height);
+      // Bottom border
+      ctx.moveTo(cellRect.x, cellRect.y + cellRect.height);
+      ctx.lineTo(cellRect.x + cellRect.width, cellRect.y + cellRect.height);
       ctx.stroke();
 
       let cursorY = cellRect.y + metrics.cellPadding;
@@ -603,15 +614,16 @@ function drawCard(
     : 'none';
 
   ctx.save();
-  ctx.fillStyle = '#ffffff';
-  ctx.strokeStyle = theme.border;
-  ctx.shadowColor = theme.shadow;
-  ctx.shadowBlur = 8;
-  ctx.shadowOffsetY = 2;
-  roundedRect(ctx, rect.x, rect.y, rect.width, rect.height, 10);
+  ctx.fillStyle = getCardColor(issue.tracker_id, theme);
+  // Sticky note look: very subtle border or none
+  ctx.strokeStyle = 'transparent';
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.05)'; // Very subtle shadow
+  ctx.shadowBlur = 4;
+  ctx.shadowOffsetY = 1;
+  roundedRect(ctx, rect.x, rect.y, rect.width, rect.height, 2); // Sharp corners (sticky note)
   ctx.fill();
-  ctx.shadowColor = 'transparent';
-  ctx.stroke();
+
+  // No stroke for sticky note effect unless hovered/selected (which logic isn't fully here but base look is clean)
 
   const title = `#${issue.id} ${issue.subject}`;
   ctx.fillStyle = theme.textPrimary;
@@ -744,6 +756,20 @@ function hitTest(
   return { kind: 'empty' };
 }
 
+function hitTestCell(
+  point: { x: number; y: number },
+  rectMap: RectMap,
+  data: BoardData
+): { statusId: number; laneId: string | number } | null {
+  for (const [key, rect] of rectMap.cells) {
+    if (pointInRect(point, rect)) {
+      const [statusId, laneId] = parseCellKey(key, data);
+      return { statusId, laneId };
+    }
+  }
+  return null;
+}
+
 function parseCellKey(key: string, data: BoardData): [number, string | number] {
   const [status, lane] = key.split(':');
   const statusId = Number(status);
@@ -832,6 +858,13 @@ function toBoardPoint(
   };
 }
 
+// Helper to get consistent color for tracker
+function getCardColor(trackerId: number, theme: CanvasTheme): string {
+  // Simple module hash to pick a color
+  const index = trackerId % theme.noteColors.length;
+  return theme.noteColors[index];
+}
+
 function readTheme(container: HTMLDivElement | null): CanvasTheme {
   const fallback = {
     bgMain: '#f8fafc',
@@ -845,6 +878,7 @@ function readTheme(container: HTMLDivElement | null): CanvasTheme {
     warnBg: '#fffbeb',
     dangerBg: '#fef2f2',
     shadow: 'rgba(15, 23, 42, 0.12)',
+    noteColors: ['#bef264', '#fdba74', '#93c5fd', '#f9a8d4', '#fde047', '#d8b4fe', '#5eead4'],
   };
   if (!container) return fallback;
   const styles = getComputedStyle(container);
@@ -860,7 +894,14 @@ function readTheme(container: HTMLDivElement | null): CanvasTheme {
     warnBg: styles.getPropertyValue('--rk-warn-bg').trim() || fallback.warnBg,
     dangerBg: styles.getPropertyValue('--rk-danger-bg').trim() || fallback.dangerBg,
     shadow: fallback.shadow,
+    noteColors: [
+      styles.getPropertyValue('--rk-note-lime').trim() || '#bef264',
+      styles.getPropertyValue('--rk-note-orange').trim() || '#fdba74',
+      styles.getPropertyValue('--rk-note-blue').trim() || '#93c5fd',
+      styles.getPropertyValue('--rk-note-pink').trim() || '#f9a8d4',
+      styles.getPropertyValue('--rk-note-yellow').trim() || '#fde047',
+      styles.getPropertyValue('--rk-note-purple').trim() || '#d8b4fe',
+      styles.getPropertyValue('--rk-note-teal').trim() || '#5eead4',
+    ],
   };
 }
-
-
