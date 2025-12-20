@@ -35,6 +35,7 @@ type CanvasTheme = {
   bgMain: string;
   surface: string;
   border: string;
+  borderStrong: string;
   textPrimary: string;
   textSecondary: string;
   primary: string;
@@ -605,14 +606,23 @@ function drawLaneLabels(
     ctx.fillRect(0, laneLayout.y, metrics.laneHeaderWidth, laneLayout.height);
     ctx.fillStyle = theme.textPrimary;
     ctx.fillText(lane.name, 12, laneLayout.y + metrics.laneTitleHeight / 2);
+
+    // Vertical separator
     ctx.strokeStyle = theme.border;
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(metrics.laneHeaderWidth + 0.5, laneLayout.y);
     ctx.lineTo(metrics.laneHeaderWidth + 0.5, laneLayout.y + laneLayout.height);
-    // Draw bottom border
+    ctx.stroke();
+
+    // Bottom lane border (Stronger)
+    ctx.strokeStyle = theme.borderStrong;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
     ctx.moveTo(0, laneLayout.y + laneLayout.height);
     ctx.lineTo(metrics.laneHeaderWidth, laneLayout.y + laneLayout.height);
     ctx.stroke();
+    ctx.lineWidth = 1;
 
     if (canCreate && defaultStatusId !== undefined) {
       const buttonWidth = 24;
@@ -676,15 +686,19 @@ function drawCells(
       ctx.fillStyle = isTarget ? '#e0f2fe' : colBg;
       ctx.fillRect(cellRect.x, cellRect.y, cellRect.width, cellRect.height);
 
-      // Grid lines (stronger)
+      // Horizontal lane border (Stronger)
+      ctx.strokeStyle = theme.borderStrong;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cellRect.x, cellRect.y + cellRect.height);
+      ctx.lineTo(cellRect.x + cellRect.width, cellRect.y + cellRect.height);
+      ctx.stroke();
+
+      // Vertical grid line
       ctx.strokeStyle = theme.border;
       ctx.lineWidth = 1;
       ctx.beginPath();
-      // Right border
       ctx.moveTo(cellRect.x + cellRect.width, cellRect.y);
-      ctx.lineTo(cellRect.x + cellRect.width, cellRect.y + cellRect.height);
-      // Bottom border
-      ctx.moveTo(cellRect.x, cellRect.y + cellRect.height);
       ctx.lineTo(cellRect.x + cellRect.width, cellRect.y + cellRect.height);
       ctx.stroke();
 
@@ -1112,6 +1126,7 @@ function readTheme(container: HTMLDivElement | null): CanvasTheme {
     bgMain: '#f8fafc',
     surface: '#ffffff',
     border: '#e2e8f0',
+    borderStrong: '#cbd5e1',
     textPrimary: '#1e293b',
     textSecondary: '#64748b',
     primary: '#4f46e5',
@@ -1129,6 +1144,7 @@ function readTheme(container: HTMLDivElement | null): CanvasTheme {
     bgMain: styles.getPropertyValue('--rk-bg-main').trim() || fallback.bgMain,
     surface: styles.getPropertyValue('--rk-bg-surface').trim() || fallback.surface,
     border: styles.getPropertyValue('--rk-border').trim() || fallback.border,
+    borderStrong: styles.getPropertyValue('--rk-border-strong').trim() || fallback.borderStrong,
     textPrimary: styles.getPropertyValue('--rk-text-primary').trim() || fallback.textPrimary,
     textSecondary: styles.getPropertyValue('--rk-text-secondary').trim() || fallback.textSecondary,
     primary: styles.getPropertyValue('--rk-primary').trim() || fallback.primary,
