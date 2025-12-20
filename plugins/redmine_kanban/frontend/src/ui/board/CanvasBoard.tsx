@@ -443,19 +443,10 @@ function drawHeaders(
     const count = column.count ?? 0;
     const over = limit && count > limit;
 
-    const icon = getStatusIcon(column.name);
-    let currentX = x + 12;
-
-    // Icon
-    ctx.font = '16px "Material Symbols Outlined", sans-serif';
-    ctx.fillStyle = theme.textSecondary;
-    ctx.fillText(icon, currentX, layout.headerHeight / 2);
-    currentX += 24;
-
     // Column Name
     ctx.font = '600 14px Inter, sans-serif';
     ctx.fillStyle = theme.textPrimary;
-    ctx.fillText(column.name, currentX, layout.headerHeight / 2);
+    ctx.fillText(column.name, x + 12, layout.headerHeight / 2);
 
     // WIP Badge
     ctx.font = '500 11px Inter, sans-serif';
@@ -856,17 +847,6 @@ function hitTestCell(
     }
   }
   return null;
-}
-
-function getStatusIcon(name: string): string {
-  const n = name.toLowerCase();
-  if (n.includes('新') || n.includes('todo') || n.includes('未')) return '\ue8b6'; // search/check_circle -> using search as placeholder for "new/find"
-  if (n.includes('進') || n.includes('作業') || n.includes('doing')) return '\ue869'; // build
-  if (n.includes('認') || n.includes('レビュー')) return '\ue877'; // visibility
-  if (n.includes('終') || n.includes('完了') || n.includes('done')) return '\ue86c'; // check_circle
-  if (n.includes('却') || n.includes('却下')) return '\ue14b'; // cancel
-  if (n.includes('留') || n.includes('保留')) return '\ue034'; // pause
-  return '\ue8d2'; // description (default)
 }
 
 function truncateText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
