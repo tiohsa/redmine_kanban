@@ -6,11 +6,11 @@ import { cellKey } from './state';
 
 const metrics = {
   columnWidth: 260,
-  columnGap: 16,
+  columnGap: 0,
   laneHeaderWidth: 160,
   headerHeight: 56,
   laneTitleHeight: 40,
-  laneGap: 16,
+  laneGap: 0,
   cellPadding: 12,
   cardHeight: 84,
   cardGap: 8,
@@ -44,6 +44,7 @@ type CanvasTheme = {
   dangerBg: string;
   shadow: string;
   noteColors: string[];
+  columnBgs: string[];
 };
 
 type DragState = {
@@ -106,7 +107,10 @@ export function CanvasBoard({
 
   const laneType = data.meta.lane_type;
 
+  const layout = useMemo(() => computeLayout(state, data, canCreate), [state, data, canCreate]);
+
   const theme = useMemo(() => readTheme(containerRef.current), [size.width, size.height]);
+
 
   useEffect(() => {
     const node = containerRef.current;
@@ -139,6 +143,13 @@ export function CanvasBoard({
     containerRef.current.style.cursor = cursor;
   }, [cursor]);
 
+  useEffect(() => {
+    // Re-render when fonts are loaded (important for Canvas icons)
+    void document.fonts.ready.then(() => {
+      scheduleRender();
+    });
+  }, []);
+
   const scheduleRender = () => {
     if (renderHandle.current !== null) return;
     renderHandle.current = requestAnimationFrame(() => {
@@ -165,7 +176,7 @@ export function CanvasBoard({
 
     const scroll = scrollRef.current;
     const viewRect = { x: scroll.x, y: scroll.y, width: size.width, height: size.height };
-    const layout = computeLayout(state, data, canCreate);
+    // use memoized layout
     boardSizeRef.current = { width: layout.boardWidth, height: layout.boardHeight };
 
     rectMapRef.current = {
@@ -182,10 +193,6 @@ export function CanvasBoard({
 
     drawHeaders(ctx, layout, state.columns, theme, data.meta);
 
-    if (laneType !== 'none') {
-      drawLaneLabels(ctx, layout, state.lanes, theme, canCreate, state.columns[0]?.id, rectMapRef.current, labels);
-    }
-
     drawCells(
       ctx,
       layout,
@@ -199,6 +206,10 @@ export function CanvasBoard({
       dragRef.current,
       labels
     );
+
+    if (laneType !== 'none') {
+      drawLaneLabels(ctx, layout, state.lanes, theme, canCreate, state.columns[0]?.id, rectMapRef.current, labels);
+    }
 
     drawDragOverlay(ctx, state, data, theme, dragRef.current, labels);
 
@@ -359,7 +370,7 @@ function computeLayout(state: BoardState, data: BoardData, canCreate: boolean) {
   const laneLayouts = lanes.map((laneId) => {
     const laneHeight = computeLaneHeight(state, data, laneId, canCreate);
     const y = currentY;
-    currentY += laneHeight + metrics.laneGap;
+    currentY += laneHeight;
     return { laneId, y, height: laneHeight };
   });
 
@@ -372,7 +383,7 @@ function computeLayout(state: BoardState, data: BoardData, canCreate: boolean) {
     gridWidth,
     headerHeight,
     laneLayouts,
-    boardWidth: gridStartX + gridWidth + metrics.columnGap,
+    boardWidth: gridStartX + gridWidth,
     boardHeight,
   };
 }
@@ -424,31 +435,53 @@ function drawHeaders(
   ctx.font = '600 14px Inter, sans-serif';
   ctx.textBaseline = 'middle';
   columns.forEach((column, index) => {
-    const x = layout.gridStartX + index * (metrics.columnWidth + metrics.columnGap);
-    ctx.fillStyle = theme.surface;
+    const x = layout.gridStartX + index * metrics.columnWidth;
+    const colBg = theme.columnBgs[index % theme.columnBgs.length];
+    ctx.fillStyle = colBg;
     ctx.fillRect(x, 0, metrics.columnWidth, layout.headerHeight);
     const limit = column.wip_limit ?? null;
     const count = column.count ?? 0;
     const over = limit && count > limit;
 
-    ctx.fillStyle = theme.textPrimary;
-    ctx.fillText(column.name, x + 12, layout.headerHeight / 2);
+    const icon = getStatusIcon(column.name);
+    let currentX = x + 12;
 
-    ctx.font = '500 12px Inter, sans-serif';
+    // Icon
+    ctx.font = '16px "Material Symbols Outlined", sans-serif';
+    ctx.fillStyle = theme.textSecondary;
+    ctx.fillText(icon, currentX, layout.headerHeight / 2);
+    currentX += 24;
+
+    // Column Name
+    ctx.font = '600 14px Inter, sans-serif';
+    ctx.fillStyle = theme.textPrimary;
+    ctx.fillText(column.name, currentX, layout.headerHeight / 2);
+
+    // WIP Badge
+    ctx.font = '500 11px Inter, sans-serif';
     const badgeText = limit ? `${count} / ${limit}` : String(count);
-    const badgeWidth = ctx.measureText(badgeText).width + 12;
-    const badgeHeight = 20;
+    const badgeWidth = ctx.measureText(badgeText).width + 10;
+    const badgeHeight = 18;
     const badgeX = x + metrics.columnWidth - badgeWidth - 12;
     const badgeY = (layout.headerHeight - badgeHeight) / 2;
-    ctx.fillStyle = over ? theme.dangerBg : theme.warnBg;
-    ctx.strokeStyle = over ? theme.danger : theme.warn;
-    roundedRect(ctx, badgeX, badgeY, badgeWidth, badgeHeight, 8);
+    ctx.fillStyle = over ? theme.dangerBg : 'rgba(255, 255, 255, 0.5)';
+    ctx.strokeStyle = over ? theme.danger : theme.border;
+    roundedRect(ctx, badgeX, badgeY, badgeWidth, badgeHeight, 4);
     ctx.fill();
     ctx.stroke();
 
     ctx.fillStyle = over ? theme.danger : theme.textSecondary;
-    ctx.textBaseline = 'middle';
-    ctx.fillText(badgeText, badgeX + 6, badgeY + badgeHeight / 2);
+    ctx.textAlign = 'center';
+    ctx.fillText(badgeText, badgeX + badgeWidth / 2, badgeY + badgeHeight / 2);
+    ctx.textAlign = 'left';
+
+    // Vertical boundary line
+    ctx.strokeStyle = theme.border;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + metrics.columnWidth, 0);
+    ctx.lineTo(x + metrics.columnWidth, layout.headerHeight);
+    ctx.stroke();
   });
   ctx.restore();
 }
@@ -539,12 +572,10 @@ function drawCells(
       const key = cellKey(statusId, laneId);
       rectMap.cells.set(key, cellRect);
 
+      const colBg = theme.columnBgs[colIndex % theme.columnBgs.length];
       const isTarget = drag?.dragging && drag.targetCellKey === key;
-      // Whiteboard look: no cell background, just grid lines
-      if (isTarget) {
-        ctx.fillStyle = '#e0f2fe';
-        ctx.fillRect(cellRect.x, cellRect.y, cellRect.width, cellRect.height);
-      }
+      ctx.fillStyle = isTarget ? '#e0f2fe' : colBg;
+      ctx.fillRect(cellRect.x, cellRect.y, cellRect.width, cellRect.height);
 
       // Grid lines (stronger)
       ctx.strokeStyle = theme.border;
@@ -614,16 +645,73 @@ function drawCard(
     : 'none';
 
   ctx.save();
+  const radius = 2;
+  const curlSize = 15;
+  const x = rect.x;
+  const y = rect.y;
+  const w = rect.width;
+  const h = rect.height;
+
+  // 1. Draw Card Shadow (Pronounced)
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
+  ctx.shadowBlur = 6;
+  ctx.shadowOffsetY = 3;
+
+  // 2. Draw Main Body (with corner cut for curl)
   ctx.fillStyle = getCardColor(issue.tracker_id, theme);
-  // Sticky note look: very subtle border or none
-  ctx.strokeStyle = 'transparent';
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.05)'; // Very subtle shadow
-  ctx.shadowBlur = 4;
-  ctx.shadowOffsetY = 1;
-  roundedRect(ctx, rect.x, rect.y, rect.width, rect.height, 2); // Sharp corners (sticky note)
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + w - radius, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+  ctx.lineTo(x + w, y + h - curlSize);
+  ctx.lineTo(x + w - curlSize, y + h);
+  ctx.lineTo(x + radius, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
   ctx.fill();
 
-  // No stroke for sticky note effect unless hovered/selected (which logic isn't fully here but base look is clean)
+  // Reset shadow for drawing on top of card
+  ctx.shadowColor = 'transparent';
+
+  // 3. Draw Curled Corner
+  // Shadow under the curl flap
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+  ctx.beginPath();
+  ctx.moveTo(x + w - curlSize, y + h);
+  ctx.lineTo(x + w, y + h - curlSize);
+  ctx.lineTo(x + w - curlSize, y + h - curlSize);
+  ctx.closePath();
+  ctx.fill();
+
+  // The curled flap itself
+  ctx.fillStyle = getCardColor(issue.tracker_id, theme);
+  ctx.beginPath();
+  ctx.moveTo(x + w - curlSize, y + h);
+  ctx.bezierCurveTo(x + w - curlSize / 2, y + h - curlSize / 4, x + w - curlSize / 4, y + h - curlSize / 2, x + w, y + h - curlSize);
+  ctx.lineTo(x + w - radius, y + h - radius); // Slight overlap
+  ctx.closePath();
+  ctx.fill();
+
+  // Highlight on curl
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+  ctx.fill();
+
+  // 4. Draw Tape at the top center
+  const tapeW = 40;
+  const tapeH = 12;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.45)'; // Semi-transparent tape
+  ctx.fillRect(x + (w - tapeW) / 2, y - tapeH / 2, tapeW, tapeH);
+  // Tape texture
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < tapeW; i += 4) {
+    ctx.beginPath();
+    ctx.moveTo(x + (w - tapeW) / 2 + i, y - tapeH / 2);
+    ctx.lineTo(x + (w - tapeW) / 2 + i, y + tapeH / 2);
+    ctx.stroke();
+  }
 
   const title = `#${issue.id} ${issue.subject}`;
   ctx.fillStyle = theme.textPrimary;
@@ -770,6 +858,26 @@ function hitTestCell(
   return null;
 }
 
+function getStatusIcon(name: string): string {
+  const n = name.toLowerCase();
+  if (n.includes('新') || n.includes('todo') || n.includes('未')) return '\ue8b6'; // search/check_circle -> using search as placeholder for "new/find"
+  if (n.includes('進') || n.includes('作業') || n.includes('doing')) return '\ue869'; // build
+  if (n.includes('認') || n.includes('レビュー')) return '\ue877'; // visibility
+  if (n.includes('終') || n.includes('完了') || n.includes('done')) return '\ue86c'; // check_circle
+  if (n.includes('却') || n.includes('却下')) return '\ue14b'; // cancel
+  if (n.includes('留') || n.includes('保留')) return '\ue034'; // pause
+  return '\ue8d2'; // description (default)
+}
+
+function truncateText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+  if (ctx.measureText(text).width <= maxWidth) return text;
+  let t = text;
+  while (t.length > 0 && ctx.measureText(t + '...').width > maxWidth) {
+    t = t.slice(0, -1);
+  }
+  return t + '...';
+}
+
 function parseCellKey(key: string, data: BoardData): [number, string | number] {
   const [status, lane] = key.split(':');
   const statusId = Number(status);
@@ -835,15 +943,6 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
-function truncateText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
-  if (ctx.measureText(text).width <= maxWidth) return text;
-  let trimmed = text;
-  while (trimmed.length > 0 && ctx.measureText(`${trimmed}…`).width > maxWidth) {
-    trimmed = trimmed.slice(0, -1);
-  }
-  return `${trimmed}…`;
-}
-
 function toBoardPoint(
   event: React.PointerEvent,
   scroll: { x: number; y: number },
@@ -879,6 +978,7 @@ function readTheme(container: HTMLDivElement | null): CanvasTheme {
     dangerBg: '#fef2f2',
     shadow: 'rgba(15, 23, 42, 0.12)',
     noteColors: ['#bef264', '#fdba74', '#93c5fd', '#f9a8d4', '#fde047', '#d8b4fe', '#5eead4'],
+    columnBgs: ['#f1f5f9', '#eff6ff', '#fefce8', '#f0fdf4', '#faf5ff', '#fff7ed', '#fdf2f8'],
   };
   if (!container) return fallback;
   const styles = getComputedStyle(container);
@@ -902,6 +1002,15 @@ function readTheme(container: HTMLDivElement | null): CanvasTheme {
       styles.getPropertyValue('--rk-note-yellow').trim() || '#fde047',
       styles.getPropertyValue('--rk-note-purple').trim() || '#d8b4fe',
       styles.getPropertyValue('--rk-note-teal').trim() || '#5eead4',
+    ],
+    columnBgs: [
+      styles.getPropertyValue('--rk-col-bg-1').trim() || '#f1f5f9',
+      styles.getPropertyValue('--rk-col-bg-2').trim() || '#eff6ff',
+      styles.getPropertyValue('--rk-col-bg-3').trim() || '#fefce8',
+      styles.getPropertyValue('--rk-col-bg-4').trim() || '#f0fdf4',
+      styles.getPropertyValue('--rk-col-bg-5').trim() || '#faf5ff',
+      styles.getPropertyValue('--rk-col-bg-6').trim() || '#fff7ed',
+      styles.getPropertyValue('--rk-col-bg-7').trim() || '#fdf2f8',
     ],
   };
 }
