@@ -109,6 +109,13 @@ export function App({ dataUrl }: Props) {
       return false;
     }
   });
+  const [fitToScreen, setFitToScreen] = useState(() => {
+    try {
+      return localStorage.getItem('rk_fit_to_screen') === '1';
+    } catch {
+      return false;
+    }
+  });
   const [sortKey, setSortKey] = useState<SortKey>(() => {
     try {
       const v = localStorage.getItem('rk_sortkey');
@@ -188,6 +195,14 @@ export function App({ dataUrl }: Props) {
       document.body.classList.remove(className);
     };
   }, [fullWindow]);
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('rk_fit_to_screen', fitToScreen ? '1' : '0');
+    } catch {
+      // ignore
+    }
+  }, [fitToScreen]);
 
   React.useEffect(() => {
     try {
@@ -389,6 +404,8 @@ export function App({ dataUrl }: Props) {
           fullWindow={fullWindow}
           onToggleFullWindow={() => setFullWindow((v) => !v)}
           onAnalyze={handleAnalyze}
+          fitToScreen={fitToScreen}
+          onToggleFitToScreen={() => setFitToScreen(!fitToScreen)}
         />
       ) : (
         <div className="rk-empty">データを取得しています...</div>
@@ -402,6 +419,7 @@ export function App({ dataUrl }: Props) {
             canMove={canMove}
             canCreate={canCreate}
             labels={data.labels}
+            fitToScreen={fitToScreen}
             onCommand={(command) => {
               if (command.type === 'move_issue') {
                 void moveIssue(command.issueId, command.statusId, command.assignedToId);
@@ -744,6 +762,8 @@ function Toolbar({
   fullWindow,
   onToggleFullWindow,
   onAnalyze,
+  fitToScreen,
+  onToggleFitToScreen, // Add new prop
 }: {
   data: BoardData;
   filters: Filters;
@@ -753,6 +773,8 @@ function Toolbar({
   fullWindow: boolean;
   onToggleFullWindow: () => void;
   onAnalyze: () => void;
+  fitToScreen: boolean;
+  onToggleFitToScreen: () => void;
 }) {
   const assignees = data.lists.assignees ?? [];
   const labels = data.labels;
@@ -844,6 +866,16 @@ function Toolbar({
         <button type="button" className="rk-btn rk-btn-primary" onClick={onAnalyze} title={labels.analyze}>
           <span className="rk-icon">auto_awesome</span>
           {labels.analyze}
+        </button>
+
+        <button
+          type="button"
+          className="rk-btn"
+          onClick={onToggleFitToScreen}
+          title="Fit to Screen"
+        >
+          <span className="rk-icon">{fitToScreen ? 'zoom_in' : 'fit_screen'}</span>
+          {fitToScreen ? '100%' : 'Fit'}
         </button>
 
         <button type="button" className="rk-btn" onClick={onToggleFullWindow} title={fullWindow ? labels.normal_view : labels.fullscreen_view}>

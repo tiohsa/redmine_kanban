@@ -75,6 +75,7 @@ type Props = {
   onDelete: (issueId: number) => void;
   onEditClick: (editUrl: string) => void;
   labels: Record<string, string>;
+  fitToScreen?: boolean;
 };
 
 export function CanvasBoard({
@@ -88,6 +89,7 @@ export function CanvasBoard({
   onDelete,
   onEditClick,
   labels,
+  fitToScreen = false,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -104,12 +106,34 @@ export function CanvasBoard({
   const renderHandle = useRef<number | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [cursor, setCursor] = useState('default');
+  const scaleRef = useRef(1);
 
   const laneType = data.meta.lane_type;
 
   const layout = useMemo(() => computeLayout(state, data, canCreate), [state, data, canCreate]);
 
   const theme = useMemo(() => readTheme(containerRef.current), [size.width, size.height]);
+
+  // Compute scale based on fitToScreen
+  useEffect(() => {
+    if (fitToScreen && size.width > 0 && size.height > 0) {
+      const scaleX = size.width / layout.boardWidth;
+
+      // Calculate height scale, but ensure we don't zoom out excessively for very tall boards just to fit height.
+      // Usually "Fit" means checking width mostly, but users might want whole view.
+      // Let's fit to contain (both width and height).
+      const scaleY = size.height / layout.boardHeight;
+
+      // Use the smaller scale to fit everything, but cap at 1 (don't zoom IN if board is small)
+      scaleRef.current = Math.min(scaleX, scaleY, 1);
+
+      // Reset scroll when fitting
+      scrollRef.current = { x: 0, y: 0 };
+    } else {
+      scaleRef.current = 1;
+    }
+    scheduleRender();
+  }, [fitToScreen, size, layout.boardWidth, layout.boardHeight]);
 
 
   useEffect(() => {
@@ -175,8 +199,21 @@ export function CanvasBoard({
     ctx.fillRect(0, 0, size.width, size.height);
 
     const scroll = scrollRef.current;
-    const viewRect = { x: scroll.x, y: scroll.y, width: size.width, height: size.height };
-    // use memoized layout
+    const scale = scaleRef.current;
+
+    // Adjust viewRect for HitTest (in logical coordinates)
+    // Visible area in logical coords:
+    const viewRect = {
+      x: scroll.x / scale,
+      y: scroll.y / scale,
+      width: size.width / scale,
+      height: size.height / scale
+    };
+
+    // However, when fitting, scroll is 0.
+    // When NOT fitting, scale is 1. so scroll.x / 1 = scroll.x. Correct.
+
+    // boardSizeRef is logical size
     boardSizeRef.current = { width: layout.boardWidth, height: layout.boardHeight };
 
     rectMapRef.current = {
@@ -188,7 +225,28 @@ export function CanvasBoard({
     };
 
     ctx.save();
+    // Apply transform: translate then scale? No, usually scale then translate or logic depends.
+    // If we want to zoom content:
+    // ctx.scale(scale, scale);
+    // ctx.translate(-scroll.x, -scroll.y);
+
+    // Actually, if we fit to screen, we typically center or align top-left.
+    // Let's implement standard pan-zoom transform:
+    // ScreenX = (WorldX - ScrollX) * Scale
+    //         = WorldX * Scale - ScrollX * Scale
+
+    // So transform is:
+    // Translate(-ScrollX, -ScrollY)
+    // Scale(Scale, Scale)
+
+    // ctx.scale(scale, scale);
+    // ctx.translate(-scroll.x, -scroll.y);
+    // NOTE: Order matters in Canvas. transform multiplies current matrix.
+    // convert x_screen = scale * (x_world - scroll_x)
+
+    ctx.scale(scale, scale);
     ctx.translate(-scroll.x, -scroll.y);
+
     const layoutLabels = { stagnation: labels.stagnation, add: labels.add };
 
     drawHeaders(ctx, layout, state.columns, theme, data.meta);
@@ -227,8 +285,15 @@ export function CanvasBoard({
 
   const updateScroll = (x: number, y: number) => {
     const board = boardSizeRef.current;
-    const maxX = Math.max(0, board.width - size.width);
-    const maxY = Math.max(0, board.height - size.height);
+    const scale = scaleRef.current;
+
+    // Visible logical width/height
+    const visibleW = size.width / scale;
+    const visibleH = size.height / scale;
+
+    const maxX = Math.max(0, board.width - visibleW);
+    const maxY = Math.max(0, board.height - visibleH);
+
     scrollRef.current = {
       x: clamp(x, 0, maxX),
       y: clamp(y, 0, maxY),
@@ -236,8 +301,35 @@ export function CanvasBoard({
     scheduleRender();
   };
 
+  // ... (middle parts handled by previous edits context or untouched)
+
+  // Update toBoardPoint at bottom
+  function toBoardPoint(
+    event: React.PointerEvent,
+    scroll: { x: number; y: number },
+    canvas: HTMLCanvasElement | null,
+    scale: number = 1
+  ) {
+    const rect = canvas?.getBoundingClientRect();
+    const clientX = event.clientX;
+    const clientY = event.clientY;
+
+    const offsetX = rect ? clientX - rect.left : clientX;
+    const offsetY = rect ? clientY - rect.top : clientY;
+
+    // Screen to World:
+    // x_screen = scale * (x_world - scroll_x)
+    // x_screen / scale = x_world - scroll_x
+    // x_world = x_screen / scale + scroll_x
+
+    return {
+      x: offsetX / scale + scroll.x,
+      y: offsetY / scale + scroll.y,
+    };
+  }
+
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    const point = toBoardPoint(event, scrollRef.current, canvasRef.current);
+    const point = toBoardPoint(event, scrollRef.current, canvasRef.current, scaleRef.current);
     const hit = hitTest(point, rectMapRef.current, state, data);
 
     if (hit.kind === 'add') {
@@ -276,7 +368,7 @@ export function CanvasBoard({
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    const point = toBoardPoint(event, scrollRef.current, canvasRef.current);
+    const point = toBoardPoint(event, scrollRef.current, canvasRef.current, scaleRef.current);
     const drag = dragRef.current;
 
     if (!drag) {
@@ -310,7 +402,7 @@ export function CanvasBoard({
   };
 
   const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    const point = toBoardPoint(event, scrollRef.current, canvasRef.current);
+    const point = toBoardPoint(event, scrollRef.current, canvasRef.current, scaleRef.current);
     const drag = dragRef.current;
     if (!drag) return;
 
@@ -992,14 +1084,19 @@ function clamp(value: number, min: number, max: number) {
 function toBoardPoint(
   event: React.PointerEvent,
   scroll: { x: number; y: number },
-  canvas: HTMLCanvasElement | null
+  canvas: HTMLCanvasElement | null,
+  scale: number = 1
 ) {
   const rect = canvas?.getBoundingClientRect();
-  const offsetX = rect ? event.clientX - rect.left : event.clientX;
-  const offsetY = rect ? event.clientY - rect.top : event.clientY;
+  const clientX = event.clientX;
+  const clientY = event.clientY;
+
+  const offsetX = rect ? clientX - rect.left : clientX;
+  const offsetY = rect ? clientY - rect.top : clientY;
+
   return {
-    x: offsetX + scroll.x,
-    y: offsetY + scroll.y,
+    x: offsetX / scale + scroll.x,
+    y: offsetY / scale + scroll.y,
   };
 }
 
