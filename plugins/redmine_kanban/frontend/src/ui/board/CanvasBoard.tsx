@@ -424,24 +424,31 @@ function drawHeaders(
   meta: BoardData['meta']
 ) {
   ctx.save();
-  ctx.fillStyle = theme.surface;
+  // Unified header background
+  ctx.fillStyle = '#f8fafc'; // Light gray for header background
   ctx.fillRect(0, 0, layout.gridStartX + layout.gridWidth, layout.headerHeight);
+
+  // Bottom border
   ctx.strokeStyle = theme.border;
+  ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(0, layout.headerHeight + 0.5);
-  ctx.lineTo(layout.gridStartX + layout.gridWidth, layout.headerHeight + 0.5);
+  ctx.moveTo(0, layout.headerHeight - 0.5); // Adjust for sharp line
+  ctx.lineTo(layout.gridStartX + layout.gridWidth, layout.headerHeight - 0.5);
   ctx.stroke();
+
+  // Draw lane header area border if needed
+  if (layout.gridStartX > 0) {
+    ctx.beginPath();
+    ctx.moveTo(layout.gridStartX, 0);
+    ctx.lineTo(layout.gridStartX, layout.headerHeight);
+    ctx.stroke();
+  }
 
   ctx.font = '600 14px Inter, sans-serif';
   ctx.textBaseline = 'middle';
+
   columns.forEach((column, index) => {
     const x = layout.gridStartX + index * metrics.columnWidth;
-    const colBg = theme.columnBgs[index % theme.columnBgs.length];
-    ctx.fillStyle = colBg;
-    ctx.fillRect(x, 0, metrics.columnWidth, layout.headerHeight);
-    const limit = column.wip_limit ?? null;
-    const count = column.count ?? 0;
-    const over = limit && count > limit;
 
     // Column Name
     ctx.font = '600 14px Inter, sans-serif';
@@ -449,22 +456,31 @@ function drawHeaders(
     ctx.fillText(column.name, x + 12, layout.headerHeight / 2);
 
     // WIP Badge
-    ctx.font = '500 11px Inter, sans-serif';
-    const badgeText = limit ? `${count} / ${limit}` : String(count);
-    const badgeWidth = ctx.measureText(badgeText).width + 10;
-    const badgeHeight = 18;
-    const badgeX = x + metrics.columnWidth - badgeWidth - 12;
-    const badgeY = (layout.headerHeight - badgeHeight) / 2;
-    ctx.fillStyle = over ? theme.dangerBg : 'rgba(255, 255, 255, 0.5)';
-    ctx.strokeStyle = over ? theme.danger : theme.border;
-    roundedRect(ctx, badgeX, badgeY, badgeWidth, badgeHeight, 4);
-    ctx.fill();
-    ctx.stroke();
+    const limit = column.wip_limit ?? null;
+    const count = column.count ?? 0;
+    const over = limit && count > limit;
 
-    ctx.fillStyle = over ? theme.danger : theme.textSecondary;
-    ctx.textAlign = 'center';
-    ctx.fillText(badgeText, badgeX + badgeWidth / 2, badgeY + badgeHeight / 2);
-    ctx.textAlign = 'left';
+    if (limit || count > 0) {
+      ctx.font = '500 11px Inter, sans-serif';
+      const badgeText = limit ? `${count} / ${limit}` : String(count);
+      const badgeWidth = ctx.measureText(badgeText).width + 10;
+      const badgeHeight = 18;
+      const badgeX = x + metrics.columnWidth - badgeWidth - 12;
+      const badgeY = (layout.headerHeight - badgeHeight) / 2;
+
+      ctx.fillStyle = over ? theme.dangerBg : '#e2e8f0'; // Slightly darker for badge bg
+      ctx.strokeStyle = over ? theme.danger : 'transparent';
+      if (over) ctx.lineWidth = 1;
+
+      roundedRect(ctx, badgeX, badgeY, badgeWidth, badgeHeight, 4);
+      ctx.fill();
+      if (over) ctx.stroke();
+
+      ctx.fillStyle = over ? theme.danger : theme.textSecondary;
+      ctx.textAlign = 'center';
+      ctx.fillText(badgeText, badgeX + badgeWidth / 2, badgeY + badgeHeight / 2);
+      ctx.textAlign = 'left';
+    }
 
     // Vertical boundary line
     ctx.strokeStyle = theme.border;

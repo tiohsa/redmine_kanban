@@ -176,29 +176,43 @@
 
 /* Toolbar Adjustments */
 .rk-toolbar {
-  margin-bottom: 12px;
+  margin-bottom: 0;
+  /* Remove gap between toolbar and board if desired, or keep small */
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 4px;
+  /* Tighter gap */
   align-items: center;
   background: var(--rk-bg-surface);
-  padding: 6px 12px;
+  padding: 4px 8px;
+  /* Compact padding */
   border: 1px solid var(--rk-border);
-  border-radius: 12px;
-  box-shadow: var(--rk-shadow-sm);
+  border-bottom: none;
+  /* Connect to board if intended, but keeping generic style for now */
+  border-radius: 8px 8px 0 0;
+  /* Top rounded only if connecting */
+  box-shadow: none;
+  /* Remove shadow for flatter look or keep minimal */
 }
 
+/* If the user wants separate toolbar, maybe keep margin but small. 
+   "Remove gap between header and lane" usually means Canvas Header and Lane.
+   But "Header part to attached header design" might mean Toolbar.
+   Let's assume Board Header (Canvas) <-> Lane (Canvas) gap first.
+   But for Toolbar optimization: */
 .rk-toolbar-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
+  /* Tighter group */
 }
 
 .rk-toolbar-separator {
   width: 1px;
-  height: 24px;
+  height: 20px;
+  /* Slightly shorter */
   background: var(--rk-border);
-  margin: 0 4px;
+  margin: 0 2px;
 }
 
 .rk-icon {
@@ -217,22 +231,43 @@
 }
 
 /* Custom Dropdown Styling */
+.rk-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 32px;
+  /* Compact height */
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: transparent;
+  color: var(--rk-text-secondary);
+  white-space: nowrap;
+}
+
 .rk-dropdown-trigger {
   display: flex;
   align-items: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 12px;
+  gap: 4px;
+  height: 32px;
+  /* Compact height */
+  padding: 0 8px;
   background: #fff;
   border: 1px solid var(--rk-border);
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
   color: var(--rk-text-secondary);
-  font-size: 0.875rem;
+  font-size: 0.85rem;
   font-weight: 500;
   user-select: none;
-  min-width: 120px;
+  min-width: auto;
+  /* Remove fixed min-width */
 }
 
 .rk-dropdown-trigger:hover,
@@ -356,14 +391,14 @@
 .rk-search-box {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 36px;
-  padding: 0 12px;
+  gap: 6px;
+  height: 32px;
+  padding: 0 8px;
   background: #fff;
   border: 1px solid var(--rk-border);
-  border-radius: 8px;
+  border-radius: 6px;
   transition: all 0.2s;
-  min-width: 200px;
+  min-width: 180px;
 }
 
 .rk-search-box:focus-within {
