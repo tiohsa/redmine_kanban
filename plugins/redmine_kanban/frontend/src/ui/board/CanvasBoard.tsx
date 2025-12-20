@@ -652,117 +652,157 @@ function drawCard(
     : 'none';
 
   ctx.save();
-  const radius = 2;
-  const curlSize = 15;
+  const radius = 6;
   const x = rect.x;
   const y = rect.y;
   const w = rect.width;
   const h = rect.height;
 
-  // 1. Draw Card Shadow (Pronounced)
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
-  ctx.shadowBlur = 6;
-  ctx.shadowOffsetY = 3;
+  // 1. Draw Card Shadow (Subtle)
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.08)';
+  ctx.shadowBlur = 4;
+  ctx.shadowOffsetY = 2;
 
-  // 2. Draw Main Body (with corner cut for curl)
-  ctx.fillStyle = getCardColor(issue.tracker_id, theme);
+  // 2. Draw Card Body
+  ctx.fillStyle = theme.surface;
+  roundedRect(ctx, x, y, w, h, radius);
+  ctx.fill();
+
+  // Reset shadow
+  ctx.shadowColor = 'transparent';
+
+  // 3. Left Strip (Tracker Color)
+  const stripWidth = 5;
+  const trackerColor = getCardColor(issue.tracker_id, theme);
+  ctx.fillStyle = trackerColor;
   ctx.beginPath();
   ctx.moveTo(x + radius, y);
-  ctx.lineTo(x + w - radius, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
-  ctx.lineTo(x + w, y + h - curlSize);
-  ctx.lineTo(x + w - curlSize, y + h);
+  ctx.lineTo(x + stripWidth, y);
+  ctx.lineTo(x + stripWidth, y + h);
   ctx.lineTo(x + radius, y + h);
   ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
   ctx.lineTo(x, y + radius);
   ctx.quadraticCurveTo(x, y, x + radius, y);
-  ctx.closePath();
   ctx.fill();
 
-  // Reset shadow for drawing on top of card
-  ctx.shadowColor = 'transparent';
+  // Content Area
+  const contentX = x + stripWidth + 8;
+  const contentW = w - stripWidth - 16;
 
-  // 3. Draw Curled Corner
-  // Shadow under the curl flap
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
-  ctx.beginPath();
-  ctx.moveTo(x + w - curlSize, y + h);
-  ctx.lineTo(x + w, y + h - curlSize);
-  ctx.lineTo(x + w - curlSize, y + h - curlSize);
-  ctx.closePath();
-  ctx.fill();
-
-  // The curled flap itself
-  ctx.fillStyle = getCardColor(issue.tracker_id, theme);
-  ctx.beginPath();
-  ctx.moveTo(x + w - curlSize, y + h);
-  ctx.bezierCurveTo(x + w - curlSize / 2, y + h - curlSize / 4, x + w - curlSize / 4, y + h - curlSize / 2, x + w, y + h - curlSize);
-  ctx.lineTo(x + w - radius, y + h - radius); // Slight overlap
-  ctx.closePath();
-  ctx.fill();
-
-  // Highlight on curl
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
-  ctx.fill();
-
-  // 4. Draw Tape at the top center
-  const tapeW = 40;
-  const tapeH = 12;
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.45)'; // Semi-transparent tape
-  ctx.fillRect(x + (w - tapeW) / 2, y - tapeH / 2, tapeW, tapeH);
-  // Tape texture
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-  ctx.lineWidth = 1;
-  for (let i = 0; i < tapeW; i += 4) {
-    ctx.beginPath();
-    ctx.moveTo(x + (w - tapeW) / 2 + i, y - tapeH / 2);
-    ctx.lineTo(x + (w - tapeW) / 2 + i, y + tapeH / 2);
-    ctx.stroke();
-  }
-
-  const title = `#${issue.id} ${issue.subject}`;
+  // 4. Subject & ID
   ctx.fillStyle = theme.textPrimary;
   ctx.font = '600 13px Inter, sans-serif';
-  ctx.fillText(truncateText(ctx, title, rect.width - 16), rect.x + 8, rect.y + 8);
+  ctx.textBaseline = 'top';
 
-  ctx.font = '500 12px Inter, sans-serif';
+  const subjectY = y + 8;
+  const subject = issue.subject;
+  const idText = `#${issue.id}`;
+
+  // Check fit
+  ctx.fillText(truncateText(ctx, subject, contentW), contentX, subjectY);
+
+  // ID (smaller, top right or next to title? Let's put slightly above or keep minimal)
+  // Let's put ID in small gray next to subject if fits, or just leave it since subject is key
+  // We can put ID at top right
+  ctx.save();
+  ctx.font = '400 11px Inter, sans-serif';
   ctx.fillStyle = theme.textSecondary;
-  const dueLabel = issue.due_date ?? labels.not_set;
-  ctx.fillText(`${labels.issue_due_date}: ${dueLabel}`, rect.x + 8, rect.y + 32);
+  const idW = ctx.measureText(idText).width;
+  // If we want it top-right:
+  // ctx.fillText(idText, x + w - idW - 8, y + 8);
+  // But let's append to title line if truncated logic handled better, simpler to put below or keep simple.
+  // Actually, let's put it on the second line with assignee
+  ctx.restore();
 
-  const agingLabel = `${agingDays}d`;
-  ctx.fillStyle = agingClass === 'danger' ? theme.danger : agingClass === 'warn' ? theme.warn : theme.textSecondary;
-  ctx.fillText(`${labels.stagnation}: ${agingLabel}`, rect.x + 8, rect.y + 50);
+  // 5. Metadata Row 1: ID | Assignee
+  const row1Y = y + 30;
+  ctx.font = '400 11px Inter, sans-serif';
+  ctx.fillStyle = theme.textSecondary;
 
-  if (issue.priority_name) {
-    ctx.fillStyle = theme.textSecondary;
-    ctx.fillText(`${labels.issue_priority}: ${issue.priority_name}`, rect.x + 8, rect.y + 66);
+  // ID
+  ctx.fillText(idText, contentX, row1Y);
+
+  let currentX = contentX + ctx.measureText(idText).width + 12;
+
+  // Assignee
+  if (issue.assigned_to_name) {
+    drawIcon(ctx, 'person', currentX, row1Y, 14, theme.textSecondary);
+    currentX += 16;
+    ctx.fillText(truncateText(ctx, issue.assigned_to_name, 80), currentX, row1Y);
+    // currentX += ctx.measureText(issue.assigned_to_name).width + 12; // Update if more items
   }
 
+  // 6. Metadata Row 2: Due Date | Priority | Aging
+  const row2Y = y + 48;
+  currentX = contentX;
+
+  // Due Date
+  if (issue.due_date) {
+    const isOverdue = new Date(issue.due_date) < new Date(); // Simple check, ideally compare days
+    const dateColor = isOverdue ? theme.danger : theme.textSecondary;
+    drawIcon(ctx, 'calendar_today', currentX, row2Y, 14, dateColor);
+    currentX += 16;
+    ctx.fillStyle = dateColor;
+    ctx.fillText(issue.due_date, currentX, row2Y);
+    currentX += ctx.measureText(issue.due_date).width + 12;
+  }
+
+  // Priority (if high)
+  // Assuming priority_id > 2 is 'High' or check name
+  if (issue.priority_id && issue.priority_id > 2) {
+    // This is a guess, ideally we know which is high. Or just show all.
+    // Let's just show it.
+    const prioColor = issue.priority_id >= 4 ? theme.danger : theme.warn; // example heuristic
+    drawIcon(ctx, 'priority_high', currentX, row2Y, 14, prioColor);
+    currentX += 16;
+    ctx.fillStyle = prioColor;
+    // ctx.fillText(issue.priority_name || '!', currentX, row2Y);
+    // Just icon might be enough for space, or truncate
+    if (issue.priority_name) {
+      ctx.fillText(truncateText(ctx, issue.priority_name, 60), currentX, row2Y);
+      currentX += ctx.measureText(issue.priority_name).width + 12;
+    }
+  }
+
+  // Aging
+  if (agingEnabled && agingDays > 0) {
+    const ageColor = agingClass === 'danger' ? theme.danger : agingClass === 'warn' ? theme.warn : theme.textSecondary;
+    drawIcon(ctx, 'history', currentX, row2Y, 14, ageColor);
+    currentX += 16;
+    ctx.fillStyle = ageColor;
+    ctx.fillText(`${agingDays}d`, currentX, row2Y);
+  }
+
+  // 7. Edit Button (Pencil Icon top right)
+  const editSize = 20;
   const editRect = {
-    x: rect.x + rect.width - 42,
-    y: rect.y + 8,
-    width: 16,
-    height: 16,
+    x: x + w - editSize - 4,
+    y: y + 4,
+    width: editSize,
+    height: editSize,
   };
   if (rectMap) rectMap.editButtons.set(issue.id, editRect);
-  drawIconBox(ctx, editRect, theme.primary, '✎');
 
-  if (data.meta.can_delete) {
-    const deleteRect = {
-      x: rect.x + rect.width - 20,
-      y: rect.y + 8,
-      width: 16,
-      height: 16,
-    };
-    if (rectMap) rectMap.deleteButtons.set(issue.id, deleteRect);
-    drawIconBox(ctx, deleteRect, theme.danger, '×');
-  }
+  // Icon only
+  // drawIcon(ctx, 'edit', editRect.x + 2, editRect.y + 2, 16, theme.textSecondary);
+  // Or slight hover effect logic? For now just static 
+  // We can use drawIconBox with transparent bg
+  ctx.save();
+  ctx.font = '16px "Material Symbols Outlined"';
+  ctx.fillStyle = theme.textSecondary;
+  ctx.textBaseline = 'top';
+  ctx.fillText('edit', editRect.x, editRect.y);
+  ctx.restore();
 
-  if (canMove) {
-    ctx.strokeStyle = theme.border;
-  }
+  ctx.restore();
+}
 
+function drawIcon(ctx: CanvasRenderingContext2D, icon: string, x: number, y: number, size: number, color: string) {
+  ctx.save();
+  ctx.font = `${size}px "Material Symbols Outlined"`;
+  ctx.fillStyle = color;
+  ctx.textBaseline = 'top';
+  ctx.fillText(icon, x, y - 2); // Slight adjustment for alignment
   ctx.restore();
 }
 
