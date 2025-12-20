@@ -60,7 +60,8 @@ module RedmineKanban
     end
 
     def fetch_issues(status_ids)
-      relation = Issue.visible(@user).where(project_id: @project.id).where(status_id: status_ids)
+      project_ids = @project.self_and_descendants.ids
+      relation = Issue.visible(@user).where(project_id: project_ids).where(status_id: status_ids)
       relation = relation.includes(:assigned_to, :priority, :status)
       relation.order(updated_on: :desc).limit(@settings.issue_limit).to_a
     end
@@ -90,7 +91,8 @@ module RedmineKanban
     end
 
     def fetch_column_counts(status_ids)
-      Issue.visible(@user).where(project_id: @project.id, status_id: status_ids).group(:status_id).count
+      project_ids = @project.self_and_descendants.ids
+      Issue.visible(@user).where(project_id: project_ids, status_id: status_ids).group(:status_id).count
     end
 
     def issue_to_h(issue)

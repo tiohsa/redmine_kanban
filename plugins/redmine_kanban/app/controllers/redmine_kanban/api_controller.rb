@@ -82,7 +82,7 @@ module RedmineKanban
 
     def find_issue
       @issue = Issue.visible.find(params[:id])
-      render_404 unless @issue.project_id == @project.id
+      render_404 unless @issue.project == @project || @issue.project.is_descendant_of?(@project)
     rescue ActiveRecord::RecordNotFound
       render_404
     end
