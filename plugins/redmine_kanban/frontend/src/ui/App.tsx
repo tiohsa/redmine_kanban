@@ -520,6 +520,102 @@ function endOfWeek(date: Date): Date {
   return e;
 }
 
+// Custom Dropdown Component
+function Dropdown<T extends string>({
+  label,
+  icon,
+  options,
+  value,
+  onChange,
+  onReset,
+  width = '240px',
+}: {
+  label: string;
+  icon: string;
+  options: { id: T; name: string }[];
+  value: T;
+  onChange: (id: T) => void;
+  onReset?: () => void;
+  width?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = React.useRef<HTMLDivElement>(null);
+  const menuRef = React.useRef<HTMLDivElement>(null);
+
+  // Close when clicking outside
+  React.useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => {
+      if (
+        triggerRef.current &&
+        !triggerRef.current.contains(e.target as Node) &&
+        menuRef.current &&
+        !menuRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  const selectedName = options.find((o) => o.id === value)?.name ?? value;
+
+  return (
+    <div className="rk-dropdown-container">
+      <div
+        ref={triggerRef}
+        className={`rk-dropdown-trigger ${open ? 'rk-active' : ''}`}
+        onClick={() => setOpen(!open)}
+        title={selectedName}
+      >
+        <span className="rk-icon">{icon}</span>
+        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }}>
+          {label}
+        </span>
+      </div>
+
+      {open && (
+        <div ref={menuRef} className="rk-dropdown-menu" style={{ width }}>
+          <div className="rk-dropdown-title">{label}</div>
+          <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+            {options.map((option) => {
+              const checked = option.id === value;
+              return (
+                <div
+                  key={option.id}
+                  className={`rk-dropdown-item ${checked ? 'selected' : ''}`}
+                  onClick={() => {
+                    onChange(option.id);
+                    setOpen(false);
+                  }}
+                >
+                  <div className="rk-dropdown-checkbox" />
+                  <span>{option.name}</span>
+                </div>
+              );
+            })}
+          </div>
+          {onReset && (
+            <div className="rk-dropdown-footer">
+              <button
+                type="button"
+                className="rk-dropdown-link"
+                onClick={() => {
+                  onReset();
+                  setOpen(false);
+                }}
+              >
+                リセット
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Toolbar({
   data,
   filters,
@@ -541,43 +637,60 @@ function Toolbar({
 }) {
   const assignees = data.lists.assignees ?? [];
   const labels = data.labels;
-  const options = [
+  const assigneeOptions = [
     { id: 'all', name: labels.all },
     { id: 'me', name: labels.me },
     { id: 'unassigned', name: labels.unassigned },
     ...assignees.filter((a) => a.id !== null).map((a) => ({ id: String(a.id), name: a.name })),
   ];
 
+  const dueOptions = [
+    { id: 'all', name: labels.all },
+    { id: 'overdue', name: labels.overdue },
+    { id: 'thisweek', name: labels.this_week },
+    { id: 'none', name: labels.not_set },
+  ];
+
   return (
     <div className="rk-toolbar">
-      <label className="rk-field">
-        <span className="rk-label">{labels.assignee}</span>
-        <select value={filters.assignee} onChange={(e) => onChange({ ...filters, assignee: e.target.value as any })}>
-          {options.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="rk-toolbar-group">
+        <div className="rk-search-box rk-grow" style={{ minWidth: '200px' }}>
+          <span className="rk-icon">search</span>
+          <input
+            value={filters.q}
+            onChange={(e) => onChange({ ...filters, q: e.target.value })}
+            placeholder={labels.search}
+          />
+        </div>
+      </div>
 
-      <label className="rk-field rk-grow">
-        <span className="rk-label">{labels.search}</span>
-        <input value={filters.q} onChange={(e) => onChange({ ...filters, q: e.target.value })} placeholder={labels.issue_subject} />
-      </label>
+      <div className="rk-toolbar-separator" />
 
-      <label className="rk-field">
-        <span className="rk-label">{labels.due}</span>
-        <select value={filters.due} onChange={(e) => onChange({ ...filters, due: e.target.value as any })}>
-          <option value="all">{labels.all}</option>
-          <option value="overdue">{labels.overdue}</option>
-          <option value="thisweek">{labels.this_week}</option>
-          <option value="none">{labels.not_set}</option>
-        </select>
-      </label>
+      <div className="rk-toolbar-group">
+        <Dropdown
+          label={labels.assignee}
+          icon="person"
+          options={assigneeOptions}
+          value={filters.assignee}
+          onChange={(val) => onChange({ ...filters, assignee: val })}
+          onReset={() => onChange({ ...filters, assignee: 'all' })}
+        />
 
-      <div className="rk-sort">
-        <span className="rk-label">{labels.sort}</span>
+        <Dropdown
+          label={labels.due}
+          icon="calendar_month"
+          options={dueOptions}
+          value={filters.due}
+          onChange={(val) => onChange({ ...filters, due: val as any })}
+          onReset={() => onChange({ ...filters, due: 'all' })}
+          width="180px"
+        />
+      </div>
+
+      <div className="rk-toolbar-separator" />
+
+      <div className="rk-toolbar-group rk-sort">
+        <span className="rk-icon">sort</span>
         <SortButton
           active={sortKey.startsWith('due_')}
           direction={sortKey === 'due_asc' ? 'asc' : sortKey === 'due_desc' ? 'desc' : null}
@@ -609,14 +722,20 @@ function Toolbar({
 
       <div className="rk-toolbar-spacer" />
 
-      <button type="button" className="rk-btn rk-btn-primary" onClick={onAnalyze} style={{ minWidth: '40px' }} title={labels.analyze}>
-        <span className="rk-icon">auto_awesome</span>
-        {labels.analyze}
-      </button>
+      <div className="rk-toolbar-group">
+        <button type="button" className="rk-btn rk-btn-primary" onClick={onAnalyze} title={labels.analyze}>
+          <span className="rk-icon">auto_awesome</span>
+          {labels.analyze}
+        </button>
 
-      <button type="button" className="rk-btn" onClick={onToggleFullWindow} title={fullWindow ? labels.normal_view : labels.fullscreen_view}>
-        <span className="rk-icon">{fullWindow ? 'fullscreen_exit' : 'fullscreen'}</span>
-      </button>
+        <button type="button" className="rk-btn" onClick={onToggleFullWindow} title={fullWindow ? labels.normal_view : labels.fullscreen_view}>
+          <span className="rk-icon">{fullWindow ? 'fullscreen_exit' : 'fullscreen'}</span>
+        </button>
+
+        <button type="button" className="rk-btn" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} title="Top">
+          <span className="rk-icon">vertical_align_top</span>
+        </button>
+      </div>
     </div>
   );
 }

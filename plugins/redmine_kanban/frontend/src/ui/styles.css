@@ -182,10 +182,23 @@
   gap: 8px;
   align-items: center;
   background: var(--rk-bg-surface);
-  padding: 8px 12px;
+  padding: 6px 12px;
   border: 1px solid var(--rk-border);
   border-radius: 12px;
   box-shadow: var(--rk-shadow-sm);
+}
+
+.rk-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rk-toolbar-separator {
+  width: 1px;
+  height: 24px;
+  background: var(--rk-border);
+  margin: 0 4px;
 }
 
 .rk-icon {
@@ -203,36 +216,171 @@
   -webkit-font-smoothing: antialiased;
 }
 
-.rk-field {
+/* Custom Dropdown Styling */
+.rk-dropdown-trigger {
   display: flex;
-  gap: 6px;
   align-items: center;
+  gap: 6px;
   height: 36px;
-}
-
-.rk-grow {
-  flex: 1;
-  min-width: 200px;
-}
-
-.rk-field input,
-.rk-field select {
-  height: 36px;
-  padding: 0 10px;
+  padding: 0 12px;
+  background: #fff;
   border: 1px solid var(--rk-border);
   border-radius: 8px;
-  background: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--rk-text-secondary);
   font-size: 0.875rem;
+  font-weight: 500;
+  user-select: none;
+  min-width: 120px;
+}
+
+.rk-dropdown-trigger:hover,
+.rk-dropdown-trigger.rk-active {
+  background: #f8fafc;
+  border-color: #cbd5e1;
   color: var(--rk-text-primary);
+}
+
+.rk-dropdown-trigger .rk-icon {
+  font-size: 20px;
+  color: var(--rk-text-secondary);
+}
+
+.rk-dropdown-container {
+  position: relative;
+}
+
+.rk-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: #fff;
+  border: 1px solid var(--rk-border);
+  border-radius: 12px;
+  box-shadow: var(--rk-shadow-md);
+  padding: 8px;
+  min-width: 220px;
+  z-index: 100;
+  animation: rk-fade-in 0.15s ease-out;
+}
+
+.rk-dropdown-title {
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--rk-text-primary);
+  border-bottom: 1px solid var(--rk-border);
+  margin-bottom: 4px;
+}
+
+.rk-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+  color: var(--rk-text-primary);
+  font-size: 0.875rem;
+}
+
+.rk-dropdown-item:hover {
+  background: #f1f5f9;
+}
+
+.rk-dropdown-checkbox {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #cbd5e1;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: all 0.2s;
   box-sizing: border-box;
 }
 
-.rk-field input:focus,
-.rk-field select:focus {
-  outline: none;
+.rk-dropdown-item.selected .rk-dropdown-checkbox {
+  background: var(--rk-primary);
+  border-color: var(--rk-primary);
+}
+
+.rk-dropdown-item.selected .rk-dropdown-checkbox::after {
+  content: "check";
+  font-family: 'Material Symbols Outlined';
+  font-size: 14px;
+  color: #fff;
+  font-weight: 700;
+}
+
+.rk-dropdown-footer {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--rk-border);
+}
+
+.rk-dropdown-link {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  color: var(--rk-primary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.rk-dropdown-link:hover {
+  background: #eff6ff;
+}
+
+@keyframes rk-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Updated Search Input to match Dropdown trigger */
+.rk-search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px;
+  background: #fff;
+  border: 1px solid var(--rk-border);
+  border-radius: 8px;
+  transition: all 0.2s;
+  min-width: 200px;
+}
+
+.rk-search-box:focus-within {
   border-color: var(--rk-primary);
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.rk-search-box input {
+  border: none;
+  outline: none;
+  font-size: 0.875rem;
+  width: 100%;
+  color: var(--rk-text-primary);
+}
+
+.rk-search-box .rk-icon {
+  color: var(--rk-text-secondary);
 }
 
 /* Ensure labels are vertically centered and visible */
@@ -570,6 +718,7 @@
 .rk-btn:hover {
   background: #f8fafc;
   border-color: #cbd5e1;
+  box-shadow: var(--rk-shadow-sm);
 }
 
 .rk-btn:disabled {
@@ -619,15 +768,9 @@
 }
 
 .rk-btn-toggle-active {
-  background: #e0e7ff;
-  border-color: #c7d2fe;
-  color: #3730a3;
-}
-
-.rk-btn-toggle-active {
-  background: #e0e7ff;
-  border-color: #c7d2fe;
-  color: #3730a3;
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #3b82f6;
 }
 
 .rk-sort {
