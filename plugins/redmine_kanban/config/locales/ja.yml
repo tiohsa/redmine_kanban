@@ -45,3 +45,6 @@ ja:
   label_kanban_move_failed: "移動に失敗しました"
   label_kanban_load_failed: "読み込みに失敗しました"
   label_kanban_no_result: "結果がありません"
+  label_kanban_filter: "フィルタ"
+  label_kanban_filter_task: "タスクの絞り込み"
+  label_kanban_filter_subject: "題名で絞り込み..."

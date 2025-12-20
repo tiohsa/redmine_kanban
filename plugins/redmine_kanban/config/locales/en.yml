@@ -45,3 +45,6 @@ en:
   label_kanban_move_failed: "Move failed"
   label_kanban_load_failed: "Load failed"
   label_kanban_no_result: "No result"
+  label_kanban_filter: "Filter"
+  label_kanban_filter_task: "Filter Tasks"
+  label_kanban_filter_subject: "Filter by subject..."

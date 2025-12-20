@@ -616,6 +616,72 @@ function Dropdown<T extends string>({
   );
 }
 
+function SearchDropdown({
+  label,
+  title,
+  placeholder,
+  value,
+  onChange,
+}: {
+  label: string;
+  title: string;
+  placeholder: string;
+  value: string;
+  onChange: (val: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = React.useRef<HTMLDivElement>(null);
+  const menuRef = React.useRef<HTMLDivElement>(null);
+
+  // Close when clicking outside
+  React.useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => {
+      if (
+        triggerRef.current &&
+        !triggerRef.current.contains(e.target as Node) &&
+        menuRef.current &&
+        !menuRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  return (
+    <div className="rk-dropdown-container">
+      <div
+        ref={triggerRef}
+        className={`rk-dropdown-trigger ${open ? 'rk-active' : ''}`}
+        onClick={() => setOpen(!open)}
+        title={label}
+      >
+        <span className="rk-icon">filter_list</span>
+        <span>{label}</span>
+      </div>
+
+      {open && (
+        <div ref={menuRef} className="rk-dropdown-menu" style={{ width: '300px' }}>
+          <div className="rk-dropdown-title">{title}</div>
+          <div style={{ padding: '12px' }}>
+            <div className="rk-search-box">
+              <span className="rk-icon">search</span>
+              <input
+                autoFocus
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                placeholder={placeholder}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Toolbar({
   data,
   filters,
@@ -654,14 +720,13 @@ function Toolbar({
   return (
     <div className="rk-toolbar">
       <div className="rk-toolbar-group">
-        <div className="rk-search-box rk-grow" style={{ minWidth: '200px' }}>
-          <span className="rk-icon">search</span>
-          <input
-            value={filters.q}
-            onChange={(e) => onChange({ ...filters, q: e.target.value })}
-            placeholder={labels.search}
-          />
-        </div>
+        <SearchDropdown
+          label={labels.filter ?? 'フィルタ'}
+          title={labels.filter_task ?? 'タスクの絞り込み'}
+          placeholder={labels.filter_subject ?? '題名で絞り込み...'}
+          value={filters.q}
+          onChange={(val) => onChange({ ...filters, q: val })}
+        />
       </div>
 
       <div className="rk-toolbar-separator" />
