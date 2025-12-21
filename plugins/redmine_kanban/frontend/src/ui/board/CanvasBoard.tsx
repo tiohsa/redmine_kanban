@@ -935,17 +935,17 @@ function drawCard(
     ctx.stroke();
 
     // info icon in subtask area
-    const iconSize = 20;
+    const iconSize = 24;
     const infoRect = {
-      x: x + w - iconSize - 6,
-      y: subtaskStartY - 14,
+      x: x + w - iconSize - 4,
+      y: subtaskStartY - 16,
       width: iconSize,
       height: iconSize,
     };
     if (rectMap) rectMap.infoButtons.set(issue.id, infoRect);
 
     ctx.save();
-    ctx.font = '16px "Material Symbols Outlined"';
+    ctx.font = '20px "Material Symbols Outlined"';
     ctx.fillStyle = theme.textSecondary;
     ctx.textBaseline = 'top';
     ctx.fillText('info', infoRect.x, infoRect.y);
@@ -1018,27 +1018,27 @@ function drawCard(
   }
 
   // 9. Buttons (Edit/Delete)
-  const iconSize = 20;
+  const actionIconSize = 24;
   const editRect = {
-    x: x + w - iconSize - 4,
+    x: x + w - actionIconSize - 4,
     y: y + 4,
-    width: iconSize,
-    height: iconSize,
+    width: actionIconSize,
+    height: actionIconSize,
   };
   if (rectMap) rectMap.editButtons.set(issue.id, editRect);
 
   ctx.save();
-  ctx.font = '16px "Material Symbols Outlined"';
+  ctx.font = '20px "Material Symbols Outlined"';
   ctx.fillStyle = theme.textSecondary;
   ctx.textBaseline = 'top';
   ctx.fillText('edit', editRect.x, editRect.y);
 
   if (data.meta.can_delete && rectMap) {
     const deleteRect = {
-      x: editRect.x - iconSize - 4,
+      x: editRect.x - actionIconSize - 4,
       y: y + 4,
-      width: iconSize,
-      height: iconSize,
+      width: actionIconSize,
+      height: actionIconSize,
     };
     rectMap.deleteButtons.set(issue.id, deleteRect);
     ctx.fillStyle = theme.danger;
