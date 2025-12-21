@@ -918,7 +918,7 @@ function drawCard(
     // There is usually space.
 
     // Better: Right aligned on Row 2 (Metadata).
-    const donutRightX = x + w - 30; // 30px from right edge
+    const donutRightX = x + w - 16; // Aligned with the center of the edit button above
     drawProgressDonut(ctx, donutRightX, row2Y + 6, donutRadius, issue.done_ratio, theme);
   }
 
