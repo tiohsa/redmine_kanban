@@ -29,6 +29,7 @@ type RectMap = {
   deleteButtons: Map<number, Rect>;
   editButtons: Map<number, Rect>;
   subtaskChecks: Map<string, Rect>; // key: "issueId:subtaskId"
+  subtaskSubjects: Map<string, Rect>; // key: "issueId:subtaskId"
 };
 
 type CanvasTheme = {
@@ -63,6 +64,7 @@ type HitResult =
   | { kind: 'delete'; issueId: number }
   | { kind: 'edit'; issueId: number }
   | { kind: 'subtask_check'; issueId: number; subtaskId: number }
+  | { kind: 'subtask_subject'; issueId: number; subtaskId: number }
   | { kind: 'cell'; statusId: number; laneId: string | number }
   | { kind: 'empty' };
 
@@ -104,6 +106,7 @@ export function CanvasBoard({
     deleteButtons: new Map(),
     editButtons: new Map(),
     subtaskChecks: new Map(),
+    subtaskSubjects: new Map(),
   });
   const scrollRef = useRef({ x: 0, y: 0 });
   const boardSizeRef = useRef({ width: 0, height: 0 });
@@ -211,6 +214,7 @@ export function CanvasBoard({
       deleteButtons: new Map(),
       editButtons: new Map(),
       subtaskChecks: new Map(),
+      subtaskSubjects: new Map(),
     };
 
     ctx.save();
@@ -293,9 +297,14 @@ export function CanvasBoard({
       if (issue && onSubtaskToggle) {
         const subtask = issue.subtasks?.find(s => s.id === hit.subtaskId);
         if (subtask) {
-           onSubtaskToggle(hit.subtaskId, subtask.is_closed);
+          onSubtaskToggle(hit.subtaskId, subtask.is_closed);
         }
       }
+      return;
+    }
+
+    if (hit.kind === 'subtask_subject') {
+      onCardOpen(hit.subtaskId);
       return;
     }
 
@@ -342,7 +351,7 @@ export function CanvasBoard({
       const hit = hitTest(point, rectMapRef.current, state, data);
       if (hit.kind === 'card') {
         setCursor(canMove ? 'grab' : 'pointer');
-      } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'edit' || hit.kind === 'subtask_check') {
+      } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'edit' || hit.kind === 'subtask_check' || hit.kind === 'subtask_subject') {
         setCursor('pointer');
       } else {
         setCursor('default');
@@ -391,8 +400,10 @@ export function CanvasBoard({
       // Since buttons are checked in PointerDown, this is fine.
       // But we should re-check hit to ensure we are still on the card.
       const hit = hitTest(point, rectMapRef.current, state, data);
-      if (hit.kind === 'card' && hit.issueId === drag.issueId) {
-         onCardOpen(drag.issueId);
+      if (hit.kind === 'subtask_subject') {
+        onCardOpen(hit.subtaskId);
+      } else if (hit.kind === 'card' && hit.issueId === drag.issueId) {
+        onCardOpen(drag.issueId);
       }
     }
 
@@ -480,7 +491,7 @@ function computeLaneHeight(
       for (const cardId of cardIds) {
         const issue = state.cardsById.get(cardId);
         if (issue) {
-           height += measureCardHeight(issue);
+          height += measureCardHeight(issue);
         }
       }
       height += (cardIds.length - 1) * metrics.cardGap;
@@ -692,8 +703,8 @@ function drawCells(
         currentY += cardH + metrics.cardGap;
 
         if (rectIntersects(cardRect, viewRect)) {
-             rectMap.cards.set(issue.id, cardRect);
-             drawCard(ctx, cardRect, issue, data, theme, canMove, labels, rectMap);
+          rectMap.cards.set(issue.id, cardRect);
+          drawCard(ctx, cardRect, issue, data, theme, canMove, labels, rectMap);
         }
       }
     });
@@ -896,10 +907,21 @@ function drawCard(
       // Text
       ctx.fillStyle = subtask.is_closed ? theme.textSecondary : theme.textPrimary;
       ctx.font = '12px Inter, sans-serif';
-      if (subtask.is_closed) {
-        // Strikethrough? or just gray. Gray is fine.
+      const subjectText = truncateText(ctx, subtask.subject, w - 40);
+      const textMetrics = ctx.measureText(subjectText);
+
+      const subjectRect = {
+        x: sx + 20,
+        y: sy,
+        width: textMetrics.width,
+        height: metrics.subtaskHeight
+      };
+
+      if (rectMap) {
+        rectMap.subtaskSubjects.set(`${issue.id}:${subtask.id}`, subjectRect);
       }
-      ctx.fillText(truncateText(ctx, subtask.subject, w - 40), sx + 20, sy + 1);
+
+      ctx.fillText(subjectText, sx + 20, sy + 1);
     });
   }
 
@@ -1021,8 +1043,14 @@ function hitTest(
 ): HitResult {
   for (const [key, rect] of rectMap.subtaskChecks) {
     if (pointInRect(point, rect)) {
-        const [issueIdStr, subtaskIdStr] = key.split(':');
-        return { kind: 'subtask_check', issueId: parseInt(issueIdStr), subtaskId: parseInt(subtaskIdStr) };
+      const [issueIdStr, subtaskIdStr] = key.split(':');
+      return { kind: 'subtask_check', issueId: parseInt(issueIdStr), subtaskId: parseInt(subtaskIdStr) };
+    }
+  }
+  for (const [key, rect] of rectMap.subtaskSubjects) {
+    if (pointInRect(point, rect)) {
+      const [issueIdStr, subtaskIdStr] = key.split(':');
+      return { kind: 'subtask_subject', issueId: parseInt(issueIdStr), subtaskId: parseInt(subtaskIdStr) };
     }
   }
   for (const [issueId, rect] of rectMap.deleteButtons) {
