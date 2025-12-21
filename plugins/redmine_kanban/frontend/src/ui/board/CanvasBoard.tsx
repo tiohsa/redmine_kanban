@@ -468,7 +468,7 @@ function computeLayout(state: BoardState, data: BoardData, canCreate: boolean) {
 function measureCardHeight(issue: Issue): number {
   let h = metrics.cardBaseHeight;
   if (issue.subtasks && issue.subtasks.length > 0) {
-    h += 8; // Padding before subtasks
+    h += 20; // Padding before subtasks (increased from 8)
     h += issue.subtasks.length * metrics.subtaskHeight;
   }
   return h;
@@ -859,14 +859,14 @@ function drawCard(
 
   // 8. Subtasks (New)
   if (issue.subtasks && issue.subtasks.length > 0) {
-    const subtaskStartY = y + metrics.cardBaseHeight; // Start after base content
+    const subtaskStartY = y + metrics.cardBaseHeight + 12; // Consistent with h += 24 (12px top, 12px bottom roughly)
 
     // Draw separator line
     ctx.beginPath();
     ctx.strokeStyle = theme.border;
     ctx.lineWidth = 1;
-    ctx.moveTo(x, subtaskStartY - 4);
-    ctx.lineTo(x + w, subtaskStartY - 4);
+    ctx.moveTo(x, subtaskStartY - 20); // Move separator to the start of subtask area
+    ctx.lineTo(x + w, subtaskStartY - 20);
     ctx.stroke();
 
     issue.subtasks.forEach((subtask, idx) => {
