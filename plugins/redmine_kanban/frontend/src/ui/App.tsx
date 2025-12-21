@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
 import type { BoardData, Issue } from './types';
 import { getJson, postJson } from './http';
 import { CanvasBoard } from './board/CanvasBoard';
@@ -16,71 +15,6 @@ type Filters = {
 };
 
 type ModalContext = { statusId: number; laneId?: string | number; issueId?: number };
-
-function AiAnalysisModal({
-  onClose,
-  result,
-  loading,
-  labels,
-}: {
-  onClose: () => void;
-  result: string | null;
-  loading: boolean;
-  labels: Record<string, string>;
-}) {
-  return (
-    <div className="rk-modal-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
-      <div className="rk-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="rk-modal-head">
-          <h3>{labels.summary}</h3>
-          <button type="button" className="rk-btn rk-btn-ghost" onClick={onClose} aria-label={labels.close}>
-            ×
-          </button>
-        </div>
-        <div className="rk-form">
-          {loading ? (
-            <div style={{ textAlign: 'center', padding: '40px' }}>
-              <div
-                style={{
-                  display: 'inline-block',
-                  width: '40px',
-                  height: '40px',
-                  border: '4px solid #f3f3f3',
-                  borderTop: '4px solid var(--rk-primary)',
-                  borderRadius: '50%',
-                  animation: 'rk-spin 1s linear infinite',
-                }}
-              />
-              <p style={{ marginTop: '16px', color: 'var(--rk-text-secondary)' }}>{labels.analyzing}</p>
-            </div>
-          ) : (
-            <div
-              className="rk-analysis-result"
-              style={{
-                lineHeight: '1.6',
-                color: 'var(--rk-text-primary)',
-                fontSize: '0.95rem',
-                maxHeight: '60vh',
-                overflowY: 'auto',
-                padding: '12px',
-                background: '#f8fafc',
-                borderRadius: '8px',
-                border: '1px solid var(--rk-border)',
-              }}
-            >
-              <ReactMarkdown>{result || ''}</ReactMarkdown>
-            </div>
-          )}
-        </div>
-        <div className="rk-modal-actions">
-          <button type="button" className="rk-btn" onClick={onClose}>
-            {labels.close}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export function App({ dataUrl }: Props) {
   const [data, setData] = useState<BoardData | null>(null);
@@ -107,9 +41,6 @@ export function App({ dataUrl }: Props) {
   const [modal, setModal] = useState<ModalContext | null>(null);
   const [pendingDeleteIssue, setPendingDeleteIssue] = useState<Issue | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
-  const [analysisOpen, setAnalysisOpen] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState<string | null>(null);
   const [iframeEditUrl, setIframeEditUrl] = useState<string | null>(null);
   const [fullWindow, setFullWindow] = useState(() => {
     try {
@@ -165,28 +96,6 @@ export function App({ dataUrl }: Props) {
       setLoading(false);
     }
   }, [baseUrl]);
-
-  const handleAnalyze = async () => {
-    if (!data) return;
-    setAnalysisOpen(true);
-    if (analysisResult) return;
-
-    setAnalyzing(true);
-    setAnalysisResult(null);
-    try {
-      const currentIssues = filterIssues(data.issues, data, filters);
-      const res = await postJson<{ result?: string; error?: string }>(`${baseUrl}/analyze`, { issues: currentIssues });
-      if (res.error) {
-        setAnalysisResult(`${data.labels.error}: ${res.error}`);
-      } else {
-        setAnalysisResult(res.result ?? data.labels.no_result);
-      }
-    } catch (e: any) {
-      setAnalysisResult(`${data.labels.error}: ${e.message}`);
-    } finally {
-      setAnalyzing(false);
-    }
-  };
 
   React.useEffect(() => {
     void refresh();
@@ -488,7 +397,6 @@ export function App({ dataUrl }: Props) {
           onChangeSort={setSortKey}
           fullWindow={fullWindow}
           onToggleFullWindow={() => setFullWindow((v) => !v)}
-          onAnalyze={handleAnalyze}
           fitToScreen={fitToScreen}
           onToggleFitToScreen={() => setFitToScreen(!fitToScreen)}
           showSubtasks={showSubtasks}
@@ -553,16 +461,6 @@ export function App({ dataUrl }: Props) {
 
       {iframeEditUrl && data ? (
         <IframeEditDialog url={iframeEditUrl} labels={data.labels} onClose={() => { setIframeEditUrl(null); refresh(); }} />
-      ) : null}
-
-
-      {analysisOpen && data ? (
-        <AiAnalysisModal
-          onClose={() => setAnalysisOpen(false)}
-          result={analysisResult}
-          loading={analyzing}
-          labels={data.labels}
-        />
       ) : null}
     </div>
   );
@@ -984,7 +882,6 @@ function Toolbar({
   onChangeSort: (k: SortKey) => void;
   fullWindow: boolean;
   onToggleFullWindow: () => void;
-  onAnalyze: () => void;
   fitToScreen: boolean;
   onToggleFitToScreen: () => void;
   showSubtasks: boolean;
@@ -1094,10 +991,6 @@ function Toolbar({
       <div className="rk-toolbar-spacer" />
 
       <div className="rk-toolbar-group">
-        <button type="button" className="rk-btn rk-btn-primary" onClick={onAnalyze} title={labels.analyze}>
-          <span className="rk-icon">auto_awesome</span>
-        </button>
-
         <button
           type="button"
           className={`rk-btn ${fitToScreen ? 'rk-btn-toggle-active' : ''}`}
