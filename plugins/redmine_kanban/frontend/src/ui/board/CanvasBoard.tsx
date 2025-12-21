@@ -31,6 +31,7 @@ type RectMap = {
   subtaskChecks: Map<string, Rect>; // key: "issueId:subtaskId"
   subtaskSubjects: Map<string, Rect>; // key: "issueId:subtaskId"
   cardSubjects: Map<number, Rect>; // key: issueId
+  infoButtons: Map<number, Rect>;
 };
 
 type CanvasTheme = {
@@ -67,6 +68,7 @@ type HitResult =
   | { kind: 'subtask_check'; issueId: number; subtaskId: number }
   | { kind: 'subtask_subject'; issueId: number; subtaskId: number }
   | { kind: 'card_subject'; issueId: number }
+  | { kind: 'info'; issueId: number }
   | { kind: 'cell'; statusId: number; laneId: string | number }
   | { kind: 'empty' };
 
@@ -110,6 +112,7 @@ export function CanvasBoard({
     subtaskChecks: new Map(),
     subtaskSubjects: new Map(),
     cardSubjects: new Map(),
+    infoButtons: new Map(),
   });
   const scrollRef = useRef({ x: 0, y: 0 });
   const boardSizeRef = useRef({ width: 0, height: 0 });
@@ -220,6 +223,7 @@ export function CanvasBoard({
       subtaskChecks: new Map(),
       subtaskSubjects: new Map(),
       cardSubjects: new Map(),
+      infoButtons: new Map(),
     };
 
     ctx.save();
@@ -319,6 +323,19 @@ export function CanvasBoard({
       return;
     }
 
+    if (hit.kind === 'info') {
+      const issue = state.cardsById.get(hit.issueId);
+      if (issue) {
+        if (issue.parent_id) {
+          const parentUrl = issue.urls.issue.replace(/\/\d+$/, `/${issue.parent_id}`);
+          onEditClick(parentUrl);
+        } else {
+          onEditClick(issue.urls.issue);
+        }
+      }
+      return;
+    }
+
     if (hit.kind === 'add') {
       onCreate({ statusId: hit.statusId, laneId: hit.laneId });
       return;
@@ -370,7 +387,7 @@ export function CanvasBoard({
         newHover = { kind: 'subtask_subject', id: `${hit.issueId}:${hit.subtaskId}` };
       } else if (hit.kind === 'card') {
         setCursor(canMove ? 'grab' : 'pointer');
-      } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'edit' || hit.kind === 'subtask_check') {
+      } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'edit' || hit.kind === 'subtask_check' || hit.kind === 'info') {
         setCursor('pointer');
       } else {
         setCursor('default');
@@ -917,6 +934,23 @@ function drawCard(
     ctx.lineTo(x + w, subtaskStartY - 20);
     ctx.stroke();
 
+    // info icon in subtask area
+    const iconSize = 20;
+    const infoRect = {
+      x: x + w - iconSize - 6,
+      y: subtaskStartY - 14,
+      width: iconSize,
+      height: iconSize,
+    };
+    if (rectMap) rectMap.infoButtons.set(issue.id, infoRect);
+
+    ctx.save();
+    ctx.font = '16px "Material Symbols Outlined"';
+    ctx.fillStyle = theme.textSecondary;
+    ctx.textBaseline = 'top';
+    ctx.fillText('info', infoRect.x, infoRect.y);
+    ctx.restore();
+
     issue.subtasks.forEach((subtask, idx) => {
       const sy = subtaskStartY + idx * metrics.subtaskHeight;
       const sx = x + 12;
@@ -1109,6 +1143,11 @@ function hitTest(
     if (pointInRect(point, rect)) {
       const [issueIdStr, subtaskIdStr] = key.split(':');
       return { kind: 'subtask_subject', issueId: parseInt(issueIdStr), subtaskId: parseInt(subtaskIdStr) };
+    }
+  }
+  for (const [issueId, rect] of rectMap.infoButtons) {
+    if (pointInRect(point, rect)) {
+      return { kind: 'info', issueId };
     }
   }
   for (const [issueId, rect] of rectMap.cardSubjects) {

@@ -511,7 +511,7 @@ export function App({ dataUrl }: Props) {
             state={boardState}
             canMove={canMove}
             canCreate={canCreate}
-            labels={data.labels}
+            labels={filteredData.labels}
             fitToScreen={fitToScreen}
             onCommand={(command) => {
               if (command.type === 'move_issue') {
