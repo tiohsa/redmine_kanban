@@ -7,9 +7,9 @@ import { cellKey } from './state';
 const metrics = {
   columnWidth: 260,
   columnGap: 0,
-  laneHeaderWidth: 160,
-  headerHeight: 56,
-  laneTitleHeight: 40,
+  laneHeaderWidth: 120, // 160 -> 120
+  headerHeight: 40,    // 56 -> 40
+  laneTitleHeight: 32, // 40 -> 32
   laneGap: 0,
   cellPadding: 12,
   cardBaseHeight: 84, // Changed from cardHeight to cardBaseHeight
@@ -580,7 +580,7 @@ function drawHeaders(
   columns.forEach((column, index) => {
     const x = layout.gridStartX + index * metrics.columnWidth;
 
-    ctx.font = '600 14px Inter, sans-serif';
+    ctx.font = '600 13px Inter, sans-serif';
     ctx.fillStyle = theme.textPrimary;
     ctx.fillText(column.name, x + 12, layout.headerHeight / 2);
 
@@ -639,7 +639,8 @@ function drawLaneLabels(
     ctx.fillStyle = theme.surface;
     ctx.fillRect(0, laneLayout.y, metrics.laneHeaderWidth, laneLayout.height);
     ctx.fillStyle = theme.textPrimary;
-    ctx.fillText(lane.name, 12, laneLayout.y + metrics.laneTitleHeight / 2);
+    ctx.font = '600 12px Inter, sans-serif'; // Slightly smaller font for narrower width
+    ctx.fillText(lane.name, 8, laneLayout.y + metrics.laneTitleHeight / 2);
 
     ctx.strokeStyle = theme.border;
     ctx.lineWidth = 1;
@@ -657,9 +658,9 @@ function drawLaneLabels(
     ctx.lineWidth = 1;
 
     if (canCreate && defaultStatusId !== undefined) {
-      const buttonWidth = 24;
-      const buttonHeight = 24;
-      const buttonX = metrics.laneHeaderWidth - buttonWidth - 8;
+      const buttonWidth = 20;
+      const buttonHeight = 20;
+      const buttonX = metrics.laneHeaderWidth - buttonWidth - 6;
       const buttonY = laneLayout.y + (metrics.laneTitleHeight - buttonHeight) / 2;
       const addRect = { x: buttonX, y: buttonY, width: buttonWidth, height: buttonHeight };
       const key = cellKey(defaultStatusId, lane.id);
