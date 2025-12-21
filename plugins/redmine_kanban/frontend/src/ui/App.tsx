@@ -162,12 +162,11 @@ export function App({ dataUrl }: Props) {
   const handleAnalyze = async () => {
     if (!data) return;
     setAnalysisOpen(true);
-    if (analysisResult) return; // cache previous result or clear it elsewhere
+    if (analysisResult) return;
 
     setAnalyzing(true);
     setAnalysisResult(null);
     try {
-      // Filter current view issues
       const currentIssues = filterIssues(data.issues, data, filters);
       const res = await postJson<{ result?: string; error?: string }>(`${baseUrl}/analyze`, { issues: currentIssues });
       if (res.error) {
@@ -246,7 +245,6 @@ export function App({ dataUrl }: Props) {
   };
 
   const moveIssue = async (issueId: number, statusId: number, assignedToId: number | null) => {
-    // Optimistic update: immediately update local state
     if (data) {
       setData({
         ...data,
@@ -270,7 +268,67 @@ export function App({ dataUrl }: Props) {
     } catch (e: any) {
       const payload = e?.payload as any;
       setNotice(payload?.message ?? (data ? data.labels.move_failed : '移動に失敗しました'));
-      await refresh(); // ロールバック目的
+      await refresh();
+    }
+  };
+
+  const toggleSubtask = async (subtaskId: number, currentClosed: boolean) => {
+    if (!data) return;
+
+    // Optimistic update
+    setData((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        issues: prev.issues.map((issue) => {
+          if (!issue.subtasks) return issue;
+          const found = issue.subtasks.find((s) => s.id === subtaskId);
+          if (!found) return issue;
+          return {
+            ...issue,
+            subtasks: issue.subtasks.map((s) =>
+              s.id === subtaskId ? { ...s, is_closed: !currentClosed } : s
+            ),
+          };
+        }),
+      };
+    });
+
+    try {
+      // Find a closed status if we are closing, or open status if opening.
+      // This logic is tricky because we don't know which status to pick.
+      // We will look at available columns (which are statuses) to find one that matches.
+
+      let targetStatusId: number | null = null;
+
+      if (!currentClosed) {
+        // We want to close it. Find a closed status.
+        const closedCol = data.columns.find(c => c.is_closed);
+        if (closedCol) targetStatusId = closedCol.id;
+      } else {
+        // We want to open it. Find an open status (first one preferably).
+        const openCol = data.columns.find(c => !c.is_closed);
+        if (openCol) targetStatusId = openCol.id;
+      }
+
+      if (!targetStatusId) {
+         throw new Error("Cannot determine target status for toggle");
+      }
+
+      await postJson(
+        `${baseUrl}/issues/${subtaskId}/move`, // using move endpoint which handles status change
+        { status_id: targetStatusId },
+        'PATCH'
+      );
+      // We don't need to refresh if optimistic update is correct, but safer to refresh or let it be.
+      // But subtask status change might affect parent's done_ratio if calculated.
+      // Let's refresh silently or debounce.
+      await refresh();
+
+    } catch (e: any) {
+       console.error(e);
+       setError('サブタスクの更新に失敗しました');
+       await refresh(); // Revert
     }
   };
 
@@ -284,7 +342,6 @@ export function App({ dataUrl }: Props) {
     setPendingDeleteIssue(issue);
     setNotice(null);
 
-    // Call API immediately
     void deleteIssue(issueId);
   };
 
@@ -293,7 +350,6 @@ export function App({ dataUrl }: Props) {
     setIsRestoring(true);
 
     try {
-      // Re-create the issue
       const res = await postJson<{ ok: boolean; issue?: Issue; message?: string }>(
         `${baseUrl}/issues`,
         {
@@ -325,7 +381,6 @@ export function App({ dataUrl }: Props) {
   const deleteIssue = async (issueId: number) => {
     try {
       await postJson(`${baseUrl}/issues/${issueId}`, {}, 'DELETE');
-      // We keep pendingDeleteIssue for the snackbar to allow Undo (re-creation)
     } catch (e: any) {
       const p = e?.payload as any;
       setError(p?.message || (data ? data.labels.delete_failed : '削除に失敗しました'));
@@ -438,6 +493,7 @@ export function App({ dataUrl }: Props) {
             onCardOpen={openEdit}
             onDelete={requestDelete}
             onEditClick={setIframeEditUrl}
+            onSubtaskToggle={toggleSubtask}
           />
         ) : null}
       </div>
