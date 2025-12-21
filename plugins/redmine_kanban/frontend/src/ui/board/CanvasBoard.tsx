@@ -14,7 +14,7 @@ const metrics = {
   cellPadding: 12,
   cardBaseHeight: 84, // Changed from cardHeight to cardBaseHeight
   subtaskHeight: 24,  // Height per subtask
-  cardGap: 8,
+  cardGap: 10,        // 8 -> 10, More breathing room
   boardPaddingBottom: 24,
 };
 
@@ -1275,7 +1275,7 @@ function getCardColor(trackerId: number, theme: CanvasTheme): string {
 
 function readTheme(container: HTMLDivElement | null): CanvasTheme {
   const fallback = {
-    bgMain: '#f8fafc',
+    bgMain: '#f1f5f9', // Slate 100
     surface: '#ffffff',
     border: '#e2e8f0',
     borderStrong: '#cbd5e1',

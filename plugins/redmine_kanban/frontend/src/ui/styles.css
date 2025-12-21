@@ -2,8 +2,8 @@
 
 /* Modern Color Palette (Tailwind-like) */
 :root {
-  --rk-bg-main: #ffffff;
-  /* Pure White */
+  --rk-bg-main: #f1f5f9;
+  /* Slate 100 - Light Gray Background */
   --rk-bg-surface: #ffffff;
   --rk-border: #e2e8f0;
   /* Slate 200 */
@@ -57,7 +57,7 @@
   --rk-col-bg-7: #fdf2f8;
   /* Pink */
 
-  --rk-shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --rk-shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
   --rk-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
   --rk-shadow-md: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 }
