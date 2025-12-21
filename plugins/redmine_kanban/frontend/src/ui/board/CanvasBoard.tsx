@@ -30,6 +30,7 @@ type RectMap = {
   editButtons: Map<number, Rect>;
   subtaskChecks: Map<string, Rect>; // key: "issueId:subtaskId"
   subtaskSubjects: Map<string, Rect>; // key: "issueId:subtaskId"
+  cardSubjects: Map<number, Rect>; // key: issueId
 };
 
 type CanvasTheme = {
@@ -65,6 +66,7 @@ type HitResult =
   | { kind: 'edit'; issueId: number }
   | { kind: 'subtask_check'; issueId: number; subtaskId: number }
   | { kind: 'subtask_subject'; issueId: number; subtaskId: number }
+  | { kind: 'card_subject'; issueId: number }
   | { kind: 'cell'; statusId: number; laneId: string | number }
   | { kind: 'empty' };
 
@@ -107,6 +109,7 @@ export function CanvasBoard({
     editButtons: new Map(),
     subtaskChecks: new Map(),
     subtaskSubjects: new Map(),
+    cardSubjects: new Map(),
   });
   const scrollRef = useRef({ x: 0, y: 0 });
   const boardSizeRef = useRef({ width: 0, height: 0 });
@@ -115,6 +118,7 @@ export function CanvasBoard({
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [cursor, setCursor] = useState('default');
   const scaleRef = useRef(1);
+  const hoverRef = useRef<{ kind: 'card_subject' | 'subtask_subject'; id: string } | null>(null);
 
   const laneType = data.meta.lane_type;
 
@@ -215,6 +219,7 @@ export function CanvasBoard({
       editButtons: new Map(),
       subtaskChecks: new Map(),
       subtaskSubjects: new Map(),
+      cardSubjects: new Map(),
     };
 
     ctx.save();
@@ -234,7 +239,8 @@ export function CanvasBoard({
       canMove,
       rectMapRef.current,
       dragRef.current,
-      labels
+      labels,
+      hoverRef.current
     );
 
     if (laneType !== 'none') {
@@ -308,6 +314,11 @@ export function CanvasBoard({
       return;
     }
 
+    if (hit.kind === 'card_subject') {
+      onCardOpen(hit.issueId);
+      return;
+    }
+
     if (hit.kind === 'add') {
       onCreate({ statusId: hit.statusId, laneId: hit.laneId });
       return;
@@ -349,12 +360,28 @@ export function CanvasBoard({
 
     if (!drag) {
       const hit = hitTest(point, rectMapRef.current, state, data);
-      if (hit.kind === 'card') {
+      let newHover: { kind: 'card_subject' | 'subtask_subject'; id: string } | null = null;
+
+      if (hit.kind === 'card_subject') {
+        setCursor('pointer');
+        newHover = { kind: 'card_subject', id: String(hit.issueId) };
+      } else if (hit.kind === 'subtask_subject') {
+        setCursor('pointer');
+        newHover = { kind: 'subtask_subject', id: `${hit.issueId}:${hit.subtaskId}` };
+      } else if (hit.kind === 'card') {
         setCursor(canMove ? 'grab' : 'pointer');
-      } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'edit' || hit.kind === 'subtask_check' || hit.kind === 'subtask_subject') {
+      } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'edit' || hit.kind === 'subtask_check') {
         setCursor('pointer');
       } else {
         setCursor('default');
+      }
+
+      // Update hover state and re-render if changed
+      const currentHover = hoverRef.current;
+      const hoverChanged = (currentHover?.kind !== newHover?.kind) || (currentHover?.id !== newHover?.id);
+      if (hoverChanged) {
+        hoverRef.current = newHover;
+        scheduleRender();
       }
       return;
     }
@@ -638,7 +665,8 @@ function drawCells(
   canMove: boolean,
   rectMap: RectMap,
   drag: DragState | null,
-  labels: Record<string, string>
+  labels: Record<string, string>,
+  hover: { kind: 'card_subject' | 'subtask_subject'; id: string } | null
 ) {
   const columns = state.columnOrder;
 
@@ -704,7 +732,7 @@ function drawCells(
 
         if (rectIntersects(cardRect, viewRect)) {
           rectMap.cards.set(issue.id, cardRect);
-          drawCard(ctx, cardRect, issue, data, theme, canMove, labels, rectMap);
+          drawCard(ctx, cardRect, issue, data, theme, canMove, labels, rectMap, hover);
         }
       }
     });
@@ -721,7 +749,8 @@ function drawCard(
   theme: CanvasTheme,
   canMove: boolean,
   labels: Record<string, string>,
-  rectMap?: RectMap
+  rectMap?: RectMap,
+  hover?: { kind: 'card_subject' | 'subtask_subject'; id: string } | null
 ) {
   const column = data.columns.find((c) => c.id === issue.status_id);
   const isClosed = !!column?.is_closed;
@@ -780,7 +809,26 @@ function drawCard(
   const subject = issue.subject;
   const idText = `#${issue.id}`;
   const buttonAreaWidth = 52;
-  ctx.fillText(truncateText(ctx, subject, contentW - buttonAreaWidth), contentX, subjectY);
+  const subjectText = truncateText(ctx, subject, contentW - buttonAreaWidth);
+  const subjectTextWidth = ctx.measureText(subjectText).width;
+
+  // Register subject area for hit testing
+  const subjectRect = { x: contentX, y: subjectY, width: subjectTextWidth, height: 16 };
+  if (rectMap) {
+    rectMap.cardSubjects.set(issue.id, subjectRect);
+  }
+
+  // Draw subject with underline if hovered
+  const isSubjectHovered = hover?.kind === 'card_subject' && hover.id === String(issue.id);
+  ctx.fillText(subjectText, contentX, subjectY);
+  if (isSubjectHovered) {
+    ctx.beginPath();
+    ctx.strokeStyle = theme.textPrimary;
+    ctx.lineWidth = 1;
+    ctx.moveTo(contentX, subjectY + 14);
+    ctx.lineTo(contentX + subjectTextWidth, subjectY + 14);
+    ctx.stroke();
+  }
 
   // 5. Metadata Row 1: ID | Assignee
   const row1Y = y + 30;
@@ -921,7 +969,17 @@ function drawCard(
         rectMap.subtaskSubjects.set(`${issue.id}:${subtask.id}`, subjectRect);
       }
 
+      // Draw subtask subject with underline if hovered
+      const isSubtaskHovered = hover?.kind === 'subtask_subject' && hover.id === `${issue.id}:${subtask.id}`;
       ctx.fillText(subjectText, sx + 20, sy + 1);
+      if (isSubtaskHovered) {
+        ctx.beginPath();
+        ctx.strokeStyle = subtask.is_closed ? theme.textSecondary : theme.textPrimary;
+        ctx.lineWidth = 1;
+        ctx.moveTo(sx + 20, sy + 13);
+        ctx.lineTo(sx + 20 + textMetrics.width, sy + 13);
+        ctx.stroke();
+      }
     });
   }
 
@@ -1051,6 +1109,11 @@ function hitTest(
     if (pointInRect(point, rect)) {
       const [issueIdStr, subtaskIdStr] = key.split(':');
       return { kind: 'subtask_subject', issueId: parseInt(issueIdStr), subtaskId: parseInt(subtaskIdStr) };
+    }
+  }
+  for (const [issueId, rect] of rectMap.cardSubjects) {
+    if (pointInRect(point, rect)) {
+      return { kind: 'card_subject', issueId };
     }
   }
   for (const [issueId, rect] of rectMap.deleteButtons) {
