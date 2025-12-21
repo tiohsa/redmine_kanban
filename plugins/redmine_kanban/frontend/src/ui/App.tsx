@@ -274,6 +274,34 @@ export function App({ dataUrl }: Props) {
     }
   };
 
+  const toggleChildIssue = async (parentIssueId: number, childIssueId: number, nextDone: boolean) => {
+    if (data) {
+      setData({
+        ...data,
+        issues: data.issues.map((issue) =>
+          issue.id === parentIssueId
+            ? {
+                ...issue,
+                children: issue.children?.map((child) =>
+                  child.id === childIssueId ? { ...child, done_ratio: nextDone ? 100 : 0 } : child
+                ),
+              }
+            : issue
+        ),
+      });
+    }
+
+    try {
+      setNotice(null);
+      await postJson(`${baseUrl}/issues/${childIssueId}`, { done_ratio: nextDone ? 100 : 0 }, 'PATCH');
+      await refresh();
+    } catch (e: any) {
+      const payload = e?.payload as any;
+      setNotice(payload?.message ?? (data ? data.labels.update_failed : '更新に失敗しました'));
+      await refresh();
+    }
+  };
+
   const canMove = !!data?.meta.can_move;
   const canCreate = !!data?.meta.can_create;
 
@@ -437,6 +465,7 @@ export function App({ dataUrl }: Props) {
             onCreate={openCreate}
             onCardOpen={openEdit}
             onDelete={requestDelete}
+            onChildToggle={toggleChildIssue}
             onEditClick={setIframeEditUrl}
           />
         ) : null}

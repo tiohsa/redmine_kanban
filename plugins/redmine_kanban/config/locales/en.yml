@@ -32,6 +32,7 @@ en:
   label_kanban_issue_start_date: "Start Date"
   label_kanban_issue_priority: "Priority"
   label_kanban_issue_description: "Description"
+  label_kanban_child_issues: "Child Issues"
   label_kanban_stagnation: "Aging"
   label_kanban_not_set: "Not set"
   label_kanban_this_week: "This week"

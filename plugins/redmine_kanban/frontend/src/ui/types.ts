@@ -27,10 +27,20 @@ export type Issue = {
   updated_on?: string | null;
   aging_days?: number;
   done_ratio?: number;
+  children?: IssueChild[];
   urls: {
     issue: string;
     issue_edit: string;
   };
+};
+
+export type IssueChild = {
+  id: number;
+  subject: string;
+  status_id: number;
+  status_name?: string | null;
+  status_is_closed?: boolean;
+  done_ratio?: number;
 };
 
 export type Lists = {

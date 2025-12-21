@@ -60,7 +60,7 @@ module RedmineKanban
     def fetch_issues(status_ids)
       project_ids = @project.self_and_descendants.ids
       relation = Issue.visible(@user).where(project_id: project_ids).where(status_id: status_ids)
-      relation = relation.includes(:assigned_to, :priority, :status)
+      relation = relation.includes(:assigned_to, :priority, :status, children: [:status])
       relation.order(updated_on: :desc).limit(@settings.issue_limit).to_a
     end
 
@@ -109,6 +109,7 @@ module RedmineKanban
         priority_id: issue.priority_id,
         priority_name: issue.priority&.name,
         done_ratio: issue.done_ratio,
+        children: child_issues(issue),
         updated_on: issue.updated_on&.iso8601,
         aging_days: aging_days(issue),
         urls: {
@@ -159,6 +160,7 @@ module RedmineKanban
         issue_start_date: l(:label_kanban_issue_start_date),
         issue_priority: l(:label_kanban_issue_priority),
         issue_description: l(:label_kanban_issue_description),
+        child_issues: l(:label_kanban_child_issues),
         stagnation: l(:label_kanban_stagnation),
         not_set: l(:label_kanban_not_set),
         this_week: l(:label_kanban_this_week),
@@ -175,6 +177,19 @@ module RedmineKanban
         load_failed: l(:label_kanban_load_failed),
         no_result: l(:label_kanban_no_result)
       }
+    end
+
+    def child_issues(issue)
+      issue.children.select { |child| child.visible?(@user) }.map do |child|
+        {
+          id: child.id,
+          subject: child.subject,
+          status_id: child.status_id,
+          status_name: child.status&.name,
+          status_is_closed: child.status&.is_closed,
+          done_ratio: child.done_ratio
+        }
+      end
     end
 
     def l(key, options = {})

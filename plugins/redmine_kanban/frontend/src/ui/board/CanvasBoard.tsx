@@ -12,7 +12,7 @@ const metrics = {
   laneTitleHeight: 40,
   laneGap: 0,
   cellPadding: 12,
-  cardHeight: 84,
+  cardHeight: 128,
   cardGap: 8,
   // addButtonHeight: 28, // Removed
   // addButtonGap: 8,     // Removed
@@ -29,6 +29,7 @@ type RectMap = {
   addButtons: Map<string, Rect>;
   deleteButtons: Map<number, Rect>;
   editButtons: Map<number, Rect>;
+  childChecks: Map<string, Rect>;
 };
 
 type CanvasTheme = {
@@ -62,6 +63,7 @@ type HitResult =
   | { kind: 'add'; statusId: number; laneId: string | number }
   | { kind: 'delete'; issueId: number }
   | { kind: 'edit'; issueId: number }
+  | { kind: 'child_toggle'; issueId: number; childId: number }
   | { kind: 'cell'; statusId: number; laneId: string | number }
   | { kind: 'empty' };
 
@@ -74,6 +76,7 @@ type Props = {
   onCreate: (ctx: { statusId: number; laneId?: string | number }) => void;
   onCardOpen: (issueId: number) => void;
   onDelete: (issueId: number) => void;
+  onChildToggle: (parentIssueId: number, childIssueId: number, nextDone: boolean) => void;
   onEditClick: (editUrl: string) => void;
   labels: Record<string, string>;
   fitToScreen?: boolean;
@@ -88,6 +91,7 @@ export function CanvasBoard({
   onCreate,
   onCardOpen,
   onDelete,
+  onChildToggle,
   onEditClick,
   labels,
   fitToScreen = false,
@@ -100,6 +104,7 @@ export function CanvasBoard({
     addButtons: new Map(),
     deleteButtons: new Map(),
     editButtons: new Map(),
+    childChecks: new Map(),
   });
   const scrollRef = useRef({ x: 0, y: 0 });
   const boardSizeRef = useRef({ width: 0, height: 0 });
@@ -223,6 +228,7 @@ export function CanvasBoard({
       addButtons: new Map(),
       deleteButtons: new Map(),
       editButtons: new Map(),
+      childChecks: new Map(),
     };
 
     ctx.save();
@@ -333,6 +339,16 @@ export function CanvasBoard({
     const point = toBoardPoint(event, scrollRef.current, canvasRef.current, scaleRef.current);
     const hit = hitTest(point, rectMapRef.current, state, data);
 
+    if (hit.kind === 'child_toggle') {
+      const issue = state.cardsById.get(hit.issueId);
+      const child = issue?.children?.find((entry) => entry.id === hit.childId);
+      if (issue && child) {
+        const isDone = (child.done_ratio ?? 0) >= 100;
+        onChildToggle(issue.id, child.id, !isDone);
+      }
+      return;
+    }
+
     if (hit.kind === 'add') {
       onCreate({ statusId: hit.statusId, laneId: hit.laneId });
       return;
@@ -376,6 +392,8 @@ export function CanvasBoard({
       const hit = hitTest(point, rectMapRef.current, state, data);
       if (hit.kind === 'card') {
         setCursor(canMove ? 'grab' : 'pointer');
+      } else if (hit.kind === 'child_toggle') {
+        setCursor('pointer');
       } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'edit') {
         setCursor('pointer');
       } else {
@@ -880,6 +898,68 @@ function drawCard(
     ctx.fillText(`${agingDays}d`, currentX, row2Y);
   }
 
+  // 7. Child Issue Checklist (Todo)
+  const childIssues = issue.children ?? [];
+  const todoHeaderY = y + 66;
+  if (childIssues.length > 0) {
+    ctx.save();
+    ctx.font = '600 10px Inter, sans-serif';
+    ctx.fillStyle = theme.textSecondary;
+    ctx.textBaseline = 'top';
+    ctx.fillText(labels.child_issues ?? 'Child Issues', contentX, todoHeaderY);
+
+    const listStartY = todoHeaderY + 12;
+    const lineHeight = 14;
+    const checkboxSize = 10;
+    const maxVisible = 3;
+    const visibleChildren = childIssues.slice(0, maxVisible);
+    ctx.font = '400 11px Inter, sans-serif';
+    const listTextWidth = contentW - checkboxSize - 18;
+
+    visibleChildren.forEach((child, index) => {
+      const rowY = listStartY + index * lineHeight;
+      const boxRect = {
+        x: contentX,
+        y: rowY + 1,
+        width: checkboxSize,
+        height: checkboxSize,
+      };
+      if (rectMap) rectMap.childChecks.set(childKey(issue.id, child.id), boxRect);
+
+      const childDone = (child.done_ratio ?? 0) >= 100;
+      ctx.strokeStyle = theme.borderStrong;
+      ctx.fillStyle = childDone ? theme.primary : '#ffffff';
+      roundedRect(ctx, boxRect.x, boxRect.y, boxRect.width, boxRect.height, 2);
+      ctx.fill();
+      ctx.stroke();
+      if (childDone) {
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 9px Inter, sans-serif';
+        ctx.fillText('✓', boxRect.x + 2, boxRect.y - 1);
+        ctx.font = '400 11px Inter, sans-serif';
+      }
+
+      const textColor = childDone ? theme.textSecondary : theme.textPrimary;
+      ctx.fillStyle = textColor;
+      ctx.fillText(truncateText(ctx, child.subject, listTextWidth), boxRect.x + checkboxSize + 6, rowY);
+    });
+
+    const remaining = childIssues.length - visibleChildren.length;
+    if (remaining > 0) {
+      const rowY = listStartY + visibleChildren.length * lineHeight;
+      ctx.fillStyle = theme.textSecondary;
+      ctx.fillText(`+${remaining}`, contentX + checkboxSize + 6, rowY);
+    }
+    ctx.restore();
+  }
+
+  // 8. Done Ratio Donut
+  const doneRatio = issue.done_ratio ?? 0;
+  const donutSize = 28;
+  const donutCenterX = x + w - donutSize / 2 - 10;
+  const donutCenterY = y + h - donutSize / 2 - 8;
+  drawDonut(ctx, donutCenterX, donutCenterY, 10, doneRatio / 100, theme);
+
   // 7. Edit Button (Pencil Icon top right)
   const iconSize = 20;
   const editRect = {
@@ -919,6 +999,37 @@ function drawIcon(ctx: CanvasRenderingContext2D, icon: string, x: number, y: num
   ctx.fillStyle = color;
   ctx.textBaseline = 'top';
   ctx.fillText(icon, x, y - 2); // Slight adjustment for alignment
+  ctx.restore();
+}
+
+function drawDonut(
+  ctx: CanvasRenderingContext2D,
+  centerX: number,
+  centerY: number,
+  radius: number,
+  ratio: number,
+  theme: CanvasTheme
+) {
+  const clamped = Math.max(0, Math.min(1, ratio));
+  const startAngle = -Math.PI / 2;
+  const endAngle = startAngle + Math.PI * 2 * clamped;
+  ctx.save();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = theme.border;
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.strokeStyle = theme.primary;
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radius, startAngle, endAngle);
+  ctx.stroke();
+
+  ctx.fillStyle = theme.textSecondary;
+  ctx.font = '600 9px Inter, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`${Math.round(clamped * 100)}%`, centerX, centerY);
   ctx.restore();
 }
 
@@ -983,6 +1094,12 @@ function hitTest(
   state: BoardState,
   data: BoardData
 ): HitResult {
+  for (const [key, rect] of rectMap.childChecks) {
+    if (pointInRect(point, rect)) {
+      const [issueId, childId] = parseChildKey(key);
+      return { kind: 'child_toggle', issueId, childId };
+    }
+  }
   for (const [issueId, rect] of rectMap.deleteButtons) {
     if (pointInRect(point, rect)) return { kind: 'delete', issueId };
   }
@@ -1037,6 +1154,15 @@ function parseCellKey(key: string, data: BoardData): [number, string | number] {
   if (lane === 'unassigned') return [statusId, 'unassigned'];
   const parsedLane = Number(lane);
   return [statusId, Number.isFinite(parsedLane) ? parsedLane : lane];
+}
+
+function childKey(issueId: number, childId: number) {
+  return `${issueId}:${childId}`;
+}
+
+function parseChildKey(key: string): [number, number] {
+  const [issueId, childId] = key.split(':').map((value) => Number(value));
+  return [issueId, childId];
 }
 
 function resolveLaneId(data: BoardData, issue: Issue): string | number {
