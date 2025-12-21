@@ -46,3 +46,5 @@ ja:
   label_kanban_filter: "フィルタ"
   label_kanban_filter_task: "タスクの絞り込み"
   label_kanban_filter_subject: "題名で絞り込み..."
+  label_kanban_fit_none: "原寸 (100%)"
+  label_kanban_fit_width: "幅に合わせる"

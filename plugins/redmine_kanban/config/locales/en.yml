@@ -46,3 +46,5 @@ en:
   label_kanban_filter: "Filter"
   label_kanban_filter_task: "Filter Tasks"
   label_kanban_filter_subject: "Filter by subject..."
+  label_kanban_fit_none: "Actual Size (100%)"
+  label_kanban_fit_width: "Fit to Width"

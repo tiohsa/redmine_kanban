@@ -84,7 +84,7 @@ type Props = {
   onEditClick: (editUrl: string) => void;
   onSubtaskToggle?: (subtaskId: number, currentClosed: boolean) => void;
   labels: Record<string, string>;
-  fitToScreen?: boolean;
+  fitMode?: 'none' | 'width';
 };
 
 export function CanvasBoard({
@@ -99,7 +99,7 @@ export function CanvasBoard({
   onEditClick,
   onSubtaskToggle,
   labels,
-  fitToScreen = false,
+  fitMode = 'none',
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -129,17 +129,10 @@ export function CanvasBoard({
 
   const theme = useMemo(() => readTheme(containerRef.current), [size.width, size.height]);
 
+  // Scale calculation is now handled directly in draw() to ensure it's always in sync with the latest layout and size.
   useEffect(() => {
-    if (fitToScreen && size.width > 0 && size.height > 0) {
-      const scaleX = size.width / layout.boardWidth;
-      const scaleY = size.height / layout.boardHeight;
-      scaleRef.current = Math.min(scaleX, scaleY, 1);
-      scrollRef.current = { x: 0, y: 0 };
-    } else {
-      scaleRef.current = 1;
-    }
     scheduleRender();
-  }, [fitToScreen, size, layout.boardWidth, layout.boardHeight]);
+  }, [fitMode]);
 
   useEffect(() => {
     const node = containerRef.current;
@@ -202,8 +195,21 @@ export function CanvasBoard({
     ctx.fillStyle = theme.bgMain;
     ctx.fillRect(0, 0, size.width, size.height);
 
-    const scroll = scrollRef.current;
+    boardSizeRef.current = { width: layout.boardWidth, height: layout.boardHeight };
+
+    // Update scale before drawing
+    if (fitMode === 'width' && size.width > 0 && layout.boardWidth > 0) {
+      const nextScale = Math.min(size.width / layout.boardWidth, 1);
+      if (isFinite(nextScale) && nextScale > 0) {
+        scaleRef.current = nextScale;
+      }
+      scrollRef.current.x = 0;
+    } else if (fitMode === 'none') {
+      scaleRef.current = 1;
+    }
+
     const scale = scaleRef.current;
+    const scroll = scrollRef.current;
 
     const viewRect = {
       x: scroll.x / scale,
@@ -211,8 +217,6 @@ export function CanvasBoard({
       width: size.width / scale,
       height: size.height / scale
     };
-
-    boardSizeRef.current = { width: layout.boardWidth, height: layout.boardHeight };
 
     rectMapRef.current = {
       cards: new Map(),

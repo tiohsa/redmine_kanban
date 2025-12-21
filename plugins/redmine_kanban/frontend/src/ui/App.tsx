@@ -16,6 +16,8 @@ type Filters = {
 
 type ModalContext = { statusId: number; laneId?: string | number; issueId?: number };
 
+type FitMode = 'none' | 'width';
+
 export function App({ dataUrl }: Props) {
   const [data, setData] = useState<BoardData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -49,12 +51,16 @@ export function App({ dataUrl }: Props) {
       return false;
     }
   });
-  const [fitToScreen, setFitToScreen] = useState(() => {
+  const [fitMode, setFitMode] = useState<FitMode>(() => {
     try {
-      return localStorage.getItem('rk_fit_to_screen') === '1';
+      const v = localStorage.getItem('rk_fit_mode');
+      if (v === 'none' || v === 'width') return v;
+      // Legacy compatibility
+      if (localStorage.getItem('rk_fit_to_screen') === '1') return 'width';
     } catch {
-      return false;
+      // ignore
     }
+    return 'none';
   });
   const [showSubtasks, setShowSubtasks] = useState(() => {
     try {
@@ -122,11 +128,11 @@ export function App({ dataUrl }: Props) {
 
   React.useEffect(() => {
     try {
-      localStorage.setItem('rk_fit_to_screen', fitToScreen ? '1' : '0');
+      localStorage.setItem('rk_fit_mode', fitMode);
     } catch {
       // ignore
     }
-  }, [fitToScreen]);
+  }, [fitMode]);
 
   React.useEffect(() => {
     try {
@@ -294,8 +300,9 @@ export function App({ dataUrl }: Props) {
       );
 
       if (res.ok) {
-        setPendingDeleteIssue(null);
+        setNotice(null);
         await refresh();
+        setPendingDeleteIssue(null);
       } else {
         setError(res.message || '復元に失敗しました');
       }
@@ -397,8 +404,11 @@ export function App({ dataUrl }: Props) {
           onChangeSort={setSortKey}
           fullWindow={fullWindow}
           onToggleFullWindow={() => setFullWindow((v) => !v)}
-          fitToScreen={fitToScreen}
-          onToggleFitToScreen={() => setFitToScreen(!fitToScreen)}
+          onAnalyze={() => setModal({ statusId: 0, issueId: -1 })}
+          fitMode={fitMode}
+          onToggleFitMode={() => {
+            setFitMode((prev) => (prev === 'none' ? 'width' : 'none'));
+          }}
           showSubtasks={showSubtasks}
           onToggleShowSubtasks={() => {
             const next = !showSubtasks;
@@ -420,7 +430,7 @@ export function App({ dataUrl }: Props) {
             canMove={canMove}
             canCreate={canCreate}
             labels={filteredData.labels}
-            fitToScreen={fitToScreen}
+            fitMode={fitMode}
             onCommand={(command) => {
               if (command.type === 'move_issue') {
                 void moveIssue(command.issueId, command.statusId, command.assignedToId);
@@ -870,8 +880,8 @@ function Toolbar({
   fullWindow,
   onToggleFullWindow,
   onAnalyze,
-  fitToScreen,
-  onToggleFitToScreen,
+  fitMode,
+  onToggleFitMode,
   showSubtasks,
   onToggleShowSubtasks,
 }: {
@@ -882,8 +892,9 @@ function Toolbar({
   onChangeSort: (k: SortKey) => void;
   fullWindow: boolean;
   onToggleFullWindow: () => void;
-  fitToScreen: boolean;
-  onToggleFitToScreen: () => void;
+  onAnalyze: () => void;
+  fitMode: FitMode;
+  onToggleFitMode: () => void;
   showSubtasks: boolean;
   onToggleShowSubtasks: () => void;
 }) {
@@ -993,11 +1004,17 @@ function Toolbar({
       <div className="rk-toolbar-group">
         <button
           type="button"
-          className={`rk-btn ${fitToScreen ? 'rk-btn-toggle-active' : ''}`}
-          onClick={onToggleFitToScreen}
-          title={fitToScreen ? 'Reset View (100%)' : 'Fit to Screen'}
+          className={`rk-btn ${fitMode !== 'none' ? 'rk-btn-toggle-active' : ''}`}
+          onClick={onToggleFitMode}
+          title={
+            fitMode === 'none' ? labels.fit_none :
+              fitMode === 'width' ? labels.fit_width :
+                labels.fit_all
+          }
         >
-          <span className="rk-icon">{fitToScreen ? 'zoom_in' : 'fit_screen'}</span>
+          <span className="rk-icon">
+            {fitMode === 'none' ? 'zoom_in' : 'fit_screen'}
+          </span>
         </button>
 
         <button
