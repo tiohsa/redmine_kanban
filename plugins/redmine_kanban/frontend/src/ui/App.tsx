@@ -1062,7 +1062,6 @@ function Toolbar({
       <div className="rk-toolbar-separator" />
 
       <div className="rk-toolbar-group rk-sort">
-        <span className="rk-icon">sort</span>
         <SortButton
           active={sortKey.startsWith('due_')}
           direction={sortKey === 'due_asc' ? 'asc' : sortKey === 'due_desc' ? 'desc' : null}
@@ -1087,7 +1086,7 @@ function Toolbar({
           label={data.labels.updated ?? '更新'}
           onClick={() => {
             if (sortKey === 'updated_desc') onChangeSort('updated_asc');
-            else onChangeSort('updated_desc');
+            else onChangeSort('updated_asc');
           }}
         />
       </div>
@@ -1097,17 +1096,15 @@ function Toolbar({
       <div className="rk-toolbar-group">
         <button type="button" className="rk-btn rk-btn-primary" onClick={onAnalyze} title={labels.analyze}>
           <span className="rk-icon">auto_awesome</span>
-          {labels.analyze}
         </button>
 
         <button
           type="button"
-          className="rk-btn"
+          className={`rk-btn ${fitToScreen ? 'rk-btn-toggle-active' : ''}`}
           onClick={onToggleFitToScreen}
-          title="Fit to Screen"
+          title={fitToScreen ? 'Reset View (100%)' : 'Fit to Screen'}
         >
           <span className="rk-icon">{fitToScreen ? 'zoom_in' : 'fit_screen'}</span>
-          {fitToScreen ? '100%' : 'Fit'}
         </button>
 
         <button
@@ -1117,7 +1114,6 @@ function Toolbar({
           title={showSubtasks ? '子チケットを非表示' : '子チケットを表示'}
         >
           <span className="rk-icon">{showSubtasks ? 'check_box' : 'check_box_outline_blank'}</span>
-          子チケット
         </button>
 
         <button type="button" className="rk-btn" onClick={onToggleFullWindow} title={fullWindow ? labels.normal_view : labels.fullscreen_view}>
@@ -1143,11 +1139,11 @@ function SortButton({
   label: string;
   onClick: () => void;
 }) {
-  const suffix = direction === 'asc' ? 'arrow_upward' : direction === 'desc' ? 'arrow_downward' : '';
+  const arrow = direction === 'asc' ? 'arrow_upward' : direction === 'desc' ? 'arrow_downward' : 'sort';
   return (
-    <button type="button" className={`rk-btn rk-btn-sm ${active ? 'rk-btn-toggle-active' : ''}`} onClick={onClick}>
+    <button type="button" className={`rk-btn ${active ? 'rk-btn-toggle-active' : ''}`} onClick={onClick}>
+      <span className="rk-icon" style={{ fontSize: '18px' }}>{arrow}</span>
       {label}
-      {suffix && <span className="rk-icon" style={{ fontSize: '14px' }}>{suffix}</span>}
     </button>
   );
 }

@@ -239,17 +239,28 @@
   justify-content: center;
   gap: 4px;
   height: 32px;
-  /* Compact height */
-  padding: 0 10px;
-  border: 1px solid transparent;
+  padding: 0 8px;
+  border: 1px solid var(--rk-border);
   border-radius: 6px;
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
-  background: transparent;
+  background: #fff;
   color: var(--rk-text-secondary);
   white-space: nowrap;
+}
+
+.rk-btn:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: var(--rk-text-primary);
+}
+
+.rk-btn-toggle-active {
+  background: #eff6ff !important;
+  border-color: #93c5fd !important;
+  color: var(--rk-primary) !important;
 }
 
 .rk-dropdown-trigger {
@@ -748,21 +759,16 @@
   border-color: #fecaca;
 }
 
-.rk-btn {
-  border: 1px solid var(--rk-border);
-  background: #fff;
-  border-radius: 8px;
-  padding: 0 12px;
-  height: 36px;
-  cursor: pointer;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--rk-text-primary);
-  transition: all 0.2s;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
+.rk-btn-primary {
+  background: var(--rk-primary);
+  border-color: var(--rk-primary);
+  color: #fff;
+}
+
+.rk-btn-primary:hover {
+  background: var(--rk-primary-hover);
+  border-color: var(--rk-primary-hover);
+  color: #fff;
 }
 
 .rk-btn:hover {
