@@ -21,6 +21,7 @@ export type Subtask = {
 
 export type Issue = {
   id: number;
+  parent_id?: number | null;
   subject: string;
   status_id: number;
   tracker_id: number;

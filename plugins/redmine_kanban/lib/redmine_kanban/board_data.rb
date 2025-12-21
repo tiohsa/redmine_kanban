@@ -96,6 +96,7 @@ module RedmineKanban
     def issue_to_h(issue)
       {
         id: issue.id,
+        parent_id: issue.parent_id,
         subject: issue.subject,
         status_id: issue.status_id,
         status_name: issue.status&.name,

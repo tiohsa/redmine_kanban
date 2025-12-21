@@ -125,6 +125,13 @@ export function App({ dataUrl }: Props) {
       return false;
     }
   });
+  const [showSubtasks, setShowSubtasks] = useState(() => {
+    try {
+      return localStorage.getItem('rk_show_subtasks') !== '0'; // Default true
+    } catch {
+      return true;
+    }
+  });
   const [sortKey, setSortKey] = useState<SortKey>(() => {
     try {
       const v = localStorage.getItem('rk_sortkey');
@@ -220,22 +227,34 @@ export function App({ dataUrl }: Props) {
     }
   }, [sortKey]);
 
+  // Filter data based on showSubtasks
+  const filteredData = useMemo(() => {
+    if (!data) return null;
+    if (showSubtasks) return data;
+
+    // Filter out issues that have a parent_id (subtasks)
+    return {
+      ...data,
+      issues: data.issues.filter(issue => !issue.parent_id)
+    };
+  }, [data, showSubtasks]);
+
   const issues = useMemo(() => {
-    let filtered = filterIssues(data?.issues ?? [], data, filters);
+    let filtered = filterIssues(filteredData?.issues ?? [], filteredData, filters);
     if (pendingDeleteIssue) {
       filtered = filtered.filter((i) => i.id !== pendingDeleteIssue.id);
     }
     return filtered;
-  }, [data, filters, pendingDeleteIssue]);
+  }, [filteredData, filters, pendingDeleteIssue]);
   const priorityRank = useMemo(() => {
     const m = new Map<number, number>();
     for (const [idx, p] of (data?.lists.priorities ?? []).entries()) m.set(p.id, idx);
     return m;
   }, [data]);
   const boardState = useMemo(() => {
-    if (!data) return null;
-    return buildBoardState(data, issues, sortKey, priorityRank);
-  }, [data, issues, sortKey, priorityRank]);
+    if (!filteredData) return null;
+    return buildBoardState(filteredData, issues, sortKey, priorityRank);
+  }, [filteredData, issues, sortKey, priorityRank]);
 
   const openCreate = (ctx: ModalContext) => setModal(ctx);
   const openEdit = (issueId: number) => {
@@ -312,7 +331,7 @@ export function App({ dataUrl }: Props) {
       }
 
       if (!targetStatusId) {
-         throw new Error("Cannot determine target status for toggle");
+        throw new Error("Cannot determine target status for toggle");
       }
 
       await postJson(
@@ -326,9 +345,9 @@ export function App({ dataUrl }: Props) {
       await refresh();
 
     } catch (e: any) {
-       console.error(e);
-       setError('サブタスクの更新に失敗しました');
-       await refresh(); // Revert
+      console.error(e);
+      setError('サブタスクの更新に失敗しました');
+      await refresh(); // Revert
     }
   };
 
@@ -388,6 +407,8 @@ export function App({ dataUrl }: Props) {
       await refresh();
     }
   };
+
+
 
   return (
     <div className={`rk-root${fullWindow ? ' rk-root-fullwindow' : ''}`}>
@@ -470,15 +491,23 @@ export function App({ dataUrl }: Props) {
           onAnalyze={handleAnalyze}
           fitToScreen={fitToScreen}
           onToggleFitToScreen={() => setFitToScreen(!fitToScreen)}
+          showSubtasks={showSubtasks}
+          onToggleShowSubtasks={() => {
+            const next = !showSubtasks;
+            setShowSubtasks(next);
+            try {
+              localStorage.setItem('rk_show_subtasks', next ? '1' : '0');
+            } catch { }
+          }}
         />
       ) : (
         <div className="rk-empty">データを取得しています...</div>
       )}
 
       <div className="rk-board">
-        {data && boardState ? (
+        {filteredData && boardState ? (
           <CanvasBoard
-            data={data}
+            data={filteredData}
             state={boardState}
             canMove={canMove}
             canCreate={canCreate}
@@ -944,7 +973,9 @@ function Toolbar({
   onToggleFullWindow,
   onAnalyze,
   fitToScreen,
-  onToggleFitToScreen, // Add new prop
+  onToggleFitToScreen,
+  showSubtasks,
+  onToggleShowSubtasks,
 }: {
   data: BoardData;
   filters: Filters;
@@ -956,6 +987,8 @@ function Toolbar({
   onAnalyze: () => void;
   fitToScreen: boolean;
   onToggleFitToScreen: () => void;
+  showSubtasks: boolean;
+  onToggleShowSubtasks: () => void;
 }) {
   const assignees = data.lists.assignees ?? [];
   const labels = data.labels;
@@ -1075,6 +1108,16 @@ function Toolbar({
         >
           <span className="rk-icon">{fitToScreen ? 'zoom_in' : 'fit_screen'}</span>
           {fitToScreen ? '100%' : 'Fit'}
+        </button>
+
+        <button
+          type="button"
+          className={`rk-btn ${showSubtasks ? 'rk-btn-toggle-active' : ''}`}
+          onClick={onToggleShowSubtasks}
+          title={showSubtasks ? '子チケットを非表示' : '子チケットを表示'}
+        >
+          <span className="rk-icon">{showSubtasks ? 'check_box' : 'check_box_outline_blank'}</span>
+          子チケット
         </button>
 
         <button type="button" className="rk-btn" onClick={onToggleFullWindow} title={fullWindow ? labels.normal_view : labels.fullscreen_view}>
