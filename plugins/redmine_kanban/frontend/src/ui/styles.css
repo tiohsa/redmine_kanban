@@ -1051,8 +1051,8 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   background: var(--rk-bg-surface);
   border-radius: 12px;
   box-shadow: var(--rk-shadow-md);
-  width: min(90vw, 1200px);
-  height: min(85vh, 900px);
+  width: calc(100vw - 48px);
+  height: calc(100vh - 48px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
