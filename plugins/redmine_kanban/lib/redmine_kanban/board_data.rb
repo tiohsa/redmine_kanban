@@ -1,9 +1,10 @@
 module RedmineKanban
   class BoardData
-    def initialize(project:, user:)
+    def initialize(project:, user:, project_ids: nil)
       @project = project
       @user = user
       @settings = Settings.new(Setting.plugin_redmine_kanban)
+      @project_ids = project_ids.presence || [@project.id]
     end
 
     def to_h
@@ -44,7 +45,8 @@ module RedmineKanban
         lists: {
           assignees: assignees_list,
           trackers: trackers_list,
-          priorities: priorities_list
+          priorities: priorities_list,
+          projects: projects_list
         },
         issues: issues.map { |issue| issue_to_h(issue) },
         labels: labels
@@ -58,9 +60,8 @@ module RedmineKanban
     end
 
     def fetch_issues(status_ids)
-      project_ids = @project.self_and_descendants.ids
-      relation = Issue.visible(@user).where(project_id: project_ids).where(status_id: status_ids)
-      relation = relation.includes(:assigned_to, :priority, :status)
+      relation = Issue.visible(@user).where(project_id: @project_ids).where(status_id: status_ids)
+      relation = relation.includes(:assigned_to, :priority, :status, :project)
       relation.order(updated_on: :desc).limit(@settings.issue_limit).to_a
     end
 
@@ -74,13 +75,23 @@ module RedmineKanban
       lanes
     end
 
+    def projects_list
+      base_depth = @project.ancestors.count
+      @project.self_and_descendants.visible.to_a.map do |p|
+        { id: p.id, name: p.name, level: p.ancestors.count - base_depth }
+      end
+    end
+
     def assignees_list
-      users = @project.assignable_users.sorted.to_a
+      # Use assignable users from all selected projects
+      projects = Project.where(id: @project_ids).to_a
+      users = projects.map(&:assignable_users).flatten.uniq.sort_by { |u| u.name.to_s.downcase }
       [{ id: nil, name: l(:label_kanban_unassigned) }] + users.map { |u| { id: u.id, name: u.name } }
     end
 
     def trackers_list
-      trackers = @project.trackers.sorted.to_a
+      # Use trackers from all selected projects
+      trackers = Project.where(id: @project_ids).includes(:trackers).flat_map(&:trackers).uniq.sort_by(&:position)
       trackers.map { |t| { id: t.id, name: t.name } }
     end
 
@@ -89,8 +100,7 @@ module RedmineKanban
     end
 
     def fetch_column_counts(status_ids)
-      project_ids = @project.self_and_descendants.ids
-      Issue.visible(@user).where(project_id: project_ids, status_id: status_ids).group(:status_id).count
+      Issue.visible(@user).where(project_id: @project_ids, status_id: status_ids).group(:status_id).count
     end
 
     def issue_to_h(issue)
@@ -112,6 +122,7 @@ module RedmineKanban
         done_ratio: issue.done_ratio,
         updated_on: issue.updated_on&.iso8601,
         aging_days: aging_days(issue),
+        project: { id: issue.project_id, name: issue.project.name },
         subtasks: issue.children.visible.map { |child|
           {
             id: child.id,

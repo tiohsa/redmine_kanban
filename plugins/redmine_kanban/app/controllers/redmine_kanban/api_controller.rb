@@ -9,7 +9,7 @@ module RedmineKanban
     before_action :find_issue, only: [:move, :update, :destroy]
 
     def index
-      render json: BoardData.new(project: @project, user: User.current).to_h
+      render json: BoardData.new(project: @project, user: User.current, project_ids: params[:project_ids]).to_h
     end
 
     def move

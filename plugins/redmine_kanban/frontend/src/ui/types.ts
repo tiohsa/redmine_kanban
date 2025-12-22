@@ -40,12 +40,14 @@ export type Issue = {
     issue: string;
     issue_edit: string;
   };
+  project?: { id: number; name: string };
 };
 
 export type Lists = {
   assignees: { id: number | null; name: string }[];
   trackers: { id: number; name: string }[];
   priorities: { id: number; name: string }[];
+  projects: { id: number; name: string; level: number }[];
 };
 
 export type Meta = {

@@ -12,6 +12,7 @@ type Filters = {
   q: string;
   due: 'all' | 'overdue' | 'thisweek' | '3days' | '7days' | 'none';
   priority: string[]; // Multiple selection
+  projectIds: number[]; // Multiple selection
 };
 
 type ModalContext = { statusId: number; laneId?: string | number; issueId?: number };
@@ -32,13 +33,14 @@ export function App({ dataUrl }: Props) {
           assignee: parsed.assignee || 'all',
           q: parsed.q || '',
           due: parsed.due || 'all',
-          priority: Array.isArray(parsed.priority) ? parsed.priority : []
+          priority: Array.isArray(parsed.priority) ? parsed.priority : [],
+          projectIds: Array.isArray(parsed.projectIds) ? parsed.projectIds.map(Number) : []
         };
       }
     } catch {
       // ignore
     }
-    return { assignee: 'all', q: '', due: 'all', priority: [] };
+    return { assignee: 'all', q: '', due: 'all', priority: [], projectIds: [] };
   });
   const [modal, setModal] = useState<ModalContext | null>(null);
   const [pendingDeleteIssue, setPendingDeleteIssue] = useState<Issue | null>(null);
@@ -94,14 +96,20 @@ export function App({ dataUrl }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const json = await getJson<BoardData>(`${baseUrl}/data`);
+      const params = new URLSearchParams();
+      filters.projectIds.forEach(id => params.append('project_ids[]', String(id)));
+
+      const qs = params.toString();
+      const url = `${baseUrl}/data${qs ? `?${qs}` : ''}`;
+
+      const json = await getJson<BoardData>(url);
       setData(json);
     } catch (e) {
       setError(data?.labels.load_failed ?? '読み込みに失敗しました');
     } finally {
       setLoading(false);
     }
-  }, [baseUrl]);
+  }, [baseUrl, filters.projectIds]);
 
   React.useEffect(() => {
     void refresh();
@@ -141,6 +149,14 @@ export function App({ dataUrl }: Props) {
       // ignore
     }
   }, [sortKey]);
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('rk_filters', JSON.stringify(filters));
+    } catch {
+      // ignore
+    }
+  }, [filters]);
 
   // Filter data based on showSubtasks
   const filteredData = useMemo(() => {
@@ -944,7 +960,32 @@ function Toolbar({
           onChange={(val) => onChange({ ...filters, assignee: val })}
           onReset={() => onChange({ ...filters, assignee: 'all' })}
         />
+      </div>
 
+      <div className="rk-toolbar-separator" />
+
+      <div className="rk-toolbar-group">
+        <MultiSelectDropdown
+          label={labels.project ?? 'プロジェクト'}
+          icon="folder"
+          options={(data.lists.projects ?? []).map((p) => ({
+            id: String(p.id),
+            name: '\xA0'.repeat(p.level * 2) + p.name,
+          }))}
+          value={filters.projectIds.map(String)}
+          onChange={(val) => {
+            onChange({ ...filters, projectIds: val.map(Number) });
+          }}
+          onReset={() => {
+            onChange({ ...filters, projectIds: [] });
+          }}
+          width="280px"
+        />
+      </div>
+
+      <div className="rk-toolbar-separator" />
+
+      <div className="rk-toolbar-group">
         <MultiSelectDropdown
           label={labels.issue_priority}
           icon="priority_high"
@@ -1034,7 +1075,7 @@ function Toolbar({
           <span className="rk-icon">vertical_align_top</span>
         </button>
       </div>
-    </div>
+    </div >
   );
 }
 
@@ -1118,6 +1159,7 @@ function IssueModal({
   })();
 
   const [subject, setSubject] = useState(issue?.subject ?? '');
+  const [projectId, setProjectId] = useState(issue?.project?.id ? String(issue.project.id) : String(data.meta.project_id));
   const [trackerId, setTrackerId] = useState(issue?.tracker_id ? String(issue.tracker_id) : String(defaultTracker));
   const [assigneeId, setAssigneeId] = useState(issue?.assigned_to_id ? String(issue.assigned_to_id) : defaultAssignee);
   const [dueDate, setDueDate] = useState(issue?.due_date ?? '');
@@ -1170,6 +1212,7 @@ function IssueModal({
         done_ratio: doneRatio,
         description,
         status_id: ctx.statusId,
+        project_id: projectId,
       }, isEdit);
     } catch (e: any) {
       setErr(e?.message ?? (isEdit ? labels.update_failed : labels.create_failed));
@@ -1194,6 +1237,17 @@ function IssueModal({
           <label className="rk-field">
             <span className="rk-label">{labels.issue_subject}</span>
             <input value={subject} onChange={(e) => setSubject(e.target.value)} autoFocus />
+          </label>
+
+          <label className="rk-field">
+            <span className="rk-label">{labels.project}</span>
+            <select value={projectId} onChange={(e) => setProjectId(e.target.value)} disabled={isEdit}>
+              {data.lists.projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {'\u00A0'.repeat(p.level * 2)}{p.name}
+                </option>
+              ))}
+            </select>
           </label>
 
           <div className="rk-row2">

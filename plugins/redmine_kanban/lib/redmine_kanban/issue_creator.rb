@@ -11,12 +11,18 @@ module RedmineKanban
       return error(field_errors: { subject: ['件名を入力してください'] }) if subject.empty?
 
       issue = Issue.new
-      issue.project = @project
+      target_project_id = params[:project_id].to_i
+      target_project = if target_project_id > 0
+                         Project.visible(@user).find_by(id: target_project_id)
+                       else
+                         @project
+                       end
+      issue.project = target_project || @project
       issue.author = @user
       issue.init_journal(@user)
 
       tracker_id = params[:tracker_id].to_s.strip
-      tracker_id = default_tracker_id.to_s if tracker_id.empty?
+      tracker_id = default_tracker_id(issue.project).to_s if tracker_id.empty?
 
       attributes = {
         'subject' => subject,
@@ -40,8 +46,8 @@ module RedmineKanban
 
     private
 
-    def default_tracker_id
-      @project.trackers.sorted.first&.id
+    def default_tracker_id(project)
+      project.trackers.sorted.first&.id
     end
 
     def normalize_assigned_to_id(value)

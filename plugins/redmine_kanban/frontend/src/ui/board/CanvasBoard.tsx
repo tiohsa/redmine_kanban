@@ -863,7 +863,16 @@ function drawCard(
   if (issue.assigned_to_name) {
     drawIcon(ctx, 'person', currentX, row1Y, 14, theme.textSecondary);
     currentX += 16;
-    ctx.fillText(truncateText(ctx, issue.assigned_to_name, 80), currentX, row1Y);
+    const nameText = truncateText(ctx, issue.assigned_to_name, 80);
+    ctx.fillText(nameText, currentX, row1Y);
+    currentX += ctx.measureText(nameText).width + 12;
+  }
+
+  if (issue.project && issue.project.id !== data.meta.project_id) {
+    drawIcon(ctx, 'folder', currentX, row1Y, 14, theme.textSecondary);
+    currentX += 16;
+    const projectName = truncateText(ctx, issue.project.name, 120);
+    ctx.fillText(projectName, currentX, row1Y);
   }
 
   // 6. Metadata Row 2: Due Date | Priority | Aging
