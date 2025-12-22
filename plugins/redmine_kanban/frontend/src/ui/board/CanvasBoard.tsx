@@ -49,6 +49,20 @@ type CanvasTheme = {
   shadow: string;
   noteColors: string[];
   columnBgs: string[];
+  badgeBg: string;
+  badgeText: string;
+  badgeLowBg: string;
+  badgeLowColor: string;
+  badgeHighBg: string; // Yellow
+  badgeHighColor: string;
+  badgeUrgentBg: string; // Orange
+  badgeUrgentColor: string;
+  badgeImmediateBg: string; // Red
+  badgeImmediateColor: string;
+  badgeOverdueBg: string;
+  badgeOverdueColor: string;
+  badgeWarnBg: string;
+  badgeWarnColor: string;
 };
 
 type DragState = {
@@ -879,24 +893,59 @@ function drawCard(
   const row2Y = y + 48;
   currentX = contentX;
 
-  if (issue.due_date) {
-    const isOverdue = new Date(issue.due_date) < new Date();
-    const dateColor = isOverdue ? theme.danger : theme.textSecondary;
-    drawIcon(ctx, 'calendar_today', currentX, row2Y, 14, dateColor);
-    currentX += 16;
-    ctx.fillStyle = dateColor;
-    ctx.fillText(issue.due_date, currentX, row2Y);
-    currentX += ctx.measureText(issue.due_date).width + 12;
+  if (issue.priority_id) {
+    let bg = theme.badgeBg;
+    let fg = theme.badgeText;
+    let icon = '';
+
+    // Priority Colors
+    if (issue.priority_id >= 5) { // Immediate
+      bg = theme.badgeImmediateBg;
+      fg = theme.badgeImmediateColor;
+    } else if (issue.priority_id === 4) { // Urgent
+      bg = theme.badgeUrgentBg;
+      fg = theme.badgeUrgentColor;
+    } else if (issue.priority_id === 3) { // High
+      bg = theme.badgeHighBg;
+      fg = theme.badgeHighColor;
+    } else if (issue.priority_id === 1) { // Low
+      bg = theme.badgeLowBg;
+      fg = theme.badgeLowColor;
+    }
+
+    if (issue.priority_id !== 2) { // Only draw non-normal
+      const width = drawBadge(ctx, issue.priority_name || '', currentX, row2Y - 1, bg, fg);
+      currentX += width + 8;
+    }
   }
 
-  if (issue.priority_id && issue.priority_id > 2) {
-    const prioColor = issue.priority_id >= 4 ? theme.danger : theme.warn;
-    drawIcon(ctx, 'priority_high', currentX, row2Y, 14, prioColor);
-    currentX += 16;
-    ctx.fillStyle = prioColor;
-    if (issue.priority_name) {
-      ctx.fillText(truncateText(ctx, issue.priority_name, 60), currentX, row2Y);
-      currentX += ctx.measureText(issue.priority_name).width + 12;
+  if (issue.due_date) {
+    const dueState = calculateDueDateState(issue.due_date);
+    let bg = theme.badgeBg;
+    let fg = theme.badgeText;
+
+    if (dueState === 'overdue') {
+      bg = theme.badgeOverdueBg;
+      fg = theme.badgeOverdueColor;
+    } else if (dueState === 'near') {
+      bg = theme.badgeHighBg; // Reusing high/warn color
+      fg = theme.badgeHighColor;
+    }
+
+    // Only draw badge if special state, otherwise standard icon
+    if (dueState !== 'normal') {
+      let text = issue.due_date;
+      if (dueState === 'overdue') {
+        text = '!' + text;
+      }
+      const width = drawBadge(ctx, text, currentX, row2Y - 1, bg, fg, 'calendar_today');
+      currentX += width + 8;
+    } else {
+      drawIcon(ctx, 'calendar_today', currentX, row2Y, 14, theme.textSecondary);
+      currentX += 16;
+      ctx.fillStyle = theme.textSecondary;
+      ctx.fillText(issue.due_date, currentX, row2Y);
+      currentX += ctx.measureText(issue.due_date).width + 12;
     }
   }
 
@@ -1302,6 +1351,20 @@ function readTheme(container: HTMLDivElement | null): CanvasTheme {
     shadow: 'rgba(15, 23, 42, 0.12)',
     noteColors: ['#bef264', '#fdba74', '#93c5fd', '#f9a8d4', '#fde047', '#d8b4fe', '#5eead4'],
     columnBgs: ['#f1f5f9', '#eff6ff', '#fefce8', '#f0fdf4', '#faf5ff', '#fff7ed', '#fdf2f8'],
+    badgeBg: '#f1f5f9',
+    badgeText: '#64748b',
+    badgeLowBg: '#dcfce7',
+    badgeLowColor: '#15803d',
+    badgeHighBg: '#fef9c3', // Yellow-100
+    badgeHighColor: '#a16207', // Yellow-700
+    badgeUrgentBg: '#ffedd5', // Orange-100
+    badgeUrgentColor: '#c2410c', // Orange-700
+    badgeImmediateBg: '#fee2e2', // Red-100
+    badgeImmediateColor: '#b91c1c', // Red-700
+    badgeOverdueBg: '#fee2e2', // Red-100
+    badgeOverdueColor: '#b91c1c', // Red-700
+    badgeWarnBg: '#fef9c3',
+    badgeWarnColor: '#a16207',
   };
   if (!container) return fallback;
   const styles = getComputedStyle(container);
@@ -1336,5 +1399,72 @@ function readTheme(container: HTMLDivElement | null): CanvasTheme {
       styles.getPropertyValue('--rk-col-bg-6').trim() || '#fff7ed',
       styles.getPropertyValue('--rk-col-bg-7').trim() || '#fdf2f8',
     ],
+    badgeBg: '#f1f5f9',
+    badgeText: '#64748b',
+    badgeLowBg: '#dcfce7',
+    badgeLowColor: '#15803d',
+    badgeHighBg: '#fef9c3', // Yellow-100
+    badgeHighColor: '#a16207', // Yellow-700
+    badgeUrgentBg: '#ffedd5', // Orange-100
+    badgeUrgentColor: '#c2410c', // Orange-700
+    badgeImmediateBg: '#fee2e2', // Red-100
+    badgeImmediateColor: '#b91c1c', // Red-700
+    badgeOverdueBg: '#fee2e2', // Red-100
+    badgeOverdueColor: '#b91c1c', // Red-700
+    badgeWarnBg: '#fef9c3',
+    badgeWarnColor: '#a16207',
   };
+}
+
+function calculateDueDateState(dateStr: string): 'overdue' | 'near' | 'normal' {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(dateStr);
+  due.setHours(0, 0, 0, 0);
+
+  if (due < today) return 'overdue';
+
+  const diffTime = due.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays <= 3) return 'near';
+
+  return 'normal';
+}
+
+function drawBadge(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  bgColor: string,
+  textColor: string,
+  icon?: string
+): number {
+  ctx.save();
+  ctx.font = '500 11px Inter, sans-serif';
+  const textWidth = ctx.measureText(text).width;
+  const paddingX = 6;
+  const paddingY = 2;
+  const iconSize = icon ? 14 : 0;
+  const iconGap = icon ? 4 : 0;
+  const totalWidth = paddingX * 2 + textWidth + iconSize + iconGap;
+  const height = 18;
+
+  ctx.fillStyle = bgColor;
+  roundedRect(ctx, x, y, totalWidth, height, 4);
+  ctx.fill();
+
+  ctx.fillStyle = textColor;
+  let textX = x + paddingX;
+  if (icon) {
+    drawIcon(ctx, icon, x + paddingX, y + 2, iconSize, textColor);
+    textX += iconSize + iconGap;
+  }
+
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, textX, y + height / 2 + 1); // +1 for visual centering
+  ctx.restore();
+
+  return totalWidth;
 }
