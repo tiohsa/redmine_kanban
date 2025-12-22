@@ -9,13 +9,13 @@ Redmine::Plugin.register :redmine_kanban do
   author_url ''
 
   project_module :redmine_kanban do
-    permission :view_redmine_kanban, { 'redmine_kanban/boards': [:show], 'redmine_kanban/api': [:index], 'redmine_kanban/ai_analysis': [:analyze] }, read: true
+    permission :view_redmine_kanban, { 'redmine_kanban/kanban': [:show], 'redmine_kanban/api': [:index], 'redmine_kanban/ai_analysis': [:analyze] }, read: true
     permission :manage_redmine_kanban, { 'redmine_kanban/api': [:move, :create] }
   end
 
   menu :project_menu,
        :redmine_kanban,
-       { controller: 'redmine_kanban/boards', action: 'show' },
+       { controller: 'redmine_kanban/kanban', action: 'show' },
        caption: 'かんばん',
        after: :activity,
        param: :project_id

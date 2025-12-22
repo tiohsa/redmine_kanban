@@ -1,5 +1,5 @@
 module RedmineKanban
-  class BoardsController < ApplicationController
+  class KanbanController < ApplicationController
     def show
       @settings = Setting.plugin_redmine_kanban || {}
     end
