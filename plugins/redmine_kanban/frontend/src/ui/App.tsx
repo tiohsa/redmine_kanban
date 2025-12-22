@@ -13,6 +13,7 @@ type Filters = {
   due: 'all' | 'overdue' | 'thisweek' | '3days' | '7days' | 'none';
   priority: string[]; // Multiple selection
   projectIds: number[]; // Multiple selection
+  statusIds: number[]; // Multiple selection
 };
 
 type ModalContext = { statusId: number; laneId?: string | number; issueId?: number };
@@ -34,13 +35,14 @@ export function App({ dataUrl }: Props) {
           q: parsed.q || '',
           due: parsed.due || 'all',
           priority: Array.isArray(parsed.priority) ? parsed.priority : [],
-          projectIds: Array.isArray(parsed.projectIds) ? parsed.projectIds.map(Number) : []
+          projectIds: Array.isArray(parsed.projectIds) ? parsed.projectIds.map(Number) : [],
+          statusIds: Array.isArray(parsed.statusIds) ? parsed.statusIds.map(Number) : []
         };
       }
     } catch {
       // ignore
     }
-    return { assignee: 'all', q: '', due: 'all', priority: [], projectIds: [] };
+    return { assignee: 'all', q: '', due: 'all', priority: [], projectIds: [], statusIds: [] };
   });
   const [modal, setModal] = useState<ModalContext | null>(null);
   const [pendingDeleteIssue, setPendingDeleteIssue] = useState<Issue | null>(null);
@@ -158,17 +160,24 @@ export function App({ dataUrl }: Props) {
     }
   }, [filters]);
 
-  // Filter data based on showSubtasks
+  // Filter data based on showSubtasks and statusIds
   const filteredData = useMemo(() => {
     if (!data) return null;
-    if (showSubtasks) return data;
-
-    // Filter out issues that have a parent_id (subtasks)
-    return {
-      ...data,
-      issues: data.issues.filter(issue => !issue.parent_id)
-    };
-  }, [data, showSubtasks]);
+    let res = data;
+    if (!showSubtasks) {
+      res = {
+        ...res,
+        issues: res.issues.filter(issue => !issue.parent_id)
+      };
+    }
+    if (filters.statusIds.length > 0) {
+      res = {
+        ...res,
+        columns: res.columns.filter(c => filters.statusIds.includes(c.id))
+      };
+    }
+    return res;
+  }, [data, showSubtasks, filters.statusIds]);
 
   const issues = useMemo(() => {
     let filtered = filterIssues(filteredData?.issues ?? [], filteredData, filters);
@@ -980,6 +989,24 @@ function Toolbar({
             onChange({ ...filters, projectIds: [] });
           }}
           width="280px"
+        />
+      </div>
+
+      <div className="rk-toolbar-separator" />
+
+      <div className="rk-toolbar-group">
+        <MultiSelectDropdown
+          label={labels.status ?? 'ステータス'}
+          icon="fact_check"
+          options={data.columns.map((c) => ({ id: String(c.id), name: c.name }))}
+          value={filters.statusIds.map(String)}
+          onChange={(val) => {
+            onChange({ ...filters, statusIds: val.map(Number) });
+          }}
+          onReset={() => {
+            onChange({ ...filters, statusIds: [] });
+          }}
+          width="200px"
         />
       </div>
 
