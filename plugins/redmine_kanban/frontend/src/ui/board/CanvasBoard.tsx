@@ -98,6 +98,7 @@ type Props = {
   onEditClick: (editUrl: string) => void;
   onSubtaskToggle?: (subtaskId: number, currentClosed: boolean) => void;
   labels: Record<string, string>;
+  busyIssueIds?: Set<number>;
   fitMode?: 'none' | 'width';
 };
 
@@ -113,6 +114,7 @@ export function CanvasBoard({
   onEditClick,
   onSubtaskToggle,
   labels,
+  busyIssueIds,
   fitMode = 'none',
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -262,7 +264,8 @@ export function CanvasBoard({
       rectMapRef.current,
       dragRef.current,
       labels,
-      hoverRef.current
+      hoverRef.current,
+      busyIssueIds
     );
 
     if (laneType !== 'none') {
@@ -319,8 +322,10 @@ export function CanvasBoard({
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const point = toBoardPoint(event, scrollRef.current, canvasRef.current, scaleRef.current);
     const hit = hitTest(point, rectMapRef.current, state, data);
+    const isBusy = (issueId: number) => busyIssueIds?.has(issueId) ?? false;
 
     if (hit.kind === 'subtask_check') {
+      if (isBusy(hit.subtaskId)) return;
       const issue = state.cardsById.get(hit.issueId);
       if (issue && onSubtaskToggle) {
         const subtask = issue.subtasks?.find(s => s.id === hit.subtaskId);
@@ -332,16 +337,19 @@ export function CanvasBoard({
     }
 
     if (hit.kind === 'subtask_subject') {
+      if (isBusy(hit.subtaskId)) return;
       onCardOpen(hit.subtaskId);
       return;
     }
 
     if (hit.kind === 'card_subject') {
+      if (isBusy(hit.issueId)) return;
       onCardOpen(hit.issueId);
       return;
     }
 
     if (hit.kind === 'info') {
+      if (isBusy(hit.issueId)) return;
       const issue = state.cardsById.get(hit.issueId);
       if (issue) {
         if (issue.parent_id) {
@@ -360,17 +368,20 @@ export function CanvasBoard({
     }
 
     if (hit.kind === 'delete') {
+      if (isBusy(hit.issueId)) return;
       onDelete(hit.issueId);
       return;
     }
 
     if (hit.kind === 'edit') {
+      if (isBusy(hit.issueId)) return;
       const issue = state.cardsById.get(hit.issueId);
       if (issue) onEditClick(issue.urls.issue_edit);
       return;
     }
 
     if (hit.kind === 'card') {
+      if (isBusy(hit.issueId)) return;
       const issue = state.cardsById.get(hit.issueId);
       if (!issue) return;
       const originLaneId = resolveLaneId(data, issue);
@@ -702,7 +713,8 @@ function drawCells(
   rectMap: RectMap,
   drag: DragState | null,
   labels: Record<string, string>,
-  hover: { kind: 'card_subject' | 'subtask_subject'; id: string } | null
+  hover: { kind: 'card_subject' | 'subtask_subject'; id: string } | null,
+  busyIssueIds?: Set<number>
 ) {
   const columns = state.columnOrder;
 
@@ -767,8 +779,9 @@ function drawCells(
         currentY += cardH + metrics.cardGap;
 
         if (rectIntersects(cardRect, viewRect)) {
+          const isUpdating = busyIssueIds?.has(issue.id) ?? false;
           rectMap.cards.set(issue.id, cardRect);
-          drawCard(ctx, cardRect, issue, data, theme, canMove, labels, rectMap, hover);
+          drawCard(ctx, cardRect, issue, data, theme, canMove, labels, rectMap, hover, isUpdating);
         }
       }
     });
@@ -786,7 +799,8 @@ function drawCard(
   canMove: boolean,
   labels: Record<string, string>,
   rectMap?: RectMap,
-  hover?: { kind: 'card_subject' | 'subtask_subject'; id: string } | null
+  hover?: { kind: 'card_subject' | 'subtask_subject'; id: string } | null,
+  isUpdating?: boolean
 ) {
   const column = data.columns.find((c) => c.id === issue.status_id);
   const isClosed = !!column?.is_closed;
@@ -1110,6 +1124,18 @@ function drawCard(
   ctx.restore();
 
   ctx.restore();
+
+  if (isUpdating) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    roundedRect(ctx, x, y, w, h, radius);
+    ctx.fill();
+    ctx.fillStyle = theme.textSecondary;
+    ctx.font = '600 12px Inter, sans-serif';
+    ctx.textBaseline = 'top';
+    ctx.fillText(labels.updating ?? '更新中', x + 12, y + 8);
+    ctx.restore();
+  }
 }
 
 function drawProgressDonut(
@@ -1186,7 +1212,7 @@ function drawDragOverlay(
   };
   ctx.save();
   ctx.globalAlpha = 0.9;
-  drawCard(ctx, rect, issue, data, theme, true, labels);
+  drawCard(ctx, rect, issue, data, theme, true, labels, undefined, undefined, false);
   ctx.restore();
 }
 

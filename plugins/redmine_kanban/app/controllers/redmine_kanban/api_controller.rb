@@ -13,15 +13,17 @@ module RedmineKanban
     end
 
     def move
+      payload = params[:issue] || params
       result = IssueMover.new(project: @project, issue: @issue, user: User.current).move(
-        status_id: params[:status_id],
-        assigned_to_id: params[:assigned_to_id]
+        status_id: payload[:status_id],
+        assigned_to_id: payload[:assigned_to_id],
+        lock_version: payload[:lock_version]
       )
 
       if result[:ok]
         render json: result
       else
-        render json: result, status: :unprocessable_entity
+        render json: result, status: result[:http_status] || :unprocessable_entity
       end
     end
 
@@ -36,7 +38,8 @@ module RedmineKanban
     end
 
     def update
-      result = IssueUpdater.new(project: @project, user: User.current).update(issue_id: @issue.id, params: params)
+      payload = params[:issue] || params
+      result = IssueUpdater.new(project: @project, user: User.current).update(issue_id: @issue.id, params: payload)
 
       if result[:ok]
         render json: result

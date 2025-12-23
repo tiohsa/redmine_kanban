@@ -17,6 +17,7 @@ export type Subtask = {
   subject: string;
   status_id: number;
   is_closed: boolean;
+  lock_version?: number;
 };
 
 export type Issue = {
@@ -24,6 +25,7 @@ export type Issue = {
   parent_id?: number | null;
   subject: string;
   status_id: number;
+  lock_version?: number;
   tracker_id: number;
   description: string;
   assigned_to_id: number | null;

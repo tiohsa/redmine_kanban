@@ -13,6 +13,8 @@ ja:
   label_kanban_loading: "読み込み中"
   label_kanban_fetching_data: "データを取得しています..."
   label_kanban_notice: "通知"
+  label_kanban_updating: "更新中"
+  label_kanban_conflict: "他ユーザにより更新されました"
   label_kanban_error: "エラー"
   label_kanban_data_fetching: "データ取得中..."
   label_kanban_delete_confirm_title: "削除確認"

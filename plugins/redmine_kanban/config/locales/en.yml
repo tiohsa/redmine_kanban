@@ -13,6 +13,8 @@ en:
   label_kanban_loading: "Loading"
   label_kanban_fetching_data: "Fetching data..."
   label_kanban_notice: "Notice"
+  label_kanban_updating: "Updating"
+  label_kanban_conflict: "Updated by another user"
   label_kanban_error: "Error"
   label_kanban_data_fetching: "Fetching data..."
   label_kanban_delete_confirm_title: "Confirm Delete"

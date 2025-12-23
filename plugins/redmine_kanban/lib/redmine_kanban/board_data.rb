@@ -109,6 +109,7 @@ module RedmineKanban
         parent_id: issue.parent_id,
         subject: issue.subject,
         status_id: issue.status_id,
+        lock_version: issue.lock_version,
         status_name: issue.status&.name,
         status_is_closed: issue.status&.is_closed,
         tracker_id: issue.tracker_id,
@@ -128,7 +129,8 @@ module RedmineKanban
             id: child.id,
             subject: child.subject,
             status_id: child.status_id,
-            is_closed: child.status.is_closed?
+            is_closed: child.status.is_closed?,
+            lock_version: child.lock_version
           }
         },
         urls: {
@@ -164,6 +166,8 @@ module RedmineKanban
         loading: l(:label_kanban_loading),
         fetching_data: l(:label_kanban_fetching_data),
         notice: l(:label_kanban_notice),
+        updating: l(:label_kanban_updating),
+        conflict: l(:label_kanban_conflict),
         error: l(:label_kanban_error),
         data_fetching: l(:label_kanban_data_fetching),
         delete_confirm_title: l(:label_kanban_delete_confirm_title),

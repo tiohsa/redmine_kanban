@@ -24,6 +24,9 @@ module RedmineKanban
         'done_ratio' => normalize_done_ratio(params[:done_ratio])
       }
 
+      lock_version = normalize_lock_version(params[:lock_version])
+      issue.lock_version = lock_version if lock_version
+
       # Handle status change if provided
       if params[:status_id].present? && params[:status_id].to_i != issue.status_id
         status_id = params[:status_id].to_i
@@ -56,6 +59,8 @@ module RedmineKanban
       else
         error(issue.errors.full_messages.join(', '), field_errors: issue.errors.to_hash(true))
       end
+    rescue ActiveRecord::StaleObjectError
+      error('他ユーザにより更新されました', status: :conflict)
     end
 
     private
@@ -89,6 +94,12 @@ module RedmineKanban
       return nil if value.nil? || value.to_s.strip.empty?
       v = value.to_i
       v.clamp(0, 100)
+    end
+
+    def normalize_lock_version(value)
+      return nil if value.nil? || value.to_s.strip.empty?
+
+      value.to_i
     end
 
     def status_allowed?(issue, status_id)
