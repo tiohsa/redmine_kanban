@@ -24,8 +24,8 @@ export async function postJson<T>(url: string, body: Record<string, unknown>, me
   if (!res.ok) {
     const err = new Error(`HTTP ${res.status}`);
     (err as any).payload = json;
+    (err as any).status = res.status;
     throw err;
   }
   return (json as T) ?? ({} as T);
 }
-

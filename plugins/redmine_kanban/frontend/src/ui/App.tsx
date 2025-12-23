@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { BoardData, Issue } from './types';
 import { getJson, postJson } from './http';
 import { CanvasBoard } from './board/CanvasBoard';
 import { buildBoardState } from './board/state';
 import { type SortKey } from './board/sort';
+import { replaceIssueInBoard, updateIssueInBoard, useIssueMutation } from './useIssueMutation';
 
 type Props = { dataUrl: string };
 
@@ -20,9 +22,22 @@ type ModalContext = { statusId: number; laneId?: string | number; issueId?: numb
 
 type FitMode = 'none' | 'width';
 
+type IssueMutationResult = { issue: Issue; warning?: string };
+
+type MovePayload = {
+  issueId: number;
+  statusId: number;
+  assignedToId: number | null;
+  lockVersion: number | null;
+};
+
+type UpdatePayload = {
+  issueId: number;
+  patch: Record<string, unknown>;
+  lockVersion: number | null;
+};
+
 export function App({ dataUrl }: Props) {
-  const [data, setData] = useState<BoardData | null>(null);
-  const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>(() => {
@@ -91,31 +106,56 @@ export function App({ dataUrl }: Props) {
     }
     return 'updated_desc';
   });
+  const [busyIssueIds, setBusyIssueIds] = useState<Set<number>>(new Set());
 
+  const queryClient = useQueryClient();
   const baseUrl = useMemo(() => dataUrl.replace(/\/data$/, ''), [dataUrl]);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams();
-      filters.projectIds.forEach(id => params.append('project_ids[]', String(id)));
+  const projectIdsKey = useMemo(
+    () => filters.projectIds.slice().sort((a, b) => a - b).join(','),
+    [filters.projectIds]
+  );
+  const boardQueryKey = useMemo(
+    () => ['kanban', 'board', baseUrl, projectIdsKey] as const,
+    [baseUrl, projectIdsKey]
+  );
 
+  const boardQuery = useQuery({
+    queryKey: boardQueryKey,
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      filters.projectIds.forEach((id) => params.append('project_ids[]', String(id)));
       const qs = params.toString();
       const url = `${baseUrl}/data${qs ? `?${qs}` : ''}`;
+      return getJson<BoardData>(url);
+    },
+    placeholderData: (prev) => prev,
+  });
 
-      const json = await getJson<BoardData>(url);
-      setData(json);
-    } catch (e) {
+  const data = boardQuery.data ?? null;
+  const loading = boardQuery.isFetching;
+
+  useEffect(() => {
+    if (boardQuery.error) {
       setError(data?.labels.load_failed ?? '読み込みに失敗しました');
-    } finally {
-      setLoading(false);
     }
-  }, [baseUrl, filters.projectIds]);
+  }, [boardQuery.error, data?.labels.load_failed]);
 
-  React.useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  const refresh = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: boardQueryKey });
+  }, [queryClient, boardQueryKey]);
+
+  const setIssueBusy = useCallback((issueId: number, busy: boolean) => {
+    setBusyIssueIds((prev) => {
+      const next = new Set(prev);
+      if (busy) {
+        next.add(issueId);
+      } else {
+        next.delete(issueId);
+      }
+      return next;
+    });
+  }, []);
 
   React.useEffect(() => {
     const className = 'rk-kanban-fullwindow';
@@ -203,92 +243,124 @@ export function App({ dataUrl }: Props) {
     setModal({ statusId: issue.status_id, issueId });
   };
 
-  const moveIssue = async (issueId: number, statusId: number, assignedToId: number | null) => {
-    if (data) {
-      setData({
-        ...data,
-        issues: data.issues.map((issue) =>
-          issue.id === issueId
-            ? { ...issue, status_id: statusId, assigned_to_id: assignedToId }
-            : issue
-        ),
-      });
-    }
-
-    try {
-      setNotice(null);
-      const res = await postJson<{ ok: boolean; message?: string; warning?: string }>(
-        `${baseUrl}/issues/${issueId}/move`,
-        { status_id: statusId, assigned_to_id: assignedToId },
+  const moveIssueMutation = useIssueMutation<MovePayload, IssueMutationResult>({
+    queryKey: boardQueryKey,
+    mutationFn: async (payload) => {
+      const res = await postJson<{ ok: boolean; issue: Issue; warning?: string }>(
+        `${baseUrl}/issues/${payload.issueId}/move`,
+        {
+          issue: {
+            status_id: payload.statusId,
+            assigned_to_id: payload.assignedToId,
+            lock_version: payload.lockVersion,
+          },
+        },
         'PATCH'
       );
-      if (res.warning) setNotice(res.warning);
-      await refresh();
-    } catch (e: any) {
-      const payload = e?.payload as any;
-      setNotice(payload?.message ?? (data ? data.labels.move_failed : '移動に失敗しました'));
-      await refresh();
+      return { issue: res.issue, warning: res.warning };
+    },
+    applyOptimistic: (prev, payload) =>
+      updateIssueInBoard(prev, payload.issueId, (issue) => ({
+        ...issue,
+        status_id: payload.statusId,
+        assigned_to_id: payload.assignedToId,
+        assigned_to_name: resolveAssigneeName(prev, payload.assignedToId),
+      })),
+    applyServer: (prev, result) => replaceIssueInBoard(prev, result.issue),
+    onError: (err) => {
+      setError(resolveMutationError(err, data?.labels, data?.labels.move_failed));
+    },
+    onSuccess: (result) => {
+      if (result.warning) setNotice(result.warning);
+    },
+    onMutateIssue: (issueId) => setIssueBusy(issueId, true),
+    onSettledIssue: (issueId) => setIssueBusy(issueId, false),
+  });
+
+  const updateIssueMutation = useIssueMutation<UpdatePayload, IssueMutationResult>({
+    queryKey: boardQueryKey,
+    mutationFn: async (payload) => {
+      const res = await postJson<{ ok: boolean; issue: Issue; warning?: string }>(
+        `${baseUrl}/issues/${payload.issueId}`,
+        { issue: { ...payload.patch, lock_version: payload.lockVersion } },
+        'PATCH'
+      );
+      return { issue: res.issue, warning: res.warning };
+    },
+    applyOptimistic: (prev, payload) =>
+      updateIssueInBoard(prev, payload.issueId, (issue) => {
+        const patch = payload.patch as Partial<Issue>;
+        const next = { ...issue, ...patch };
+        if ('assigned_to_id' in patch) {
+          next.assigned_to_name = resolveAssigneeName(
+            prev,
+            patch.assigned_to_id ?? null
+          );
+        }
+        if ('priority_id' in patch) {
+          next.priority_name = resolvePriorityName(prev, patch.priority_id ?? null);
+        }
+        return next;
+      }),
+    applyServer: (prev, result) => replaceIssueInBoard(prev, result.issue),
+    onSuccess: (result) => {
+      if (result.warning) setNotice(result.warning);
+    },
+    onMutateIssue: (issueId) => setIssueBusy(issueId, true),
+    onSettledIssue: (issueId) => setIssueBusy(issueId, false),
+  });
+
+  const createIssueMutation = useMutation({
+    mutationFn: async (payload: Record<string, unknown>) => {
+      return postJson<{ ok: boolean; issue?: Issue }>(`${baseUrl}/issues`, payload, 'POST');
+    },
+    onSettled: () => {
+      void refresh();
+    },
+  });
+
+  const moveIssue = (issueId: number, statusId: number, assignedToId: number | null) => {
+    if (!data) return;
+    if (busyIssueIds.has(issueId)) return;
+    const issue = data.issues.find((it) => it.id === issueId);
+    if (!issue) return;
+    if (issue.lock_version === undefined || issue.lock_version === null) {
+      setError(data.labels.update_failed ?? '更新に失敗しました');
+      return;
     }
+
+    setNotice(null);
+    moveIssueMutation.mutate({
+      issueId,
+      statusId,
+      assignedToId,
+      lockVersion: issue.lock_version,
+    });
   };
 
-  const toggleSubtask = async (subtaskId: number, currentClosed: boolean) => {
+  const toggleSubtask = (subtaskId: number, currentClosed: boolean) => {
     if (!data) return;
-
-    // Optimistic update
-    setData((prev) => {
-      if (!prev) return null;
-      return {
-        ...prev,
-        issues: prev.issues.map((issue) => {
-          if (!issue.subtasks) return issue;
-          const found = issue.subtasks.find((s) => s.id === subtaskId);
-          if (!found) return issue;
-          return {
-            ...issue,
-            subtasks: issue.subtasks.map((s) =>
-              s.id === subtaskId ? { ...s, is_closed: !currentClosed } : s
-            ),
-          };
-        }),
-      };
-    });
-
-    try {
-      // Find a closed status if we are closing, or open status if opening.
-      // This logic is tricky because we don't know which status to pick.
-      // We will look at available columns (which are statuses) to find one that matches.
-
-      let targetStatusId: number | null = null;
-
-      if (!currentClosed) {
-        // We want to close it. Find a closed status.
-        const closedCol = data.columns.find(c => c.is_closed);
-        if (closedCol) targetStatusId = closedCol.id;
-      } else {
-        // We want to open it. Find an open status (first one preferably).
-        const openCol = data.columns.find(c => !c.is_closed);
-        if (openCol) targetStatusId = openCol.id;
-      }
-
-      if (!targetStatusId) {
-        throw new Error("Cannot determine target status for toggle");
-      }
-
-      await postJson(
-        `${baseUrl}/issues/${subtaskId}/move`, // using move endpoint which handles status change
-        { status_id: targetStatusId },
-        'PATCH'
-      );
-      // We don't need to refresh if optimistic update is correct, but safer to refresh or let it be.
-      // But subtask status change might affect parent's done_ratio if calculated.
-      // Let's refresh silently or debounce.
-      await refresh();
-
-    } catch (e: any) {
-      console.error(e);
+    if (busyIssueIds.has(subtaskId)) return;
+    const subtaskInfo = findSubtask(data, subtaskId);
+    if (!subtaskInfo) return;
+    const targetStatusId = resolveSubtaskStatus(data, currentClosed);
+    if (!targetStatusId) {
       setError('サブタスクの更新に失敗しました');
-      await refresh(); // Revert
+      return;
     }
+
+    if (subtaskInfo.lockVersion === null) {
+      setError('サブタスクの更新に失敗しました');
+      return;
+    }
+
+    setNotice(null);
+    moveIssueMutation.mutate({
+      issueId: subtaskId,
+      statusId: targetStatusId,
+      assignedToId: subtaskInfo.assignedToId,
+      lockVersion: subtaskInfo.lockVersion,
+    });
   };
 
   const canMove = !!data?.meta.can_move;
@@ -341,6 +413,7 @@ export function App({ dataUrl }: Props) {
   const deleteIssue = async (issueId: number) => {
     try {
       await postJson(`${baseUrl}/issues/${issueId}`, {}, 'DELETE');
+      await refresh();
     } catch (e: any) {
       const p = e?.payload as any;
       setError(p?.message || (data ? data.labels.delete_failed : '削除に失敗しました'));
@@ -456,9 +529,10 @@ export function App({ dataUrl }: Props) {
             canCreate={canCreate}
             labels={filteredData.labels}
             fitMode={fitMode}
+            busyIssueIds={busyIssueIds}
             onCommand={(command) => {
               if (command.type === 'move_issue') {
-                void moveIssue(command.issueId, command.statusId, command.assignedToId);
+                moveIssue(command.issueId, command.statusId, command.assignedToId);
               }
             }}
             onCreate={openCreate}
@@ -476,16 +550,41 @@ export function App({ dataUrl }: Props) {
           ctx={modal}
           onClose={() => setModal(null)}
           onSaved={async (payload, isEdit) => {
-            try {
-              setNotice(null);
-              const method = isEdit ? 'PATCH' : 'POST';
-              const url = isEdit ? `${baseUrl}/issues/${modal.issueId}` : `${baseUrl}/issues`;
-              await postJson(url, payload, method);
-              setModal(null);
-              await refresh();
-            } catch (e: any) {
-              const p = e?.payload as any;
-              throw new Error(p?.message || fieldError(p?.field_errors) || (isEdit ? data.labels.update_failed : data.labels.create_failed));
+            setNotice(null);
+            if (isEdit) {
+              const issueId = modal.issueId;
+              const issue = issueId ? data.issues.find((it) => it.id === issueId) : null;
+              if (!issue) return;
+              if (issue.lock_version === undefined || issue.lock_version === null) {
+                throw new Error(data.labels.update_failed);
+              }
+              try {
+                await updateIssueMutation.mutateAsync({
+                  issueId,
+                  patch: payload,
+                  lockVersion: issue.lock_version,
+                });
+                setModal(null);
+              } catch (e: any) {
+                const p = e?.payload as any;
+                throw new Error(
+                  p?.message ||
+                    fieldError(p?.field_errors) ||
+                    resolveMutationError(e, data.labels, data.labels.update_failed)
+                );
+              }
+            } else {
+              try {
+                await createIssueMutation.mutateAsync(payload);
+                setModal(null);
+              } catch (e: any) {
+                const p = e?.payload as any;
+                throw new Error(
+                  p?.message ||
+                    fieldError(p?.field_errors) ||
+                    data.labels.create_failed
+                );
+              }
             }
           }}
           onDeleted={async (issueId) => {
@@ -557,6 +656,65 @@ function fieldError(fieldErrors: any): string | null {
   if (!fieldErrors) return null;
   if (fieldErrors.subject?.length) return fieldErrors.subject[0];
   return null;
+}
+
+function resolveMutationError(
+  error: unknown,
+  labels: Record<string, string> | undefined,
+  fallback?: string
+): string {
+  const status = (error as any)?.status as number | undefined;
+  if (status === 409 || status === 422) {
+    return labels?.conflict ?? '他ユーザにより更新されました';
+  }
+  const payloadMessage = (error as any)?.payload?.message as string | undefined;
+  return payloadMessage || fallback || labels?.update_failed || '更新に失敗しました';
+}
+
+function resolveAssigneeName(data: BoardData, assignedToId: number | null): string | null {
+  if (assignedToId === null) return null;
+  const assignee = data.lists.assignees.find((a) => a.id === assignedToId);
+  return assignee?.name ?? null;
+}
+
+function resolvePriorityName(data: BoardData, priorityId: number | null): string | null {
+  if (priorityId === null) return null;
+  const priority = data.lists.priorities.find((p) => p.id === priorityId);
+  return priority?.name ?? null;
+}
+
+type SubtaskInfo = {
+  lockVersion: number | null;
+  assignedToId: number | null;
+};
+
+function findSubtask(data: BoardData, subtaskId: number): SubtaskInfo | null {
+  const issue = data.issues.find((it) => it.id === subtaskId);
+  if (issue) {
+    return {
+      lockVersion: issue.lock_version ?? null,
+      assignedToId: issue.assigned_to_id ?? null,
+    };
+  }
+
+  for (const parent of data.issues) {
+    const subtask = parent.subtasks?.find((it) => it.id === subtaskId);
+    if (subtask) {
+      return {
+        lockVersion: subtask.lock_version ?? null,
+        assignedToId: null,
+      };
+    }
+  }
+
+  return null;
+}
+
+function resolveSubtaskStatus(data: BoardData, currentClosed: boolean): number | null {
+  if (currentClosed) {
+    return data.columns.find((c) => !c.is_closed)?.id ?? null;
+  }
+  return data.columns.find((c) => c.is_closed)?.id ?? null;
 }
 
 function startOfWeek(date: Date): Date {

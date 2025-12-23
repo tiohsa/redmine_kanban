@@ -7,11 +7,12 @@ module RedmineKanban
       @settings = Settings.new(Setting.plugin_redmine_kanban)
     end
 
-    def move(status_id:, assigned_to_id:)
+    def move(status_id:, assigned_to_id:, lock_version: nil)
       return error('権限がありません') unless @issue.editable?
 
       status_id = status_id.to_i
       assigned_to_id = normalize_assigned_to_id(assigned_to_id)
+      lock_version = normalize_lock_version(lock_version)
 
       unless status_allowed?(status_id)
         return error('ワークフロー上、このステータスへ遷移できません')
@@ -48,6 +49,8 @@ module RedmineKanban
 
       @issue.safe_attributes = attrs
 
+      @issue.lock_version = lock_version if lock_version
+
       if @issue.save
         result = { ok: true, issue: BoardData.new(project: @project, user: @user).send(:issue_to_h, @issue) }
         result[:warning] = warning if warning.present?
@@ -55,12 +58,20 @@ module RedmineKanban
       else
         error(@issue.errors.full_messages.join(', '))
       end
+    rescue ActiveRecord::StaleObjectError
+      error('他ユーザにより更新されました', status: :conflict)
     end
 
     private
 
     def normalize_assigned_to_id(value)
       return nil if value.nil? || value.to_s == '' || value.to_s == 'null'
+
+      value.to_i
+    end
+
+    def normalize_lock_version(value)
+      return nil if value.nil? || value.to_s.strip == ''
 
       value.to_i
     end
@@ -75,8 +86,8 @@ module RedmineKanban
       @issue.new_statuses_allowed_to(@user).map(&:id).include?(status_id)
     end
 
-    def error(message)
-      { ok: false, message: message }
+    def error(message, status: :unprocessable_entity)
+      { ok: false, message: message, http_status: status }
     end
   end
 end
