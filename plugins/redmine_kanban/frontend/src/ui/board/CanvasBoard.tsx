@@ -1125,17 +1125,8 @@ function drawCard(
 
   ctx.restore();
 
-  if (isUpdating) {
-    ctx.save();
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    roundedRect(ctx, x, y, w, h, radius);
-    ctx.fill();
-    ctx.fillStyle = theme.textSecondary;
-    ctx.font = '600 12px Inter, sans-serif';
-    ctx.textBaseline = 'top';
-    ctx.fillText(labels.updating ?? '更新中', x + 12, y + 8);
-    ctx.restore();
-  }
+  // No visual indicator for isUpdating to avoid "flash" effect after drop.
+  // The logic to block interaction while updating is still active in hit testing.
 }
 
 function drawProgressDonut(

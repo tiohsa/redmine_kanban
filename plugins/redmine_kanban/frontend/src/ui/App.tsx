@@ -133,7 +133,7 @@ export function App({ dataUrl }: Props) {
   });
 
   const data = boardQuery.data ?? null;
-  const loading = boardQuery.isFetching;
+  const loading = boardQuery.isLoading;
 
   useEffect(() => {
     if (boardQuery.error) {
@@ -1099,10 +1099,7 @@ function Toolbar({
     { id: 'none', name: labels.not_set },
   ];
 
-  const priorityOptions = [
-    { id: 'all', name: labels.all },
-    ...(data.lists.priorities ?? []).map(p => ({ id: String(p.id), name: p.name }))
-  ];
+  const priorityOptions = (data.lists.priorities ?? []).map(p => ({ id: String(p.id), name: p.name }));
 
   return (
     <div className="rk-toolbar">
