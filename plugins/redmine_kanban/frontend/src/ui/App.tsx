@@ -1,9 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { BoardData, Issue } from './types';
-import { getJson, postJson } from './http';
+import type { BoardData, Issue, Subtask } from './types';
+import { getJson, postJson } from './http'; // kept for non-mutation calls if any
 import { CanvasBoard } from './board/CanvasBoard';
 import { buildBoardState } from './board/state';
 import { type SortKey } from './board/sort';
+import {
+  useBoardData,
+  useUpdateIssueMutation,
+  useCreateIssueMutation,
+  useDeleteIssueMutation,
+  queryClient,
+  QUERY_KEYS
+} from './queries';
+import { useMutationState } from '@tanstack/react-query';
 
 type Props = { dataUrl: string };
 
@@ -21,10 +30,7 @@ type ModalContext = { statusId: number; laneId?: string | number; issueId?: numb
 type FitMode = 'none' | 'width';
 
 export function App({ dataUrl }: Props) {
-  const [data, setData] = useState<BoardData | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Filters state
   const [filters, setFilters] = useState<Filters>(() => {
     try {
       const v = localStorage.getItem('rk_filters');
@@ -44,6 +50,55 @@ export function App({ dataUrl }: Props) {
     }
     return { assignee: 'all', q: '', due: 'all', priority: [], projectIds: [], statusIds: [] };
   });
+
+  const baseUrl = useMemo(() => dataUrl.replace(/\/data$/, ''), [dataUrl]);
+  const dataQueryUrl = useMemo(() => {
+     const params = new URLSearchParams();
+      filters.projectIds.forEach(id => params.append('project_ids[]', String(id)));
+      const qs = params.toString();
+      return `${baseUrl}/data${qs ? `?${qs}` : ''}`;
+  }, [baseUrl, filters.projectIds]);
+
+
+  // Data fetching using TanStack Query
+  // Note: We pass baseUrl here because useBoardData constructs the full URL internally using filters.
+  // Wait, the review says useBoardData uses the URL as key.
+  // Let's check useBoardData in queries.ts:
+  // export function useBoardData(dataUrl: string, filters: Record<string, any>) { ... const url = `${dataUrl}${qs ? `?${qs}` : ''}`; ... queryKey: QUERY_KEYS.boardData(url) ... }
+  // So if we pass baseUrl, the key is `['boardData', baseUrl + params]`.
+  // And mutation uses dataUrl passed to it.
+  // In moveIssue, we pass `dataUrl: dataQueryUrl`.
+  // `dataQueryUrl` in App.tsx is `${baseUrl}/data${qs}`.
+  // So mutation key is `['boardData', baseUrl/data + params]`.
+  // But useBoardData uses `baseUrl + params`.
+  // Mismatch! useBoardData should receive `${baseUrl}/data`.
+
+  const { data, isLoading: loading, error: queryError } = useBoardData(`${baseUrl}/data`, filters);
+
+  // Mutations
+  const updateIssueMutation = useUpdateIssueMutation();
+  const createIssueMutation = useCreateIssueMutation();
+  const deleteIssueMutation = useDeleteIssueMutation();
+
+  const updatingIssues = useMutationState({
+    filters: { mutationKey: ['updateIssue'], status: 'pending' },
+    select: (mutation) => (mutation.state.variables as any)?.issueId,
+  });
+  const deletingIssues = useMutationState({
+    filters: { mutationKey: ['deleteIssue'], status: 'pending' },
+    select: (mutation) => (mutation.state.variables as any)?.issueId,
+  });
+
+  const updatingIssueIds = useMemo(() => {
+    const s = new Set<number>();
+    updatingIssues.forEach((id) => { if (typeof id === 'number') s.add(id); });
+    deletingIssues.forEach((id) => { if (typeof id === 'number') s.add(id); });
+    return s;
+  }, [updatingIssues, deletingIssues]);
+
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
   const [modal, setModal] = useState<ModalContext | null>(null);
   const [pendingDeleteIssue, setPendingDeleteIssue] = useState<Issue | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
@@ -59,7 +114,6 @@ export function App({ dataUrl }: Props) {
     try {
       const v = localStorage.getItem('rk_fit_mode');
       if (v === 'none' || v === 'width') return v;
-      // Legacy compatibility
       if (localStorage.getItem('rk_fit_to_screen') === '1') return 'width';
     } catch {
       // ignore
@@ -68,7 +122,7 @@ export function App({ dataUrl }: Props) {
   });
   const [showSubtasks, setShowSubtasks] = useState(() => {
     try {
-      return localStorage.getItem('rk_show_subtasks') !== '0'; // Default true
+      return localStorage.getItem('rk_show_subtasks') !== '0';
     } catch {
       return true;
     }
@@ -92,30 +146,12 @@ export function App({ dataUrl }: Props) {
     return 'updated_desc';
   });
 
-  const baseUrl = useMemo(() => dataUrl.replace(/\/data$/, ''), [dataUrl]);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams();
-      filters.projectIds.forEach(id => params.append('project_ids[]', String(id)));
-
-      const qs = params.toString();
-      const url = `${baseUrl}/data${qs ? `?${qs}` : ''}`;
-
-      const json = await getJson<BoardData>(url);
-      setData(json);
-    } catch (e) {
-      setError(data?.labels.load_failed ?? '読み込みに失敗しました');
-    } finally {
-      setLoading(false);
+  // Derived state
+  useEffect(() => {
+    if (queryError) {
+        setError('読み込みに失敗しました');
     }
-  }, [baseUrl, filters.projectIds]);
-
-  React.useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  }, [queryError]);
 
   React.useEffect(() => {
     const className = 'rk-kanban-fullwindow';
@@ -124,43 +160,22 @@ export function App({ dataUrl }: Props) {
     } else {
       document.body.classList.remove(className);
     }
-
-    try {
-      localStorage.setItem('rk_fullwindow', fullWindow ? '1' : '0');
-    } catch {
-      // ignore
-    }
-
-    return () => {
-      document.body.classList.remove(className);
-    };
+    try { localStorage.setItem('rk_fullwindow', fullWindow ? '1' : '0'); } catch {}
+    return () => { document.body.classList.remove(className); };
   }, [fullWindow]);
 
   React.useEffect(() => {
-    try {
-      localStorage.setItem('rk_fit_mode', fitMode);
-    } catch {
-      // ignore
-    }
+    try { localStorage.setItem('rk_fit_mode', fitMode); } catch {}
   }, [fitMode]);
 
   React.useEffect(() => {
-    try {
-      localStorage.setItem('rk_sortkey', sortKey);
-    } catch {
-      // ignore
-    }
+    try { localStorage.setItem('rk_sortkey', sortKey); } catch {}
   }, [sortKey]);
 
   React.useEffect(() => {
-    try {
-      localStorage.setItem('rk_filters', JSON.stringify(filters));
-    } catch {
-      // ignore
-    }
+    try { localStorage.setItem('rk_filters', JSON.stringify(filters)); } catch {}
   }, [filters]);
 
-  // Filter data based on showSubtasks and statusIds
   const filteredData = useMemo(() => {
     if (!data) return null;
     let res = data;
@@ -186,11 +201,13 @@ export function App({ dataUrl }: Props) {
     }
     return filtered;
   }, [filteredData, filters, pendingDeleteIssue]);
+
   const priorityRank = useMemo(() => {
     const m = new Map<number, number>();
     for (const [idx, p] of (data?.lists.priorities ?? []).entries()) m.set(p.id, idx);
     return m;
   }, [data]);
+
   const boardState = useMemo(() => {
     if (!filteredData) return null;
     return buildBoardState(filteredData, issues, sortKey, priorityRank);
@@ -203,92 +220,71 @@ export function App({ dataUrl }: Props) {
     setModal({ statusId: issue.status_id, issueId });
   };
 
-  const moveIssue = async (issueId: number, statusId: number, assignedToId: number | null) => {
-    if (data) {
-      setData({
-        ...data,
-        issues: data.issues.map((issue) =>
-          issue.id === issueId
-            ? { ...issue, status_id: statusId, assigned_to_id: assignedToId }
-            : issue
-        ),
-      });
-    }
+  const moveIssue = (issueId: number, statusId: number, assignedToId: number | null) => {
+      const issue = data?.issues.find(i => i.id === issueId);
+      if (!issue) return;
 
-    try {
-      setNotice(null);
-      const res = await postJson<{ ok: boolean; message?: string; warning?: string }>(
-        `${baseUrl}/issues/${issueId}/move`,
-        { status_id: statusId, assigned_to_id: assignedToId },
-        'PATCH'
-      );
-      if (res.warning) setNotice(res.warning);
-      await refresh();
-    } catch (e: any) {
-      const payload = e?.payload as any;
-      setNotice(payload?.message ?? (data ? data.labels.move_failed : '移動に失敗しました'));
-      await refresh();
-    }
+      updateIssueMutation.mutate({
+          issueId,
+          payload: {
+              status_id: statusId,
+              assigned_to_id: assignedToId,
+              lock_version: issue.lock_version
+          },
+          baseUrl,
+          dataUrl: dataQueryUrl
+      }, {
+          onError: () => {
+              setNotice(data?.labels.move_failed || '移動に失敗しました');
+          }
+      });
   };
 
-  const toggleSubtask = async (subtaskId: number, currentClosed: boolean) => {
-    if (!data) return;
+  const toggleSubtask = (subtaskId: number, currentClosed: boolean) => {
+    // Find subtask's parent to find the subtask object (not efficient but structure dictates it)
+    let parentIssue: Issue | undefined;
+    let subtask: Subtask | undefined;
 
-    // Optimistic update
-    setData((prev) => {
-      if (!prev) return null;
-      return {
-        ...prev,
-        issues: prev.issues.map((issue) => {
-          if (!issue.subtasks) return issue;
-          const found = issue.subtasks.find((s) => s.id === subtaskId);
-          if (!found) return issue;
-          return {
-            ...issue,
-            subtasks: issue.subtasks.map((s) =>
-              s.id === subtaskId ? { ...s, is_closed: !currentClosed } : s
-            ),
-          };
-        }),
-      };
+    data?.issues.forEach(i => {
+        const s = i.subtasks?.find(st => st.id === subtaskId);
+        if (s) {
+            parentIssue = i;
+            subtask = s;
+        }
     });
 
-    try {
-      // Find a closed status if we are closing, or open status if opening.
-      // This logic is tricky because we don't know which status to pick.
-      // We will look at available columns (which are statuses) to find one that matches.
+    if (!subtask || !data) return;
 
-      let targetStatusId: number | null = null;
-
-      if (!currentClosed) {
-        // We want to close it. Find a closed status.
+    // Determine target status
+    let targetStatusId: number | null = null;
+    if (!currentClosed) {
+        // We want to close it.
         const closedCol = data.columns.find(c => c.is_closed);
         if (closedCol) targetStatusId = closedCol.id;
-      } else {
-        // We want to open it. Find an open status (first one preferably).
+    } else {
+        // We want to open it.
         const openCol = data.columns.find(c => !c.is_closed);
         if (openCol) targetStatusId = openCol.id;
-      }
-
-      if (!targetStatusId) {
-        throw new Error("Cannot determine target status for toggle");
-      }
-
-      await postJson(
-        `${baseUrl}/issues/${subtaskId}/move`, // using move endpoint which handles status change
-        { status_id: targetStatusId },
-        'PATCH'
-      );
-      // We don't need to refresh if optimistic update is correct, but safer to refresh or let it be.
-      // But subtask status change might affect parent's done_ratio if calculated.
-      // Let's refresh silently or debounce.
-      await refresh();
-
-    } catch (e: any) {
-      console.error(e);
-      setError('サブタスクの更新に失敗しました');
-      await refresh(); // Revert
     }
+
+    if (!targetStatusId) {
+        setError('変更先のステータスが見つかりません');
+        return;
+    }
+
+    updateIssueMutation.mutate({
+        issueId: subtaskId,
+        payload: {
+            status_id: targetStatusId,
+            lock_version: subtask.lock_version
+        },
+        baseUrl,
+        dataUrl: dataQueryUrl
+    }, {
+         onError: () => {
+            setError('サブタスクの更新に失敗しました');
+         }
+    });
   };
 
   const canMove = !!data?.meta.can_move;
@@ -301,7 +297,16 @@ export function App({ dataUrl }: Props) {
     setPendingDeleteIssue(issue);
     setNotice(null);
 
-    void deleteIssue(issueId);
+    deleteIssueMutation.mutate({
+        issueId,
+        baseUrl,
+        dataUrl: dataQueryUrl
+    }, {
+        onError: () => {
+             setError(data?.labels.delete_failed || '削除に失敗しました');
+             setPendingDeleteIssue(null);
+        }
+    });
   };
 
   const handleUndo = async () => {
@@ -309,59 +314,38 @@ export function App({ dataUrl }: Props) {
     setIsRestoring(true);
 
     try {
-      const res = await postJson<{ ok: boolean; issue?: Issue; message?: string }>(
-        `${baseUrl}/issues`,
-        {
-          subject: pendingDeleteIssue.subject,
-          description: pendingDeleteIssue.description,
-          status_id: pendingDeleteIssue.status_id,
-          assigned_to_id: pendingDeleteIssue.assigned_to_id,
-          tracker_id: pendingDeleteIssue.tracker_id,
-          priority_id: pendingDeleteIssue.priority_id,
-          start_date: pendingDeleteIssue.start_date,
-          due_date: pendingDeleteIssue.due_date,
-        },
-        'POST'
-      );
-
-      if (res.ok) {
+        await createIssueMutation.mutateAsync({
+            payload: {
+                subject: pendingDeleteIssue.subject,
+                description: pendingDeleteIssue.description,
+                status_id: pendingDeleteIssue.status_id,
+                assigned_to_id: pendingDeleteIssue.assigned_to_id,
+                tracker_id: pendingDeleteIssue.tracker_id,
+                priority_id: pendingDeleteIssue.priority_id,
+                start_date: pendingDeleteIssue.start_date,
+                due_date: pendingDeleteIssue.due_date,
+            },
+            baseUrl,
+            dataUrl: dataQueryUrl
+        });
         setNotice(null);
-        await refresh();
         setPendingDeleteIssue(null);
-      } else {
-        setError(res.message || '復元に失敗しました');
-      }
     } catch (e: any) {
-      setError('復元中にエラーが発生しました');
+        setError('復元中にエラーが発生しました');
     } finally {
-      setIsRestoring(false);
+        setIsRestoring(false);
     }
   };
-
-  const deleteIssue = async (issueId: number) => {
-    try {
-      await postJson(`${baseUrl}/issues/${issueId}`, {}, 'DELETE');
-    } catch (e: any) {
-      const p = e?.payload as any;
-      setError(p?.message || (data ? data.labels.delete_failed : '削除に失敗しました'));
-      setPendingDeleteIssue(null);
-      await refresh();
-    }
-  };
-
-
 
   return (
     <div className={`rk-root${fullWindow ? ' rk-root-fullwindow' : ''}`}>
-
-
       <div className="rk-popup-host" aria-live="polite" aria-relevant="additions text">
         {loading ? (
-          <div className="rk-popup rk-popup-info" role="dialog" aria-label={data?.labels.loading}>
+          <div className="rk-popup rk-popup-info" role="dialog" aria-label="Loading">
             <div className="rk-popup-head">
-              <div className="rk-popup-title">{data?.labels.loading}</div>
+              <div className="rk-popup-title">Loading...</div>
             </div>
-            <div className="rk-popup-body">{data?.labels.fetching_data}</div>
+            <div className="rk-popup-body">Fetching data...</div>
           </div>
         ) : null}
 
@@ -369,18 +353,19 @@ export function App({ dataUrl }: Props) {
           <div className={`rk-popup ${pendingDeleteIssue ? 'rk-popup-info' : 'rk-popup-warn'}`} role="dialog">
             <div className="rk-popup-head">
               <div className="rk-popup-title">
-                {pendingDeleteIssue ? data?.labels.notice : data?.labels.notice}
+                {pendingDeleteIssue ? (data?.labels?.notice ?? 'Notice') : (data?.labels?.notice ?? 'Notice')}
               </div>
               <button
                 type="button"
                 className="rk-icon-btn rk-popup-close"
-                aria-label={data?.labels.close}
+                aria-label={data?.labels?.close ?? 'Close'}
                 onClick={() => {
-                  if (pendingDeleteIssue) {
-                    void deleteIssue(pendingDeleteIssue.id);
-                  } else {
-                    setNotice(null);
-                  }
+                   // If we are pending delete, and user closes the popup, it means they accepted the delete (which already happened optimistically/API call initiated).
+                   // Actually delete is initiated in requestDelete. So just clearing the state is fine.
+                   // Wait, delete was called in requestDelete.
+                   // If user clicks close, we just hide the undo option.
+                   setPendingDeleteIssue(null);
+                   setNotice(null);
                 }}
               >
                 ×
@@ -408,10 +393,10 @@ export function App({ dataUrl }: Props) {
         ) : null}
 
         {error ? (
-          <div className="rk-popup rk-popup-error" role="dialog" aria-label={data?.labels.error} aria-live="assertive">
+          <div className="rk-popup rk-popup-error" role="dialog" aria-label={data?.labels?.error ?? 'Error'} aria-live="assertive">
             <div className="rk-popup-head">
-              <div className="rk-popup-title">{data?.labels.error}</div>
-              <button type="button" className="rk-icon-btn rk-popup-close" aria-label={data?.labels.close} onClick={() => setError(null)}>
+              <div className="rk-popup-title">{data?.labels?.error ?? 'Error'}</div>
+              <button type="button" className="rk-icon-btn rk-popup-close" aria-label={data?.labels?.close ?? 'Close'} onClick={() => setError(null)}>
                 ×
               </button>
             </div>
@@ -444,7 +429,7 @@ export function App({ dataUrl }: Props) {
           }}
         />
       ) : (
-        <div className="rk-empty">データを取得しています...</div>
+        !loading && <div className="rk-empty">データがありません</div>
       )}
 
       <div className="rk-board">
@@ -456,9 +441,10 @@ export function App({ dataUrl }: Props) {
             canCreate={canCreate}
             labels={filteredData.labels}
             fitMode={fitMode}
+            updatingIssueIds={updatingIssueIds}
             onCommand={(command) => {
               if (command.type === 'move_issue') {
-                void moveIssue(command.issueId, command.statusId, command.assignedToId);
+                moveIssue(command.issueId, command.statusId, command.assignedToId);
               }
             }}
             onCreate={openCreate}
@@ -476,30 +462,43 @@ export function App({ dataUrl }: Props) {
           ctx={modal}
           onClose={() => setModal(null)}
           onSaved={async (payload, isEdit) => {
-            try {
-              setNotice(null);
-              const method = isEdit ? 'PATCH' : 'POST';
-              const url = isEdit ? `${baseUrl}/issues/${modal.issueId}` : `${baseUrl}/issues`;
-              await postJson(url, payload, method);
-              setModal(null);
-              await refresh();
-            } catch (e: any) {
-              const p = e?.payload as any;
-              throw new Error(p?.message || fieldError(p?.field_errors) || (isEdit ? data.labels.update_failed : data.labels.create_failed));
-            }
+             setNotice(null);
+             if (isEdit && modal.issueId) {
+                 const issue = data.issues.find(i => i.id === modal.issueId);
+                 await updateIssueMutation.mutateAsync({
+                     issueId: modal.issueId,
+                     payload: { ...payload, lock_version: issue?.lock_version },
+                     baseUrl,
+                     dataUrl: dataQueryUrl
+                 });
+             } else {
+                 await createIssueMutation.mutateAsync({
+                     payload: { ...payload, status_id: modal.statusId },
+                     baseUrl,
+                     dataUrl: dataQueryUrl
+                 });
+             }
+             setModal(null);
           }}
           onDeleted={async (issueId) => {
             requestDelete(issueId);
+            setModal(null);
           }}
         />
       ) : null}
 
       {iframeEditUrl && data ? (
-        <IframeEditDialog url={iframeEditUrl} labels={data.labels} onClose={() => { setIframeEditUrl(null); refresh(); }} />
+        <IframeEditDialog url={iframeEditUrl} labels={data.labels} onClose={() => {
+             setIframeEditUrl(null);
+             queryClient.invalidateQueries({ queryKey: QUERY_KEYS.boardData(dataQueryUrl) });
+        }} />
       ) : null}
     </div>
   );
 }
+
+// ... Rest of the helper components (ConfirmDialog, fieldError, etc.) are unchanged ...
+// But I need to include them because overwrite_file replaces the whole file.
 
 function ConfirmDialog({
   title,
@@ -522,7 +521,6 @@ function ConfirmDialog({
 }) {
   const confirmClass = confirmKind === 'danger' ? 'rk-btn rk-btn-danger' : 'rk-btn rk-btn-primary';
 
-  // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !confirmDisabled) {

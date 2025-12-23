@@ -99,6 +99,7 @@ type Props = {
   onSubtaskToggle?: (subtaskId: number, currentClosed: boolean) => void;
   labels: Record<string, string>;
   fitMode?: 'none' | 'width';
+  updatingIssueIds?: Set<number>;
 };
 
 export function CanvasBoard({
@@ -114,6 +115,7 @@ export function CanvasBoard({
   onSubtaskToggle,
   labels,
   fitMode = 'none',
+  updatingIssueIds,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -172,7 +174,7 @@ export function CanvasBoard({
         renderHandle.current = null;
       }
     };
-  }, [size, state, data.meta, canCreate, canMove, theme]);
+  }, [size, state, data.meta, canCreate, canMove, theme, updatingIssueIds]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -262,7 +264,8 @@ export function CanvasBoard({
       rectMapRef.current,
       dragRef.current,
       labels,
-      hoverRef.current
+      hoverRef.current,
+      updatingIssueIds
     );
 
     if (laneType !== 'none') {
@@ -321,6 +324,9 @@ export function CanvasBoard({
     const hit = hitTest(point, rectMapRef.current, state, data);
 
     if (hit.kind === 'subtask_check') {
+      // Prevent toggling if parent issue is updating
+      if (updatingIssueIds?.has(hit.issueId)) return;
+
       const issue = state.cardsById.get(hit.issueId);
       if (issue && onSubtaskToggle) {
         const subtask = issue.subtasks?.find(s => s.id === hit.subtaskId);
@@ -360,17 +366,20 @@ export function CanvasBoard({
     }
 
     if (hit.kind === 'delete') {
+      if (updatingIssueIds?.has(hit.issueId)) return;
       onDelete(hit.issueId);
       return;
     }
 
     if (hit.kind === 'edit') {
+      if (updatingIssueIds?.has(hit.issueId)) return;
       const issue = state.cardsById.get(hit.issueId);
       if (issue) onEditClick(issue.urls.issue_edit);
       return;
     }
 
     if (hit.kind === 'card') {
+      if (updatingIssueIds?.has(hit.issueId)) return;
       const issue = state.cardsById.get(hit.issueId);
       if (!issue) return;
       const originLaneId = resolveLaneId(data, issue);
@@ -404,7 +413,11 @@ export function CanvasBoard({
         setCursor('pointer');
         newHover = { kind: 'subtask_subject', id: `${hit.issueId}:${hit.subtaskId}` };
       } else if (hit.kind === 'card') {
-        setCursor(canMove ? 'grab' : 'pointer');
+        if (updatingIssueIds?.has(hit.issueId)) {
+            setCursor('not-allowed');
+        } else {
+            setCursor(canMove ? 'grab' : 'pointer');
+        }
       } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'edit' || hit.kind === 'subtask_check' || hit.kind === 'info') {
         setCursor('pointer');
       } else {
@@ -465,7 +478,9 @@ export function CanvasBoard({
       if (hit.kind === 'subtask_subject') {
         onCardOpen(hit.subtaskId);
       } else if (hit.kind === 'card' && hit.issueId === drag.issueId) {
-        onCardOpen(drag.issueId);
+        if (!updatingIssueIds?.has(drag.issueId)) {
+            onCardOpen(drag.issueId);
+        }
       }
     }
 
@@ -702,7 +717,8 @@ function drawCells(
   rectMap: RectMap,
   drag: DragState | null,
   labels: Record<string, string>,
-  hover: { kind: 'card_subject' | 'subtask_subject'; id: string } | null
+  hover: { kind: 'card_subject' | 'subtask_subject'; id: string } | null,
+  updatingIssueIds?: Set<number>
 ) {
   const columns = state.columnOrder;
 
@@ -768,7 +784,18 @@ function drawCells(
 
         if (rectIntersects(cardRect, viewRect)) {
           rectMap.cards.set(issue.id, cardRect);
-          drawCard(ctx, cardRect, issue, data, theme, canMove, labels, rectMap, hover);
+          drawCard(
+            ctx,
+            cardRect,
+            issue,
+            data,
+            theme,
+            canMove,
+            labels,
+            rectMap,
+            hover,
+            updatingIssueIds
+          );
         }
       }
     });
@@ -786,7 +813,8 @@ function drawCard(
   canMove: boolean,
   labels: Record<string, string>,
   rectMap?: RectMap,
-  hover?: { kind: 'card_subject' | 'subtask_subject'; id: string } | null
+  hover?: { kind: 'card_subject' | 'subtask_subject'; id: string } | null,
+  updatingIssueIds?: Set<number>
 ) {
   const column = data.columns.find((c) => c.id === issue.status_id);
   const isClosed = !!column?.is_closed;
@@ -1078,6 +1106,18 @@ function drawCard(
         ctx.stroke();
       }
     });
+  }
+
+  // Draw overlay if updating
+  if (updatingIssueIds?.has(issue.id)) {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    roundedRect(ctx, x, y, w, h, radius);
+    ctx.fill();
+    ctx.font = '600 12px Inter, sans-serif';
+    ctx.fillStyle = theme.textPrimary;
+    ctx.textAlign = 'center';
+    ctx.fillText('Updating...', x + w / 2, y + h / 2);
+    ctx.textAlign = 'left';
   }
 
   // 9. Buttons (Edit/Delete)

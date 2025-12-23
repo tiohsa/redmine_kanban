@@ -2,6 +2,8 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './ui/App';
 import './ui/styles.css';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from './ui/queries';
 
 function boot() {
   const rootEl = document.getElementById('redmine-kanban-root');
@@ -12,7 +14,9 @@ function boot() {
 
   ReactDOM.createRoot(rootEl).render(
     <React.StrictMode>
-      <App dataUrl={dataUrl} />
+      <QueryClientProvider client={queryClient}>
+        <App dataUrl={dataUrl} />
+      </QueryClientProvider>
     </React.StrictMode>
   );
 }
@@ -22,4 +26,3 @@ if (document.readyState === 'loading') {
 } else {
   boot();
 }
-

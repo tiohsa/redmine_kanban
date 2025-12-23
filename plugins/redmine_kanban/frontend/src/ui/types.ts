@@ -17,6 +17,7 @@ export type Subtask = {
   subject: string;
   status_id: number;
   is_closed: boolean;
+  lock_version?: number;
 };
 
 export type Issue = {
@@ -41,6 +42,7 @@ export type Issue = {
     issue_edit: string;
   };
   project?: { id: number; name: string };
+  lock_version?: number;
 };
 
 export type Lists = {
