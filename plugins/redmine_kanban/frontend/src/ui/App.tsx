@@ -569,8 +569,8 @@ export function App({ dataUrl }: Props) {
                 const p = e?.payload as any;
                 throw new Error(
                   p?.message ||
-                    fieldError(p?.field_errors) ||
-                    resolveMutationError(e, data.labels, data.labels.update_failed)
+                  fieldError(p?.field_errors) ||
+                  resolveMutationError(e, data.labels, data.labels.update_failed)
                 );
               }
             } else {
@@ -581,8 +581,8 @@ export function App({ dataUrl }: Props) {
                 const p = e?.payload as any;
                 throw new Error(
                   p?.message ||
-                    fieldError(p?.field_errors) ||
-                    data.labels.create_failed
+                  fieldError(p?.field_errors) ||
+                  data.labels.create_failed
                 );
               }
             }
@@ -1126,6 +1126,7 @@ function Toolbar({
           value={filters.assignee}
           onChange={(val) => onChange({ ...filters, assignee: val })}
           onReset={() => onChange({ ...filters, assignee: 'all' })}
+          closeOnSelect={false}
         />
       </div>
 
