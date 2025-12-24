@@ -97,6 +97,7 @@ type Props = {
   onDelete: (issueId: number) => void;
   onEditClick: (editUrl: string) => void;
   onSubtaskToggle?: (subtaskId: number, currentClosed: boolean) => void;
+  onAddSubtask: (parentIssueId: number) => void;
   labels: Record<string, string>;
   busyIssueIds?: Set<number>;
   fitMode?: 'none' | 'width';
@@ -113,6 +114,7 @@ export function CanvasBoard({
   onDelete,
   onEditClick,
   onSubtaskToggle,
+  onAddSubtask,
   labels,
   busyIssueIds,
   fitMode = 'none',
@@ -375,8 +377,7 @@ export function CanvasBoard({
 
     if (hit.kind === 'edit') {
       if (isBusy(hit.issueId)) return;
-      const issue = state.cardsById.get(hit.issueId);
-      if (issue) onEditClick(issue.urls.issue);
+      onAddSubtask(hit.issueId);
       return;
     }
 

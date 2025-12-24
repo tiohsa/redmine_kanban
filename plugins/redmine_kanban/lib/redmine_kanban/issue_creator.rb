@@ -35,6 +35,10 @@ module RedmineKanban
         'tracker_id' => tracker_id.to_i
       }
 
+      if params[:parent_issue_id].present?
+        attributes['parent_issue_id'] = params[:parent_issue_id]
+      end
+
       issue.safe_attributes = attributes
 
       if issue.save
