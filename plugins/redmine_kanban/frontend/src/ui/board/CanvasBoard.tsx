@@ -376,7 +376,7 @@ export function CanvasBoard({
     if (hit.kind === 'edit') {
       if (isBusy(hit.issueId)) return;
       const issue = state.cardsById.get(hit.issueId);
-      if (issue) onEditClick(issue.urls.issue_edit);
+      if (issue) onEditClick(issue.urls.issue);
       return;
     }
 
