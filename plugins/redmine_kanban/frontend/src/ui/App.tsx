@@ -108,6 +108,13 @@ export function App({ dataUrl }: Props) {
     return 'updated_desc';
   });
   const [busyIssueIds, setBusyIssueIds] = useState<Set<number>>(new Set());
+  const [hiddenStatusIds, setHiddenStatusIds] = useState<Set<number>>(() => {
+    try {
+      const v = localStorage.getItem('rk_hidden_status_ids');
+      if (v) return new Set(JSON.parse(v).map(Number));
+    } catch { }
+    return new Set();
+  });
 
   const queryClient = useQueryClient();
   const baseUrl = useMemo(() => dataUrl.replace(/\/data$/, ''), [dataUrl]);
@@ -195,6 +202,12 @@ export function App({ dataUrl }: Props) {
 
   React.useEffect(() => {
     try {
+      localStorage.setItem('rk_hidden_status_ids', JSON.stringify(Array.from(hiddenStatusIds)));
+    } catch { }
+  }, [hiddenStatusIds]);
+
+  React.useEffect(() => {
+    try {
       localStorage.setItem('rk_filters', JSON.stringify(filters));
     } catch {
       // ignore
@@ -222,11 +235,14 @@ export function App({ dataUrl }: Props) {
 
   const issues = useMemo(() => {
     let filtered = filterIssues(filteredData?.issues ?? [], filteredData, filters);
+    // Filter out issues in hidden status lanes
+    filtered = filtered.filter(it => !hiddenStatusIds.has(it.status_id));
+
     if (pendingDeleteIssue) {
       filtered = filtered.filter((i) => i.id !== pendingDeleteIssue.id);
     }
     return filtered;
-  }, [filteredData, filters, pendingDeleteIssue]);
+  }, [filteredData, filters, pendingDeleteIssue, hiddenStatusIds]);
   const priorityRank = useMemo(() => {
     const m = new Map<number, number>();
     for (const [idx, p] of (data?.lists.priorities ?? []).entries()) m.set(p.id, idx);
@@ -543,6 +559,15 @@ export function App({ dataUrl }: Props) {
             onEditClick={setIframeEditUrl}
             onSubtaskToggle={toggleSubtask}
             onAddSubtask={openSubtask}
+            hiddenStatusIds={hiddenStatusIds}
+            onToggleStatusVisibility={(id: number) => {
+              setHiddenStatusIds((prev) => {
+                const next = new Set(prev);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                return next;
+              });
+            }}
           />
         ) : null}
       </div>
@@ -1654,7 +1679,7 @@ function BulkSubtaskModal({
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [subjects, setSubjects] = useState('');
-  
+
   const parent = data.issues.find((i) => i.id === parentIssueId);
   const defaultTracker = parent?.tracker_id ? String(parent.tracker_id) : (data.lists.trackers?.[0]?.id ?? '');
   const defaultStatus = data.columns.find(c => !c.is_closed)?.id ?? '';

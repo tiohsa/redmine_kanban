@@ -32,6 +32,7 @@ type RectMap = {
   subtaskSubjects: Map<string, Rect>; // key: "issueId:subtaskId"
   cardSubjects: Map<number, Rect>; // key: issueId
   infoButtons: Map<number, Rect>;
+  visibilityButtons: Map<number, Rect>; // key: statusId
 };
 
 type CanvasTheme = {
@@ -84,6 +85,7 @@ type HitResult =
   | { kind: 'card_subject'; issueId: number }
   | { kind: 'info'; issueId: number }
   | { kind: 'cell'; statusId: number; laneId: string | number }
+  | { kind: 'visibility'; statusId: number }
   | { kind: 'empty' };
 
 type Props = {
@@ -101,6 +103,8 @@ type Props = {
   labels: Record<string, string>;
   busyIssueIds?: Set<number>;
   fitMode?: 'none' | 'width';
+  hiddenStatusIds?: Set<number>;
+  onToggleStatusVisibility?: (statusId: number) => void;
 };
 
 export function CanvasBoard({
@@ -118,6 +122,8 @@ export function CanvasBoard({
   labels,
   busyIssueIds,
   fitMode = 'none',
+  hiddenStatusIds,
+  onToggleStatusVisibility,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -131,6 +137,7 @@ export function CanvasBoard({
     subtaskSubjects: new Map(),
     cardSubjects: new Map(),
     infoButtons: new Map(),
+    visibilityButtons: new Map(),
   });
   const scrollRef = useRef({ x: 0, y: 0 });
   const boardSizeRef = useRef({ width: 0, height: 0 });
@@ -246,13 +253,14 @@ export function CanvasBoard({
       subtaskSubjects: new Map(),
       cardSubjects: new Map(),
       infoButtons: new Map(),
+      visibilityButtons: new Map(),
     };
 
     ctx.save();
     ctx.scale(scale, scale);
     ctx.translate(-scroll.x, -scroll.y);
 
-    drawHeaders(ctx, layout, state.columns, theme, data.meta);
+    drawHeaders(ctx, layout, state.columns, theme, data.meta, hiddenStatusIds, rectMapRef.current);
 
     drawCells(
       ctx,
@@ -369,6 +377,11 @@ export function CanvasBoard({
       return;
     }
 
+    if (hit.kind === 'visibility') {
+      onToggleStatusVisibility?.(hit.statusId);
+      return;
+    }
+
     if (hit.kind === 'delete') {
       if (isBusy(hit.issueId)) return;
       onDelete(hit.issueId);
@@ -417,7 +430,7 @@ export function CanvasBoard({
         newHover = { kind: 'subtask_subject', id: `${hit.issueId}:${hit.subtaskId}` };
       } else if (hit.kind === 'card') {
         setCursor(canMove ? 'grab' : 'pointer');
-      } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'edit' || hit.kind === 'subtask_check' || hit.kind === 'info') {
+      } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'edit' || hit.kind === 'subtask_check' || hit.kind === 'info' || hit.kind === 'visibility') {
         setCursor('pointer');
       } else {
         setCursor('default');
@@ -584,7 +597,9 @@ function drawHeaders(
   layout: ReturnType<typeof computeLayout>,
   columns: Column[],
   theme: CanvasTheme,
-  meta: BoardData['meta']
+  meta: BoardData['meta'],
+  hiddenStatusIds?: Set<number>,
+  rectMap?: RectMap
 ) {
   ctx.save();
   ctx.fillStyle = '#f8fafc';
@@ -611,17 +626,24 @@ function drawHeaders(
     const x = layout.gridStartX + index * metrics.columnWidth;
 
     ctx.font = '600 13px Inter, sans-serif';
-    ctx.fillStyle = theme.textPrimary;
-    ctx.fillText(column.name, x + 12, layout.headerHeight / 2);
-
     const limit = column.wip_limit ?? null;
     const count = column.count ?? 0;
     const over = limit && count > limit;
 
-    if (limit || count > 0) {
-      ctx.font = '500 11px Inter, sans-serif';
-      const badgeText = limit ? `${count} / ${limit}` : String(count);
-      const badgeWidth = ctx.measureText(badgeText).width + 10;
+    const badgeText = (limit || count > 0) ? (limit ? `${count} / ${limit}` : String(count)) : '';
+    ctx.font = '500 11px Inter, sans-serif';
+    const badgeWidth = badgeText ? ctx.measureText(badgeText).width + 10 : 0;
+    const visIconWidth = 24;
+
+    ctx.font = '600 13px Inter, sans-serif';
+    const maxNameWidth = metrics.columnWidth - 12 - (badgeWidth ? badgeWidth + 24 : 12) - visIconWidth;
+    const displayName = truncateText(ctx, column.name, maxNameWidth);
+
+    ctx.fillStyle = theme.textPrimary;
+    ctx.fillText(displayName, x + 12, layout.headerHeight / 2);
+    const nameWidth = ctx.measureText(displayName).width;
+
+    if (badgeText) {
       const badgeHeight = 18;
       const badgeX = x + metrics.columnWidth - badgeWidth - 12;
       const badgeY = (layout.headerHeight - badgeHeight) / 2;
@@ -634,11 +656,21 @@ function drawHeaders(
       ctx.fill();
       if (over) ctx.stroke();
 
+      ctx.font = '500 11px Inter, sans-serif';
       ctx.fillStyle = over ? theme.danger : theme.textSecondary;
       ctx.textAlign = 'center';
       ctx.fillText(badgeText, badgeX + badgeWidth / 2, badgeY + badgeHeight / 2);
       ctx.textAlign = 'left';
     }
+
+    // Visibility Toggle
+    const isHidden = hiddenStatusIds?.has(column.id);
+    const visX = x + 12 + nameWidth + 8;
+    const visY = (layout.headerHeight - 16) / 2;
+    const visRect = { x: visX - 4, y: visY - 4, width: 24, height: 24 };
+    if (rectMap) rectMap.visibilityButtons.set(column.id, visRect);
+
+    drawIcon(ctx, isHidden ? 'visibility_off' : 'visibility', visX, visY + 2, 16, isHidden ? theme.textSecondary : theme.primary);
 
     ctx.strokeStyle = theme.border;
     ctx.lineWidth = 1;
@@ -1229,6 +1261,11 @@ function hitTest(
   for (const [issueId, rect] of rectMap.infoButtons) {
     if (pointInRect(point, rect)) {
       return { kind: 'info', issueId };
+    }
+  }
+  for (const [statusId, rect] of rectMap.visibilityButtons) {
+    if (pointInRect(point, rect)) {
+      return { kind: 'visibility', statusId };
     }
   }
   for (const [issueId, rect] of rectMap.cardSubjects) {
