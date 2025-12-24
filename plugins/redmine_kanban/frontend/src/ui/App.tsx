@@ -240,7 +240,7 @@ export function App({ dataUrl }: Props) {
   const openEdit = (issueId: number) => {
     const issue = data?.issues.find((i) => i.id === issueId);
     if (!issue) return;
-    setModal({ statusId: issue.status_id, issueId });
+    setIframeEditUrl(issue.urls.issue_edit);
   };
 
   const moveIssueMutation = useIssueMutation<MovePayload, IssueMutationResult>({
@@ -553,7 +553,8 @@ export function App({ dataUrl }: Props) {
             setNotice(null);
             if (isEdit) {
               const issueId = modal.issueId;
-              const issue = issueId ? data.issues.find((it) => it.id === issueId) : null;
+              if (!issueId) return;
+              const issue = data.issues.find((it) => it.id === issueId);
               if (!issue) return;
               if (issue.lock_version === undefined || issue.lock_version === null) {
                 throw new Error(data.labels.update_failed);
