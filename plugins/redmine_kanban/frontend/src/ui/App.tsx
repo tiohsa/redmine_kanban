@@ -579,7 +579,26 @@ export function App({ dataUrl }: Props) {
               }
             } else {
               try {
-                await createIssueMutation.mutateAsync(payload);
+                const subtasks = payload.subtasks_subjects as string[] | undefined;
+                const parentPayload = { ...payload };
+                delete parentPayload.subtasks_subjects;
+
+                const res = await createIssueMutation.mutateAsync(parentPayload);
+                const createdIssue = res.issue;
+
+                if (createdIssue && subtasks && subtasks.length > 0) {
+                  for (const subj of subtasks) {
+                    await createIssueMutation.mutateAsync({
+                      ...parentPayload,
+                      subject: subj,
+                      parent_issue_id: createdIssue.id,
+                    });
+                  }
+                  setNotice(`チケット #${createdIssue.id} と ${subtasks.length} 件の子チケットを作成しました`);
+                } else {
+                  setNotice(data.labels.created ?? '作成しました');
+                }
+
                 setModal(null);
               } catch (e: any) {
                 const p = e?.payload as any;
@@ -1362,6 +1381,8 @@ function IssueModal({
   const isEdit = !!issue;
   const canDelete = isEdit && data.meta.can_delete;
 
+  const [subjects, setSubjects] = useState('');
+
   const defaultTracker = data.lists.trackers?.[0]?.id ?? '';
   const defaultAssignee = (() => {
     if (isEdit) return issue?.assigned_to_id ? String(issue.assigned_to_id) : '';
@@ -1415,7 +1436,7 @@ function IssueModal({
 
     setSaving(true);
     try {
-      await onSaved({
+      const payload: Record<string, unknown> = {
         subject,
         tracker_id: trackerIdNum,
         assigned_to_id: assigneeIdNum,
@@ -1426,7 +1447,16 @@ function IssueModal({
         description,
         status_id: ctx.statusId,
         project_id: projectId,
-      }, isEdit);
+      };
+
+      if (!isEdit && subjects.trim().length > 0) {
+        const lines = subjects.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+        if (lines.length > 0) {
+          payload.subtasks_subjects = lines;
+        }
+      }
+
+      await onSaved(payload, isEdit);
     } catch (e: any) {
       setErr(e?.message ?? (isEdit ? labels.update_failed : labels.create_failed));
     } finally {
@@ -1524,8 +1554,6 @@ function IssueModal({
             </label>
           </div>
 
-
-
           <label className="rk-field">
             <span className="rk-label">{labels.issue_description}</span>
             <textarea rows={4} value={description} onChange={(e) => setDescription(e.target.value)} />
@@ -1537,6 +1565,18 @@ function IssueModal({
               <div className="rk-desc-preview-body">{linkifyText(description)}</div>
             </div>
           ) : null}
+
+          {!isEdit && (
+            <label className="rk-field" style={{ marginTop: '16px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+              <span className="rk-label">子チケット一括登録 (1行に1件名)</span>
+              <textarea
+                rows={4}
+                value={subjects}
+                onChange={(e) => setSubjects(e.target.value)}
+                placeholder="チケット作成と同時に子チケットを作成できます"
+              />
+            </label>
+          )}
 
           {err ? <div className="rk-error">{err}</div> : null}
         </div>
