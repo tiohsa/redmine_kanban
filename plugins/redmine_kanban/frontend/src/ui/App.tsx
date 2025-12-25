@@ -6,6 +6,7 @@ import { CanvasBoard } from './board/CanvasBoard';
 import { buildBoardState } from './board/state';
 import { type SortKey } from './board/sort';
 import { replaceIssueInBoard, updateIssueInBoard, useIssueMutation } from './useIssueMutation';
+import { getCleanDialogStyles } from './board/iframeStyles';
 
 type Props = { dataUrl: string };
 
@@ -1642,6 +1643,20 @@ function IframeEditDialog({ url, labels, onClose }: { url: string; labels: Recor
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
+  const handleLoad = (e: React.SyntheticEvent<HTMLIFrameElement, Event>) => {
+    const iframe = e.currentTarget;
+    try {
+      const doc = iframe.contentDocument;
+      if (doc) {
+        const style = doc.createElement('style');
+        style.textContent = getCleanDialogStyles();
+        doc.head.appendChild(style);
+      }
+    } catch (err) {
+      console.warn('Cannot access iframe content for styling:', err);
+    }
+  };
+
   return (
     <div
       className="rk-modal-backdrop"
@@ -1659,7 +1674,7 @@ function IframeEditDialog({ url, labels, onClose }: { url: string; labels: Recor
         >
           ×
         </button>
-        <iframe className="rk-iframe-dialog-frame" src={url} />
+        <iframe className="rk-iframe-dialog-frame" src={url} onLoad={handleLoad} />
       </div>
     </div>
   );
