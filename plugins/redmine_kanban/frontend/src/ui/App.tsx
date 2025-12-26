@@ -8,6 +8,7 @@ import { type SortKey } from './board/sort';
 import { replaceIssueInBoard, updateIssueInBoard, useIssueMutation } from './useIssueMutation';
 import { getCleanDialogStyles } from './board/iframeStyles';
 import { IframeCreateDialog } from './IframeCreateDialog';
+import { IframeEditDialog } from './IframeEditDialog';
 
 type Props = { dataUrl: string };
 
@@ -65,7 +66,7 @@ export function App({ dataUrl }: Props) {
   const [subtaskModal, setSubtaskModal] = useState<number | null>(null);
   const [pendingDeleteIssue, setPendingDeleteIssue] = useState<Issue | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
-  const [iframeEditUrl, setIframeEditUrl] = useState<string | null>(null);
+  const [iframeEditContext, setIframeEditContext] = useState<{ url: string; issueId: number } | null>(null);
   const [iframeCreateUrl, setIframeCreateUrl] = useState<string | null>(null);
   const [fullWindow, setFullWindow] = useState(() => {
     try {
@@ -277,7 +278,7 @@ export function App({ dataUrl }: Props) {
   const openEdit = (issueId: number) => {
     const issue = data?.issues.find((i) => i.id === issueId);
     if (!issue) return;
-    setIframeEditUrl(issue.urls.issue_edit);
+    setIframeEditContext({ url: issue.urls.issue_edit, issueId });
   };
   const openSubtask = (parentIssueId: number) => setSubtaskModal(parentIssueId);
 
@@ -576,7 +577,16 @@ export function App({ dataUrl }: Props) {
             onCreate={openCreate}
             onCardOpen={openEdit}
             onDelete={requestDelete}
-            onEditClick={setIframeEditUrl}
+            onEditClick={(urlPath: string) => {
+              // Extract issue ID from URL like /issues/123 or /issues/123/edit
+              const match = urlPath.match(/\/issues\/(\d+)/);
+              if (match) {
+                const issueId = parseInt(match[1], 10);
+                // Convert show URL to edit URL
+                const editUrl = urlPath.includes('/edit') ? urlPath : `${urlPath}/edit`;
+                setIframeEditContext({ url: editUrl, issueId });
+              }
+            }}
             onSubtaskToggle={toggleSubtask}
             onAddSubtask={openSubtask}
             hiddenStatusIds={hiddenStatusIds}
@@ -687,8 +697,20 @@ export function App({ dataUrl }: Props) {
         />
       ) : null}
 
-      {iframeEditUrl && data ? (
-        <IframeEditDialog url={iframeEditUrl} labels={data.labels} onClose={() => { setIframeEditUrl(null); refresh(); }} />
+      {iframeEditContext && data ? (
+        <IframeEditDialog
+          url={iframeEditContext.url}
+          issueId={iframeEditContext.issueId}
+          labels={data.labels}
+          baseUrl={baseUrl}
+          queryKey={boardQueryKey}
+          onClose={() => { setIframeEditContext(null); refresh(); }}
+          onSuccess={(msg) => {
+            setNotice(msg);
+            setIframeEditContext(null);
+            refresh();
+          }}
+        />
       ) : null}
 
       {iframeCreateUrl && data ? (
@@ -1665,54 +1687,6 @@ function IssueModal({
   );
 }
 
-function IframeEditDialog({ url, labels, onClose }: { url: string; labels: Record<string, string>; onClose: () => void }) {
-  // Close on Escape key
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
-
-  const handleLoad = (e: React.SyntheticEvent<HTMLIFrameElement, Event>) => {
-    const iframe = e.currentTarget;
-    try {
-      const doc = iframe.contentDocument;
-      if (doc) {
-        const style = doc.createElement('style');
-        style.textContent = getCleanDialogStyles();
-        doc.head.appendChild(style);
-      }
-    } catch (err) {
-      console.warn('Cannot access iframe content for styling:', err);
-    }
-  };
-
-  return (
-    <div
-      className="rk-modal-backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-label={labels.issue_priority}
-      onClick={onClose}
-    >
-      <div className="rk-iframe-dialog" onClick={(e) => e.stopPropagation()}>
-        <button
-          type="button"
-          className="rk-iframe-dialog-close"
-          onClick={onClose}
-          aria-label={labels.close}
-        >
-          ×
-        </button>
-        <iframe className="rk-iframe-dialog-frame" src={url} onLoad={handleLoad} />
-      </div>
-    </div>
-  );
-}
 
 function BulkSubtaskModal({
   data,
