@@ -771,10 +771,14 @@ function resolveMutationError(
   fallback?: string
 ): string {
   const status = (error as any)?.status as number | undefined;
-  if (status === 409 || status === 422) {
+  const payloadMessage = (error as any)?.payload?.message as string | undefined;
+
+  // 409 Conflict is specifically for optimistic locking failures
+  if (status === 409) {
     return labels?.conflict ?? '他ユーザにより更新されました';
   }
-  const payloadMessage = (error as any)?.payload?.message as string | undefined;
+
+  // For 422 and other errors, prefer the server's message
   return payloadMessage || fallback || labels?.update_failed || '更新に失敗しました';
 }
 
