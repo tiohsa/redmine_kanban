@@ -478,16 +478,14 @@ export function CanvasBoard({
         });
       }
     } else {
-      // If we released on the same card and didn't drag, open it.
-      // But check if we were clicking a button.
-      // Since buttons are checked in PointerDown, this is fine.
-      // But we should re-check hit to ensure we are still on the card.
+      // If we released on the same card and didn't drag, only open if clicking subject
       const hit = hitTest(point, rectMapRef.current, state, data);
       if (hit.kind === 'subtask_subject') {
         onCardOpen(hit.subtaskId);
-      } else if (hit.kind === 'card' && hit.issueId === drag.issueId) {
-        onCardOpen(drag.issueId);
+      } else if (hit.kind === 'card_subject') {
+        onCardOpen(hit.issueId);
       }
+      // Note: Clicking on the card body (not on subject) no longer opens the edit dialog
     }
 
     dragRef.current = null;
