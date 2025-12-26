@@ -7,6 +7,7 @@ import { buildBoardState } from './board/state';
 import { type SortKey } from './board/sort';
 import { replaceIssueInBoard, updateIssueInBoard, useIssueMutation } from './useIssueMutation';
 import { getCleanDialogStyles } from './board/iframeStyles';
+import { IframeCreateDialog } from './IframeCreateDialog';
 
 type Props = { dataUrl: string };
 
@@ -65,6 +66,7 @@ export function App({ dataUrl }: Props) {
   const [pendingDeleteIssue, setPendingDeleteIssue] = useState<Issue | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
   const [iframeEditUrl, setIframeEditUrl] = useState<string | null>(null);
+  const [iframeCreateUrl, setIframeCreateUrl] = useState<string | null>(null);
   const [fullWindow, setFullWindow] = useState(() => {
     try {
       return localStorage.getItem('rk_fullwindow') === '1';
@@ -254,7 +256,24 @@ export function App({ dataUrl }: Props) {
     return buildBoardState(filteredData, issues, sortKey, priorityRank);
   }, [filteredData, issues, sortKey, priorityRank]);
 
-  const openCreate = (ctx: ModalContext) => setModal(ctx);
+  const openCreate = (ctx: ModalContext) => {
+    // Generate Redmine new issue URL with query params
+    // baseUrl is like /projects/ecookbook/kanban, we need /projects/ecookbook/issues/new
+    const projectUrl = baseUrl.replace(/\/kanban$/, '');
+    const params = new URLSearchParams();
+    if (data?.meta.project_id) {
+      params.append('project_id', String(data.meta.project_id));
+    }
+    if (ctx.statusId) {
+      params.append('issue[status_id]', String(ctx.statusId));
+    }
+    // Handle assignee from laneId if applicable
+    if (ctx.laneId && data?.meta.lane_type === 'assignee' && ctx.laneId !== 'unassigned' && ctx.laneId !== 'none') {
+      params.append('issue[assigned_to_id]', String(ctx.laneId));
+    }
+
+    setIframeCreateUrl(`${projectUrl}/issues/new?${params.toString()}`);
+  };
   const openEdit = (issueId: number) => {
     const issue = data?.issues.find((i) => i.id === issueId);
     if (!issue) return;
@@ -670,6 +689,21 @@ export function App({ dataUrl }: Props) {
 
       {iframeEditUrl && data ? (
         <IframeEditDialog url={iframeEditUrl} labels={data.labels} onClose={() => { setIframeEditUrl(null); refresh(); }} />
+      ) : null}
+
+      {iframeCreateUrl && data ? (
+        <IframeCreateDialog
+          url={iframeCreateUrl}
+          labels={data.labels}
+          baseUrl={baseUrl}
+          queryKey={boardQueryKey}
+          onClose={() => { setIframeCreateUrl(null); refresh(); }}
+          onSuccess={(msg) => {
+            setNotice(msg);
+            setIframeCreateUrl(null);
+            refresh();
+          }}
+        />
       ) : null}
     </div>
   );

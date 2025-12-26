@@ -14,11 +14,12 @@ export default defineConfig({
     lib: {
       entry: path.resolve(__dirname, 'src/main.tsx'),
       name: 'RedmineKanban',
-      formats: ['iife'],
+      formats: ['umd'],
       fileName: () => 'javascripts/redmine_kanban_spa.js',
     },
     rollupOptions: {
       output: {
+        // Enforce IIFE wrapping to prevent scoped variables from leaking (e.g. minified '$')
         assetFileNames: (assetInfo) => {
           const name = assetInfo.name || '';
           if (name.endsWith('.css')) return 'stylesheets/redmine_kanban_spa.css';

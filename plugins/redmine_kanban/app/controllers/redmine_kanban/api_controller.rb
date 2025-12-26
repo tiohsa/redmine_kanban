@@ -28,7 +28,8 @@ module RedmineKanban
     end
 
     def create
-      result = IssueCreator.new(project: @project, user: User.current).create(params: params)
+      issue_params = params[:issue] || params
+      result = IssueCreator.new(project: @project, user: User.current).create(params: issue_params)
 
       if result[:ok]
         render json: result
