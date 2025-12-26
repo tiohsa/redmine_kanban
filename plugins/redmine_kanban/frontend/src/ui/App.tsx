@@ -63,7 +63,7 @@ export function App({ dataUrl }: Props) {
     return { assignee: 'all', q: '', due: 'all', priority: [], projectIds: [], statusIds: [] };
   });
   const [modal, setModal] = useState<ModalContext | null>(null);
-  const [subtaskModal, setSubtaskModal] = useState<number | null>(null);
+
   const [pendingDeleteIssue, setPendingDeleteIssue] = useState<Issue | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
   const [iframeEditContext, setIframeEditContext] = useState<{ url: string; issueId: number } | null>(null);
@@ -280,7 +280,7 @@ export function App({ dataUrl }: Props) {
     if (!issue) return;
     setIframeEditContext({ url: issue.urls.issue_edit, issueId });
   };
-  const openSubtask = (parentIssueId: number) => setSubtaskModal(parentIssueId);
+
 
   const moveIssueMutation = useIssueMutation<MovePayload, IssueMutationResult>({
     queryKey: boardQueryKey,
@@ -588,7 +588,7 @@ export function App({ dataUrl }: Props) {
               }
             }}
             onSubtaskToggle={toggleSubtask}
-            onAddSubtask={openSubtask}
+
             hiddenStatusIds={hiddenStatusIds}
             onToggleStatusVisibility={(id: number) => {
               setHiddenStatusIds((prev) => {
@@ -671,31 +671,7 @@ export function App({ dataUrl }: Props) {
         />
       ) : null}
 
-      {data && subtaskModal !== null ? (
-        <BulkSubtaskModal
-          data={data}
-          parentIssueId={subtaskModal}
-          onClose={() => setSubtaskModal(null)}
-          onSaved={async (payloads) => {
-            setNotice(null);
-            try {
-              // Create issues sequentially to avoid overwhelming server or race conditions
-              for (const payload of payloads) {
-                await createIssueMutation.mutateAsync(payload);
-              }
-              setSubtaskModal(null);
-              setNotice(`${payloads.length} 件の子チケットを作成しました`);
-            } catch (e: any) {
-              const p = e?.payload as any;
-              throw new Error(
-                p?.message ||
-                fieldError(p?.field_errors) ||
-                data.labels.create_failed
-              );
-            }
-          }}
-        />
-      ) : null}
+
 
       {iframeEditContext && data ? (
         <IframeEditDialog
@@ -1687,178 +1663,3 @@ function IssueModal({
   );
 }
 
-
-function BulkSubtaskModal({
-  data,
-  parentIssueId,
-  onClose,
-  onSaved,
-}: {
-  data: BoardData;
-  parentIssueId: number;
-  onClose: () => void;
-  onSaved: (payloads: Record<string, unknown>[]) => Promise<void>;
-}) {
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [subjects, setSubjects] = useState('');
-
-  const parent = data.issues.find((i) => i.id === parentIssueId);
-  const defaultTracker = parent?.tracker_id ? String(parent.tracker_id) : (data.lists.trackers?.[0]?.id ?? '');
-  const defaultStatus = data.columns.find(c => !c.is_closed)?.id ?? '';
-  const defaultPriority = parent?.priority_id ? String(parent.priority_id) : '';
-  const defaultAssignee = parent?.assigned_to_id ? String(parent.assigned_to_id) : '';
-
-  const [trackerId, setTrackerId] = useState(String(defaultTracker));
-  const [statusId, setStatusId] = useState(String(defaultStatus));
-  const [priorityId, setPriorityId] = useState(String(defaultPriority));
-  const [assigneeId, setAssigneeId] = useState(String(defaultAssignee));
-  const [dueDate, setDueDate] = useState('');
-
-  const labels = data.labels;
-
-  // Close on Escape key
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !saving) {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, saving]);
-
-  const submit = async () => {
-    setErr(null);
-    const lines = subjects.split('\n').map(s => s.trim()).filter(s => s.length > 0);
-    if (lines.length === 0) {
-      setErr('件名を入力してください');
-      return;
-    }
-
-    const trackerIdNum = Number(trackerId);
-    if (!Number.isFinite(trackerIdNum) || trackerIdNum <= 0) {
-      setErr(labels.select_tracker);
-      return;
-    }
-
-    const statusIdNum = Number(statusId);
-    if (!Number.isFinite(statusIdNum) || statusIdNum <= 0) {
-      setErr(labels.select_status ?? 'ステータスを選択してください');
-      return;
-    }
-
-    const assigneeIdNum = assigneeId === '' ? null : Number(assigneeId);
-    const priorityIdNum = priorityId === '' ? null : Number(priorityId);
-
-    setSaving(true);
-    try {
-      const payloads = lines.map(subject => ({
-        parent_issue_id: parentIssueId,
-        subject,
-        tracker_id: trackerIdNum,
-        status_id: statusIdNum,
-        priority_id: priorityIdNum,
-        assigned_to_id: assigneeIdNum,
-        due_date: dueDate.trim() ? dueDate : null,
-        project_id: parent?.project?.id ?? data.meta.project_id,
-      }));
-      await onSaved(payloads);
-    } catch (e: any) {
-      setErr(e?.message ?? labels.create_failed);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="rk-modal-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
-      <div className="rk-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="rk-modal-head">
-          <h3>子チケット一括登録 (親: #{parentIssueId})</h3>
-        </div>
-
-        <div className="rk-form">
-          <label className="rk-field">
-            <span className="rk-label">件名 (1行に1つ入力してください)</span>
-            <textarea
-              rows={6}
-              value={subjects}
-              onChange={(e) => setSubjects(e.target.value)}
-              placeholder="タスクA&#13;&#10;タスクB&#13;&#10;タスクC"
-              autoFocus
-            />
-          </label>
-
-          <div className="rk-row2">
-            <label className="rk-field">
-              <span className="rk-label">{labels.issue_tracker}</span>
-              <select value={trackerId} onChange={(e) => setTrackerId(e.target.value)}>
-                {data.lists.trackers.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="rk-field">
-              <span className="rk-label">{labels.status}</span>
-              <select value={statusId} onChange={(e) => setStatusId(e.target.value)}>
-                {data.columns.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <div className="rk-row2">
-            <label className="rk-field">
-              <span className="rk-label">{labels.issue_assignee}</span>
-              <select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
-                {data.lists.assignees.map((a) => (
-                  <option key={String(a.id)} value={a.id ?? ''}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="rk-field">
-              <span className="rk-label">{labels.issue_priority}</span>
-              <select value={priorityId} onChange={(e) => setPriorityId(e.target.value)}>
-                <option value="">（{labels.not_set}）</option>
-                {data.lists.priorities.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <div className="rk-row2">
-            <label className="rk-field">
-              <span className="rk-label">{labels.issue_due_date}</span>
-              <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-            </label>
-            <div className="rk-field" /> {/* Spacer */}
-          </div>
-
-          {err ? <div className="rk-error">{err}</div> : null}
-        </div>
-
-        <div className="rk-modal-actions">
-          <button type="button" className="rk-btn" onClick={onClose} disabled={saving}>
-            キャンセル
-          </button>
-          <button type="button" className="rk-btn rk-btn-primary" onClick={submit} disabled={saving}>
-            {saving ? '登録中...' : '一括登録'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}

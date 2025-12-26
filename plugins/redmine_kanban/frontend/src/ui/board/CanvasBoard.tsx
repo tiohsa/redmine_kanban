@@ -27,7 +27,7 @@ type RectMap = {
   cells: Map<string, Rect>;
   addButtons: Map<string, Rect>;
   deleteButtons: Map<number, Rect>;
-  editButtons: Map<number, Rect>;
+
   subtaskChecks: Map<string, Rect>; // key: "issueId:subtaskId"
   subtaskSubjects: Map<string, Rect>; // key: "issueId:subtaskId"
   cardSubjects: Map<number, Rect>; // key: issueId
@@ -79,7 +79,7 @@ type HitResult =
   | { kind: 'card'; issueId: number }
   | { kind: 'add'; statusId: number; laneId: string | number }
   | { kind: 'delete'; issueId: number }
-  | { kind: 'edit'; issueId: number }
+
   | { kind: 'subtask_check'; issueId: number; subtaskId: number }
   | { kind: 'subtask_subject'; issueId: number; subtaskId: number }
   | { kind: 'card_subject'; issueId: number }
@@ -99,7 +99,7 @@ type Props = {
   onDelete: (issueId: number) => void;
   onEditClick: (editUrl: string) => void;
   onSubtaskToggle?: (subtaskId: number, currentClosed: boolean) => void;
-  onAddSubtask: (parentIssueId: number) => void;
+
   labels: Record<string, string>;
   busyIssueIds?: Set<number>;
   fitMode?: 'none' | 'width';
@@ -118,7 +118,7 @@ export function CanvasBoard({
   onDelete,
   onEditClick,
   onSubtaskToggle,
-  onAddSubtask,
+
   labels,
   busyIssueIds,
   fitMode = 'none',
@@ -132,7 +132,7 @@ export function CanvasBoard({
     cells: new Map(),
     addButtons: new Map(),
     deleteButtons: new Map(),
-    editButtons: new Map(),
+
     subtaskChecks: new Map(),
     subtaskSubjects: new Map(),
     cardSubjects: new Map(),
@@ -248,7 +248,7 @@ export function CanvasBoard({
       cells: new Map(),
       addButtons: new Map(),
       deleteButtons: new Map(),
-      editButtons: new Map(),
+
       subtaskChecks: new Map(),
       subtaskSubjects: new Map(),
       cardSubjects: new Map(),
@@ -388,11 +388,7 @@ export function CanvasBoard({
       return;
     }
 
-    if (hit.kind === 'edit') {
-      if (isBusy(hit.issueId)) return;
-      onAddSubtask(hit.issueId);
-      return;
-    }
+
 
     if (hit.kind === 'card') {
       if (isBusy(hit.issueId)) return;
@@ -430,7 +426,7 @@ export function CanvasBoard({
         newHover = { kind: 'subtask_subject', id: `${hit.issueId}:${hit.subtaskId}` };
       } else if (hit.kind === 'card') {
         setCursor(canMove ? 'grab' : 'pointer');
-      } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'edit' || hit.kind === 'subtask_check' || hit.kind === 'info' || hit.kind === 'visibility') {
+      } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'subtask_check' || hit.kind === 'info' || hit.kind === 'visibility') {
         setCursor('pointer');
       } else {
         setCursor('default');
@@ -1127,25 +1123,15 @@ function drawCard(
     });
   }
 
-  // 9. Buttons (Edit/Delete)
-  const actionIconSize = 24;
-  const editRect = {
-    x: x + w - actionIconSize - 4,
-    y: y + 4,
-    width: actionIconSize,
-    height: actionIconSize,
-  };
-  if (rectMap) rectMap.editButtons.set(issue.id, editRect);
-
+  // 9. Delete Button
   ctx.save();
   ctx.font = '20px "Material Symbols Outlined"';
-  ctx.fillStyle = theme.textSecondary;
   ctx.textBaseline = 'top';
-  ctx.fillText('edit', editRect.x, editRect.y);
 
   if (data.meta.can_delete && rectMap) {
+    const actionIconSize = 24;
     const deleteRect = {
-      x: editRect.x - actionIconSize - 4,
+      x: x + w - actionIconSize - 4,
       y: y + 4,
       width: actionIconSize,
       height: actionIconSize,
@@ -1276,9 +1262,7 @@ function hitTest(
   for (const [issueId, rect] of rectMap.deleteButtons) {
     if (pointInRect(point, rect)) return { kind: 'delete', issueId };
   }
-  for (const [issueId, rect] of rectMap.editButtons) {
-    if (pointInRect(point, rect)) return { kind: 'edit', issueId };
-  }
+
   for (const [issueId, rect] of rectMap.cards) {
     if (pointInRect(point, rect)) return { kind: 'card', issueId };
   }
