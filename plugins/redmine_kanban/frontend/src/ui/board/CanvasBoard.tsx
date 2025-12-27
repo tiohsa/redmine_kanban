@@ -207,6 +207,8 @@ export function CanvasBoard({
   const draw = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    // サイズが設定されていない場合は描画をスキップ
+    if (size.width <= 0 || size.height <= 0) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     const dpr = window.devicePixelRatio || 1;
