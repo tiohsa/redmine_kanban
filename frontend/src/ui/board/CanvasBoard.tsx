@@ -458,7 +458,7 @@ export function CanvasBoard({
         setCursor('pointer');
         newHover = { kind: 'subtask_subject', id: `${hit.issueId}:${hit.subtaskId}` };
       } else if (hit.kind === 'card') {
-        setCursor(canMove ? 'grab' : 'pointer');
+        setCursor('pointer');
       } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'subtask_check' || hit.kind === 'info' || hit.kind === 'visibility') {
         setCursor('pointer');
       } else {
