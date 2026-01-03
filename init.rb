@@ -2,7 +2,7 @@ require_relative 'lib/redmine_kanban'
 
 Redmine::Plugin.register :redmine_kanban do
   name 'Redmine Kanban'
-  author 'redmine-kanban'
+  author 'tiohsa'
   description 'Redmine kanban'
   version '0.1.0'
   url 'https://github.com/tiohsa/redmine_kanban'
