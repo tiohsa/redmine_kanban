@@ -76,7 +76,7 @@
       <th>移動先ステータス</th>
       <th>進捗率</th>
       <th>開始日</th>
-      <th>期日</th>
+      <th>終了日</th>
     </tr>
     </thead>
     <tbody>
@@ -103,8 +103,8 @@
                          options_for_select(dates, attrs['start_date'] || '__no_change__') %>
         </td>
         <td>
-          <%= select_tag "settings[status_auto_updates][#{sid}][due_date]",
-                         options_for_select(dates, attrs['due_date'] || '__no_change__') %>
+          <%= select_tag "settings[status_auto_updates][#{sid}][closed_on]",
+                         options_for_select(dates, attrs['closed_on'] || '__no_change__') %>
         </td>
       </tr>
     <% end %>

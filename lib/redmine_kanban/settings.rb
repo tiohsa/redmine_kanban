@@ -63,7 +63,7 @@ module RedmineKanban
         filtered = attrs.reject { |_, v| v == '__no_change__' }
 
         # Whitelist allowed attributes
-        filtered.slice('done_ratio', 'start_date', 'due_date')
+        filtered.slice('done_ratio', 'start_date', 'closed_on')
       end
     end
 

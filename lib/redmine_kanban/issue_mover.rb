@@ -41,10 +41,13 @@ module RedmineKanban
         # Skip if already set by explicit user action (e.g., assigned_to_id from lane)
         next if attrs.key?(key)
 
-        # Handle magic values
-        final_value = value == '__today__' ? Date.current : value
-
-        attrs[key] = final_value
+        if key == 'closed_on'
+          final_value = value == '__today__' ? Time.current : value
+          @issue.closed_on = final_value
+        else
+          final_value = value == '__today__' ? Date.current : value
+          attrs[key] = final_value
+        end
       end
 
       @issue.safe_attributes = attrs
