@@ -297,6 +297,12 @@ export function App({ dataUrl }: Props) {
     setIframeEditContext({ url: issue.urls.issue_edit, issueId });
   };
 
+  const openView = (issueId: number) => {
+    const issue = data?.issues.find((i) => i.id === issueId);
+    if (!issue) return;
+    setIframeEditContext({ url: issue.urls.issue, issueId });
+  };
+
 
   const moveIssueMutation = useIssueMutation<MovePayload, IssueMutationResult>({
     queryKey: boardQueryKey,
@@ -597,16 +603,19 @@ export function App({ dataUrl }: Props) {
               }
             }}
             onCreate={openCreate}
-            onCardOpen={openEdit}
+            onEdit={openEdit}
+            onView={openView}
             onDelete={requestDelete}
             onEditClick={(urlPath: string) => {
-              // Extract issue ID from URL like /issues/123 or /issues/123/edit
+              // Extract issue ID
               const match = urlPath.match(/\/issues\/(\d+)/);
               if (match) {
                 const issueId = parseInt(match[1], 10);
-                // Convert show URL to edit URL
-                const editUrl = urlPath.includes('/edit') ? urlPath : `${urlPath}/edit`;
-                setIframeEditContext({ url: editUrl, issueId });
+                // Respect the URL provided. If it has /edit, it edits. If not, it views.
+                // Previously it forced /edit. We remove that forcing for general clicks.
+                // However, verification needed: does `onEditClick` get called with /edit?
+                // Subtask info provides `issue.urls.issue` (show). So it will View.
+                setIframeEditContext({ url: urlPath, issueId });
               }
             }}
             onSubtaskToggle={toggleSubtask}

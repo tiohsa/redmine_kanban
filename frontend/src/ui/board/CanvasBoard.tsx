@@ -50,6 +50,7 @@ type RectMap = {
   subtaskAreas: Map<number, Rect>; // key: issueId - entire subtask area for hit exclusion
   cardSubjects: Map<number, Rect>; // key: issueId
   infoButtons: Map<number, Rect>;
+  editButtons: Map<number, Rect>;
   visibilityButtons: Map<number, Rect>; // key: statusId
 };
 
@@ -103,6 +104,7 @@ type HitResult =
   | { kind: 'subtask_area'; issueId: number }
   | { kind: 'card_subject'; issueId: number }
   | { kind: 'info'; issueId: number }
+  | { kind: 'edit'; issueId: number }
   | { kind: 'cell'; statusId: number; laneId: string | number }
   | { kind: 'visibility'; statusId: number }
   | { kind: 'empty' };
@@ -114,7 +116,8 @@ type Props = {
   canCreate: boolean;
   onCommand: (command: BoardCommand) => void;
   onCreate: (ctx: { statusId: number; laneId?: string | number }) => void;
-  onCardOpen: (issueId: number) => void;
+  onEdit: (issueId: number) => void;
+  onView: (issueId: number) => void;
   onDelete: (issueId: number) => void;
   onEditClick: (editUrl: string) => void;
   onSubtaskToggle?: (subtaskId: number, currentClosed: boolean) => void;
@@ -134,7 +137,8 @@ export function CanvasBoard({
   canCreate,
   onCommand,
   onCreate,
-  onCardOpen,
+  onEdit,
+  onView,
   onDelete,
   onEditClick,
   onSubtaskToggle,
@@ -159,6 +163,7 @@ export function CanvasBoard({
     subtaskAreas: new Map(),
     cardSubjects: new Map(),
     infoButtons: new Map(),
+    editButtons: new Map(),
     visibilityButtons: new Map(),
   });
   const scrollRef = useRef({ x: 0, y: 0 });
@@ -301,6 +306,7 @@ export function CanvasBoard({
       subtaskAreas: new Map(),
       cardSubjects: new Map(),
       infoButtons: new Map(),
+      editButtons: new Map(),
       visibilityButtons: new Map(),
     };
 
@@ -391,27 +397,25 @@ export function CanvasBoard({
 
     if (hit.kind === 'subtask_subject') {
       if (isBusy(hit.subtaskId)) return;
-      onCardOpen(hit.subtaskId);
+      onView(hit.subtaskId);
       return;
     }
 
     if (hit.kind === 'card_subject') {
       if (isBusy(hit.issueId)) return;
-      onCardOpen(hit.issueId);
+      onView(hit.issueId);
       return;
     }
 
     if (hit.kind === 'info') {
       if (isBusy(hit.issueId)) return;
-      const issue = state.cardsById.get(hit.issueId);
-      if (issue) {
-        if (issue.parent_id) {
-          const parentUrl = issue.urls.issue.replace(/\/\d+$/, `/${issue.parent_id}`);
-          onEditClick(parentUrl);
-        } else {
-          onEditClick(issue.urls.issue);
-        }
-      }
+      onView(hit.issueId);
+      return;
+    }
+
+    if (hit.kind === 'edit') {
+      if (isBusy(hit.issueId)) return;
+      onEdit(hit.issueId);
       return;
     }
 
@@ -469,7 +473,7 @@ export function CanvasBoard({
         newHover = { kind: 'subtask_subject', id: `${hit.issueId}:${hit.subtaskId}` };
       } else if (hit.kind === 'card') {
         nextCursor = 'pointer';
-      } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'subtask_check' || hit.kind === 'info' || hit.kind === 'visibility') {
+      } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'subtask_check' || hit.kind === 'info' || hit.kind === 'edit' || hit.kind === 'visibility') {
         nextCursor = 'pointer';
       }
 
@@ -540,10 +544,10 @@ export function CanvasBoard({
       // except for subtask checkbox area which is already handled in handlePointerDown
       const hit = hitTest(point, rectMapRef.current, state, data);
       if (hit.kind === 'subtask_subject') {
-        onCardOpen(hit.subtaskId);
+        onView(hit.subtaskId);
       } else if (hit.kind === 'card_subject' || hit.kind === 'card') {
         // Open dialog when clicking on subject or anywhere on the card
-        onCardOpen(hit.kind === 'card' ? hit.issueId : hit.issueId);
+        onView(hit.kind === 'card' ? hit.issueId : hit.issueId);
       }
     }
 
@@ -1275,22 +1279,42 @@ function drawCard(
     });
   }
 
-  // 9. Delete Button
+  // 9. Delete Button & Edit Button
   ctx.save();
   ctx.font = '20px "Material Symbols Outlined"';
   ctx.textBaseline = 'top';
 
-  if (data.meta.can_delete && rectMap) {
+  if (rectMap) {
     const actionIconSize = 24;
-    const deleteRect = {
-      x: x + w - actionIconSize - 4,
+    let buttonRightX = x + w - 4;
+
+    // Delete Button
+    if (data.meta.can_delete) {
+      const deleteRect = {
+        x: buttonRightX - actionIconSize,
+        y: y + 4,
+        width: actionIconSize,
+        height: actionIconSize,
+      };
+      rectMap.deleteButtons.set(issue.id, deleteRect);
+      ctx.fillStyle = theme.danger;
+      ctx.fillText('delete', deleteRect.x, deleteRect.y);
+      buttonRightX -= actionIconSize;
+    }
+
+    // Edit Button (Always visible if editable?)
+    // Assuming can_edit is true implicitly or we check
+    // If not check editable, just show it? Usually Kanban board is for editable.
+    // Let's assume always visible like delete or subject click.
+    const editRect = {
+      x: buttonRightX - actionIconSize,
       y: y + 4,
       width: actionIconSize,
       height: actionIconSize,
     };
-    rectMap.deleteButtons.set(issue.id, deleteRect);
-    ctx.fillStyle = theme.danger;
-    ctx.fillText('delete', deleteRect.x, deleteRect.y);
+    rectMap.editButtons.set(issue.id, editRect);
+    ctx.fillStyle = theme.textSecondary;
+    ctx.fillText('edit', editRect.x, editRect.y);
   }
   ctx.restore();
 
@@ -1403,6 +1427,14 @@ function hitTest(
     if (pointInRect(point, rect)) {
       return { kind: 'info', issueId };
     }
+  }
+  for (const [issueId, rect] of rectMap.editButtons) {
+    if (pointInRect(point, rect)) {
+      return { kind: 'edit', issueId };
+    }
+  }
+  for (const [issueId, rect] of rectMap.deleteButtons) {
+    if (pointInRect(point, rect)) return { kind: 'delete', issueId };
   }
   for (const [statusId, rect] of rectMap.visibilityButtons) {
     if (pointInRect(point, rect)) {
