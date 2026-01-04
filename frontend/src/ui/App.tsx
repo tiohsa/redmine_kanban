@@ -15,7 +15,8 @@ type Props = { dataUrl: string };
 type Filters = {
   assignee: 'all' | 'me' | 'unassigned' | string;
   q: string;
-  due: 'all' | 'overdue' | 'thisweek' | '3days' | '7days' | 'none';
+  due: 'all' | 'overdue' | 'thisweek' | '3days' | '7days' | '1day' | 'custom' | 'none';
+  dueDays?: number;
   priority: string[]; // Multiple selection
   projectIds: number[]; // Multiple selection
   statusIds: number[]; // Multiple selection
@@ -52,6 +53,7 @@ export function App({ dataUrl }: Props) {
           assignee: parsed.assignee || 'all',
           q: parsed.q || '',
           due: parsed.due || 'all',
+          dueDays: parsed.dueDays || 7,
           priority: Array.isArray(parsed.priority) ? parsed.priority : [],
           projectIds: Array.isArray(parsed.projectIds) ? parsed.projectIds.map(Number) : [],
           statusIds: Array.isArray(parsed.statusIds) ? parsed.statusIds.map(Number) : []
@@ -913,6 +915,19 @@ function filterIssues(issues: Issue[], data: BoardData | null, filters: Filters)
         limit.setDate(now0.getDate() + 7);
         return due >= now0 && due < limit;
       }
+
+      if (filters.due === '1day') {
+        const limit = new Date(now0);
+        limit.setDate(now0.getDate() + 1);
+        return due >= now0 && due < limit;
+      }
+
+      if (filters.due === 'custom') {
+        const days = filters.dueDays ?? 7;
+        const limit = new Date(now0);
+        limit.setDate(now0.getDate() + days);
+        return due >= now0 && due < limit;
+      }
     }
 
     return true;
@@ -1239,6 +1254,8 @@ function Toolbar({
     { id: 'thisweek', name: labels.this_week },
     { id: '3days', name: labels.within_3_days },
     { id: '7days', name: labels.within_1_week },
+    { id: '1day', name: labels.within_1_day ?? '1日以内' },
+    { id: 'custom', name: labels.within_specified_days ?? '指定した日以内' },
     { id: 'none', name: labels.not_set },
   ];
 
@@ -1337,6 +1354,22 @@ function Toolbar({
           closeOnSelect={false}
           labels={labels}
         />
+
+        {filters.due === 'custom' && (
+          <input
+            type="number"
+            min="1"
+            className="rk-input"
+            style={{ width: '60px', marginLeft: '6px', height: '32px', padding: '0 8px' }}
+            value={filters.dueDays ?? 7}
+            onChange={(e) => {
+              const val = parseInt(e.target.value, 10);
+              if (!Number.isNaN(val) && val > 0) {
+                onChange({ ...filters, dueDays: val });
+              }
+            }}
+          />
+        )}
       </div>
 
       <div className="rk-toolbar-separator" />

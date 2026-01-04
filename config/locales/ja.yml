@@ -34,6 +34,8 @@ ja:
   label_kanban_not_set: "(未設定)"
   label_kanban_this_week: "今週"
   label_kanban_within_3_days: "3日以内"
+  label_kanban_within_1_day: "1日以内"
+  label_kanban_within_specified_days: "指定した日以内"
   label_kanban_within_1_week: "1週間以内"
   label_kanban_overdue: "期限切れ"
   label_kanban_select_tracker: "トラッカーを選択してください"
