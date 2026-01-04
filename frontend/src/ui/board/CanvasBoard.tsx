@@ -170,12 +170,21 @@ export function CanvasBoard({
   const scaleRef = useRef(1);
   const hoverRef = useRef<{ kind: 'card_subject' | 'subtask_subject'; id: string } | null>(null);
   const drawRef = useRef<() => void>(() => { });
+  const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
+
+  const measureCtx = useMemo(() => {
+    const canvas = document.createElement('canvas');
+    return canvas.getContext('2d');
+  }, []);
 
   const laneType = data.meta.lane_type;
 
   const metrics = useMemo(() => getMetrics(fontSize), [fontSize]);
 
-  const layout = useMemo(() => computeLayout(state, data, canCreate, metrics, size.width, fitMode), [state, data, canCreate, metrics, size.width, fitMode]);
+  const layout = useMemo(
+    () => computeLayout(state, data, canCreate, metrics, size.width, fitMode, measureCtx, fontSize),
+    [state, data, canCreate, metrics, size.width, fitMode, measureCtx, fontSize]
+  );
 
   const theme = useMemo(() => readTheme(containerRef.current), [size.width, size.height]);
 
@@ -448,22 +457,38 @@ export function CanvasBoard({
     const drag = dragRef.current;
 
     if (!drag) {
+      let nextCursor = 'default';
       const hit = hitTest(point, rectMapRef.current, state, data);
       let newHover: { kind: 'card_subject' | 'subtask_subject'; id: string } | null = null;
 
       if (hit.kind === 'card_subject') {
-        setCursor('pointer');
+        nextCursor = 'pointer';
         newHover = { kind: 'card_subject', id: String(hit.issueId) };
       } else if (hit.kind === 'subtask_subject') {
-        setCursor('pointer');
+        nextCursor = 'pointer';
         newHover = { kind: 'subtask_subject', id: `${hit.issueId}:${hit.subtaskId}` };
       } else if (hit.kind === 'card') {
-        setCursor('pointer');
+        nextCursor = 'pointer';
       } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'subtask_check' || hit.kind === 'info' || hit.kind === 'visibility') {
-        setCursor('pointer');
-      } else {
-        setCursor('default');
+        nextCursor = 'pointer';
       }
+
+      if (newHover) {
+        const issue = state.cardsById.get(Number(newHover.kind === 'card_subject' ? newHover.id : newHover.id.split(':')[0]));
+        if (issue) {
+          const text = newHover.kind === 'card_subject'
+            ? issue.subject
+            : issue.subtasks?.find(s => `${issue.id}:${s.id}` === newHover.id)?.subject;
+
+          if (text) {
+            setTooltip({ text, x: Math.min(event.clientX, window.innerWidth - 320), y: event.clientY + 16 });
+          }
+        }
+      } else {
+        setTooltip(null);
+      }
+
+      setCursor(nextCursor);
 
       // Update hover state and re-render if changed
       const currentHover = hoverRef.current;
@@ -545,6 +570,29 @@ export function CanvasBoard({
           setCursor('default');
         }}
       />
+      {tooltip && (
+        <div
+          style={{
+            position: 'fixed',
+            left: tooltip.x,
+            top: tooltip.y,
+            background: 'rgba(30, 41, 59, 0.95)',
+            color: '#fff',
+            padding: '4px 8px',
+            borderRadius: '4px',
+            fontSize: '12px',
+            maxWidth: '300px',
+            zIndex: 1000,
+            pointerEvents: 'none',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            lineHeight: 1.4,
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+          }}
+        >
+          {tooltip.text}
+        </div>
+      )}
     </div>
   );
 }
@@ -555,7 +603,9 @@ function computeLayout(
   canCreate: boolean,
   metrics: ReturnType<typeof getMetrics>,
   containerWidth: number = 0,
-  fitMode: 'none' | 'width' = 'none'
+  fitMode: 'none' | 'width' = 'none',
+  measureCtx?: CanvasRenderingContext2D | null,
+  fontSize?: number
 ) {
   const columnCount = state.columnOrder.length;
   const gridStartX = data.meta.lane_type === 'none' ? 0 : metrics.laneHeaderWidth;
@@ -580,7 +630,7 @@ function computeLayout(
 
   let currentY = headerHeight;
   const laneLayouts = lanes.map((laneId) => {
-    const laneHeight = computeLaneHeight(state, data, laneId, canCreate, adjustedMetrics);
+    const laneHeight = computeLaneHeight(state, data, laneId, canCreate, adjustedMetrics, measureCtx, fontSize);
     const y = currentY;
     currentY += laneHeight;
     return { laneId, y, height: laneHeight };
@@ -601,8 +651,27 @@ function computeLayout(
   };
 }
 
-function measureCardHeight(issue: Issue, metrics: ReturnType<typeof getMetrics>): number {
+function measureCardHeight(
+  issue: Issue,
+  metrics: ReturnType<typeof getMetrics>,
+  ctx?: CanvasRenderingContext2D | null,
+  fontSize?: number,
+  cardWidth?: number
+): number {
   let h = metrics.cardBaseHeight;
+
+  if (ctx && fontSize && cardWidth) {
+    ctx.font = `400 ${fontSize}px Inter, sans-serif`;
+    const stripWidth = 5;
+    const contentW = cardWidth - metrics.cellPadding * 2 - stripWidth - 16;
+    const buttonAreaWidth = 52;
+    const subjectW = contentW - buttonAreaWidth;
+    const lines = truncateTextLines(ctx, issue.subject, subjectW, 2);
+    if (lines.length > 1) {
+      h += (fontSize + 3) * (lines.length - 1);
+    }
+  }
+
   if (issue.subtasks && issue.subtasks.length > 0) {
     h += 20; // Padding before subtasks (increased from 8)
     h += issue.subtasks.length * metrics.subtaskHeight;
@@ -615,7 +684,9 @@ function computeLaneHeight(
   data: BoardData,
   laneId: string | number,
   canCreate: boolean,
-  metrics: ReturnType<typeof getMetrics>
+  metrics: ReturnType<typeof getMetrics>,
+  measureCtx?: CanvasRenderingContext2D | null,
+  fontSize?: number
 ) {
   let maxCellHeight = 0;
 
@@ -628,7 +699,7 @@ function computeLaneHeight(
       for (const cardId of cardIds) {
         const issue = state.cardsById.get(cardId);
         if (issue) {
-          height += measureCardHeight(issue, metrics);
+          height += measureCardHeight(issue, metrics, measureCtx, fontSize, metrics.columnWidth);
         }
       }
       height += (cardIds.length - 1) * metrics.cardGap;
@@ -855,7 +926,7 @@ function drawCells(
         const issue = state.cardsById.get(cardId);
         if (!issue) continue;
 
-        const cardH = measureCardHeight(issue, metrics);
+        const cardH = measureCardHeight(issue, metrics, ctx, fontSize, layout.columnWidth);
         const cardRect = {
           x: cellRect.x + metrics.cellPadding,
           y: currentY,
@@ -946,31 +1017,37 @@ function drawCard(
   const subject = issue.subject;
   const idText = `#${issue.id}`;
   const buttonAreaWidth = 52;
-  const subjectText = truncateText(ctx, subject, contentW - buttonAreaWidth);
-  const subjectTextWidth = ctx.measureText(subjectText).width;
+  const subjectLines = truncateTextLines(ctx, subject, contentW - buttonAreaWidth, 2);
 
   // Register subject area for hit testing
-  const subjectRect = { x: contentX, y: subjectY, width: subjectTextWidth, height: fontSize + 3 };
+  const subjectTotalHeight = subjectLines.length * (fontSize + 3);
+  const subjectRect = { x: contentX, y: subjectY, width: contentW - buttonAreaWidth, height: subjectTotalHeight };
   if (rectMap) {
     rectMap.cardSubjects.set(issue.id, subjectRect);
   }
 
   // Draw subject with underline if hovered
   const isSubjectHovered = hover?.kind === 'card_subject' && hover.id === String(issue.id);
-  ctx.fillText(subjectText, contentX, subjectY);
-  if (isSubjectHovered) {
-    ctx.beginPath();
-    ctx.strokeStyle = theme.textPrimary;
-    ctx.lineWidth = 1;
-    ctx.moveTo(contentX, subjectY + fontSize + 1);
-    ctx.lineTo(contentX + subjectTextWidth, subjectY + fontSize + 1);
-    ctx.stroke();
-  }
+
+  subjectLines.forEach((line, index) => {
+    ctx.fillText(line, contentX, subjectY + index * (fontSize + 3));
+    if (isSubjectHovered) {
+      const lineWidth = ctx.measureText(line).width;
+      ctx.beginPath();
+      ctx.strokeStyle = theme.textPrimary;
+      ctx.lineWidth = 1;
+      const currentY = subjectY + index * (fontSize + 3);
+      ctx.moveTo(contentX, currentY + fontSize + 1);
+      ctx.lineTo(contentX + lineWidth, currentY + fontSize + 1);
+      ctx.stroke();
+    }
+  });
 
   const metaFontSize = Math.max(10, fontSize - 2);
 
   // 5. Metadata Row 1: ID | Assignee
-  const row1Y = subjectY + fontSize + 9;
+  // Adjust rowY based on subject lines
+  const row1Y = subjectY + subjectTotalHeight + 6;
   ctx.font = `400 ${metaFontSize}px Inter, sans-serif`;
   ctx.fillStyle = theme.textSecondary;
 
@@ -1378,6 +1455,44 @@ function hitTestCell(
   return null;
 }
 
+function truncateTextLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number): string[] {
+  const lines: string[] = [];
+  const chars = Array.from(text);
+  let currentLine = '';
+
+  for (let i = 0; i < chars.length; i++) {
+    const char = chars[i];
+    const test = currentLine + char;
+    const w = ctx.measureText(test).width;
+
+    if (w > maxWidth) {
+      if (currentLine) lines.push(currentLine);
+      currentLine = char;
+    } else {
+      currentLine = test;
+    }
+  }
+  if (currentLine) lines.push(currentLine);
+
+  if (lines.length <= maxLines) return lines;
+
+  // Truncate
+  const result = lines.slice(0, maxLines - 1);
+  // Reconstruct last line content from lines[maxLines-1] onwards
+  // Since we don't have indexes easy, let's just use truncateText on the combined text of remaining lines? 
+  // A bit complex to get exact text.
+  // Instead, let's just take lines[maxLines-1] AND force '...' on it if there are more lines
+  // But lines[maxLines-1] might already be full width. Adding ... will overflow.
+
+  const lastLineCandidate = lines[maxLines - 1];
+  let lastLine = lastLineCandidate;
+  while (lastLine.length > 0 && ctx.measureText(lastLine + '...').width > maxWidth) {
+    lastLine = lastLine.slice(0, -1);
+  }
+  result.push(lastLine + '...');
+
+  return result;
+}
 function truncateText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
   if (ctx.measureText(text).width <= maxWidth) return text;
   let t = text;
