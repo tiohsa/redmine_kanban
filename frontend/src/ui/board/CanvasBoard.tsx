@@ -789,6 +789,8 @@ function drawHeaders(
       ctx.textAlign = 'left';
     }
 
+
+
     // Visibility Toggle
     const isHidden = hiddenStatusIds?.has(column.id);
     const visX = x + 12 + nameWidth + 8;

@@ -7,7 +7,6 @@ import { buildBoardState } from './board/state';
 import { type SortKey } from './board/sort';
 import { replaceIssueInBoard, updateIssueInBoard, useIssueMutation } from './useIssueMutation';
 import { getCleanDialogStyles } from './board/iframeStyles';
-import { IframeCreateDialog } from './IframeCreateDialog';
 import { IframeEditDialog } from './IframeEditDialog';
 
 type Props = { dataUrl: string };
@@ -581,6 +580,11 @@ export function App({ dataUrl }: Props) {
           }}
           fontSize={fontSize}
           onChangeFontSize={setFontSize}
+          canCreate={canCreate}
+          onCreate={() => {
+            const defaultStatus = data.columns.find(c => !c.is_closed)?.id ?? data.columns[0]?.id ?? 1;
+            openCreate({ statusId: defaultStatus });
+          }}
         />
       ) : (
         <div className="rk-empty">{labels?.fetching_data}</div>
@@ -725,8 +729,10 @@ export function App({ dataUrl }: Props) {
       ) : null}
 
       {iframeCreateUrl && data ? (
-        <IframeCreateDialog
+        <IframeEditDialog
           url={iframeCreateUrl}
+          issueId={0}
+          mode="create"
           labels={data.labels}
           baseUrl={baseUrl}
           queryKey={boardQueryKey}
@@ -1232,6 +1238,8 @@ function Toolbar({
   onToggleShowSubtasks,
   fontSize,
   onChangeFontSize,
+  canCreate,
+  onCreate,
 }: {
   data: BoardData;
   filters: Filters;
@@ -1247,6 +1255,8 @@ function Toolbar({
   onToggleShowSubtasks: () => void;
   fontSize: number;
   onChangeFontSize: (size: number) => void;
+  canCreate: boolean;
+  onCreate: () => void;
 }) {
   const assignees = data.lists.assignees ?? [];
   const labels = data.labels;
@@ -1272,6 +1282,21 @@ function Toolbar({
 
   return (
     <div className="rk-toolbar">
+      {canCreate && (
+        <>
+          <div className="rk-toolbar-group">
+            <div
+              className="rk-dropdown-trigger"
+              onClick={onCreate}
+              title={labels.create ?? 'Create'}
+              role="button"
+            >
+              <span className="rk-icon">add</span>
+            </div>
+          </div>
+          <div className="rk-toolbar-separator" />
+        </>
+      )}
       <div className="rk-toolbar-group">
         <SearchDropdown
           label={labels.filter}
@@ -1765,7 +1790,7 @@ function IssueModal({
           <button type="button" className="rk-btn" onClick={onClose} disabled={saving}>
             {labels.cancel}
           </button>
-          <button type="submit" className="rk-btn rk-btn-primary" disabled={saving}>
+          <button type="submit" className="rk-btn" disabled={saving}>
             {saving ? labels.saving : (isEdit ? labels.save : labels.create)}
           </button>
         </div>

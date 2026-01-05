@@ -160,7 +160,7 @@ export function IframeCreateDialog({ url, labels, baseUrl, queryKey, onClose, on
             <button type="button" className="rk-btn" onClick={onClose} disabled={isSubmitting}>
               {labels.cancel}
             </button>
-            <button type="button" className="rk-btn rk-btn-primary" onClick={handleSubmit} disabled={isSubmitting}>
+            <button type="button" className="rk-btn" onClick={handleSubmit} disabled={isSubmitting}>
               {isSubmitting ? labels.creating : labels.create}
             </button>
           </div>

@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { getCleanDialogStyles } from './board/iframeStyles';
+import { extractIssueIdFromUrl } from './utils/url';
 import { useBulkSubtaskMutation } from './hooks/useBulkSubtaskMutation';
 
 type Props = {
     url: string;
     issueId: number;
+    mode?: 'create' | 'edit';
     labels: Record<string, string>;
     baseUrl: string;
     queryKey: readonly unknown[];
@@ -12,7 +14,7 @@ type Props = {
     onSuccess: (message: string) => void;
 };
 
-export function IframeEditDialog({ url, issueId, labels, baseUrl, queryKey, onClose, onSuccess }: Props) {
+export function IframeEditDialog({ url, issueId, mode = 'edit', labels, baseUrl, queryKey, onClose, onSuccess }: Props) {
     const [subtasks, setSubtasks] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [iframeRef, setIframeRef] = useState<HTMLIFrameElement | null>(null);
@@ -57,14 +59,24 @@ export function IframeEditDialog({ url, issueId, labels, baseUrl, queryKey, onCl
 
                 // Detect successful update by checking URL (issue page without /edit)
                 if (isSubmittingRef.current) {
-                    // If we're on issue show page (not edit), it means update succeeded
-                    const isShowPage = /\/issues\/\d+$/.test(currentUrl) && !currentUrl.includes('/edit');
-                    if (isShowPage) {
-                        handleUpdateSuccess();
-                        return;
+                    if (mode === 'create') {
+                        // For create mode, detect new issue ID in URL
+                        const newIssueId = extractIssueIdFromUrl(currentUrl);
+                        if (newIssueId) {
+                            createdIssueIdRef.current = newIssueId;
+                            handleSuccess(newIssueId);
+                            return;
+                        }
+                    } else {
+                        // For edit mode, check if we're on issue show page (not edit)
+                        const isShowPage = /\/issues\/\d+$/.test(currentUrl) && !currentUrl.includes('/edit');
+                        if (isShowPage) {
+                            handleSuccess(issueId);
+                            return;
+                        }
                     }
 
-                    // If still on /edit page with errors, reset submitting state
+                    // If still on form page with errors, reset submitting state
                     setIsSubmitting(false);
                 }
             }
@@ -78,14 +90,15 @@ export function IframeEditDialog({ url, issueId, labels, baseUrl, queryKey, onCl
     };
 
     const parentAttributesRef = useRef<Record<string, number | undefined>>({});
+    const createdIssueIdRef = useRef<number | null>(null);
 
-    const handleUpdateSuccess = async () => {
+    const handleSuccess = async (targetIssueId: number) => {
         const lines = subtasks.split('\n').map(s => s.trim()).filter(s => s.length > 0);
 
         if (lines.length > 0) {
             try {
                 await bulkMutation.mutateAsync(lines.map(subject => ({
-                    parent_issue_id: issueId,
+                    parent_issue_id: targetIssueId,
                     subject,
                     tracker_id: parentAttributesRef.current.tracker_id,
                     priority_id: parentAttributesRef.current.priority_id,
@@ -93,20 +106,20 @@ export function IframeEditDialog({ url, issueId, labels, baseUrl, queryKey, onCl
                     assigned_to_id: parentAttributesRef.current.assigned_to_id,
                 })));
                 onSuccess(
-                    (labels.updated_with_subtasks)
-                        .replace('%{id}', String(issueId))
+                    (mode === 'create' ? labels.created_with_subtasks : labels.updated_with_subtasks)
+                        .replace('%{id}', String(targetIssueId))
                         .replace('%{count}', String(lines.length))
                 );
             } catch (e) {
                 onSuccess(
-                    (labels.updated_subtask_failed)
-                        .replace('%{id}', String(issueId))
+                    (mode === 'create' ? labels.created_subtask_failed : labels.updated_subtask_failed)
+                        .replace('%{id}', String(targetIssueId))
                 );
             }
         } else {
             onSuccess(
-                (labels.saved)
-                    .replace('%{id}', String(issueId))
+                (mode === 'create' ? labels.created : labels.saved)
+                    .replace('%{id}', String(targetIssueId))
             );
         }
         onClose();
@@ -145,6 +158,10 @@ export function IframeEditDialog({ url, issueId, labels, baseUrl, queryKey, onCl
         }
     };
 
+    const submitLabel = mode === 'create'
+        ? (isSubmitting ? labels.creating : labels.create)
+        : (isSubmitting ? labels.saving : labels.save);
+
     return (
         <div className="rk-modal-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
             <div className="rk-iframe-dialog-container" onClick={(e) => e.stopPropagation()}>
@@ -168,7 +185,7 @@ export function IframeEditDialog({ url, issueId, labels, baseUrl, queryKey, onCl
                             {labels.cancel}
                         </button>
                         <button type="button" className="rk-btn rk-btn-primary" onClick={handleSubmit} disabled={isSubmitting}>
-                            {isSubmitting ? labels.saving : labels.save}
+                            {submitLabel}
                         </button>
                     </div>
                 </div>
@@ -176,3 +193,4 @@ export function IframeEditDialog({ url, issueId, labels, baseUrl, queryKey, onCl
         </div>
     );
 }
+
