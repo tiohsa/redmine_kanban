@@ -472,7 +472,7 @@ export function CanvasBoard({
         nextCursor = 'pointer';
         newHover = { kind: 'subtask_subject', id: `${hit.issueId}:${hit.subtaskId}` };
       } else if (hit.kind === 'card') {
-        nextCursor = 'pointer';
+        nextCursor = canMove ? 'grab' : 'default';
       } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'subtask_check' || hit.kind === 'info' || hit.kind === 'edit' || hit.kind === 'visibility') {
         nextCursor = 'pointer';
       }
@@ -545,9 +545,9 @@ export function CanvasBoard({
       const hit = hitTest(point, rectMapRef.current, state, data);
       if (hit.kind === 'subtask_subject') {
         onView(hit.subtaskId);
-      } else if (hit.kind === 'card_subject' || hit.kind === 'card') {
-        // Open dialog when clicking on subject or anywhere on the card
-        onView(hit.kind === 'card' ? hit.issueId : hit.issueId);
+      } else if (hit.kind === 'card_subject') {
+        // Open dialog when clicking on subject (but not on the rest of the card)
+        onView(hit.issueId);
       }
     }
 
