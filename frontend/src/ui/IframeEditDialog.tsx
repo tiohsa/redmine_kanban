@@ -48,6 +48,13 @@ export function IframeEditDialog({ url, issueId, labels, baseUrl, queryKey, onCl
                 style.textContent = getCleanDialogStyles();
                 doc.head.appendChild(style);
 
+                // Add Escape key listener for the iframe content
+                iframe.contentWindow?.addEventListener('keydown', (ev) => {
+                    if (ev.key === 'Escape' && !isSubmittingRef.current) {
+                        onClose();
+                    }
+                });
+
                 // Detect successful update by checking URL (issue page without /edit)
                 if (isSubmittingRef.current) {
                     // If we're on issue show page (not edit), it means update succeeded
