@@ -17,6 +17,7 @@ type Props = {
 export function IframeEditDialog({ url, issueId, mode = 'edit', labels, baseUrl, queryKey, onClose, onSuccess }: Props) {
     const [subtasks, setSubtasks] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
     const [iframeRef, setIframeRef] = useState<HTMLIFrameElement | null>(null);
     const isSubmittingRef = useRef(false);
 
@@ -86,6 +87,9 @@ export function IframeEditDialog({ url, issueId, mode = 'edit', labels, baseUrl,
             if (isSubmittingRef.current) {
                 setIsSubmitting(false);
             }
+        } finally {
+            // Reveal iframe after styles are injected
+            setIsLoading(false);
         }
     };
 
