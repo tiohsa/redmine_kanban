@@ -2,11 +2,11 @@ module RedmineKanban
   class ApiController < ApplicationController
     skip_before_action :authorize, only: [:update, :destroy]
 
+    before_action :find_issue, only: [:move, :update, :destroy]
     before_action :require_move_permission, only: [:move]
     before_action :require_create_permission, only: [:create]
     before_action :require_update_permission, only: [:update]
     before_action :require_delete_permission, only: [:destroy]
-    before_action :find_issue, only: [:move, :update, :destroy]
 
     def index
       render json: BoardData.new(project: @project, user: User.current, project_ids: params[:project_ids]).to_h
@@ -61,7 +61,8 @@ module RedmineKanban
     private
 
     def require_move_permission
-      return if User.current.allowed_to?(:manage_redmine_kanban, @project) && User.current.allowed_to?(:edit_issues, @project)
+      issue_project = @issue.project
+      return if User.current.allowed_to?(:manage_redmine_kanban, @project) && User.current.allowed_to?(:edit_issues, issue_project)
 
       render json: { ok: false, message: '権限がありません' }, status: :forbidden
     end

@@ -55,7 +55,7 @@ module RedmineKanban
       @issue.lock_version = lock_version if lock_version
 
       if @issue.save
-        result = { ok: true, issue: BoardData.new(project: @project, user: @user).send(:issue_to_h, @issue) }
+        result = { ok: true, issue: BoardData.new(project: @issue.project, user: @user).send(:issue_to_h, @issue) }
         result[:warning] = warning if warning.present?
         result
       else
