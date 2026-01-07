@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { BoardData, Issue } from './types';
 import { getJson, postJson } from './http';
-import { CanvasBoard } from './board/CanvasBoard';
+import { CanvasBoard, type CanvasBoardHandle } from './board/CanvasBoard';
 import { buildBoardState } from './board/state';
 import { type SortKey } from './board/sort';
 import { replaceIssueInBoard, updateIssueInBoard, useIssueMutation } from './useIssueMutation';
@@ -129,6 +129,7 @@ export function App({ dataUrl }: Props) {
   });
 
   const queryClient = useQueryClient();
+  const boardRef = useRef<CanvasBoardHandle>(null);
   const baseUrl = useMemo(() => dataUrl.replace(/\/data$/, ''), [dataUrl]);
 
   const projectIdsKey = useMemo(
@@ -585,6 +586,7 @@ export function App({ dataUrl }: Props) {
             const defaultStatus = data.columns.find(c => !c.is_closed)?.id ?? data.columns[0]?.id ?? 1;
             openCreate({ statusId: defaultStatus });
           }}
+          onScrollToTop={() => boardRef.current?.scrollToTop()}
         />
       ) : (
         <div className="rk-empty">{labels?.fetching_data}</div>
@@ -593,6 +595,7 @@ export function App({ dataUrl }: Props) {
       <div className="rk-board">
         {filteredData && boardState ? (
           <CanvasBoard
+            ref={boardRef}
             data={filteredData}
             state={boardState}
             canMove={canMove}
@@ -1240,6 +1243,7 @@ function Toolbar({
   onChangeFontSize,
   canCreate,
   onCreate,
+  onScrollToTop,
 }: {
   data: BoardData;
   filters: Filters;
@@ -1257,6 +1261,7 @@ function Toolbar({
   onChangeFontSize: (size: number) => void;
   canCreate: boolean;
   onCreate: () => void;
+  onScrollToTop: () => void;
 }) {
   const assignees = data.lists.assignees ?? [];
   const labels = data.labels;
@@ -1469,7 +1474,7 @@ function Toolbar({
           <span className="rk-icon">{fullWindow ? 'fullscreen_exit' : 'fullscreen'}</span>
         </button>
 
-        <button type="button" className="rk-btn" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} title="Top">
+        <button type="button" className="rk-btn" onClick={onScrollToTop} title="Top">
           <span className="rk-icon">vertical_align_top</span>
         </button>
 

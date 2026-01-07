@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 import type { BoardData, Column, Issue, Lane, Subtask } from '../types';
 import type { BoardCommand } from './commands';
 import type { BoardState } from './state';
@@ -109,6 +109,10 @@ type HitResult =
   | { kind: 'visibility'; statusId: number }
   | { kind: 'empty' };
 
+export type CanvasBoardHandle = {
+  scrollToTop: () => void;
+};
+
 type Props = {
   data: BoardData;
   state: BoardState;
@@ -130,7 +134,7 @@ type Props = {
   fontSize?: number;
 };
 
-export function CanvasBoard({
+export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasBoard({
   data,
   state,
   canMove,
@@ -149,7 +153,7 @@ export function CanvasBoard({
   hiddenStatusIds,
   onToggleStatusVisibility,
   fontSize = 13,
-}: Props) {
+}: Props, ref) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rectMapRef = useRef<RectMap>({
@@ -253,6 +257,13 @@ export function CanvasBoard({
       drawRef.current();
     });
   };
+
+  useImperativeHandle(ref, () => ({
+    scrollToTop: () => {
+      scrollRef.current = { x: 0, y: 0 };
+      scheduleRender();
+    }
+  }));
 
   const draw = () => {
     const canvas = canvasRef.current;
@@ -604,6 +615,7 @@ export function CanvasBoard({
     </div>
   );
 }
+);
 
 function computeLayout(
   state: BoardState,
