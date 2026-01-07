@@ -314,8 +314,6 @@ export function CanvasBoard({
     ctx.scale(scale, scale);
     ctx.translate(-scroll.x, -scroll.y);
 
-    drawHeaders(ctx, layout, state.columns, theme, data.meta, metrics, hiddenStatusIds, rectMapRef.current);
-
     drawCells(
       ctx,
       layout,
@@ -339,6 +337,12 @@ export function CanvasBoard({
     }
 
     drawDragOverlay(ctx, state, data, theme, dragRef.current, labels, metrics, fontSize, layout);
+
+    // Draw header last so it appears on top (sticky header)
+    ctx.save();
+    ctx.translate(0, scroll.y); // Sticky header: counteract vertical translation
+    drawHeaders(ctx, layout, state.columns, theme, data.meta, metrics, hiddenStatusIds, rectMapRef.current, scroll.y);
+    ctx.restore();
 
     ctx.restore();
   };
@@ -725,7 +729,8 @@ function drawHeaders(
   meta: BoardData['meta'],
   metrics: ReturnType<typeof getMetrics>,
   hiddenStatusIds?: Set<number>,
-  rectMap?: RectMap
+  rectMap?: RectMap,
+  offsetY: number = 0
 ) {
   ctx.save();
   ctx.fillStyle = '#f8fafc';
@@ -795,7 +800,8 @@ function drawHeaders(
     const isHidden = hiddenStatusIds?.has(column.id);
     const visX = x + 12 + nameWidth + 8;
     const visY = (layout.headerHeight - 16) / 2;
-    const visRect = { x: visX - 4, y: visY - 4, width: 24, height: 24 };
+    // Add offsetY to the rect coordinates because the header is sticky but pointer events are in global coordinates
+    const visRect = { x: visX - 4, y: visY - 4 + offsetY, width: 24, height: 24 };
     if (rectMap) rectMap.visibilityButtons.set(column.id, visRect);
 
     drawIcon(ctx, isHidden ? 'visibility_off' : 'visibility', visX, visY + 2, 16, isHidden ? theme.textSecondary : theme.primary);
