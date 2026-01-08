@@ -166,6 +166,8 @@ export function IframeEditDialog({ url, issueId, mode = 'edit', labels, baseUrl,
         ? (isSubmitting ? labels.creating : labels.create)
         : (isSubmitting ? labels.saving : labels.save);
 
+    const [isSubtasksOpen, setIsSubtasksOpen] = useState(false);
+
     return (
         <div className="rk-modal-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
             <div className="rk-iframe-dialog-container" onClick={(e) => e.stopPropagation()}>
@@ -175,14 +177,36 @@ export function IframeEditDialog({ url, issueId, mode = 'edit', labels, baseUrl,
 
                 <div className="rk-create-footer">
                     <div className="rk-subtask-input">
-                        <label className="rk-label">{labels.bulk_subtask_title}</label>
-                        <textarea
-                            rows={3}
-                            value={subtasks}
-                            onChange={e => setSubtasks(e.target.value)}
-                            placeholder={labels.bulk_subtask_placeholder}
-                            disabled={isSubmitting}
-                        />
+                        <button
+                            type="button"
+                            className="rk-subtask-toggle"
+                            onClick={() => setIsSubtasksOpen(!isSubtasksOpen)}
+                            style={{
+                                background: 'none',
+                                border: 'none',
+                                padding: 0,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                color: 'inherit',
+                                fontSize: 'inherit',
+                                fontWeight: 'inherit',
+                            }}
+                        >
+                            <span style={{ transform: isSubtasksOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▶</span>
+                            <label className="rk-label" style={{ cursor: 'pointer', margin: 0 }}>{labels.bulk_subtask_title}</label>
+                        </button>
+                        {isSubtasksOpen && (
+                            <textarea
+                                rows={3}
+                                value={subtasks}
+                                onChange={e => setSubtasks(e.target.value)}
+                                placeholder={labels.bulk_subtask_placeholder}
+                                disabled={isSubmitting}
+                                style={{ marginTop: '8px' }}
+                            />
+                        )}
                     </div>
                     <div className="rk-modal-actions">
                         <button type="button" className="rk-btn" onClick={onClose} disabled={isSubmitting}>
