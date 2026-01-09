@@ -13,16 +13,15 @@ module RedmineKanban
 
       issue.init_journal(@user)
 
-      attributes = {
-        'subject' => params[:subject].to_s.strip,
-        'description' => params[:description].to_s,
-        'assigned_to_id' => normalize_assigned_to_id(params[:assigned_to_id]),
-        'priority_id' => normalize_priority_id(params[:priority_id]),
-        'start_date' => normalize_date(params[:start_date]),
-        'due_date' => normalize_date(params[:due_date]),
-        'tracker_id' => normalize_tracker_id(params[:tracker_id]),
-        'done_ratio' => normalize_done_ratio(params[:done_ratio])
-      }
+      attributes = {}
+      attributes['subject'] = params[:subject].to_s.strip if params.key?(:subject)
+      attributes['description'] = params[:description].to_s if params.key?(:description)
+      attributes['assigned_to_id'] = normalize_assigned_to_id(params[:assigned_to_id]) if params.key?(:assigned_to_id)
+      attributes['priority_id'] = normalize_priority_id(params[:priority_id]) if params.key?(:priority_id)
+      attributes['start_date'] = normalize_date(params[:start_date]) if params.key?(:start_date)
+      attributes['due_date'] = normalize_date(params[:due_date]) if params.key?(:due_date)
+      attributes['tracker_id'] = normalize_tracker_id(params[:tracker_id]) if params.key?(:tracker_id)
+      attributes['done_ratio'] = normalize_done_ratio(params[:done_ratio]) if params.key?(:done_ratio)
 
       lock_version = normalize_lock_version(params[:lock_version])
       issue.lock_version = lock_version if lock_version

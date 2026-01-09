@@ -52,6 +52,7 @@ type RectMap = {
   infoButtons: Map<number, Rect>;
   editButtons: Map<number, Rect>;
   visibilityButtons: Map<number, Rect>; // key: statusId
+  priorityBadges: Map<number, Rect>;
 };
 
 type CanvasTheme = {
@@ -107,6 +108,7 @@ type HitResult =
   | { kind: 'edit'; issueId: number }
   | { kind: 'cell'; statusId: number; laneId: string | number }
   | { kind: 'visibility'; statusId: number }
+  | { kind: 'priority'; issueId: number }
   | { kind: 'empty' };
 
 export type CanvasBoardHandle = {
@@ -125,6 +127,7 @@ type Props = {
   onDelete: (issueId: number) => void;
   onEditClick: (editUrl: string) => void;
   onSubtaskToggle?: (subtaskId: number, currentClosed: boolean) => void;
+  onPriorityClick?: (issueId: number, currentPriorityId: number, x: number, y: number) => void;
 
   labels: Record<string, string>;
   busyIssueIds?: Set<number>;
@@ -146,6 +149,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   onDelete,
   onEditClick,
   onSubtaskToggle,
+  onPriorityClick,
 
   labels,
   busyIssueIds,
@@ -169,6 +173,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     infoButtons: new Map(),
     editButtons: new Map(),
     visibilityButtons: new Map(),
+    priorityBadges: new Map(),
   });
   const scrollRef = useRef({ x: 0, y: 0 });
   const boardSizeRef = useRef({ width: 0, height: 0 });
@@ -319,6 +324,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       infoButtons: new Map(),
       editButtons: new Map(),
       visibilityButtons: new Map(),
+      priorityBadges: new Map(),
     };
 
     ctx.save();
@@ -450,6 +456,16 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       return;
     }
 
+    if (hit.kind === 'priority') {
+      if (isBusy(hit.issueId)) return;
+      event.preventDefault();
+      const issue = state.cardsById.get(hit.issueId);
+      if (issue && onPriorityClick) {
+        onPriorityClick(hit.issueId, issue.priority_id ?? 2, event.clientX, event.clientY);
+      }
+      return;
+    }
+
 
     if (hit.kind === 'card' || hit.kind === 'subtask_area') {
       if (isBusy(hit.issueId)) return;
@@ -488,7 +504,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         newHover = { kind: 'subtask_subject', id: `${hit.issueId}:${hit.subtaskId}` };
       } else if (hit.kind === 'card') {
         nextCursor = canMove ? 'grab' : 'default';
-      } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'subtask_check' || hit.kind === 'info' || hit.kind === 'edit' || hit.kind === 'visibility') {
+      } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'subtask_check' || hit.kind === 'info' || hit.kind === 'edit' || hit.kind === 'visibility' || hit.kind === 'priority') {
         nextCursor = 'pointer';
       }
 
@@ -1102,23 +1118,35 @@ function drawCard(
     let fg = theme.badgeText;
     let icon = '';
 
-    // Priority Colors
-    if (issue.priority_id >= 5) { // Immediate
-      bg = theme.badgeImmediateBg;
-      fg = theme.badgeImmediateColor;
-    } else if (issue.priority_id === 4) { // Urgent
-      bg = theme.badgeUrgentBg;
-      fg = theme.badgeUrgentColor;
-    } else if (issue.priority_id === 3) { // High
-      bg = theme.badgeHighBg;
-      fg = theme.badgeHighColor;
-    } else if (issue.priority_id === 1) { // Low
-      bg = theme.badgeLowBg;
-      fg = theme.badgeLowColor;
-    }
+    // Priority Colors - use index-based palette for distinct colors
+    const priorities = data.lists.priorities ?? [];
+    const priorityColorPalette = [
+      { bg: '#dcfce7', fg: '#15803d' }, // Green (Low)
+      { bg: '#f1f5f9', fg: '#64748b' }, // Slate (Normal)
+      { bg: '#fef9c3', fg: '#a16207' }, // Yellow (High)
+      { bg: '#ffedd5', fg: '#c2410c' }, // Orange (Urgent)
+      { bg: '#fee2e2', fg: '#b91c1c' }, // Red (Immediate)
+      { bg: '#dbeafe', fg: '#1d4ed8' }, // Blue
+      { bg: '#e0e7ff', fg: '#4338ca' }, // Indigo
+      { bg: '#f5d0fe', fg: '#a21caf' }, // Fuchsia
+    ];
+    const priorityIndex = priorities.findIndex(p => p.id === issue.priority_id);
+    const colorEntry = priorityColorPalette[priorityIndex >= 0 ? priorityIndex % priorityColorPalette.length : 1];
+    bg = colorEntry.bg;
+    fg = colorEntry.fg;
 
-    if (issue.priority_id !== 2) { // Only draw non-normal
+    if (issue.priority_id) { // Always draw if priority_id exists (even normal) to allow editing
       const width = drawBadge(ctx, issue.priority_name || '', currentX, row2Y - 1, bg, fg, metaFontSize);
+
+      if (rectMap) {
+        rectMap.priorityBadges.set(issue.id, {
+          x: currentX,
+          y: row2Y - 1,
+          width: width,
+          height: metaFontSize + (Math.max(2, Math.round(metaFontSize * 0.2)) * 2) + 4 // approximated height from drawBadge
+        });
+      }
+
       currentX += width + 8;
     }
   }
@@ -1459,6 +1487,11 @@ function hitTest(
   for (const [statusId, rect] of rectMap.visibilityButtons) {
     if (pointInRect(point, rect)) {
       return { kind: 'visibility', statusId };
+    }
+  }
+  for (const [issueId, rect] of rectMap.priorityBadges) {
+    if (pointInRect(point, rect)) {
+      return { kind: 'priority', issueId };
     }
   }
   for (const [issueId, rect] of rectMap.cardSubjects) {

@@ -69,6 +69,7 @@ export function App({ dataUrl }: Props) {
   const [isRestoring, setIsRestoring] = useState(false);
   const [iframeEditContext, setIframeEditContext] = useState<{ url: string; issueId: number } | null>(null);
   const [iframeCreateUrl, setIframeCreateUrl] = useState<string | null>(null);
+  const [priorityPopup, setPriorityPopup] = useState<{ issueId: number; currentId: number; x: number; y: number } | null>(null);
   const [fullWindow, setFullWindow] = useState(() => {
     try {
       return localStorage.getItem('rk_fullwindow') === '1';
@@ -625,6 +626,9 @@ export function App({ dataUrl }: Props) {
                 setIframeEditContext({ url: urlPath, issueId });
               }
             }}
+            onPriorityClick={(issueId, currentPriorityId, x, y) => {
+              setPriorityPopup({ issueId, currentId: currentPriorityId, x, y });
+            }}
             onSubtaskToggle={toggleSubtask}
 
             hiddenStatusIds={hiddenStatusIds}
@@ -747,6 +751,97 @@ export function App({ dataUrl }: Props) {
           }}
         />
       ) : null}
+
+      {priorityPopup && data ? (
+        <PriorityPopup
+          x={priorityPopup.x}
+          y={priorityPopup.y}
+          value={String(priorityPopup.currentId)}
+          options={(data.lists.priorities ?? []).map(p => ({ id: String(p.id), name: p.name }))}
+          onClose={() => setPriorityPopup(null)}
+          onChange={async (newId) => {
+            const pid = Number(newId);
+            setPriorityPopup(null);
+
+            if (Number.isNaN(pid)) {
+              setError("Invalid priority ID");
+              return;
+            }
+            if (pid === priorityPopup.currentId) return;
+
+            try {
+              await updateIssueMutation.mutateAsync({
+                issueId: priorityPopup.issueId,
+                patch: { priority_id: pid },
+                lockVersion: data.issues.find(i => i.id === priorityPopup.issueId)?.lock_version ?? null
+              });
+            } catch (e: any) {
+              console.error("Priority update failed", e);
+              setError(e.message || "Priority update failed");
+            }
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function PriorityPopup({
+  x,
+  y,
+  value,
+  options,
+  onClose,
+  onChange,
+}: {
+  x: number;
+  y: number;
+  value: string;
+  options: { id: string; name: string }[];
+  onClose: () => void;
+  onChange: (val: string) => void;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [onClose]);
+
+  // Adjust position to stay in viewport might be needed, but for now simple positioning
+  const style: React.CSSProperties = {
+    position: 'fixed',
+    left: x,
+    top: y,
+    zIndex: 1000,
+    background: 'white',
+    borderRadius: '6px',
+    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+    border: '1px solid #e2e8f0',
+    minWidth: '160px',
+    padding: '4px 0',
+  };
+
+  return (
+    <div ref={menuRef} style={style}>
+      {options.map((option) => {
+        const checked = option.id === value;
+        return (
+          <div
+            key={option.id}
+            className={`rk-dropdown-item ${checked ? 'selected' : ''}`}
+            onClick={() => onChange(option.id)}
+          >
+            <div className="rk-dropdown-checkbox" />
+            <span>{option.name}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
