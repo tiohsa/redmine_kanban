@@ -70,6 +70,7 @@ export function App({ dataUrl }: Props) {
   const [iframeEditContext, setIframeEditContext] = useState<{ url: string; issueId: number } | null>(null);
   const [iframeCreateUrl, setIframeCreateUrl] = useState<string | null>(null);
   const [priorityPopup, setPriorityPopup] = useState<{ issueId: number; currentId: number; x: number; y: number } | null>(null);
+  const [datePopup, setDatePopup] = useState<{ issueId: number; currentDate: string | null; x: number; y: number } | null>(null);
   const [fullWindow, setFullWindow] = useState(() => {
     try {
       return localStorage.getItem('rk_fullwindow') === '1';
@@ -629,6 +630,9 @@ export function App({ dataUrl }: Props) {
             onPriorityClick={(issueId, currentPriorityId, x, y) => {
               setPriorityPopup({ issueId, currentId: currentPriorityId, x, y });
             }}
+            onDateClick={(issueId, currentDate, x, y) => {
+              setDatePopup({ issueId, currentDate, x, y });
+            }}
             onSubtaskToggle={toggleSubtask}
 
             hiddenStatusIds={hiddenStatusIds}
@@ -782,6 +786,31 @@ export function App({ dataUrl }: Props) {
           }}
         />
       ) : null}
+
+      {datePopup && data ? (
+        <DatePopup
+          key={`${datePopup.issueId}-${datePopup.x}-${datePopup.y}`}
+          x={datePopup.x}
+          y={datePopup.y}
+          value={datePopup.currentDate}
+          onClose={() => setDatePopup(null)}
+          onChange={async (newDate) => {
+            setDatePopup(null);
+            if (newDate !== datePopup.currentDate) {
+              try {
+                await updateIssueMutation.mutateAsync({
+                  issueId: datePopup.issueId,
+                  patch: { due_date: newDate },
+                  lockVersion: data.issues.find(i => i.id === datePopup.issueId)?.lock_version ?? null
+                });
+              } catch (e: any) {
+                console.error("Date update failed", e);
+                setError(e.message || "Date update failed");
+              }
+            }
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -843,6 +872,84 @@ function PriorityPopup({
         );
       })}
     </div>
+  );
+}
+
+function DatePopup({
+  x,
+  y,
+  value,
+  onClose,
+  onChange,
+}: {
+  x: number;
+  y: number;
+  value: string | null;
+  onClose: () => void;
+  onChange: (val: string | null) => void;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [onClose]);
+
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    // Auto-open picker if supported
+    // Small delay to ensure layout is stable for positioning
+    const timer = setTimeout(() => {
+      if (inputRef.current && typeof inputRef.current.showPicker === 'function') {
+        try {
+          inputRef.current.showPicker();
+        } catch (e) {
+          // ignore
+        }
+      }
+    }, 10);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Invisible input positioned at click location to anchor the picker
+  const style: React.CSSProperties = {
+    position: 'fixed',
+    left: x,
+    top: y,
+    opacity: 0,
+    width: '1px',
+    height: '1px',
+    border: 'none',
+    padding: 0,
+    margin: 0,
+    zIndex: 2000, // Ensure it's on top so browser sees it as visible/interactive
+    pointerEvents: 'none', // Allow clicks to pass through if it lingers
+  };
+
+  return (
+    <>
+      <div
+        ref={menuRef}
+        style={{ position: 'fixed', left: 0, top: 0, width: 0, height: 0 }}
+      />
+      <input
+        ref={inputRef}
+        type="date"
+        defaultValue={value || ''}
+        style={style}
+        onChange={(e) => {
+          onChange(e.target.value || null);
+        }}
+      // If the user cancels the picker, there is no standardized event.
+      // The popup will close when they click outside (handled by menuRef listener).
+      />
+    </>
   );
 }
 

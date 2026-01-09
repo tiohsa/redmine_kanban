@@ -53,6 +53,7 @@ type RectMap = {
   editButtons: Map<number, Rect>;
   visibilityButtons: Map<number, Rect>; // key: statusId
   priorityBadges: Map<number, Rect>;
+  dateBadges: Map<number, Rect>;
 };
 
 type CanvasTheme = {
@@ -109,6 +110,7 @@ type HitResult =
   | { kind: 'cell'; statusId: number; laneId: string | number }
   | { kind: 'visibility'; statusId: number }
   | { kind: 'priority'; issueId: number }
+  | { kind: 'date'; issueId: number }
   | { kind: 'empty' };
 
 export type CanvasBoardHandle = {
@@ -128,6 +130,7 @@ type Props = {
   onEditClick: (editUrl: string) => void;
   onSubtaskToggle?: (subtaskId: number, currentClosed: boolean) => void;
   onPriorityClick?: (issueId: number, currentPriorityId: number, x: number, y: number) => void;
+  onDateClick?: (issueId: number, currentDate: string | null, x: number, y: number) => void;
 
   labels: Record<string, string>;
   busyIssueIds?: Set<number>;
@@ -150,6 +153,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   onEditClick,
   onSubtaskToggle,
   onPriorityClick,
+  onDateClick,
 
   labels,
   busyIssueIds,
@@ -174,6 +178,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     editButtons: new Map(),
     visibilityButtons: new Map(),
     priorityBadges: new Map(),
+    dateBadges: new Map(),
   });
   const scrollRef = useRef({ x: 0, y: 0 });
   const boardSizeRef = useRef({ width: 0, height: 0 });
@@ -325,6 +330,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       editButtons: new Map(),
       visibilityButtons: new Map(),
       priorityBadges: new Map(),
+      dateBadges: new Map(),
     };
 
     ctx.save();
@@ -467,6 +473,16 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     }
 
 
+    if (hit.kind === 'date') {
+      if (isBusy(hit.issueId)) return;
+      event.preventDefault();
+      const issue = state.cardsById.get(hit.issueId);
+      if (issue && onDateClick) {
+        onDateClick(hit.issueId, issue.due_date ?? null, event.clientX, event.clientY);
+      }
+      return;
+    }
+
     if (hit.kind === 'card' || hit.kind === 'subtask_area') {
       if (isBusy(hit.issueId)) return;
       const issue = state.cardsById.get(hit.issueId);
@@ -504,7 +520,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         newHover = { kind: 'subtask_subject', id: `${hit.issueId}:${hit.subtaskId}` };
       } else if (hit.kind === 'card') {
         nextCursor = canMove ? 'grab' : 'default';
-      } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'subtask_check' || hit.kind === 'info' || hit.kind === 'edit' || hit.kind === 'visibility' || hit.kind === 'priority') {
+      } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'subtask_check' || hit.kind === 'info' || hit.kind === 'edit' || hit.kind === 'visibility' || hit.kind === 'priority' || hit.kind === 'date') {
         nextCursor = 'pointer';
       }
 
@@ -1171,13 +1187,31 @@ function drawCard(
         text = '!' + text;
       }
       const width = drawBadge(ctx, text, currentX, row2Y - 1, bg, fg, metaFontSize, 'calendar_today');
+
+      if (rectMap) {
+        rectMap.dateBadges.set(issue.id, {
+          x: currentX,
+          y: row2Y - 1,
+          width: width,
+          height: metaFontSize + (Math.max(2, Math.round(metaFontSize * 0.2)) * 2) + 4
+        });
+      }
+
       currentX += width + 8;
     } else {
-      drawIcon(ctx, 'calendar_today', currentX, row2Y, 14, theme.textSecondary);
-      currentX += 16;
-      ctx.fillStyle = theme.textSecondary;
-      ctx.fillText(issue.due_date, currentX, row2Y);
-      currentX += ctx.measureText(issue.due_date).width + 12;
+      // Normal state: White badge with border
+      const width = drawBadge(ctx, issue.due_date, currentX, row2Y - 1, theme.surface, theme.textSecondary, metaFontSize, 'calendar_today', theme.surface);
+
+      if (rectMap) {
+        rectMap.dateBadges.set(issue.id, {
+          x: currentX,
+          y: row2Y - 1,
+          width: width,
+          height: metaFontSize + (Math.max(2, Math.round(metaFontSize * 0.2)) * 2) + 4
+        });
+      }
+
+      currentX += width + 8;
     }
   }
 
@@ -1494,6 +1528,11 @@ function hitTest(
       return { kind: 'priority', issueId };
     }
   }
+  for (const [issueId, rect] of rectMap.dateBadges) {
+    if (pointInRect(point, rect)) {
+      return { kind: 'date', issueId };
+    }
+  }
   for (const [issueId, rect] of rectMap.cardSubjects) {
     if (pointInRect(point, rect)) {
       return { kind: 'card_subject', issueId };
@@ -1762,7 +1801,8 @@ function drawBadge(
   bgColor: string,
   textColor: string,
   fontSize: number = 11,
-  icon?: string
+  icon?: string,
+  borderColor?: string
 ): number {
   ctx.save();
   ctx.font = `500 ${fontSize}px Inter, sans-serif`;
@@ -1777,6 +1817,12 @@ function drawBadge(
   ctx.fillStyle = bgColor;
   roundedRect(ctx, x, y, totalWidth, height, 4);
   ctx.fill();
+
+  if (borderColor) {
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
 
   ctx.fillStyle = textColor;
   let textX = x + paddingX;
