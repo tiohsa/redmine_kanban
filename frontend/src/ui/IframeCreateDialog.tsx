@@ -80,6 +80,7 @@ export function IframeCreateDialog({ url, labels, baseUrl, queryKey, onClose, on
         await bulkMutation.mutateAsync(lines.map(subject => ({
           parent_issue_id: parentId,
           subject,
+          project_id: parentAttributesRef.current.project_id,
           tracker_id: parentAttributesRef.current.tracker_id,
           priority_id: parentAttributesRef.current.priority_id,
           status_id: parentAttributesRef.current.status_id,
@@ -112,10 +113,14 @@ export function IframeCreateDialog({ url, labels, baseUrl, queryKey, onClose, on
       const formData = new FormData(form);
       const getVal = (name: string) => {
         const v = formData.get(name);
-        return (typeof v === 'string' && v.trim()) ? Number(v) : undefined;
+        if (typeof v === 'string' && v.trim()) return Number(v);
+        const field = form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement | null;
+        if (field && field.value.trim()) return Number(field.value);
+        return undefined;
       };
 
       parentAttributesRef.current = {
+        project_id: getVal('issue[project_id]') ?? getVal('project_id'),
         tracker_id: getVal('issue[tracker_id]'),
         priority_id: getVal('issue[priority_id]'),
         status_id: getVal('issue[status_id]'),

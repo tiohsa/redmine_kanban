@@ -688,11 +688,13 @@ export function App({ dataUrl }: Props) {
                 const createdIssue = res.issue;
 
                 if (createdIssue && subtasks && subtasks.length > 0) {
+                  const createdProjectId = createdIssue.project?.id;
                   for (const subj of subtasks) {
                     await createIssueMutation.mutateAsync({
                       ...parentPayload,
                       subject: subj,
                       parent_issue_id: createdIssue.id,
+                      project_id: createdProjectId ?? parentPayload.project_id,
                     });
                   }
                   setNotice(
