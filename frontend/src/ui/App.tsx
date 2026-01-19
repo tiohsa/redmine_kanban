@@ -1569,9 +1569,6 @@ function Toolbar({
           onChange={(val) => {
             onChange({ ...filters, projectIds: val.map(Number) });
           }}
-          onReset={() => {
-            onChange({ ...filters, projectIds: [] });
-          }}
           width="280px"
           labels={labels}
           includeAllOption
@@ -1590,9 +1587,6 @@ function Toolbar({
           onChange={(val) => {
             onChange({ ...filters, statusIds: val.map(Number) });
           }}
-          onReset={() => {
-            onChange({ ...filters, statusIds: [] });
-          }}
           width="200px"
           labels={labels}
           includeAllOption
@@ -1609,7 +1603,6 @@ function Toolbar({
           options={priorityOptions}
           value={filters.priority}
           onChange={(val) => onChange({ ...filters, priority: val })}
-          onReset={() => onChange({ ...filters, priority: [] })}
           width="160px"
           labels={labels}
           includeAllOption
