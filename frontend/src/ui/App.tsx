@@ -796,8 +796,7 @@ export function App({ dataUrl }: Props) {
           y={datePopup.y}
           value={datePopup.currentDate}
           onClose={() => setDatePopup(null)}
-          onChange={async (newDate) => {
-            setDatePopup(null);
+          onCommit={async (newDate) => {
             if (newDate !== datePopup.currentDate) {
               try {
                 await updateIssueMutation.mutateAsync({
@@ -882,32 +881,25 @@ function DatePopup({
   y,
   value,
   onClose,
-  onChange,
+  onCommit,
 }: {
   x: number;
   y: number;
   value: string | null;
   onClose: () => void;
-  onChange: (val: string | null) => void;
+  onCommit: (val: string | null) => void;
 }) {
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [onClose]);
-
   const inputRef = useRef<HTMLInputElement>(null);
+  const [pendingValue, setPendingValue] = useState<string | null>(value);
+  const [hasChange, setHasChange] = useState(false);
 
   useEffect(() => {
     // Auto-open picker if supported
     // Small delay to ensure layout is stable for positioning
     const timer = setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
       if (inputRef.current && typeof inputRef.current.showPicker === 'function') {
         try {
           inputRef.current.showPicker();
@@ -918,6 +910,16 @@ function DatePopup({
     }, 10);
     return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   // Invisible input positioned at click location to anchor the picker
   const style: React.CSSProperties = {
@@ -931,27 +933,26 @@ function DatePopup({
     padding: 0,
     margin: 0,
     zIndex: 2000, // Ensure it's on top so browser sees it as visible/interactive
-    pointerEvents: 'none', // Allow clicks to pass through if it lingers
   };
 
   return (
-    <>
-      <div
-        ref={menuRef}
-        style={{ position: 'fixed', left: 0, top: 0, width: 0, height: 0 }}
-      />
-      <input
-        ref={inputRef}
-        type="date"
-        defaultValue={value || ''}
-        style={style}
-        onChange={(e) => {
-          onChange(e.target.value || null);
-        }}
-      // If the user cancels the picker, there is no standardized event.
-      // The popup will close when they click outside (handled by menuRef listener).
-      />
-    </>
+    <input
+      ref={inputRef}
+      type="date"
+      defaultValue={value || ''}
+      style={style}
+      onBlur={() => {
+        if (hasChange) {
+          onCommit(pendingValue ?? null);
+        }
+        setTimeout(onClose, 0);
+      }}
+      onChange={(e) => {
+        setPendingValue(e.target.value || null);
+        setHasChange(true);
+      }}
+    // If the user cancels the picker, blur should fire and close the popup.
+    />
   );
 }
 
