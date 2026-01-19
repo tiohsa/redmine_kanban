@@ -1272,6 +1272,8 @@ function MultiSelectDropdown({
   onReset,
   width = '240px',
   labels,
+  includeAllOption = false,
+  allLabel,
 }: {
   label: string;
   icon: string;
@@ -1281,6 +1283,8 @@ function MultiSelectDropdown({
   onReset?: () => void;
   width?: string;
   labels: Record<string, string>;
+  includeAllOption?: boolean;
+  allLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = React.useRef<HTMLDivElement>(null);
@@ -1302,7 +1306,15 @@ function MultiSelectDropdown({
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open]);
 
-  const selectedCount = value.length;
+  const optionIds = useMemo(() => options.map((option) => option.id), [options]);
+  const optionIdSet = useMemo(() => new Set(optionIds), [optionIds]);
+  const allSelected = optionIds.length > 0 && optionIds.every((id) => value.includes(id));
+  const selectedCount = value.filter((id) => optionIdSet.has(id)).length;
+  const resolvedAllLabel = allLabel ?? labels.all ?? 'All';
+  const title =
+    allSelected ? resolvedAllLabel : value.length > 0
+      ? value.map(v => options.find(o => o.id === v)?.name).join(', ')
+      : label;
 
   return (
     <div className="rk-dropdown-container">
@@ -1310,7 +1322,7 @@ function MultiSelectDropdown({
         ref={triggerRef}
         className={`rk-dropdown-trigger ${open ? 'rk-active' : ''}`}
         onClick={() => setOpen(!open)}
-        title={value.length > 0 ? value.map(v => options.find(o => o.id === v)?.name).join(', ') : label}
+        title={title}
       >
         <span className="rk-icon">{icon}</span>
         <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }}>
@@ -1322,6 +1334,18 @@ function MultiSelectDropdown({
         <div ref={menuRef} className="rk-dropdown-menu" style={{ width }}>
           <div className="rk-dropdown-title">{label}</div>
           <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+            {includeAllOption && (
+              <div
+                key="__all__"
+                className={`rk-dropdown-item ${allSelected ? 'selected' : ''}`}
+                onClick={() => {
+                  onChange(allSelected ? [] : optionIds);
+                }}
+              >
+                <div className="rk-dropdown-checkbox" />
+                <span>{resolvedAllLabel}</span>
+              </div>
+            )}
             {options.map((option) => {
               const checked = value.includes(option.id);
               return (
@@ -1548,6 +1572,8 @@ function Toolbar({
           }}
           width="280px"
           labels={labels}
+          includeAllOption
+          allLabel={labels.all}
         />
       </div>
 
@@ -1567,6 +1593,8 @@ function Toolbar({
           }}
           width="200px"
           labels={labels}
+          includeAllOption
+          allLabel={labels.all}
         />
       </div>
 
@@ -1582,6 +1610,8 @@ function Toolbar({
           onReset={() => onChange({ ...filters, priority: [] })}
           width="160px"
           labels={labels}
+          includeAllOption
+          allLabel={labels.all}
         />
 
         <Dropdown

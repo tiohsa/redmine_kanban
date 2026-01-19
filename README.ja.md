@@ -1,174 +1,146 @@
 # Redmine Kanban
 
-Redmineの運用を強化するための、React + Vite で構築されたモダンなカンバンボードプラグインです。
-従来の「タスクの見える化」だけでなく、WIP（仕掛り）制限や停滞検知（Aging）などの機能を備え、チームのフロー効率を向上させることを目的としています。
+Redmine の運用を強化する、React + Vite で構築されたモダンなカンバンボードプラグインです。
+単なる「タスクの見える化」ではなく、WIP 制限や停滞検知などでフロー効率を高めます。
 
-[English version is here](README.md)
+[English version is here](README.md) | [セットアップ](../../SETUP.md) | [要件定義](../../requirement.md)
 
-## 特徴
+## 目次
 
-### カンバンボード（redmine_kanban）
+- [概要](#概要)
+- [主な特徴](#主な特徴)
+- [スクリーンショット](#スクリーンショット)
+- [クイックスタート（Docker Compose）](#クイックスタートdocker-compose)
+- [Redmine プラグインとして導入](#redmine-プラグインとして導入)
+- [利用方法](#利用方法)
+- [設定](#設定)
+- [技術スタック](#技術スタック)
+- [開発](#開発)
+- [API エンドポイント](#api-エンドポイント)
+- [ライセンス](#ライセンス)
 
-* **Canvas描画**: HTML Canvasによる高パフォーマンスなボード描画。スムーズなスクロールと大量データの効率的な処理を実現
-* **WIP制御**: 列や担当者ごとの仕掛り数（WIP）を制限し、マルチタスクによる効率低下を防ぎます。超過時の動作（禁止/警告）も設定可能
-* **停滞検知 (Aging)**: 長期間更新されていないタスクを視覚的に強調し、見落としを防ぎます。閾値は設定で調整可能
-* **スイムレーン**: 担当者、バージョン、親チケットなどでレーンを切り替え、多角的な視点でタスクを管理可能
-* **ドラッグ&ドロップ**: 直感的なカード移動。Redmineのワークフローに準拠したステータス遷移をサポート
-* **高度なフィルタリング**: 担当者、期限、優先度、Blocked状態などでタスクをフィルタリング可能
-* **Kanbanからの直接作成**: 列ヘッダやセルから新規チケットを作成でき、朝会などでの即時更新が可能
-* **サブタスク表示**: 親タスクのサブタスク一覧を表示し、完了状態のトグルが可能
-* **Undo機能**: 誤って削除したタスクを復元可能
-* **プロジェクトフィルタ**: 複数プロジェクトやサブプロジェクトでフィルタリング可能
+## 概要
 
-![alt text](./images/kanban.png)
+Redmine Kanban は、作業の滞留を早期に可視化し、チームのフローを守るためのプラグインです。
+直感的な操作感と高い描画性能により、日々の運用をスムーズにします。
 
+## 主な特徴
 
-## 技術スタック
+- **Canvas 描画**: HTML Canvas による高パフォーマンスなボード描画。大量データでもスムーズ。
+- **WIP 制御**: 列や担当者ごとの WIP を制限し、超過時の動作（禁止/警告）を設定可能。
+- **停滞検知 (Aging)**: 長期間更新されていないタスクを視覚的に強調。閾値を調整可能。
+- **スイムレーン**: 担当者、バージョン、親チケットなどでレーンを切り替え可能。
+- **ドラッグ&ドロップ**: Redmine のワークフローに準拠したステータス遷移をサポート。
+- **高度なフィルタリング**: 担当者、期限、優先度、Blocked 状態などで絞り込み可能。
+- **Kanban からの直接作成**: 列ヘッダやセルから新規チケットを作成可能。
+- **サブタスク表示**: 親タスクのサブタスク一覧を表示し、完了状態のトグルが可能。
+- **Undo 機能**: 誤って削除したタスクを復元可能。
+- **プロジェクトフィルタ**: 複数プロジェクトやサブプロジェクトでフィルタリング可能。
 
-| レイヤー | 技術 |
-|---------|------|
-| バックエンド | Ruby on Rails (Redmine プラグイン) |
-| フロントエンド（カンバン） | React 18 + TypeScript + Vite + Canvas |
-| コンテナ | Docker Compose |
-| データベース | PostgreSQL (Redmine標準) |
+## スクリーンショット
 
-## インストールと起動
+![Kanban board](./images/kanban.png)
+![Settings](./images/settings.png)
 
-このリポジトリは、開発環境（Redmine + DB + プラグイン）を Docker Compose で一括して立ち上げる構成になっています。
+## クイックスタート（Docker Compose）
 
-1. **リポジトリのクローン**
-   ```bash
-   git clone <repository-url>
-   cd <repository-directory>
-   ```
+フルリポジトリを利用する場合は、リポジトリルートの Docker Compose を使用します。
 
-2. **コンテナの起動**
-   ```bash
-   docker compose up -d
-   ```
-   初回起動時は Docker イメージのビルドが行われるため、数分かかる場合があります。
+```bash
+cd ../..
+docker compose up -d
+```
 
-3. **Redmine へのアクセス**
-   ブラウザで以下の URL にアクセスしてください。
-   * **URL**: [http://localhost:3002](http://localhost:3002)
-   * **初期アカウント**:
-     * ログインID: `admin`
-     * パスワード: `admin`
+アクセス先: [http://localhost:3002](http://localhost:3002)
+
+- ログインID: `admin`
+- パスワード: `admin`
+
+## Redmine プラグインとして導入
+
+既存の Redmine に導入する場合は、以下の手順で利用できます。
+
+1. このプラグインを Redmine の `plugins/` 配下に `redmine_kanban` として配置。
+2. Redmine を再起動。
+3. 対象プロジェクトで **Kanban** モジュールを有効化。
+
+フロントエンドを変更した場合は、`plugins/redmine_kanban/frontend` でビルドしてから再起動してください。
+
+```bash
+cd plugins/redmine_kanban/frontend
+pnpm install
+pnpm run build
+```
 
 ## 利用方法
 
 1. Redmine にログイン後、プロジェクトを作成します。
-2. プロジェクトの「設定」→「モジュール」タブで、**Kanban** にチェックを入れて保存します。
-3. プロジェクトメニューに追加された「Kanban」タブをクリックすると、カンバンボードが表示されます。
+2. 「設定」→「モジュール」で **Kanban** を有効化します。
+3. プロジェクトメニューの **Kanban** を開きます。
 
-### 設定オプション
+## 設定
 
-プラグイン設定画面で以下の項目を調整できます：
+プラグイン設定画面で以下を調整できます。
 
-* **スイムレーンタイプ**: 担当者/バージョン/親チケット
-* **チケット表示上限**: ボードに表示するチケット数の上限
-* **非表示ステータス**: ボードに表示しないステータスの選択
-* **WIP制限モード**: 列単位/列×レーン単位
-* **WIP超過時の動作**: 禁止/警告のみ
-* **停滞閾値**: 注意・危険レベルの日数設定
-* **ステータス自動更新**: カード移動時のステータス自動変更ルール
+- **スイムレーンタイプ**: 担当者/バージョン/親チケット
+- **チケット表示上限**: ボードに表示するチケット数
+- **非表示ステータス**: ボードに表示しないステータス
+- **WIP 制限モード**: 列単位/列×レーン単位
+- **WIP 超過時の動作**: 禁止/警告のみ
+- **停滞閾値**: 注意・危険レベルの日数設定
+- **ステータス自動更新**: カード移動時のステータス自動変更ルール
 
-![alt text](./images/settings.png)
+## 技術スタック
 
-## 開発者向け情報
+| レイヤー | 技術 |
+| --- | --- |
+| バックエンド | Ruby on Rails (Redmine プラグイン) |
+| フロントエンド（カンバン） | React 18 + TypeScript + Vite + Canvas |
+| コンテナ | Docker Compose |
+| データベース | PostgreSQL (Redmine 標準) |
 
-### プロジェクト構造
+## 開発
 
-```
-redmine_kanban/
-├── docker-compose.yml        # Redmine開発スタック
-├── README.md                 # READMEファイル（英語版）
-├── README.ja.md              # 日本語版README
-├── AGENTS.md                 # エージェント向けガイドライン
-├── requirement.md            # 詳細要件定義
-├── SETUP.md                  # セットアップ手順
-├── plugins/
-│   ├── redmine_kanban/       # カンバンプラグイン
-│   │   ├── init.rb           # プラグイン登録
-│   │   ├── config/
-│   │   │   ├── routes.rb     # ルーティング
-│   │   │   └── locales/      # 国際化ファイル (ja.yml, en.yml)
-│   │   ├── app/
-│   │   │   ├── controllers/  # Railsコントローラー
-│   │   │   └── views/        # ビューテンプレート
-│   │   ├── lib/
-│   │   │   └── redmine_kanban/
-│   │   │       ├── board_data.rb    # ボードデータ構築
-│   │   │       ├── issue_mover.rb   # カード移動ロジック
-│   │   │       ├── issue_creator.rb # カード作成ロジック
-│   │   │       ├── issue_updater.rb # カード更新ロジック
-│   │   │       ├── wip_checker.rb   # WIP制限チェック
-│   │   │       └── settings.rb      # 設定管理
-│   │   ├── frontend/         # React ソースコード
-│   │   │   ├── src/
-│   │   │   │   ├── main.tsx
-│   │   │   │   └── ui/
-│   │   │   │       ├── App.tsx             # メインコンポーネント
-│   │   │   │       ├── types.ts            # 型定義
-│   │   │   │       ├── http.ts             # API通信
-│   │   │   │       ├── styles.css          # スタイル
-│   │   │   │       └── board/
-│   │   │   │           └── CanvasBoard.tsx # Canvas描画ボード
-│   │   │   ├── package.json
-│   │   │   └── vite.config.ts
-│   │   ├── assets/           # ビルド出力先
-│   │   └── test/             # テストファイル
-└── themes/                   # カスタムテーマ
-```
-
-### フロントエンドのビルド
-
-フロントエンド（SPA部分）のソースコードは `plugins/redmine_kanban/frontend` にあります。
-コードを変更した場合は、以下の手順で再ビルドが必要です。
+フロントエンド（SPA 部分）のソースコードは `plugins/redmine_kanban/frontend` にあります。
 
 ```bash
-# フロントエンドディレクトリへ移動
 cd plugins/redmine_kanban/frontend
-
-# 依存関係のインストール（初回のみ）
 pnpm install
-
-# ビルド実行
 pnpm run build
 ```
 
-ビルドが完了したら、Redmine コンテナを再起動して変更を反映させます。
+ビルド完了後、Redmine コンテナを再起動して変更を反映します。
 
 ```bash
-# プロジェクトルートに戻って実行
+cd ../..
 docker compose restart redmine
 ```
 
 ### テストの実行
 
-プラグインのバックエンド（Ruby）のテストを実行するには、以下のコマンドを使用します。
+バックエンド（Ruby）のテスト:
 
 ```bash
 docker compose exec redmine bundle exec rails test plugins/redmine_kanban/test
 ```
 
-フロントエンドの型チェック：
+フロントエンドの型チェック:
 
 ```bash
 cd plugins/redmine_kanban/frontend
 pnpm run typecheck
 ```
 
-### API エンドポイント
+## API エンドポイント
 
 | メソッド | パス | 説明 |
-|---------|------|------|
+| --- | --- | --- |
 | GET | `/projects/:project_id/kanban/data` | ボードデータ取得 |
 | PATCH | `/projects/:project_id/kanban/issues/:id/move` | カード移動 |
 | POST | `/projects/:project_id/kanban/issues` | チケット作成 |
 | PATCH | `/projects/:project_id/kanban/issues/:id` | チケット更新 |
 | DELETE | `/projects/:project_id/kanban/issues/:id` | チケット削除 |
-| POST | `/projects/:project_id/kanban/ai_analysis` | AI分析 |
+| POST | `/projects/:project_id/kanban/ai_analysis` | AI 分析 |
 
 ## ライセンス
 
