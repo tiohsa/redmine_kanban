@@ -1405,6 +1405,7 @@ function SearchDropdown({
   const [open, setOpen] = useState(false);
   const triggerRef = React.useRef<HTMLDivElement>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
+  const inputRef = React.useRef<HTMLInputElement>(null);
 
   // Close when clicking outside
   React.useEffect(() => {
@@ -1442,11 +1443,25 @@ function SearchDropdown({
             <div className="rk-search-box">
               <span className="rk-icon">search</span>
               <input
+                ref={inputRef}
                 autoFocus
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 placeholder={placeholder}
               />
+              {value ? (
+                <button
+                  type="button"
+                  className="rk-search-clear"
+                  aria-label={label}
+                  onClick={() => {
+                    onChange('');
+                    inputRef.current?.focus();
+                  }}
+                >
+                  <span className="rk-icon">close</span>
+                </button>
+              ) : null}
             </div>
           </div>
         </div>

@@ -444,6 +444,23 @@
   color: var(--rk-text-secondary);
 }
 
+.rk-search-clear {
+  border: none;
+  background: transparent;
+  color: var(--rk-text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+}
+
+.rk-search-clear:hover {
+  color: var(--rk-text-primary);
+}
+
 /* Ensure labels are vertically centered and visible */
 .rk-label {
   font-size: 0.875rem;
