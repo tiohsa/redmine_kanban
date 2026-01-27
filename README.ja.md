@@ -144,4 +144,4 @@ pnpm run typecheck
 
 ## ライセンス
 
-本プロジェクトは [MIT License](LICENSE.md) の下で公開されています。
+本プロジェクトは GNU General Public License v2.0 (GPLv2) の下で公開されています。

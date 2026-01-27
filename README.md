@@ -143,4 +143,4 @@ pnpm run typecheck
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE.md).
+This project is licensed under the GNU General Public License v2.0 (GPLv2).

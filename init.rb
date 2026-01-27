@@ -7,6 +7,7 @@ Redmine::Plugin.register :redmine_kanban do
   version '0.1.0'
   url 'https://github.com/tiohsa/redmine_kanban'
   author_url 'https://github.com/tiohsa'
+  license 'GPL v2'
 
   project_module :redmine_kanban do
     permission :view_redmine_kanban, { 'redmine_kanban/kanban': [:show], 'redmine_kanban/api': [:index], 'redmine_kanban/ai_analysis': [:analyze] }, read: true
