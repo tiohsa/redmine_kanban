@@ -355,12 +355,18 @@ export function App({ dataUrl }: Props) {
       setError(resolveMutationError(err, data?.labels, data?.labels.move_failed));
     },
     onSuccess: (result) => {
-      if (result.warning) setNotice(result.warning);
+      if (result.warning) {
+        setNotice(result.warning);
+      }
       if (
         timeEntryOnClose &&
-        data?.columns.find(c => c.id === result.issue.status_id)?.is_closed
+        data?.columns.find((c) => c.id === result.issue.status_id)?.is_closed
       ) {
-        setIframeTimeEntryUrl(`/issues/${result.issue.id}/time_entries/new`);
+        if (result.issue.can_log_time) {
+          setIframeTimeEntryUrl(`/issues/${result.issue.id}/time_entries/new`);
+        } else {
+          setNotice(data?.labels.time_entry_permission_required ?? 'You do not have permission to log time for this issue');
+        }
       }
     },
     onMutateIssue: (issueId) => setIssueBusy(issueId, true),

@@ -109,6 +109,7 @@ module RedmineKanban
         parent_id: issue.parent_id,
         subject: issue.subject,
         status_id: issue.status_id,
+        can_log_time: @user.allowed_to?(:log_time, issue.project),
         lock_version: issue.lock_version,
         status_name: issue.status&.name,
         status_is_closed: issue.status&.is_closed,
@@ -230,7 +231,8 @@ module RedmineKanban
         status: l(:label_kanban_status),
         fit_none: l(:label_kanban_fit_none),
         fit_width: l(:label_kanban_fit_width),
-        fit_all: l(:label_kanban_fit_all)
+        fit_all: l(:label_kanban_fit_all),
+        time_entry_permission_required: l(:label_kanban_time_entry_permission_required)
       }
     end
 

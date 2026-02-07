@@ -55,6 +55,7 @@ ja:
   label_kanban_fit_none: "原寸 (100%)"
   label_kanban_fit_width: "幅に合わせる"
   label_kanban_fit_all: "すべて表示"
+  label_kanban_time_entry_permission_required: "このチケットの工数記録権限がありません"
   label_kanban_reset: "リセット"
   label_kanban_undo: "元に戻す"
   label_kanban_restoring: "復元中..."

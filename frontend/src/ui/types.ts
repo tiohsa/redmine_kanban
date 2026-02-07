@@ -25,6 +25,7 @@ export type Issue = {
   parent_id?: number | null;
   subject: string;
   status_id: number;
+  can_log_time?: boolean;
   lock_version?: number;
   tracker_id: number;
   description: string;

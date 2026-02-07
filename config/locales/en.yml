@@ -79,3 +79,4 @@ en:
   label_kanban_fit_none: "Actual Size (100%)"
   label_kanban_fit_width: "Fit to Width"
   label_kanban_fit_all: "Fit All"
+  label_kanban_time_entry_permission_required: "You do not have permission to log time for this issue"
