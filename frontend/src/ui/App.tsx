@@ -1454,6 +1454,33 @@ function SearchDropdown({
   const menuRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
+  // Handle keyboard shortcuts
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Trigger on Ctrl+F or Cmd+F
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        // Don't trigger if inside an input or textarea
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+          return;
+        }
+
+        e.preventDefault();
+        setOpen(true);
+        // The input will be focused via autoFocus when it renders
+      }
+
+      // Clear and close on Escape when open
+      if (e.key === 'Escape' && open) {
+        onChange('');
+        setOpen(false);
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [open, onChange]);
+
   // Close when clicking outside
   React.useEffect(() => {
     if (!open) return;
