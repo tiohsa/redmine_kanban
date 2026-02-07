@@ -17,6 +17,7 @@ type Filters = {
   due: 'all' | 'overdue' | 'thisweek' | '3days' | '7days' | '1day' | 'custom' | 'none';
   dueDays?: number;
   priority: string[]; // Multiple selection
+  priorityFilterEnabled: boolean;
   projectIds: number[]; // Multiple selection
   statusIds: number[]; // Multiple selection
 };
@@ -54,6 +55,10 @@ export function App({ dataUrl }: Props) {
           due: parsed.due || 'all',
           dueDays: parsed.dueDays || 7,
           priority: Array.isArray(parsed.priority) ? parsed.priority : [],
+          priorityFilterEnabled:
+            typeof parsed.priorityFilterEnabled === 'boolean'
+              ? parsed.priorityFilterEnabled
+              : Array.isArray(parsed.priority) && parsed.priority.length > 0,
           projectIds: Array.isArray(parsed.projectIds) ? parsed.projectIds.map(Number) : [],
           statusIds: Array.isArray(parsed.statusIds) ? parsed.statusIds.map(Number) : []
         };
@@ -61,7 +66,7 @@ export function App({ dataUrl }: Props) {
     } catch {
       // ignore
     }
-    return { assignee: 'all', q: '', due: 'all', priority: [], projectIds: [], statusIds: [] };
+    return { assignee: 'all', q: '', due: 'all', priority: [], priorityFilterEnabled: false, projectIds: [], statusIds: [] };
   });
   const [modal, setModal] = useState<ModalContext | null>(null);
 
@@ -1113,7 +1118,8 @@ function filterIssues(issues: Issue[], data: BoardData | null, filters: Filters)
       }
     }
 
-    if (filters.priority.length > 0) {
+    if (filters.priorityFilterEnabled) {
+      if (filters.priority.length === 0) return false;
       if (!filters.priority.includes(String(it.priority_id))) return false;
     }
 
@@ -1528,6 +1534,7 @@ function Toolbar({
   ];
 
   const priorityOptions = (data.lists.priorities ?? []).map(p => ({ id: String(p.id), name: p.name }));
+  const priorityValue = filters.priorityFilterEnabled ? filters.priority : priorityOptions.map((option) => option.id);
 
   return (
     <div className="rk-toolbar">
@@ -1617,8 +1624,11 @@ function Toolbar({
           label={labels.issue_priority}
           icon="priority_high"
           options={priorityOptions}
-          value={filters.priority}
-          onChange={(val) => onChange({ ...filters, priority: val })}
+          value={priorityValue}
+          onChange={(val) => {
+            const enabled = val.length !== priorityOptions.length;
+            onChange({ ...filters, priority: enabled ? val : [], priorityFilterEnabled: enabled });
+          }}
           width="160px"
           labels={labels}
           includeAllOption
