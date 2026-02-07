@@ -6,7 +6,7 @@ import { useBulkSubtaskMutation } from './hooks/useBulkSubtaskMutation';
 type Props = {
     url: string;
     issueId: number;
-    mode?: 'create' | 'edit';
+    mode?: 'create' | 'edit' | 'time_entry';
     labels: Record<string, string>;
     baseUrl: string;
     queryKey: readonly unknown[];
@@ -68,6 +68,13 @@ export function IframeEditDialog({ url, issueId, mode = 'edit', labels, baseUrl,
                             handleSuccess(newIssueId);
                             return;
                         }
+                    } else if (mode === 'time_entry') {
+                        // For time_entry, Redmine redirects to issue page or time_entries list after success
+                        // If we're no longer on the new time_entry form, consider it a success
+                        if (!currentUrl.includes('/time_entries/new')) {
+                            handleSuccess(issueId);
+                            return;
+                        }
                     } else {
                         // For edit mode, check if we're on issue show page (not edit)
                         const isShowPage = /\/issues\/\d+$/.test(currentUrl) && !currentUrl.includes('/edit');
@@ -97,6 +104,12 @@ export function IframeEditDialog({ url, issueId, mode = 'edit', labels, baseUrl,
     const createdIssueIdRef = useRef<number | null>(null);
 
     const handleSuccess = async (targetIssueId: number) => {
+        if (mode === 'time_entry') {
+            onSuccess(labels.successful_update ?? 'Successful update');
+            onClose();
+            return;
+        }
+
         const lines = subtasks.split('\n').map(s => s.trim()).filter(s => s.length > 0);
 
         if (lines.length > 0) {
@@ -132,7 +145,17 @@ export function IframeEditDialog({ url, issueId, mode = 'edit', labels, baseUrl,
 
     const handleSubmit = () => {
         if (!iframeRef?.contentDocument || !iframeRef?.contentWindow) return;
-        const form = (iframeRef.contentDocument.getElementById('issue-form') as HTMLFormElement) || iframeRef.contentDocument.forms[0];
+
+        // Find the appropriate form based on mode
+        let form: HTMLFormElement | null = null;
+        if (mode === 'time_entry') {
+            // Redmine's time entry form has id 'new_time_entry'
+            form = iframeRef.contentDocument.getElementById('new_time_entry') as HTMLFormElement;
+        }
+        if (!form) {
+            form = (iframeRef.contentDocument.getElementById('issue-form') as HTMLFormElement) || iframeRef.contentDocument.forms[0];
+        }
+
         if (form) {
             const formData = new FormData(form);
             const getVal = (name: string) => {
@@ -169,7 +192,9 @@ export function IframeEditDialog({ url, issueId, mode = 'edit', labels, baseUrl,
 
     const submitLabel = mode === 'create'
         ? (isSubmitting ? labels.creating : labels.create)
-        : (isSubmitting ? labels.saving : labels.save);
+        : mode === 'time_entry'
+            ? (isSubmitting ? labels.saving : labels.save)
+            : (isSubmitting ? labels.saving : labels.save);
 
     const [isSubtasksOpen, setIsSubtasksOpen] = useState(false);
 
@@ -181,38 +206,40 @@ export function IframeEditDialog({ url, issueId, mode = 'edit', labels, baseUrl,
                 </div>
 
                 <div className="rk-create-footer">
-                    <div className="rk-subtask-input">
-                        <button
-                            type="button"
-                            className="rk-subtask-toggle"
-                            onClick={() => setIsSubtasksOpen(!isSubtasksOpen)}
-                            style={{
-                                background: 'none',
-                                border: 'none',
-                                padding: 0,
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                color: 'inherit',
-                                fontSize: 'inherit',
-                                fontWeight: 'inherit',
-                            }}
-                        >
-                            <span style={{ transform: isSubtasksOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▶</span>
-                            <label className="rk-label" style={{ cursor: 'pointer', margin: 0 }}>{labels.bulk_subtask_title}</label>
-                        </button>
-                        {isSubtasksOpen && (
-                            <textarea
-                                rows={3}
-                                value={subtasks}
-                                onChange={e => setSubtasks(e.target.value)}
-                                placeholder={labels.bulk_subtask_placeholder}
-                                disabled={isSubmitting}
-                                style={{ marginTop: '8px' }}
-                            />
-                        )}
-                    </div>
+                    {mode !== 'time_entry' && (
+                        <div className="rk-subtask-input">
+                            <button
+                                type="button"
+                                className="rk-subtask-toggle"
+                                onClick={() => setIsSubtasksOpen(!isSubtasksOpen)}
+                                style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    padding: 0,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    color: 'inherit',
+                                    fontSize: 'inherit',
+                                    fontWeight: 'inherit',
+                                }}
+                            >
+                                <span style={{ transform: isSubtasksOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▶</span>
+                                <label className="rk-label" style={{ cursor: 'pointer', margin: 0 }}>{labels.bulk_subtask_title}</label>
+                            </button>
+                            {isSubtasksOpen && (
+                                <textarea
+                                    rows={3}
+                                    value={subtasks}
+                                    onChange={e => setSubtasks(e.target.value)}
+                                    placeholder={labels.bulk_subtask_placeholder}
+                                    disabled={isSubmitting}
+                                    style={{ marginTop: '8px' }}
+                                />
+                            )}
+                        </div>
+                    )}
                     <div className="rk-modal-actions">
                         <button type="button" className="rk-btn" onClick={onClose} disabled={isSubmitting}>
                             {labels.cancel}

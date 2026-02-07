@@ -74,6 +74,7 @@ export function App({ dataUrl }: Props) {
   const [isRestoring, setIsRestoring] = useState(false);
   const [iframeEditContext, setIframeEditContext] = useState<{ url: string; issueId: number } | null>(null);
   const [iframeCreateUrl, setIframeCreateUrl] = useState<string | null>(null);
+  const [iframeTimeEntryUrl, setIframeTimeEntryUrl] = useState<string | null>(null);
   const [priorityPopup, setPriorityPopup] = useState<{ issueId: number; currentId: number; x: number; y: number } | null>(null);
   const [datePopup, setDatePopup] = useState<{ issueId: number; currentDate: string | null; x: number; y: number } | null>(null);
   const [fullWindow, setFullWindow] = useState(() => {
@@ -133,6 +134,13 @@ export function App({ dataUrl }: Props) {
       if (v) return parseInt(v, 10);
     } catch { }
     return 13;
+  });
+  const [timeEntryOnClose, setTimeEntryOnClose] = useState(() => {
+    try {
+      return localStorage.getItem('rk_time_entry_on_close') === '1';
+    } catch {
+      return false;
+    }
   });
 
   const queryClient = useQueryClient();
@@ -241,6 +249,14 @@ export function App({ dataUrl }: Props) {
     }
   }, [filters]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem('rk_time_entry_on_close', timeEntryOnClose ? '1' : '0');
+    } catch {
+      // ignore
+    }
+  }, [timeEntryOnClose]);
+
   // Filter data based on showSubtasks and statusIds
   const filteredData = useMemo(() => {
     if (!data) return null;
@@ -340,6 +356,12 @@ export function App({ dataUrl }: Props) {
     },
     onSuccess: (result) => {
       if (result.warning) setNotice(result.warning);
+      if (
+        timeEntryOnClose &&
+        data?.columns.find(c => c.id === result.issue.status_id)?.is_closed
+      ) {
+        setIframeTimeEntryUrl(`/issues/${result.issue.id}/time_entries/new`);
+      }
     },
     onMutateIssue: (issueId) => setIssueBusy(issueId, true),
     onSettledIssue: (issueId) => setIssueBusy(issueId, false),
@@ -594,6 +616,8 @@ export function App({ dataUrl }: Props) {
             openCreate({ statusId: defaultStatus });
           }}
           onScrollToTop={() => boardRef.current?.scrollToTop()}
+          timeEntryOnClose={timeEntryOnClose}
+          onToggleTimeEntryOnClose={() => setTimeEntryOnClose(v => !v)}
         />
       ) : (
         <div className="rk-empty">{labels?.fetching_data}</div>
@@ -758,6 +782,23 @@ export function App({ dataUrl }: Props) {
           onSuccess={(msg) => {
             setNotice(msg);
             setIframeCreateUrl(null);
+            refresh();
+          }}
+        />
+      ) : null}
+
+      {iframeTimeEntryUrl && data ? (
+        <IframeEditDialog
+          url={iframeTimeEntryUrl}
+          issueId={0}
+          mode="time_entry"
+          labels={data.labels}
+          baseUrl={baseUrl}
+          queryKey={boardQueryKey}
+          onClose={() => { setIframeTimeEntryUrl(null); }}
+          onSuccess={(msg) => {
+            setNotice(msg);
+            setIframeTimeEntryUrl(null);
             refresh();
           }}
         />
@@ -1494,6 +1535,8 @@ function Toolbar({
   canCreate,
   onCreate,
   onScrollToTop,
+  timeEntryOnClose,
+  onToggleTimeEntryOnClose,
 }: {
   data: BoardData;
   filters: Filters;
@@ -1512,6 +1555,8 @@ function Toolbar({
   canCreate: boolean;
   onCreate: () => void;
   onScrollToTop: () => void;
+  timeEntryOnClose: boolean;
+  onToggleTimeEntryOnClose: () => void;
 }) {
   const assignees = data.lists.assignees ?? [];
   const labels = data.labels;
@@ -1699,6 +1744,15 @@ function Toolbar({
       <div className="rk-toolbar-spacer" />
 
       <div className="rk-toolbar-group">
+        <button
+          type="button"
+          className={`rk-btn ${timeEntryOnClose ? 'rk-btn-toggle-active' : ''}`}
+          onClick={onToggleTimeEntryOnClose}
+          title={timeEntryOnClose ? (labels.disable_time_entry_on_close ?? 'Disable time entry on close') : (labels.enable_time_entry_on_close ?? 'Enable time entry on close')}
+        >
+          <span className="rk-icon">schedule</span>
+        </button>
+
         <button
           type="button"
           className={`rk-btn ${fitMode !== 'none' ? 'rk-btn-toggle-active' : ''}`}
