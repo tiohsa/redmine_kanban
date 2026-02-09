@@ -2,13 +2,15 @@ import path from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   base: './',
   plugins: [react()],
-  define: {
-    'process.env.NODE_ENV': JSON.stringify('production'),
-    'process.env': JSON.stringify({ NODE_ENV: 'production' }),
-  },
+  define: mode === 'test'
+    ? undefined
+    : {
+      'process.env.NODE_ENV': JSON.stringify('production'),
+      'process.env': JSON.stringify({ NODE_ENV: 'production' }),
+    },
   build: {
     outDir: path.resolve(__dirname, '../assets'),
     emptyOutDir: false,
@@ -29,4 +31,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));
