@@ -577,13 +577,16 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     if (drag.dragging) {
       const hit = hitTestCell(point, rectMapRef.current, data);
       if (hit && canMove) {
-        const assignedToId = laneIdToAssignee(data, hit.laneId);
+        const issue = state.cardsById.get(drag.issueId);
+        const assignedToId = laneIdToAssignee(data, hit.laneId, issue?.assigned_to_id ?? null);
+        const priorityId = laneIdToPriority(data, hit.laneId, issue?.priority_id ?? null);
         onCommand({
           type: 'move_issue',
           issueId: drag.issueId,
           statusId: hit.statusId,
           laneId: hit.laneId,
           assignedToId,
+          priorityId,
         });
       }
     } else {
@@ -1631,18 +1634,35 @@ function parseCellKey(key: string, data: BoardData): [number, string | number] {
   const statusId = Number(status);
   if (data.meta.lane_type === 'none') return [statusId, 'none'];
   if (lane === 'unassigned') return [statusId, 'unassigned'];
+  if (lane === 'no_priority') return [statusId, 'no_priority'];
   const parsedLane = Number(lane);
   return [statusId, Number.isFinite(parsedLane) ? parsedLane : lane];
 }
 
 function resolveLaneId(data: BoardData, issue: Issue): string | number {
   if (data.meta.lane_type === 'assignee') return issue.assigned_to_id ?? 'unassigned';
+  if (data.meta.lane_type === 'priority') return issue.priority_id ?? 'no_priority';
   return 'none';
 }
 
-function laneIdToAssignee(data: BoardData, laneId: string | number): number | null {
-  if (data.meta.lane_type !== 'assignee') return null;
+function laneIdToAssignee(
+  data: BoardData,
+  laneId: string | number,
+  fallback: number | null
+): number | null {
+  if (data.meta.lane_type !== 'assignee') return fallback;
   if (laneId === 'unassigned') return null;
+  const parsed = Number(laneId);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function laneIdToPriority(
+  data: BoardData,
+  laneId: string | number,
+  fallback: number | null
+): number | null | undefined {
+  if (data.meta.lane_type !== 'priority') return fallback;
+  if (laneId === 'no_priority') return null;
   const parsed = Number(laneId);
   return Number.isFinite(parsed) ? parsed : null;
 }

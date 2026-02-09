@@ -7,11 +7,12 @@ module RedmineKanban
       @settings = Settings.new(Setting.plugin_redmine_kanban)
     end
 
-    def move(status_id:, assigned_to_id:, lock_version: nil)
+    def move(status_id:, assigned_to_id:, priority_id: nil, lock_version: nil)
       return error('権限がありません') unless @issue.editable?
 
       status_id = status_id.to_i
       assigned_to_id = normalize_assigned_to_id(assigned_to_id)
+      priority_id = normalize_priority_id(priority_id)
       lock_version = normalize_lock_version(lock_version)
 
       unless status_allowed?(status_id)
@@ -34,6 +35,7 @@ module RedmineKanban
         # 明示的にnilを設定して未割当にする（空文字列を使用）
         attrs['assigned_to_id'] = assigned_to_id.nil? ? '' : assigned_to_id
       end
+      attrs['priority_id'] = priority_id.nil? ? '' : priority_id unless priority_id == :no_change
 
       # Apply auto-update rules for the target status
       auto_attrs = @settings.status_auto_updates[status_id] || {}
@@ -75,6 +77,13 @@ module RedmineKanban
 
     def normalize_lock_version(value)
       return nil if value.nil? || value.to_s.strip == ''
+
+      value.to_i
+    end
+
+    def normalize_priority_id(value)
+      return :no_change if value.nil?
+      return nil if value.to_s.strip == '' || value.to_s == 'null'
 
       value.to_i
     end

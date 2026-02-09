@@ -4,4 +4,5 @@ export type BoardCommand = {
   statusId: number;
   laneId: string | number;
   assignedToId: number | null;
+  priorityId?: number | null;
 };

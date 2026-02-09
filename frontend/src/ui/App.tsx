@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { BoardData, Issue } from './types';
+import type { BoardData, Issue, Lane } from './types';
 import { getJson, postJson } from './http';
 import { CanvasBoard, type CanvasBoardHandle } from './board/CanvasBoard';
 import { buildBoardState } from './board/state';
@@ -32,6 +32,7 @@ type MovePayload = {
   issueId: number;
   statusId: number;
   assignedToId: number | null;
+  priorityId?: number | null;
   lockVersion: number | null;
 };
 
@@ -138,6 +139,13 @@ export function App({ dataUrl }: Props) {
   const [timeEntryOnClose, setTimeEntryOnClose] = useState(() => {
     try {
       return localStorage.getItem('rk_time_entry_on_close') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [priorityLaneEnabled, setPriorityLaneEnabled] = useState(() => {
+    try {
+      return localStorage.getItem('rk_priority_lane_enabled') === '1';
     } catch {
       return false;
     }
@@ -257,10 +265,25 @@ export function App({ dataUrl }: Props) {
     }
   }, [timeEntryOnClose]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem('rk_priority_lane_enabled', priorityLaneEnabled ? '1' : '0');
+    } catch {
+      // ignore
+    }
+  }, [priorityLaneEnabled]);
+
+  const displayData = useMemo(() => {
+    if (!data) return null;
+    return buildDisplayData(data, priorityLaneEnabled);
+  }, [data, priorityLaneEnabled]);
+
+  const effectiveLaneType = displayData?.meta.lane_type;
+
   // Filter data based on showSubtasks and statusIds
   const filteredData = useMemo(() => {
-    if (!data) return null;
-    let res = data;
+    if (!displayData) return null;
+    let res = displayData;
     if (!showSubtasks) {
       res = {
         ...res,
@@ -274,7 +297,7 @@ export function App({ dataUrl }: Props) {
       };
     }
     return res;
-  }, [data, showSubtasks, filters.statusIds]);
+  }, [displayData, showSubtasks, filters.statusIds]);
 
   const issues = useMemo(() => {
     let filtered = filterIssues(filteredData?.issues ?? [], filteredData, filters);
@@ -308,8 +331,15 @@ export function App({ dataUrl }: Props) {
       params.append('issue[status_id]', String(ctx.statusId));
     }
     // Handle assignee from laneId if applicable
-    if (ctx.laneId && data?.meta.lane_type === 'assignee' && ctx.laneId !== 'unassigned' && ctx.laneId !== 'none') {
+    if (ctx.laneId && effectiveLaneType === 'assignee' && ctx.laneId !== 'unassigned' && ctx.laneId !== 'none') {
       params.append('issue[assigned_to_id]', String(ctx.laneId));
+    }
+    if (ctx.laneId !== undefined && effectiveLaneType === 'priority') {
+      if (ctx.laneId === 'no_priority') {
+        params.append('issue[priority_id]', '');
+      } else if (ctx.laneId !== 'none') {
+        params.append('issue[priority_id]', String(ctx.laneId));
+      }
     }
 
     setIframeCreateUrl(`${projectUrl}/issues/new?${params.toString()}`);
@@ -336,6 +366,7 @@ export function App({ dataUrl }: Props) {
           issue: {
             status_id: payload.statusId,
             assigned_to_id: payload.assignedToId,
+            priority_id: payload.priorityId,
             lock_version: payload.lockVersion,
           },
         },
@@ -344,12 +375,19 @@ export function App({ dataUrl }: Props) {
       return { issue: res.issue, warning: res.warning };
     },
     applyOptimistic: (prev, payload) =>
-      updateIssueInBoard(prev, payload.issueId, (issue) => ({
-        ...issue,
-        status_id: payload.statusId,
-        assigned_to_id: payload.assignedToId,
-        assigned_to_name: resolveAssigneeName(prev, payload.assignedToId),
-      })),
+      updateIssueInBoard(prev, payload.issueId, (issue) => {
+        const next = {
+          ...issue,
+          status_id: payload.statusId,
+          assigned_to_id: payload.assignedToId,
+          assigned_to_name: resolveAssigneeName(prev, payload.assignedToId),
+        };
+        if (payload.priorityId !== undefined) {
+          next.priority_id = payload.priorityId;
+          next.priority_name = resolvePriorityName(prev, payload.priorityId ?? null);
+        }
+        return next;
+      }),
     applyServer: (prev, result) => replaceIssueInBoard(prev, result.issue),
     onError: (err) => {
       setError(resolveMutationError(err, data?.labels, data?.labels.move_failed));
@@ -415,7 +453,12 @@ export function App({ dataUrl }: Props) {
     },
   });
 
-  const moveIssue = (issueId: number, statusId: number, assignedToId: number | null) => {
+  const moveIssue = (
+    issueId: number,
+    statusId: number,
+    assignedToId: number | null,
+    priorityId?: number | null
+  ) => {
     if (!data) return;
     if (busyIssueIds.has(issueId)) return;
     const issue = data.issues.find((it) => it.id === issueId);
@@ -430,6 +473,7 @@ export function App({ dataUrl }: Props) {
       issueId,
       statusId,
       assignedToId,
+      priorityId,
       lockVersion: issue.lock_version,
     });
   };
@@ -624,6 +668,8 @@ export function App({ dataUrl }: Props) {
           onScrollToTop={() => boardRef.current?.scrollToTop()}
           timeEntryOnClose={timeEntryOnClose}
           onToggleTimeEntryOnClose={() => setTimeEntryOnClose(v => !v)}
+          priorityLaneEnabled={priorityLaneEnabled}
+          onTogglePriorityLane={() => setPriorityLaneEnabled((v) => !v)}
         />
       ) : (
         <div className="rk-empty">{labels?.fetching_data}</div>
@@ -643,7 +689,7 @@ export function App({ dataUrl }: Props) {
             fontSize={fontSize}
             onCommand={(command) => {
               if (command.type === 'move_issue') {
-                moveIssue(command.issueId, command.statusId, command.assignedToId);
+                moveIssue(command.issueId, command.statusId, command.assignedToId, command.priorityId);
               }
             }}
             onCreate={openCreate}
@@ -1093,6 +1139,35 @@ function resolvePriorityName(data: BoardData, priorityId: number | null): string
   if (priorityId === null) return null;
   const priority = data.lists.priorities.find((p) => p.id === priorityId);
   return priority?.name ?? null;
+}
+
+function buildDisplayData(data: BoardData, priorityLaneEnabled: boolean): BoardData {
+  if (!priorityLaneEnabled) return data;
+
+  const prioritiesHighToLow = [...(data.lists.priorities ?? [])].reverse();
+  const priorityLanes: Lane[] = [
+    ...prioritiesHighToLow.map((priority) => ({
+      id: priority.id,
+      name: priority.name,
+      priority_id: priority.id,
+      assigned_to_id: null,
+    })),
+    {
+      id: 'no_priority',
+      name: data.labels.not_set,
+      priority_id: null,
+      assigned_to_id: null,
+    },
+  ];
+
+  return {
+    ...data,
+    meta: {
+      ...data.meta,
+      lane_type: 'priority',
+    },
+    lanes: priorityLanes,
+  };
 }
 
 type SubtaskInfo = {
@@ -1570,6 +1645,8 @@ function Toolbar({
   onScrollToTop,
   timeEntryOnClose,
   onToggleTimeEntryOnClose,
+  priorityLaneEnabled,
+  onTogglePriorityLane,
 }: {
   data: BoardData;
   filters: Filters;
@@ -1590,6 +1667,8 @@ function Toolbar({
   onScrollToTop: () => void;
   timeEntryOnClose: boolean;
   onToggleTimeEntryOnClose: () => void;
+  priorityLaneEnabled: boolean;
+  onTogglePriorityLane: () => void;
 }) {
   const assignees = data.lists.assignees ?? [];
   const labels = data.labels;
@@ -1777,6 +1856,15 @@ function Toolbar({
       <div className="rk-toolbar-spacer" />
 
       <div className="rk-toolbar-group">
+        <button
+          type="button"
+          className={`rk-btn ${priorityLaneEnabled ? 'rk-btn-toggle-active' : ''}`}
+          onClick={onTogglePriorityLane}
+          title={priorityLaneEnabled ? labels.hide_priority_lanes : labels.show_priority_lanes}
+        >
+          <span className="rk-icon">view_stream</span>
+        </button>
+
         <button
           type="button"
           className={`rk-btn ${timeEntryOnClose ? 'rk-btn-toggle-active' : ''}`}

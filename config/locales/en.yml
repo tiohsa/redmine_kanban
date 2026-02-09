@@ -80,3 +80,5 @@ en:
   label_kanban_fit_width: "Fit to Width"
   label_kanban_fit_all: "Fit All"
   label_kanban_time_entry_permission_required: "You do not have permission to log time for this issue"
+  label_kanban_show_priority_lanes: "Show Priority Lanes"
+  label_kanban_hide_priority_lanes: "Hide Priority Lanes"

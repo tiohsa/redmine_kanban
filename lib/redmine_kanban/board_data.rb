@@ -232,7 +232,9 @@ module RedmineKanban
         fit_none: l(:label_kanban_fit_none),
         fit_width: l(:label_kanban_fit_width),
         fit_all: l(:label_kanban_fit_all),
-        time_entry_permission_required: l(:label_kanban_time_entry_permission_required)
+        time_entry_permission_required: l(:label_kanban_time_entry_permission_required),
+        show_priority_lanes: l(:label_kanban_show_priority_lanes),
+        hide_priority_lanes: l(:label_kanban_hide_priority_lanes)
       }
     end
 

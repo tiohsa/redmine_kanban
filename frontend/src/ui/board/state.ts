@@ -62,5 +62,8 @@ export function resolveLaneId(data: BoardData, issue: Issue): string | number {
   if (data.meta.lane_type === 'assignee') {
     return issue.assigned_to_id ?? 'unassigned';
   }
+  if (data.meta.lane_type === 'priority') {
+    return issue.priority_id ?? 'no_priority';
+  }
   return 'none';
 }

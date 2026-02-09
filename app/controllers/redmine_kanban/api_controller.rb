@@ -17,6 +17,7 @@ module RedmineKanban
       result = IssueMover.new(project: @project, issue: @issue, user: User.current).move(
         status_id: payload[:status_id],
         assigned_to_id: payload[:assigned_to_id],
+        priority_id: payload[:priority_id],
         lock_version: payload[:lock_version]
       )
 

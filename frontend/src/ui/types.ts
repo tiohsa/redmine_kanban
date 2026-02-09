@@ -9,7 +9,8 @@ export type Column = {
 export type Lane = {
   id: string | number;
   name: string;
-  assigned_to_id: number | null;
+  assigned_to_id?: number | null;
+  priority_id?: number | null;
 };
 
 export type Subtask = {
@@ -59,7 +60,7 @@ export type Meta = {
   can_move: boolean;
   can_create: boolean;
   can_delete: boolean;
-  lane_type: 'none' | 'assignee';
+  lane_type: 'none' | 'assignee' | 'priority';
   wip_limit_mode: 'column' | 'column_lane';
   wip_exceed_behavior: 'block' | 'warn';
   aging_warn_days: number;
