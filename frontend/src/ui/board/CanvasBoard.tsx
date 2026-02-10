@@ -194,14 +194,6 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
 
   const clearDragState = React.useCallback(() => {
-    const drag = dragRef.current;
-    if (drag) {
-      console.debug('[rk-trace] board:drag:clear', {
-        at: `${Date.now()}|${Math.round(performance.now())}`,
-        issueId: drag.issueId,
-        dropTargetCellKey: drag.dropTargetCellKey ?? null,
-      });
-    }
     dragRef.current = null;
     setCursor('default');
     scheduleRender();
@@ -255,12 +247,6 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     if (issue) {
       const currentCell = cellKey(issue.status_id, resolveLaneId(data, issue));
       if (currentCell === drag.dropTargetCellKey) {
-        console.debug('[rk-trace] board:drag:dropConfirmed', {
-          at: `${Date.now()}|${Math.round(performance.now())}`,
-          issueId: drag.issueId,
-          currentCell,
-          dropTargetCellKey: drag.dropTargetCellKey,
-        });
         clearDragState();
         return;
       }
@@ -269,12 +255,6 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     const elapsed = Date.now() - (drag.dropCommittedAt ?? Date.now());
     const isBusy = busyIssueIds?.has(drag.issueId) ?? false;
     if (!isBusy && elapsed > 2000) {
-      console.debug('[rk-trace] board:drag:dropTimeoutClear', {
-        at: `${Date.now()}|${Math.round(performance.now())}`,
-        issueId: drag.issueId,
-        elapsed,
-        dropTargetCellKey: drag.dropTargetCellKey,
-      });
       clearDragState();
     }
   }, [state, data, busyIssueIds, clearDragState]);
@@ -639,13 +619,6 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
 
         drag.dropTargetCellKey = cellKey(hit.statusId, hit.laneId);
         drag.dropCommittedAt = Date.now();
-        console.debug('[rk-trace] board:drop', {
-          at: `${Date.now()}|${Math.round(performance.now())}`,
-          issueId: drag.issueId,
-          origin: drag.origin,
-          target: { statusId: hit.statusId, laneId: hit.laneId },
-          dropTargetCellKey: drag.dropTargetCellKey,
-        });
         setCursor('default');
         scheduleRender();
         return;
