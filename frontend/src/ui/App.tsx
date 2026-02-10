@@ -171,7 +171,23 @@ export function App({ dataUrl }: Props) {
       filters.projectIds.forEach((id) => params.append('project_ids[]', String(id)));
       const qs = params.toString();
       const url = `${baseUrl}/data${qs ? `?${qs}` : ''}`;
-      return getJson<BoardData>(url);
+      const res = await getJson<BoardData>(url);
+      const traceIssueId = (window as any).__rkTraceIssueId as number | undefined;
+      if (traceIssueId) {
+        const traceIssue = res.issues.find((it) => it.id === traceIssueId);
+        if (traceIssue) {
+          console.debug('[rk-trace] app:query:dataIssue', {
+            at: `${Date.now()}|${Math.round(performance.now())}`,
+            issueId: traceIssueId,
+            statusId: traceIssue.status_id,
+            assignedToId: traceIssue.assigned_to_id,
+            priorityId: traceIssue.priority_id,
+            lockVersion: traceIssue.lock_version,
+            updatedOn: traceIssue.updated_on,
+          });
+        }
+      }
+      return res;
     },
     placeholderData: (prev) => prev,
   });
@@ -388,7 +404,19 @@ export function App({ dataUrl }: Props) {
         }
         return next;
       }),
-    applyServer: (prev, result) => replaceIssueInBoard(prev, result.issue),
+    applyServer: (prev, result, payload) =>
+      updateIssueInBoard(prev, payload.issueId, (issue) => ({
+        ...result.issue,
+        status_id: payload.statusId,
+        assigned_to_id: payload.assignedToId,
+        assigned_to_name: resolveAssigneeName(prev, payload.assignedToId),
+        priority_id:
+          payload.priorityId === undefined ? issue.priority_id : payload.priorityId,
+        priority_name:
+          payload.priorityId === undefined
+            ? issue.priority_name ?? null
+            : resolvePriorityName(prev, payload.priorityId ?? null),
+      })),
     onError: (err) => {
       setError(resolveMutationError(err, data?.labels, data?.labels.move_failed));
     },
@@ -436,7 +464,7 @@ export function App({ dataUrl }: Props) {
         }
         return next;
       }),
-    applyServer: (prev, result) => replaceIssueInBoard(prev, result.issue),
+    applyServer: (prev, result, _payload) => replaceIssueInBoard(prev, result.issue),
     onSuccess: (result) => {
       if (result.warning) setNotice(result.warning);
     },
@@ -468,7 +496,16 @@ export function App({ dataUrl }: Props) {
       return;
     }
 
+    console.debug('[rk-trace] app:moveIssue:enqueue', {
+      at: `${Date.now()}|${Math.round(performance.now())}`,
+      issueId,
+      from: { statusId: issue.status_id, assignedToId: issue.assigned_to_id, priorityId: issue.priority_id },
+      to: { statusId, assignedToId, priorityId },
+      lockVersion: issue.lock_version,
+    });
+    (window as any).__rkTraceIssueId = issueId;
     setNotice(null);
+    setIssueBusy(issueId, true);
     moveIssueMutation.mutate({
       issueId,
       statusId,
@@ -495,6 +532,7 @@ export function App({ dataUrl }: Props) {
     }
 
     setNotice(null);
+    setIssueBusy(subtaskId, true);
     moveIssueMutation.mutate({
       issueId: subtaskId,
       statusId: targetStatusId,

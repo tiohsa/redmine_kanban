@@ -4,7 +4,7 @@ export function csrfToken(): string | null {
 }
 
 export async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { credentials: 'same-origin' });
+  const res = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
   if (!res.ok) throw new Error(`GET ${url} failed: ${res.status}`);
   return (await res.json()) as T;
 }

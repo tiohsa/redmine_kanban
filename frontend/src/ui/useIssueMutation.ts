@@ -9,7 +9,7 @@ type UseIssueMutationOptions<TPayload extends IssuePayload, TResult> = {
   queryKey: QueryKey;
   mutationFn: (payload: TPayload) => Promise<TResult>;
   applyOptimistic: (data: BoardData, payload: TPayload) => BoardData;
-  applyServer: (data: BoardData, result: TResult) => BoardData;
+  applyServer: (data: BoardData, result: TResult, payload: TPayload) => BoardData;
   onError?: (error: unknown) => void;
   onSuccess?: (result: TResult) => void;
   onMutateIssue?: (issueId: number) => void;
@@ -29,38 +29,62 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
   onSettledIssue,
 }: UseIssueMutationOptions<TPayload, TResult>) {
   const queryClient = useQueryClient();
+  const now = () => `${Date.now()}|${Math.round(performance.now())}`;
 
   // Optimistic UI + server normalization keeps Kanban behavior aligned with Gantt/list/detail.
   return useMutation<TResult, unknown, TPayload, MutationContext>({
     mutationFn,
     onMutate: async (payload) => {
+      console.debug('[rk-trace] mutate:onMutate:start', { at: now(), issueId: payload.issueId, queryKey });
       await queryClient.cancelQueries({ queryKey });
+      console.debug('[rk-trace] mutate:onMutate:afterCancel', { at: now(), issueId: payload.issueId });
 
       const prev = queryClient.getQueryData<BoardData>(queryKey);
       if (prev) {
         queryClient.setQueryData(queryKey, applyOptimistic(prev, payload));
+        console.debug('[rk-trace] mutate:onMutate:optimisticApplied', { at: now(), issueId: payload.issueId });
       }
 
       onMutateIssue?.(payload.issueId);
       return { prev };
     },
     onError: (_err, _payload, ctx) => {
+      console.debug('[rk-trace] mutate:onError', { at: now(), issueId: _payload?.issueId });
       if (ctx?.prev) {
         queryClient.setQueryData(queryKey, ctx.prev);
       }
       onError?.(_err);
     },
-    onSuccess: (result) => {
+    onSuccess: (result, payload) => {
+      console.debug('[rk-trace] mutate:onSuccess:start', { at: now() });
+      const issue = (result as any)?.issue;
+      if (issue) {
+        console.debug('[rk-trace] mutate:onSuccess:issue', {
+          at: now(),
+          issueId: issue.id,
+          statusId: issue.status_id,
+          assignedToId: issue.assigned_to_id,
+          priorityId: issue.priority_id,
+          lockVersion: issue.lock_version,
+          updatedOn: issue.updated_on,
+        });
+      }
       queryClient.setQueryData<BoardData>(queryKey, (current) =>
-        current ? applyServer(current, result) : current
+        current ? applyServer(current, result, payload) : current
       );
+      console.debug('[rk-trace] mutate:onSuccess:serverApplied', { at: now() });
       onSuccess?.(result);
     },
     onSettled: (_result, _error, payload) => {
+      console.debug('[rk-trace] mutate:onSettled', { at: now(), issueId: payload?.issueId });
       if (payload) {
         onSettledIssue?.(payload.issueId);
       }
-      queryClient.invalidateQueries({ queryKey });
+      // Delay background refetch slightly to avoid visual snap-back in cases
+      // where intermediate stale responses could arrive immediately after drop.
+      window.setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey });
+      }, 400);
     },
   });
 }

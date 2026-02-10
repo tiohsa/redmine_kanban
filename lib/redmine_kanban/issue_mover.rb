@@ -52,17 +52,31 @@ module RedmineKanban
         end
       end
 
-      @issue.safe_attributes = attrs
+      error_result = nil
 
-      @issue.lock_version = lock_version if lock_version
+      Issue.transaction do
+        @issue.safe_attributes = attrs
+        @issue.lock_version = lock_version if lock_version
 
-      if @issue.save
-        result = { ok: true, issue: BoardData.new(project: @issue.project, user: @user).send(:issue_to_h, @issue) }
-        result[:warning] = warning if warning.present?
-        result
-      else
-        error(@issue.errors.full_messages.join(', '))
+        unless @issue.save
+          error_result = error(@issue.errors.full_messages.join(', '))
+          raise ActiveRecord::Rollback
+        end
+
+        if priority_id != :no_change
+          child_error = update_children_priority!(priority_id)
+          if child_error
+            error_result = error(child_error)
+            raise ActiveRecord::Rollback
+          end
+        end
       end
+
+      return error_result if error_result
+
+      result = { ok: true, issue: BoardData.new(project: @issue.project, user: @user).send(:issue_to_h, @issue) }
+      result[:warning] = warning if warning.present?
+      result
     rescue ActiveRecord::StaleObjectError
       error('他ユーザにより更新されました', status: :conflict)
     end
@@ -90,6 +104,22 @@ module RedmineKanban
 
     def should_update_assignee?
       @settings.lane_type == 'assignee'
+    end
+
+    def update_children_priority!(priority_id)
+      value = priority_id.nil? ? '' : priority_id
+
+      @issue.children.each do |child|
+        return "子チケット ##{child.id} を更新できません" unless child.editable?
+
+        child.init_journal(@user)
+        child.safe_attributes = { 'priority_id' => value }
+        next if child.save
+
+        return child.errors.full_messages.join(', ')
+      end
+
+      nil
     end
 
     def status_allowed?(status_id)

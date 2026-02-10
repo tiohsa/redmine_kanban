@@ -94,6 +94,8 @@ type DragState = {
   origin: { statusId: number; laneId: string | number };
   dragging: boolean;
   targetCellKey: string | null;
+  dropTargetCellKey?: string | null;
+  dropCommittedAt?: number;
 };
 
 type HitResult =
@@ -191,6 +193,20 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   const drawRef = useRef<() => void>(() => { });
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
 
+  const clearDragState = React.useCallback(() => {
+    const drag = dragRef.current;
+    if (drag) {
+      console.debug('[rk-trace] board:drag:clear', {
+        at: `${Date.now()}|${Math.round(performance.now())}`,
+        issueId: drag.issueId,
+        dropTargetCellKey: drag.dropTargetCellKey ?? null,
+      });
+    }
+    dragRef.current = null;
+    setCursor('default');
+    scheduleRender();
+  }, []);
+
   const measureCtx = useMemo(() => {
     const canvas = document.createElement('canvas');
     return canvas.getContext('2d');
@@ -230,6 +246,38 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   useEffect(() => {
     scheduleRender();
   }, [size, state, data.meta, canCreate, canMove, theme, fontSize]);
+
+  useEffect(() => {
+    const drag = dragRef.current;
+    if (!drag?.dropTargetCellKey) return;
+
+    const issue = state.cardsById.get(drag.issueId);
+    if (issue) {
+      const currentCell = cellKey(issue.status_id, resolveLaneId(data, issue));
+      if (currentCell === drag.dropTargetCellKey) {
+        console.debug('[rk-trace] board:drag:dropConfirmed', {
+          at: `${Date.now()}|${Math.round(performance.now())}`,
+          issueId: drag.issueId,
+          currentCell,
+          dropTargetCellKey: drag.dropTargetCellKey,
+        });
+        clearDragState();
+        return;
+      }
+    }
+
+    const elapsed = Date.now() - (drag.dropCommittedAt ?? Date.now());
+    const isBusy = busyIssueIds?.has(drag.issueId) ?? false;
+    if (!isBusy && elapsed > 2000) {
+      console.debug('[rk-trace] board:drag:dropTimeoutClear', {
+        at: `${Date.now()}|${Math.round(performance.now())}`,
+        issueId: drag.issueId,
+        elapsed,
+        dropTargetCellKey: drag.dropTargetCellKey,
+      });
+      clearDragState();
+    }
+  }, [state, data, busyIssueIds, clearDragState]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -588,6 +636,19 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
           assignedToId,
           priorityId,
         });
+
+        drag.dropTargetCellKey = cellKey(hit.statusId, hit.laneId);
+        drag.dropCommittedAt = Date.now();
+        console.debug('[rk-trace] board:drop', {
+          at: `${Date.now()}|${Math.round(performance.now())}`,
+          issueId: drag.issueId,
+          origin: drag.origin,
+          target: { statusId: hit.statusId, laneId: hit.laneId },
+          dropTargetCellKey: drag.dropTargetCellKey,
+        });
+        setCursor('default');
+        scheduleRender();
+        return;
       }
     } else {
       // If we released on the same card and didn't drag, open the dialog
@@ -601,9 +662,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       }
     }
 
-    dragRef.current = null;
-    setCursor('default');
-    scheduleRender();
+    clearDragState();
   };
 
   return (
@@ -620,8 +679,10 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerLeave={() => {
-          dragRef.current = null;
-          setCursor('default');
+          // Keep pending drop visual state until optimistic/server data confirms
+          // the move, otherwise card can momentarily snap back to origin lane.
+          if (dragRef.current?.dropTargetCellKey) return;
+          clearDragState();
         }}
       />
       {tooltip && (
@@ -982,6 +1043,11 @@ function drawCells(
 
       for (let index = 0; index < cardIds.length; index += 1) {
         const cardId = cardIds[index];
+        if (drag?.dragging && drag.issueId === cardId) {
+          // The dragged card is rendered by drawDragOverlay.
+          // Skipping the original card prevents a temporary snap-back impression.
+          continue;
+        }
         const issue = state.cardsById.get(cardId);
         if (!issue) continue;
 

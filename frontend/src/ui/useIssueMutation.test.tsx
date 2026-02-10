@@ -112,7 +112,7 @@ describe('useIssueMutation', () => {
           queryKey,
           mutationFn: async () => ({ issue: makeIssue(1, { subject: 'Server' }) }),
           applyOptimistic: (data) => updateIssueInBoard(data, 1, (i) => ({ ...i, subject: 'Optimistic' })),
-          applyServer: (data, res) => replaceIssueInBoard(data, res.issue),
+          applyServer: (data, res, _payload) => replaceIssueInBoard(data, res.issue),
           onMutateIssue,
           onSettledIssue,
           onSuccess,
@@ -148,7 +148,7 @@ describe('useIssueMutation', () => {
             throw new Error('failed');
           },
           applyOptimistic: (data) => updateIssueInBoard(data, 1, (i) => ({ ...i, subject: 'Optimistic' })),
-          applyServer: (data) => data,
+          applyServer: (data, _res, _payload) => data,
           onError,
         }),
       { wrapper: createWrapper(queryClient) }
