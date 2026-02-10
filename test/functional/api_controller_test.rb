@@ -72,6 +72,35 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_equal target_priority.id, child2.priority_id
   end
 
+  def test_update_priority_updates_children_when_parent_has_subtasks
+    parent = build_issue(subject: 'Parent issue')
+    child1 = build_issue(subject: 'Child 1', parent_issue_id: parent.id)
+    child2 = build_issue(subject: 'Child 2', parent_issue_id: parent.id)
+    target_priority = (IssuePriority.active.where.not(id: parent.priority_id).first || IssuePriority.active.first)
+    assert_not_nil target_priority
+
+    patch(
+      :update,
+      params: {
+        project_id: @project.identifier,
+        id: parent.id,
+        issue: {
+          priority_id: target_priority.id,
+          lock_version: parent.lock_version
+        }
+      }
+    )
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal true, json['ok']
+
+    [parent, child1, child2].each(&:reload)
+    assert_equal target_priority.id, parent.priority_id
+    assert_equal target_priority.id, child1.priority_id
+    assert_equal target_priority.id, child2.priority_id
+  end
+
   def test_destroy_works_without_plugin_authorize_mapping
     issue = build_issue
 

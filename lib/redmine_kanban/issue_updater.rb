@@ -49,15 +49,31 @@ module RedmineKanban
       # Remove empty/nil values to avoid overwriting with defaults if not intended (though here we intend to update)
       # Actually safe_attributes handles this, but for some normalization we did above.
 
-      issue.safe_attributes = attributes
+      error_result = nil
+      priority_updated = attributes.key?('priority_id')
 
-      if issue.save
-        result = { ok: true, issue: BoardData.new(project: @project, user: @user).send(:issue_to_h, issue) }
-        result[:warning] = @warning if @warning.present?
-        result
-      else
-        error(issue.errors.full_messages.join(', '), field_errors: issue.errors.to_hash(true))
+      Issue.transaction do
+        issue.safe_attributes = attributes
+
+        unless issue.save
+          error_result = error(issue.errors.full_messages.join(', '), field_errors: issue.errors.to_hash(true))
+          raise ActiveRecord::Rollback
+        end
+
+        if priority_updated
+          child_error = update_children_priority!(issue, attributes['priority_id'])
+          if child_error
+            error_result = error(child_error)
+            raise ActiveRecord::Rollback
+          end
+        end
       end
+
+      return error_result if error_result
+
+      result = { ok: true, issue: BoardData.new(project: @project, user: @user).send(:issue_to_h, issue) }
+      result[:warning] = @warning if @warning.present?
+      result
     rescue ActiveRecord::StaleObjectError
       error('他ユーザにより更新されました', status: :conflict)
     end
@@ -104,6 +120,22 @@ module RedmineKanban
     def status_allowed?(issue, status_id)
       return true if status_id == issue.status_id
       issue.new_statuses_allowed_to(@user).map(&:id).include?(status_id)
+    end
+
+    def update_children_priority!(issue, priority_id)
+      value = priority_id.nil? ? '' : priority_id
+
+      issue.children.each do |child|
+        return "子チケット ##{child.id} を更新できません" unless child.editable?
+
+        child.init_journal(@user)
+        child.safe_attributes = { 'priority_id' => value }
+        next if child.save
+
+        return child.errors.full_messages.join(', ')
+      end
+
+      nil
     end
 
     def error(message, status: :unprocessable_entity, field_errors: {})

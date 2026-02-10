@@ -448,7 +448,21 @@ export function App({ dataUrl }: Props) {
         }
         return next;
       }),
-    applyServer: (prev, result, _payload) => replaceIssueInBoard(prev, result.issue),
+    applyServer: (prev, result, payload) =>
+      updateIssueInBoard(prev, payload.issueId, (issue) => {
+        const patch = payload.patch as Partial<Issue>;
+        const next = { ...result.issue, ...patch };
+        if ('assigned_to_id' in patch) {
+          next.assigned_to_name = resolveAssigneeName(
+            prev,
+            patch.assigned_to_id ?? null
+          );
+        }
+        if ('priority_id' in patch) {
+          next.priority_name = resolvePriorityName(prev, patch.priority_id ?? null);
+        }
+        return next;
+      }),
     onSuccess: (result) => {
       if (result.warning) setNotice(result.warning);
     },
