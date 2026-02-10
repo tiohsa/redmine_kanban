@@ -31,7 +31,7 @@ type IssueMutationResult = { issue: Issue; warning?: string };
 type MovePayload = {
   issueId: number;
   statusId: number;
-  assignedToId: number | null;
+  assignedToId?: number | null;
   priorityId?: number | null;
   lockVersion: number | null;
 };
@@ -122,6 +122,7 @@ export function App({ dataUrl }: Props) {
     return 'updated_desc';
   });
   const [busyIssueIds, setBusyIssueIds] = useState<Set<number>>(new Set());
+  const busyIssueIdsRef = useRef<Set<number>>(new Set());
   const [hiddenStatusIds, setHiddenStatusIds] = useState<Set<number>>(() => {
     try {
       const v = localStorage.getItem('rk_hidden_status_ids');
@@ -191,6 +192,14 @@ export function App({ dataUrl }: Props) {
   }, [queryClient, boardQueryKey]);
 
   const setIssueBusy = useCallback((issueId: number, busy: boolean) => {
+    const nextRef = new Set(busyIssueIdsRef.current);
+    if (busy) {
+      nextRef.add(issueId);
+    } else {
+      nextRef.delete(issueId);
+    }
+    busyIssueIdsRef.current = nextRef;
+
     setBusyIssueIds((prev) => {
       const next = new Set(prev);
       if (busy) {
@@ -200,6 +209,10 @@ export function App({ dataUrl }: Props) {
       }
       return next;
     });
+  }, []);
+
+  const isIssueBusy = useCallback((issueId: number) => {
+    return busyIssueIdsRef.current.has(issueId);
   }, []);
 
   React.useEffect(() => {
@@ -360,27 +373,32 @@ export function App({ dataUrl }: Props) {
   const moveIssueMutation = useIssueMutation<MovePayload, IssueMutationResult>({
     queryKey: boardQueryKey,
     mutationFn: async (payload) => {
+      const issuePayload: Record<string, number | null> = {
+        status_id: payload.statusId,
+        lock_version: payload.lockVersion,
+      };
+      if (payload.assignedToId !== undefined) {
+        issuePayload.assigned_to_id = payload.assignedToId;
+      }
+      if (payload.priorityId !== undefined) {
+        issuePayload.priority_id = payload.priorityId;
+      }
+
       const res = await postJson<{ ok: boolean; issue: Issue; warning?: string }>(
         `${baseUrl}/issues/${payload.issueId}/move`,
-        {
-          issue: {
-            status_id: payload.statusId,
-            assigned_to_id: payload.assignedToId,
-            priority_id: payload.priorityId,
-            lock_version: payload.lockVersion,
-          },
-        },
+        { issue: issuePayload },
         'PATCH'
       );
       return { issue: res.issue, warning: res.warning };
     },
     applyOptimistic: (prev, payload) =>
       updateIssueInBoard(prev, payload.issueId, (issue) => {
+        const nextAssignedToId = payload.assignedToId === undefined ? issue.assigned_to_id : payload.assignedToId;
         const next = {
           ...issue,
           status_id: payload.statusId,
-          assigned_to_id: payload.assignedToId,
-          assigned_to_name: resolveAssigneeName(prev, payload.assignedToId),
+          assigned_to_id: nextAssignedToId,
+          assigned_to_name: resolveAssigneeName(prev, nextAssignedToId),
         };
         if (payload.priorityId !== undefined) {
           next.priority_id = payload.priorityId;
@@ -389,18 +407,21 @@ export function App({ dataUrl }: Props) {
         return next;
       }),
     applyServer: (prev, result, payload) =>
-      updateIssueInBoard(prev, payload.issueId, (issue) => ({
-        ...result.issue,
-        status_id: payload.statusId,
-        assigned_to_id: payload.assignedToId,
-        assigned_to_name: resolveAssigneeName(prev, payload.assignedToId),
-        priority_id:
-          payload.priorityId === undefined ? issue.priority_id : payload.priorityId,
-        priority_name:
-          payload.priorityId === undefined
-            ? issue.priority_name ?? null
-            : resolvePriorityName(prev, payload.priorityId ?? null),
-      })),
+      updateIssueInBoard(prev, payload.issueId, (issue) => {
+        const nextAssignedToId = payload.assignedToId === undefined ? issue.assigned_to_id : payload.assignedToId;
+        return {
+          ...result.issue,
+          status_id: payload.statusId,
+          assigned_to_id: nextAssignedToId,
+          assigned_to_name: resolveAssigneeName(prev, nextAssignedToId),
+          priority_id:
+            payload.priorityId === undefined ? issue.priority_id : payload.priorityId,
+          priority_name:
+            payload.priorityId === undefined
+              ? issue.priority_name ?? null
+              : resolvePriorityName(prev, payload.priorityId ?? null),
+        };
+      }),
     onError: (err) => {
       setError(resolveMutationError(err, data?.labels, data?.labels.move_failed));
     },
@@ -482,11 +503,11 @@ export function App({ dataUrl }: Props) {
   const moveIssue = (
     issueId: number,
     statusId: number,
-    assignedToId: number | null,
+    assignedToId?: number | null,
     priorityId?: number | null
   ) => {
     if (!data) return;
-    if (busyIssueIds.has(issueId)) return;
+    if (isIssueBusy(issueId)) return;
     const issue = data.issues.find((it) => it.id === issueId);
     if (!issue) return;
     if (issue.lock_version === undefined || issue.lock_version === null) {
@@ -507,7 +528,7 @@ export function App({ dataUrl }: Props) {
 
   const toggleSubtask = (subtaskId: number, currentClosed: boolean) => {
     if (!data) return;
-    if (busyIssueIds.has(subtaskId)) return;
+    if (isIssueBusy(subtaskId)) return;
     const subtaskInfo = findSubtask(data, subtaskId);
     if (!subtaskInfo) return;
     const targetStatusId = resolveSubtaskStatus(data, currentClosed);
@@ -1200,7 +1221,7 @@ function buildDisplayData(data: BoardData, priorityLaneEnabled: boolean): BoardD
 
 type SubtaskInfo = {
   lockVersion: number | null;
-  assignedToId: number | null;
+  assignedToId?: number | null;
 };
 
 function findSubtask(data: BoardData, subtaskId: number): SubtaskInfo | null {
@@ -1217,7 +1238,7 @@ function findSubtask(data: BoardData, subtaskId: number): SubtaskInfo | null {
     if (subtask) {
       return {
         lockVersion: subtask.lock_version ?? null,
-        assignedToId: null,
+        assignedToId: undefined,
       };
     }
   }

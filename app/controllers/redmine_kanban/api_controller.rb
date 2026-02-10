@@ -18,6 +18,8 @@ module RedmineKanban
         status_id: payload[:status_id],
         assigned_to_id: payload[:assigned_to_id],
         priority_id: payload[:priority_id],
+        assigned_to_provided: payload.key?(:assigned_to_id),
+        priority_provided: payload.key?(:priority_id),
         lock_version: payload[:lock_version]
       )
 
