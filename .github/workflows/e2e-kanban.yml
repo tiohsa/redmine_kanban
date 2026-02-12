@@ -1,0 +1,80 @@
+name: E2E Kanban
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install E2E dependencies
+        run: npm install --prefix e2e
+
+      - name: Install Playwright browser
+        run: npx --prefix e2e playwright install --with-deps chromium
+
+      - name: Start Redmine stack
+        run: docker compose -f .github/e2e/docker-compose.yml up -d
+
+      - name: Wait for Redmine
+        run: |
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:3002/login > /dev/null; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Redmine did not become ready in time" >&2
+          exit 1
+
+      - name: Migrate Redmine and plugin
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+            bundle exec rake db:migrate redmine:plugins:migrate RAILS_ENV=production
+
+      - name: Load default data
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+            env REDMINE_LANG=en bundle exec rake redmine:load_default_data RAILS_ENV=production
+
+      - name: Seed project/module for E2E
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+            bundle exec rails runner -e production plugins/redmine_kanban/e2e/setup_redmine.rb
+
+      - name: Run Playwright E2E
+        env:
+          REDMINE_BASE_URL: http://127.0.0.1:3002
+          CI: true
+        run: npx --prefix e2e playwright test -c e2e/playwright.config.js
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report
+          if-no-files-found: ignore
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose -f .github/e2e/docker-compose.yml logs --no-color
+
+      - name: Stop Redmine stack
+        if: always()
+        run: docker compose -f .github/e2e/docker-compose.yml down -v
