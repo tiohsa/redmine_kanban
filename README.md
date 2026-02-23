@@ -175,13 +175,6 @@ Board data notes:
 - `issues[].subtasks` is a recursive tree (`subtasks[].subtasks...`) for nested subtasks.
 - Subtask rows shown in the canvas are flattened on the frontend for rendering/hit-testing, but the API preserves hierarchy.
 
-Related UI route:
-
-| Method | Path | Description |
-| --- | --- | --- |
-| GET | `/projects/:project_id/kanban` | Kanban board page |
-| GET | `/projects/:project_id/gantt` | Redirect to Kanban page (plugin redirect) |
-
 ## CI (E2E)
 
 GitHub Actions workflow: `.github/workflows/e2e-kanban.yml`

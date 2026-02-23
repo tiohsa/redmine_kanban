@@ -176,12 +176,6 @@ REDMINE_BASE_URL=http://127.0.0.1:3002 \
 - `issues[].subtasks` は再帰ツリー構造です（`subtasks[].subtasks...`）。
 - Canvas 上の子チケット行はフロントで描画/ヒット判定用にフラット化していますが、API は階層を保持します。
 
-関連する画面ルート:
-
-| メソッド | パス | 説明 |
-| --- | --- | --- |
-| GET | `/projects/:project_id/kanban` | カンバン画面 |
-| GET | `/projects/:project_id/gantt` | カンバン画面へのリダイレクト（プラグイン側） |
 
 ## CI（E2E）
 
