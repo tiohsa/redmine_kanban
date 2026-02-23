@@ -49,7 +49,6 @@ type RectMap = {
   subtaskSubjects: Map<string, Rect>; // key: "issueId:subtaskId"
   subtaskAreas: Map<number, Rect>; // key: issueId - entire subtask area for hit exclusion
   cardSubjects: Map<number, Rect>; // key: issueId
-  infoButtons: Map<number, Rect>;
   editButtons: Map<number, Rect>;
   visibilityButtons: Map<number, Rect>; // key: statusId
   priorityBadges: Map<number, Rect>;
@@ -107,7 +106,6 @@ type HitResult =
   | { kind: 'subtask_subject'; issueId: number; subtaskId: number }
   | { kind: 'subtask_area'; issueId: number }
   | { kind: 'card_subject'; issueId: number }
-  | { kind: 'info'; issueId: number }
   | { kind: 'edit'; issueId: number }
   | { kind: 'cell'; statusId: number; laneId: string | number }
   | { kind: 'visibility'; statusId: number }
@@ -176,7 +174,6 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     subtaskSubjects: new Map(),
     subtaskAreas: new Map(),
     cardSubjects: new Map(),
-    infoButtons: new Map(),
     editButtons: new Map(),
     visibilityButtons: new Map(),
     priorityBadges: new Map(),
@@ -190,6 +187,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   const [cursor, setCursor] = useState('default');
   const scaleRef = useRef(1);
   const hoverRef = useRef<{ kind: 'card_subject' | 'subtask_subject'; id: string } | null>(null);
+  const hoveredCardIssueIdRef = useRef<number | null>(null);
   const drawRef = useRef<() => void>(() => { });
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
 
@@ -354,7 +352,6 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       subtaskSubjects: new Map(),
       subtaskAreas: new Map(),
       cardSubjects: new Map(),
-      infoButtons: new Map(),
       editButtons: new Map(),
       visibilityButtons: new Map(),
       priorityBadges: new Map(),
@@ -378,6 +375,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       dragRef.current,
       labels,
       hoverRef.current,
+      hoveredCardIssueIdRef.current,
       metrics,
       fontSize,
       busyIssueIds
@@ -462,12 +460,6 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       return;
     }
 
-    if (hit.kind === 'info') {
-      if (isBusy(hit.issueId)) return;
-      onView(hit.issueId);
-      return;
-    }
-
     if (hit.kind === 'edit') {
       if (isBusy(hit.issueId)) return;
       onEdit(hit.issueId);
@@ -539,6 +531,17 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       let nextCursor = 'default';
       const hit = hitTest(point, rectMapRef.current, state, data);
       let newHover: { kind: 'card_subject' | 'subtask_subject'; id: string } | null = null;
+      let newHoveredCardIssueId: number | null = null;
+      if (
+        hit.kind === 'card' ||
+        hit.kind === 'card_subject' ||
+        hit.kind === 'edit' ||
+        hit.kind === 'delete' ||
+        hit.kind === 'priority' ||
+        hit.kind === 'date'
+      ) {
+        newHoveredCardIssueId = hit.issueId;
+      }
 
       if (hit.kind === 'card_subject') {
         nextCursor = 'pointer';
@@ -548,7 +551,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         newHover = { kind: 'subtask_subject', id: `${hit.issueId}:${hit.subtaskId}` };
       } else if (hit.kind === 'card' || hit.kind === 'subtask_area') {
         nextCursor = canMove ? 'grab' : 'default';
-      } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'subtask_check' || hit.kind === 'info' || hit.kind === 'edit' || hit.kind === 'visibility' || hit.kind === 'priority' || hit.kind === 'date') {
+      } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'subtask_check' || hit.kind === 'edit' || hit.kind === 'visibility' || hit.kind === 'priority' || hit.kind === 'date') {
         nextCursor = 'pointer';
       }
 
@@ -572,8 +575,10 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       // Update hover state and re-render if changed
       const currentHover = hoverRef.current;
       const hoverChanged = (currentHover?.kind !== newHover?.kind) || (currentHover?.id !== newHover?.id);
-      if (hoverChanged) {
+      const cardHoverChanged = hoveredCardIssueIdRef.current !== newHoveredCardIssueId;
+      if (hoverChanged || cardHoverChanged) {
         hoverRef.current = newHover;
+        hoveredCardIssueIdRef.current = newHoveredCardIssueId;
         scheduleRender();
       }
       return;
@@ -655,6 +660,9 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
           // Keep pending drop visual state until optimistic/server data confirms
           // the move, otherwise card can momentarily snap back to origin lane.
           if (dragRef.current?.dropTargetCellKey) return;
+          hoverRef.current = null;
+          hoveredCardIssueIdRef.current = null;
+          setTooltip(null);
           clearDragState();
         }}
       />
@@ -753,8 +761,8 @@ function measureCardHeight(
     ctx.font = `400 ${fontSize}px Inter, sans-serif`;
     const stripWidth = 5;
     const contentW = cardWidth - metrics.cellPadding * 2 - stripWidth - 16;
-    const buttonAreaWidth = 52;
-    const subjectW = contentW - buttonAreaWidth;
+    // Action icons are drawn as hover overlays, so they do not reserve layout space.
+    const subjectW = contentW;
     const lines = truncateTextLines(ctx, issue.subject, subjectW, 2);
     if (lines.length > 1) {
       h += (fontSize + 3) * (lines.length - 1);
@@ -963,6 +971,7 @@ function drawCells(
   drag: DragState | null,
   labels: Record<string, string>,
   hover: { kind: 'card_subject' | 'subtask_subject'; id: string } | null,
+  hoveredCardIssueId: number | null,
   metrics: ReturnType<typeof getMetrics>,
   fontSize: number,
   busyIssueIds?: Set<number>
@@ -1036,7 +1045,7 @@ function drawCells(
 
         const isUpdating = busyIssueIds?.has(issue.id) ?? false;
         rectMap.cards.set(issue.id, cardRect);
-        drawCard(ctx, cardRect, issue, data, theme, canMove, labels, metrics, fontSize, rectMap, hover, isUpdating);
+        drawCard(ctx, cardRect, issue, data, theme, canMove, labels, metrics, fontSize, rectMap, hover, isUpdating, hoveredCardIssueId);
       }
     });
   });
@@ -1056,7 +1065,8 @@ function drawCard(
   fontSize: number,
   rectMap?: RectMap,
   hover?: { kind: 'card_subject' | 'subtask_subject'; id: string } | null,
-  isUpdating?: boolean
+  isUpdating?: boolean,
+  hoveredCardIssueId?: number | null
 ) {
   const column = data.columns.find((c) => c.id === issue.status_id);
   const isClosed = !!column?.is_closed;
@@ -1105,6 +1115,7 @@ function drawCard(
 
   const contentX = x + stripWidth + 8;
   const contentW = w - stripWidth - 16;
+  const isActionIconsVisible = hoveredCardIssueId === issue.id;
 
   // 4. Subject
   ctx.fillStyle = theme.textPrimary;
@@ -1114,12 +1125,12 @@ function drawCard(
   const subjectY = y + 8;
   const subject = issue.subject;
   const idText = `#${issue.id}`;
-  const buttonAreaWidth = 52;
-  const subjectLines = truncateTextLines(ctx, subject, contentW - buttonAreaWidth, 2);
+  const subjectMaxWidth = Math.max(40, contentW);
+  const subjectLines = truncateTextLines(ctx, subject, subjectMaxWidth, 2);
 
   // Register subject area for hit testing
   const subjectTotalHeight = subjectLines.length * (fontSize + 3);
-  const subjectRect = { x: contentX, y: subjectY, width: contentW - buttonAreaWidth, height: subjectTotalHeight };
+  const subjectRect = { x: contentX, y: subjectY, width: subjectMaxWidth, height: subjectTotalHeight };
   if (rectMap) {
     rectMap.cardSubjects.set(issue.id, subjectRect);
   }
@@ -1318,23 +1329,6 @@ function drawCard(
     ctx.lineTo(x + w, subtaskAreaY);
     ctx.stroke();
 
-    // info icon in subtask area
-    const iconSize = 20;
-    const infoRect = {
-      x: x + w - iconSize - 6,
-      y: subtaskAreaY + 4,
-      width: iconSize,
-      height: iconSize,
-    };
-    if (rectMap) rectMap.infoButtons.set(issue.id, infoRect);
-
-    ctx.save();
-    ctx.font = `${iconSize}px "Material Symbols Outlined"`;
-    ctx.fillStyle = theme.textSecondary;
-    ctx.textBaseline = 'top';
-    ctx.fillText('info', infoRect.x, infoRect.y);
-    ctx.restore();
-
     issue.subtasks.forEach((subtask, idx) => {
       const sy = subtaskStartY + idx * metrics.subtaskHeight;
       const sx = contentX;
@@ -1406,14 +1400,34 @@ function drawCard(
   // 9. Delete Button & Edit Button
   ctx.save();
   ctx.font = '20px "Material Symbols Outlined"';
-  ctx.textBaseline = 'top';
+  ctx.textBaseline = 'middle';
 
   if (rectMap) {
     const actionIconSize = 24;
     let buttonRightX = x + w - 4;
+    const actionButtonCount = 1 + (data.meta.can_delete ? 1 : 0);
+
+    if (isActionIconsVisible) {
+      const overlayPadX = 3;
+      const overlayPadY = 2;
+      const overlayWidth = actionButtonCount * actionIconSize + overlayPadX * 2;
+      const overlayHeight = actionIconSize + overlayPadY * 2;
+      const overlayRect = {
+        x: x + w - 4 - actionButtonCount * actionIconSize - overlayPadX,
+        y: y + 4 - overlayPadY,
+        width: overlayWidth,
+        height: overlayHeight,
+      };
+
+      ctx.save();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+      roundedRect(ctx, overlayRect.x, overlayRect.y, overlayRect.width, overlayRect.height, 7);
+      ctx.fill();
+      ctx.restore();
+    }
 
     // Delete Button
-    if (data.meta.can_delete) {
+    if (isActionIconsVisible && data.meta.can_delete) {
       const deleteRect = {
         x: buttonRightX - actionIconSize,
         y: y + 4,
@@ -1422,23 +1436,22 @@ function drawCard(
       };
       rectMap.deleteButtons.set(issue.id, deleteRect);
       ctx.fillStyle = theme.danger;
-      ctx.fillText('delete', deleteRect.x, deleteRect.y);
+      ctx.fillText('delete', deleteRect.x, deleteRect.y + deleteRect.height / 2);
       buttonRightX -= actionIconSize;
     }
 
-    // Edit Button (Always visible if editable?)
-    // Assuming can_edit is true implicitly or we check
-    // If not check editable, just show it? Usually Kanban board is for editable.
-    // Let's assume always visible like delete or subject click.
-    const editRect = {
-      x: buttonRightX - actionIconSize,
-      y: y + 4,
-      width: actionIconSize,
-      height: actionIconSize,
-    };
-    rectMap.editButtons.set(issue.id, editRect);
-    ctx.fillStyle = theme.textSecondary;
-    ctx.fillText('edit', editRect.x, editRect.y);
+    if (isActionIconsVisible) {
+      const editRect = {
+        x: buttonRightX - actionIconSize,
+        y: y + 4,
+        width: actionIconSize,
+        height: actionIconSize,
+      };
+      rectMap.editButtons.set(issue.id, editRect);
+      ctx.fillStyle = theme.textSecondary;
+      ctx.fillText('edit', editRect.x, editRect.y + editRect.height / 2);
+
+    }
   }
   ctx.restore();
 
@@ -1545,11 +1558,6 @@ function hitTest(
     if (pointInRect(point, rect)) {
       const [issueIdStr, subtaskIdStr] = key.split(':');
       return { kind: 'subtask_subject', issueId: parseInt(issueIdStr), subtaskId: parseInt(subtaskIdStr) };
-    }
-  }
-  for (const [issueId, rect] of rectMap.infoButtons) {
-    if (pointInRect(point, rect)) {
-      return { kind: 'info', issueId };
     }
   }
   for (const [issueId, rect] of rectMap.editButtons) {
