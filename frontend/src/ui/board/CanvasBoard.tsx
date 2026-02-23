@@ -529,7 +529,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       return;
     }
 
-    if (hit.kind === 'card' || hit.kind === 'subtask_area') {
+    if (hit.kind === 'card' || hit.kind === 'subtask_area' || hit.kind === 'subtask_row') {
       if (isBusy(hit.issueId)) return;
       const issue = state.cardsById.get(hit.issueId);
       if (!issue) return;
@@ -585,7 +585,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       } else if (hit.kind === 'subtask_subject') {
         nextCursor = 'pointer';
         newHover = { kind: 'subtask_subject', id: `${hit.issueId}:${hit.subtaskId}` };
-      } else if (hit.kind === 'card' || hit.kind === 'subtask_area') {
+      } else if (hit.kind === 'card' || hit.kind === 'subtask_area' || hit.kind === 'subtask_row') {
         nextCursor = canMove ? 'grab' : 'default';
       } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'subtask_check' || hit.kind === 'subtask_edit' || hit.kind === 'subtask_delete' || hit.kind === 'edit' || hit.kind === 'visibility' || hit.kind === 'priority' || hit.kind === 'date') {
         nextCursor = 'pointer';
