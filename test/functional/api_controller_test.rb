@@ -203,6 +203,69 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_equal current_priority.id, issue.priority_id
   end
 
+  def test_create_subtask_inherits_basic_properties_from_parent_when_not_specified
+    parent = build_issue(subject: 'Parent issue')
+    parent.update!(
+      assigned_to: @user,
+      start_date: Date.today,
+      due_date: Date.today + 7
+    )
+
+    assert_difference('Issue.count', 1) do
+      post(
+        :create,
+        params: {
+          project_id: @project.identifier,
+          issue: {
+            subject: 'Child issue',
+            parent_issue_id: parent.id
+          }
+        }
+      )
+    end
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal true, json['ok']
+
+    child = Issue.find(json.dig('issue', 'id'))
+    assert_equal parent.id, child.parent_issue_id
+    assert_equal parent.priority_id, child.priority_id
+    assert_equal parent.assigned_to_id, child.assigned_to_id
+    assert_equal parent.start_date, child.start_date
+    assert_equal parent.due_date, child.due_date
+  end
+
+  def test_create_subtask_does_not_inherit_properties_when_explicitly_provided
+    parent = build_issue(subject: 'Parent issue')
+    parent.update!(assigned_to: @user)
+    other_priority = IssuePriority.active.where.not(id: parent.priority_id).first || IssuePriority.active.first
+    assert_not_nil other_priority
+
+    assert_difference('Issue.count', 1) do
+      post(
+        :create,
+        params: {
+          project_id: @project.identifier,
+          issue: {
+            subject: 'Child issue',
+            parent_issue_id: parent.id,
+            priority_id: other_priority.id,
+            assigned_to_id: ''
+          }
+        }
+      )
+    end
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal true, json['ok']
+
+    child = Issue.find(json.dig('issue', 'id'))
+    assert_equal other_priority.id, child.priority_id
+    assert_nil child.assigned_to_id
+  end
+
   def test_destroy_works_without_plugin_authorize_mapping
     issue = build_issue
 
