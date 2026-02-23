@@ -1978,6 +1978,7 @@ function Toolbar({
           value={String(fontSize)}
           onChange={(val) => onChangeFontSize(Number(val))}
           width="100px"
+          closeOnSelect={false}
           labels={labels}
         />
       </div>
