@@ -67,6 +67,14 @@ test('kanban page loads without request errors and without Loading text', async 
   await expect(page.getByText(/^Loading$/)).toHaveCount(0);
   await expect(page.getByText(/^読み込み中$/)).toHaveCount(0);
 
+  const dataResponse = await page.request.get(`${redmineBase}/projects/ecookbook/kanban/data`);
+  expect(dataResponse.ok()).toBeTruthy();
+  const dataJson = await dataResponse.json();
+  expect(dataJson.ok).toBeTruthy();
+  expect(dataJson.labels).toBeTruthy();
+  expect(dataJson.labels.all).toBeTruthy();
+  expect(dataJson.labels.loading).toBeTruthy();
+
   expect(requestErrors, requestErrors.join('\n')).toEqual([]);
   expect(pageErrors, pageErrors.join('\n')).toEqual([]);
   expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
