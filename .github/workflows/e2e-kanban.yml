@@ -77,6 +77,11 @@ jobs:
           docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
             bundle exec rake db:migrate redmine:plugins:migrate RAILS_ENV=test
 
+      - name: Install Ruby test dependency (mocha)
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+            gem install mocha --no-document
+
       - name: Run plugin tests
         run: |
           docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
