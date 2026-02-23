@@ -555,11 +555,15 @@ export function App({ dataUrl }: Props) {
   const canMove = !!data?.meta.can_move;
   const canCreate = !!data?.meta.can_create;
 
-  const requestDelete = (issueId: number) => {
+  const requestDelete = (issueId: number, source: 'card' | 'subtask' = 'card') => {
     const issue = data?.issues.find((i) => i.id === issueId);
     if (!issue) return;
 
-    setPendingDeleteIssue(issue);
+    if (source === 'card') {
+      setPendingDeleteIssue(issue);
+    } else {
+      setPendingDeleteIssue(null);
+    }
     setNotice(null);
 
     void deleteIssue(issueId);

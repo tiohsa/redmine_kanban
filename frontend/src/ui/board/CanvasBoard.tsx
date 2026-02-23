@@ -45,8 +45,11 @@ type RectMap = {
   addButtons: Map<string, Rect>;
   deleteButtons: Map<number, Rect>;
 
+  subtaskRows: Map<string, Rect>; // key: "issueId:subtaskId"
   subtaskChecks: Map<string, Rect>; // key: "issueId:subtaskId"
   subtaskSubjects: Map<string, Rect>; // key: "issueId:subtaskId"
+  subtaskEditButtons: Map<string, Rect>; // key: "issueId:subtaskId"
+  subtaskDeleteButtons: Map<string, Rect>; // key: "issueId:subtaskId"
   subtaskAreas: Map<number, Rect>; // key: issueId - entire subtask area for hit exclusion
   cardSubjects: Map<number, Rect>; // key: issueId
   editButtons: Map<number, Rect>;
@@ -104,6 +107,9 @@ type HitResult =
 
   | { kind: 'subtask_check'; issueId: number; subtaskId: number }
   | { kind: 'subtask_subject'; issueId: number; subtaskId: number }
+  | { kind: 'subtask_row'; issueId: number; subtaskId: number }
+  | { kind: 'subtask_edit'; issueId: number; subtaskId: number }
+  | { kind: 'subtask_delete'; issueId: number; subtaskId: number }
   | { kind: 'subtask_area'; issueId: number }
   | { kind: 'card_subject'; issueId: number }
   | { kind: 'edit'; issueId: number }
@@ -126,7 +132,7 @@ type Props = {
   onCreate: (ctx: { statusId: number; laneId?: string | number }) => void;
   onEdit: (issueId: number) => void;
   onView: (issueId: number) => void;
-  onDelete: (issueId: number) => void;
+  onDelete: (issueId: number, source: 'card' | 'subtask') => void;
   onEditClick: (editUrl: string) => void;
   onSubtaskToggle?: (subtaskId: number, currentClosed: boolean) => void;
   onPriorityClick?: (issueId: number, currentPriorityId: number, x: number, y: number) => void;
@@ -170,8 +176,11 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     addButtons: new Map(),
     deleteButtons: new Map(),
 
+    subtaskRows: new Map(),
     subtaskChecks: new Map(),
     subtaskSubjects: new Map(),
+    subtaskEditButtons: new Map(),
+    subtaskDeleteButtons: new Map(),
     subtaskAreas: new Map(),
     cardSubjects: new Map(),
     editButtons: new Map(),
@@ -188,6 +197,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   const scaleRef = useRef(1);
   const hoverRef = useRef<{ kind: 'card_subject' | 'subtask_subject'; id: string } | null>(null);
   const hoveredCardIssueIdRef = useRef<number | null>(null);
+  const hoveredSubtaskKeyRef = useRef<string | null>(null);
   const drawRef = useRef<() => void>(() => { });
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
 
@@ -348,8 +358,11 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       addButtons: new Map(),
       deleteButtons: new Map(),
 
+      subtaskRows: new Map(),
       subtaskChecks: new Map(),
       subtaskSubjects: new Map(),
+      subtaskEditButtons: new Map(),
+      subtaskDeleteButtons: new Map(),
       subtaskAreas: new Map(),
       cardSubjects: new Map(),
       editButtons: new Map(),
@@ -376,6 +389,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       labels,
       hoverRef.current,
       hoveredCardIssueIdRef.current,
+      hoveredSubtaskKeyRef.current,
       metrics,
       fontSize,
       busyIssueIds
@@ -454,6 +468,18 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       return;
     }
 
+    if (hit.kind === 'subtask_edit') {
+      if (isBusy(hit.subtaskId)) return;
+      onEdit(hit.subtaskId);
+      return;
+    }
+
+    if (hit.kind === 'subtask_delete') {
+      if (isBusy(hit.subtaskId)) return;
+      onDelete(hit.subtaskId, 'subtask');
+      return;
+    }
+
     if (hit.kind === 'card_subject') {
       if (isBusy(hit.issueId)) return;
       onView(hit.issueId);
@@ -478,7 +504,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
 
     if (hit.kind === 'delete') {
       if (isBusy(hit.issueId)) return;
-      onDelete(hit.issueId);
+      onDelete(hit.issueId, 'card');
       return;
     }
 
@@ -532,6 +558,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       const hit = hitTest(point, rectMapRef.current, state, data);
       let newHover: { kind: 'card_subject' | 'subtask_subject'; id: string } | null = null;
       let newHoveredCardIssueId: number | null = null;
+      let newHoveredSubtaskKey: string | null = null;
       if (
         hit.kind === 'card' ||
         hit.kind === 'card_subject' ||
@@ -542,6 +569,15 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       ) {
         newHoveredCardIssueId = hit.issueId;
       }
+      if (
+        hit.kind === 'subtask_row' ||
+        hit.kind === 'subtask_subject' ||
+        hit.kind === 'subtask_check' ||
+        hit.kind === 'subtask_edit' ||
+        hit.kind === 'subtask_delete'
+      ) {
+        newHoveredSubtaskKey = `${hit.issueId}:${hit.subtaskId}`;
+      }
 
       if (hit.kind === 'card_subject') {
         nextCursor = 'pointer';
@@ -551,7 +587,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         newHover = { kind: 'subtask_subject', id: `${hit.issueId}:${hit.subtaskId}` };
       } else if (hit.kind === 'card' || hit.kind === 'subtask_area') {
         nextCursor = canMove ? 'grab' : 'default';
-      } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'subtask_check' || hit.kind === 'edit' || hit.kind === 'visibility' || hit.kind === 'priority' || hit.kind === 'date') {
+      } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'subtask_check' || hit.kind === 'subtask_edit' || hit.kind === 'subtask_delete' || hit.kind === 'edit' || hit.kind === 'visibility' || hit.kind === 'priority' || hit.kind === 'date') {
         nextCursor = 'pointer';
       }
 
@@ -576,9 +612,11 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       const currentHover = hoverRef.current;
       const hoverChanged = (currentHover?.kind !== newHover?.kind) || (currentHover?.id !== newHover?.id);
       const cardHoverChanged = hoveredCardIssueIdRef.current !== newHoveredCardIssueId;
-      if (hoverChanged || cardHoverChanged) {
+      const subtaskHoverChanged = hoveredSubtaskKeyRef.current !== newHoveredSubtaskKey;
+      if (hoverChanged || cardHoverChanged || subtaskHoverChanged) {
         hoverRef.current = newHover;
         hoveredCardIssueIdRef.current = newHoveredCardIssueId;
+        hoveredSubtaskKeyRef.current = newHoveredSubtaskKey;
         scheduleRender();
       }
       return;
@@ -662,6 +700,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
           if (dragRef.current?.dropTargetCellKey) return;
           hoverRef.current = null;
           hoveredCardIssueIdRef.current = null;
+          hoveredSubtaskKeyRef.current = null;
           setTooltip(null);
           clearDragState();
         }}
@@ -972,6 +1011,7 @@ function drawCells(
   labels: Record<string, string>,
   hover: { kind: 'card_subject' | 'subtask_subject'; id: string } | null,
   hoveredCardIssueId: number | null,
+  hoveredSubtaskKey: string | null,
   metrics: ReturnType<typeof getMetrics>,
   fontSize: number,
   busyIssueIds?: Set<number>
@@ -1045,7 +1085,7 @@ function drawCells(
 
         const isUpdating = busyIssueIds?.has(issue.id) ?? false;
         rectMap.cards.set(issue.id, cardRect);
-        drawCard(ctx, cardRect, issue, data, theme, canMove, labels, metrics, fontSize, rectMap, hover, isUpdating, hoveredCardIssueId);
+        drawCard(ctx, cardRect, issue, data, theme, canMove, labels, metrics, fontSize, rectMap, hover, isUpdating, hoveredCardIssueId, hoveredSubtaskKey);
       }
     });
   });
@@ -1066,7 +1106,8 @@ function drawCard(
   rectMap?: RectMap,
   hover?: { kind: 'card_subject' | 'subtask_subject'; id: string } | null,
   isUpdating?: boolean,
-  hoveredCardIssueId?: number | null
+  hoveredCardIssueId?: number | null,
+  hoveredSubtaskKey?: string | null
 ) {
   const column = data.columns.find((c) => c.id === issue.status_id);
   const isClosed = !!column?.is_closed;
@@ -1332,6 +1373,11 @@ function drawCard(
     issue.subtasks.forEach((subtask, idx) => {
       const sy = subtaskStartY + idx * metrics.subtaskHeight;
       const sx = contentX;
+      const subtaskKey = `${issue.id}:${subtask.id}`;
+      const subtaskRowRect = { x: x + 4, y: sy - 2, width: w - 8, height: metrics.subtaskHeight };
+      if (rectMap) {
+        rectMap.subtaskRows.set(subtaskKey, subtaskRowRect);
+      }
 
       // Checkbox
       const checkSize = Math.max(12, fontSize);
@@ -1339,7 +1385,7 @@ function drawCard(
 
       // Store hit rect
       if (rectMap) {
-        rectMap.subtaskChecks.set(`${issue.id}:${subtask.id}`, checkRect);
+        rectMap.subtaskChecks.set(subtaskKey, checkRect);
       }
 
       ctx.save();
@@ -1380,11 +1426,11 @@ function drawCard(
       };
 
       if (rectMap) {
-        rectMap.subtaskSubjects.set(`${issue.id}:${subtask.id}`, subjectRect);
+        rectMap.subtaskSubjects.set(subtaskKey, subjectRect);
       }
 
       // Draw subtask subject with underline if hovered
-      const isSubtaskHovered = hover?.kind === 'subtask_subject' && hover.id === `${issue.id}:${subtask.id}`;
+      const isSubtaskHovered = hover?.kind === 'subtask_subject' && hover.id === subtaskKey;
       ctx.fillText(subjectText, sx + checkSize + 8, sy);
       if (isSubtaskHovered) {
         ctx.beginPath();
@@ -1393,6 +1439,52 @@ function drawCard(
         ctx.moveTo(sx + checkSize + 8, sy + subtaskFontSize + 1);
         ctx.lineTo(sx + checkSize + 8 + textMetrics.width, sy + subtaskFontSize + 1);
         ctx.stroke();
+      }
+
+      const isSubtaskActionVisible = hoveredSubtaskKey === subtaskKey;
+      if (isSubtaskActionVisible && rectMap) {
+        const actionIconSize = 20;
+        const actionCount = 1 + (data.meta.can_delete ? 1 : 0);
+        let subtaskButtonRightX = x + w - 6;
+        const overlayPadX = 3;
+        const overlayPadY = 2;
+        const overlayRect = {
+          x: subtaskButtonRightX - actionCount * actionIconSize - overlayPadX,
+          y: sy - 2 - overlayPadY,
+          width: actionCount * actionIconSize + overlayPadX * 2,
+          height: actionIconSize + overlayPadY * 2,
+        };
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+        roundedRect(ctx, overlayRect.x, overlayRect.y, overlayRect.width, overlayRect.height, 6);
+        ctx.fill();
+        ctx.font = '18px "Material Symbols Outlined"';
+        ctx.textBaseline = 'middle';
+
+        if (data.meta.can_delete) {
+          const subtaskDeleteRect = {
+            x: subtaskButtonRightX - actionIconSize,
+            y: sy - 2,
+            width: actionIconSize,
+            height: actionIconSize,
+          };
+          rectMap.subtaskDeleteButtons.set(subtaskKey, subtaskDeleteRect);
+          ctx.fillStyle = theme.danger;
+          ctx.fillText('delete', subtaskDeleteRect.x, subtaskDeleteRect.y + subtaskDeleteRect.height / 2);
+          subtaskButtonRightX -= actionIconSize;
+        }
+
+        const subtaskEditRect = {
+          x: subtaskButtonRightX - actionIconSize,
+          y: sy - 2,
+          width: actionIconSize,
+          height: actionIconSize,
+        };
+        rectMap.subtaskEditButtons.set(subtaskKey, subtaskEditRect);
+        ctx.fillStyle = theme.textSecondary;
+        ctx.fillText('edit', subtaskEditRect.x, subtaskEditRect.y + subtaskEditRect.height / 2);
+        ctx.restore();
       }
     });
   }
@@ -1548,6 +1640,18 @@ function hitTest(
   state: BoardState,
   data: BoardData
 ): HitResult {
+  for (const [key, rect] of rectMap.subtaskEditButtons) {
+    if (pointInRect(point, rect)) {
+      const [issueIdStr, subtaskIdStr] = key.split(':');
+      return { kind: 'subtask_edit', issueId: parseInt(issueIdStr), subtaskId: parseInt(subtaskIdStr) };
+    }
+  }
+  for (const [key, rect] of rectMap.subtaskDeleteButtons) {
+    if (pointInRect(point, rect)) {
+      const [issueIdStr, subtaskIdStr] = key.split(':');
+      return { kind: 'subtask_delete', issueId: parseInt(issueIdStr), subtaskId: parseInt(subtaskIdStr) };
+    }
+  }
   for (const [key, rect] of rectMap.subtaskChecks) {
     if (pointInRect(point, rect)) {
       const [issueIdStr, subtaskIdStr] = key.split(':');
@@ -1558,6 +1662,12 @@ function hitTest(
     if (pointInRect(point, rect)) {
       const [issueIdStr, subtaskIdStr] = key.split(':');
       return { kind: 'subtask_subject', issueId: parseInt(issueIdStr), subtaskId: parseInt(subtaskIdStr) };
+    }
+  }
+  for (const [key, rect] of rectMap.subtaskRows) {
+    if (pointInRect(point, rect)) {
+      const [issueIdStr, subtaskIdStr] = key.split(':');
+      return { kind: 'subtask_row', issueId: parseInt(issueIdStr), subtaskId: parseInt(subtaskIdStr) };
     }
   }
   for (const [issueId, rect] of rectMap.editButtons) {
