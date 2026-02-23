@@ -16,7 +16,9 @@ Redmine の運用を強化する、React + Vite で構築されたモダンな�
 - [設定](#設定)
 - [技術スタック](#技術スタック)
 - [開発](#開発)
+- [テスト](#テスト)
 - [API エンドポイント](#api-エンドポイント)
+- [CI（E2E）](#cie2e)
 - [ライセンス](#ライセンス)
 
 ## 概要
@@ -69,6 +71,7 @@ docker compose up -d
 ```bash
 cd plugins/redmine_kanban/frontend
 pnpm install
+pnpm run typecheck
 pnpm run build
 ```
 
@@ -106,8 +109,12 @@ pnpm run build
 ```bash
 cd plugins/redmine_kanban/frontend
 pnpm install
+pnpm run test -- --run
+pnpm run typecheck
 pnpm run build
 ```
+
+`pnpm` を使わない環境では `npm ci` / `npm run ...` でも実行できます（`frontend/package-lock.json` 同梱）。
 
 ビルド完了後、Redmine コンテナを再起動して変更を反映します。
 
@@ -116,7 +123,7 @@ cd ../..
 docker compose restart redmine
 ```
 
-### テストの実行
+## テスト
 
 バックエンド（Ruby）のテスト:
 
@@ -124,11 +131,34 @@ docker compose restart redmine
 docker compose exec redmine bundle exec rails test plugins/redmine_kanban/test
 ```
 
-フロントエンドの型チェック:
+フロントエンドのユニットテスト / 型チェック:
 
 ```bash
 cd plugins/redmine_kanban/frontend
+pnpm run test -- --run
 pnpm run typecheck
+```
+
+Playwright E2E（ローカル実行）:
+
+```bash
+npm install --prefix e2e
+npx --prefix e2e playwright install chromium
+
+# Redmine 起動（プラグインルートで実行）
+docker compose -f .github/e2e/docker-compose.yml up -d
+
+# Redmine 初期化（初回）
+docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+  bundle exec rake db:migrate redmine:plugins:migrate RAILS_ENV=production
+docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+  env REDMINE_LANG=en bundle exec rake redmine:load_default_data RAILS_ENV=production
+docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+  bundle exec rails runner -e production plugins/redmine_kanban/e2e/setup_redmine.rb
+
+# E2E 実行
+REDMINE_BASE_URL=http://127.0.0.1:3002 \
+  npx --prefix e2e playwright test -c e2e/playwright.config.js
 ```
 
 ## API エンドポイント
@@ -140,7 +170,25 @@ pnpm run typecheck
 | POST | `/projects/:project_id/kanban/issues` | チケット作成 |
 | PATCH | `/projects/:project_id/kanban/issues/:id` | チケット更新 |
 | DELETE | `/projects/:project_id/kanban/issues/:id` | チケット削除 |
-| POST | `/projects/:project_id/kanban/ai_analysis` | AI 分析 |
+
+関連する画面ルート:
+
+| メソッド | パス | 説明 |
+| --- | --- | --- |
+| GET | `/projects/:project_id/kanban` | カンバン画面 |
+| GET | `/projects/:project_id/gantt` | カンバン画面へのリダイレクト（プラグイン側） |
+
+## CI（E2E）
+
+GitHub Actions ワークフロー: `.github/workflows/e2e-kanban.yml`
+
+CI では以下を実行します。
+
+- `e2e/` の依存関係インストール
+- `.github/e2e/docker-compose.yml` で Redmine 起動
+- マイグレーションと Redmine 初期データ投入
+- `e2e/setup_redmine.rb` による `ecookbook` プロジェクト/モジュールのシード
+- Playwright スモークテスト（`e2e/tests/kanban-smoke.spec.js`）
 
 ## ライセンス
 

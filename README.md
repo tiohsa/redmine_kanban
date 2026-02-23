@@ -16,7 +16,9 @@ It goes beyond simple task visualization with WIP limits, aging detection, and f
 - [Configuration](#configuration)
 - [Technology Stack](#technology-stack)
 - [Development](#development)
+- [Testing](#testing)
 - [API Endpoints](#api-endpoints)
+- [CI (E2E)](#ci-e2e)
 - [License](#license)
 
 ## Overview
@@ -68,6 +70,7 @@ If you modify the frontend, build assets from `plugins/redmine_kanban/frontend` 
 ```bash
 cd plugins/redmine_kanban/frontend
 pnpm install
+pnpm run typecheck
 pnpm run build
 ```
 
@@ -105,8 +108,12 @@ Frontend source code is in `plugins/redmine_kanban/frontend`.
 ```bash
 cd plugins/redmine_kanban/frontend
 pnpm install
+pnpm run test -- --run
+pnpm run typecheck
 pnpm run build
 ```
+
+If your environment does not use `pnpm`, `npm ci` / `npm run ...` also works (`frontend/package-lock.json` is included).
 
 Restart the Redmine container after rebuilding assets:
 
@@ -115,7 +122,7 @@ cd ../..
 docker compose restart redmine
 ```
 
-### Running Tests
+## Testing
 
 Backend (Ruby) tests:
 
@@ -123,11 +130,34 @@ Backend (Ruby) tests:
 docker compose exec redmine bundle exec rails test plugins/redmine_kanban/test
 ```
 
-Frontend type checking:
+Frontend unit tests / type checking:
 
 ```bash
 cd plugins/redmine_kanban/frontend
+pnpm run test -- --run
 pnpm run typecheck
+```
+
+Playwright E2E (local):
+
+```bash
+npm install --prefix e2e
+npx --prefix e2e playwright install chromium
+
+# Start Redmine stack (from plugin root)
+docker compose -f .github/e2e/docker-compose.yml up -d
+
+# Initialize Redmine data (first run)
+docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+  bundle exec rake db:migrate redmine:plugins:migrate RAILS_ENV=production
+docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+  env REDMINE_LANG=en bundle exec rake redmine:load_default_data RAILS_ENV=production
+docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+  bundle exec rails runner -e production plugins/redmine_kanban/e2e/setup_redmine.rb
+
+# Run E2E
+REDMINE_BASE_URL=http://127.0.0.1:3002 \
+  npx --prefix e2e playwright test -c e2e/playwright.config.js
 ```
 
 ## API Endpoints
@@ -139,7 +169,25 @@ pnpm run typecheck
 | POST | `/projects/:project_id/kanban/issues` | Create ticket |
 | PATCH | `/projects/:project_id/kanban/issues/:id` | Update ticket |
 | DELETE | `/projects/:project_id/kanban/issues/:id` | Delete ticket |
-| POST | `/projects/:project_id/kanban/ai_analysis` | AI analysis |
+
+Related UI route:
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/projects/:project_id/kanban` | Kanban board page |
+| GET | `/projects/:project_id/gantt` | Redirect to Kanban page (plugin redirect) |
+
+## CI (E2E)
+
+GitHub Actions workflow: `.github/workflows/e2e-kanban.yml`
+
+The CI job:
+
+- installs E2E dependencies in `e2e/`
+- starts Redmine using `.github/e2e/docker-compose.yml`
+- runs migrations and loads default Redmine data
+- seeds `ecookbook` + enables the Kanban module via `e2e/setup_redmine.rb`
+- runs Playwright smoke tests (`e2e/tests/kanban-smoke.spec.js`)
 
 ## License
 
