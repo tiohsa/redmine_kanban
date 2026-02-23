@@ -19,6 +19,7 @@ export type Subtask = {
   status_id: number;
   is_closed: boolean;
   lock_version?: number;
+  subtasks?: Subtask[];
 };
 
 export type Issue = {

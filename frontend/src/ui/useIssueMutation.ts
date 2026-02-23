@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query';
-import type { BoardData, Issue } from './types';
+import type { BoardData, Issue, Subtask } from './types';
 
 type MutationContext = { prev?: BoardData };
 
@@ -17,6 +17,31 @@ type UseIssueMutationOptions<TPayload extends IssuePayload, TResult> = {
 };
 
 type IssueUpdater = (issue: Issue) => Issue;
+
+function updateSubtasksTree(
+  subtasks: Subtask[] | undefined,
+  targetId: number,
+  patch: Pick<Subtask, 'status_id' | 'is_closed'>
+): Subtask[] | undefined {
+  if (!subtasks?.length) return subtasks;
+
+  let changed = false;
+  const next = subtasks.map((subtask) => {
+    let current = subtask;
+    if (subtask.id === targetId) {
+      current = { ...current, ...patch };
+      changed = true;
+    }
+    const nested = updateSubtasksTree(current.subtasks, targetId, patch);
+    if (nested !== current.subtasks) {
+      current = { ...current, subtasks: nested };
+      changed = true;
+    }
+    return current;
+  });
+
+  return changed ? next : subtasks;
+}
 
 export function useIssueMutation<TPayload extends IssuePayload, TResult>({
   queryKey,
@@ -79,14 +104,15 @@ export function updateIssueInBoard(
   if (updated?.parent_id) {
     const closed = data.columns.find((column) => column.id === updated.status_id)?.is_closed ?? false;
     issues = issues.map((issue) => {
-      if (issue.id !== updated.parent_id || !issue.subtasks) return issue;
+      if (!issue.subtasks) return issue;
+      const nextSubtasks = updateSubtasksTree(issue.subtasks, updated.id, {
+        status_id: updated.status_id,
+        is_closed: closed,
+      });
+      if (nextSubtasks === issue.subtasks) return issue;
       return {
         ...issue,
-        subtasks: issue.subtasks.map((subtask) =>
-          subtask.id === updated.id
-            ? { ...subtask, status_id: updated.status_id, is_closed: closed }
-            : subtask
-        ),
+        subtasks: nextSubtasks,
       };
     });
   }

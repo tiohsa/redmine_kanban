@@ -1229,6 +1229,20 @@ type SubtaskInfo = {
 };
 
 function findSubtask(data: BoardData, subtaskId: number): SubtaskInfo | null {
+  const findInTree = (subtasks: Issue['subtasks']): SubtaskInfo | null => {
+    for (const subtask of subtasks ?? []) {
+      if (subtask.id === subtaskId) {
+        return {
+          lockVersion: subtask.lock_version ?? null,
+          assignedToId: undefined,
+        };
+      }
+      const nested = findInTree(subtask.subtasks);
+      if (nested) return nested;
+    }
+    return null;
+  };
+
   const issue = data.issues.find((it) => it.id === subtaskId);
   if (issue) {
     return {
@@ -1238,13 +1252,8 @@ function findSubtask(data: BoardData, subtaskId: number): SubtaskInfo | null {
   }
 
   for (const parent of data.issues) {
-    const subtask = parent.subtasks?.find((it) => it.id === subtaskId);
-    if (subtask) {
-      return {
-        lockVersion: subtask.lock_version ?? null,
-        assignedToId: undefined,
-      };
-    }
+    const nested = findInTree(parent.subtasks);
+    if (nested) return nested;
   }
 
   return null;

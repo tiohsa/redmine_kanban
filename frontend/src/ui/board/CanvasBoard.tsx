@@ -36,6 +36,8 @@ function getMetrics(fontSize: number) {
 }
 
 const dragThreshold = 4;
+const subtaskIndentPx = 14;
+const maxSubtaskIndentLevel = 6;
 
 type Rect = { x: number; y: number; width: number; height: number };
 
@@ -118,6 +120,35 @@ type HitResult =
   | { kind: 'priority'; issueId: number }
   | { kind: 'date'; issueId: number }
   | { kind: 'empty' };
+
+type FlattenedSubtaskRow = {
+  issueId: number;
+  depth: number;
+  subtask: Subtask;
+};
+
+function flattenSubtasks(subtasks?: Subtask[], depth = 0): FlattenedSubtaskRow[] {
+  if (!subtasks || subtasks.length === 0) return [];
+
+  const rows: FlattenedSubtaskRow[] = [];
+  for (const subtask of subtasks) {
+    rows.push({ issueId: subtask.id, depth, subtask });
+    if (subtask.subtasks?.length) {
+      rows.push(...flattenSubtasks(subtask.subtasks, depth + 1));
+    }
+  }
+  return rows;
+}
+
+function findNestedSubtaskById(subtasks: Subtask[] | undefined, subtaskId: number): Subtask | null {
+  if (!subtasks || subtasks.length === 0) return null;
+  for (const subtask of subtasks) {
+    if (subtask.id === subtaskId) return subtask;
+    const nested = findNestedSubtaskById(subtask.subtasks, subtaskId);
+    if (nested) return nested;
+  }
+  return null;
+}
 
 export type CanvasBoardHandle = {
   scrollToTop: () => void;
@@ -454,7 +485,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       if (isBusy(hit.subtaskId)) return;
       const issue = state.cardsById.get(hit.issueId);
       if (issue && onSubtaskToggle) {
-        const subtask = issue.subtasks?.find(s => s.id === hit.subtaskId);
+        const subtask = findNestedSubtaskById(issue.subtasks, hit.subtaskId);
         if (subtask) {
           onSubtaskToggle(hit.subtaskId, subtask.is_closed);
         }
@@ -596,7 +627,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         if (issue) {
           const text = newHover.kind === 'card_subject'
             ? issue.subject
-            : issue.subtasks?.find(s => `${issue.id}:${s.id}` === newHover.id)?.subject;
+            : findNestedSubtaskById(issue.subtasks, Number(newHover.id.split(':')[1]))?.subject;
 
           if (text) {
             setTooltip({ text, x: Math.min(event.clientX, window.innerWidth - 320), y: event.clientY + 16 });
@@ -808,9 +839,10 @@ function measureCardHeight(
     }
   }
 
-  if (issue.subtasks && issue.subtasks.length > 0) {
+  const subtaskRows = flattenSubtasks(issue.subtasks);
+  if (subtaskRows.length > 0) {
     h += 20; // Padding before subtasks (increased from 8)
-    h += issue.subtasks.length * metrics.subtaskHeight;
+    h += subtaskRows.length * metrics.subtaskHeight;
   }
   return h;
 }
@@ -1346,7 +1378,8 @@ function drawCard(
   }
 
   // 8. Subtasks (New)
-  if (issue.subtasks && issue.subtasks.length > 0) {
+  const flattenedSubtasks = flattenSubtasks(issue.subtasks);
+  if (flattenedSubtasks.length > 0) {
     const subtaskFontSize = Math.max(10, fontSize - 1);
     // Align the divider to the actual metadata rows so larger fonts / wrapped subjects
     // do not cause the separator to overlap assignee or priority text.
@@ -1372,9 +1405,11 @@ function drawCard(
     ctx.lineTo(x + w, subtaskAreaY);
     ctx.stroke();
 
-    issue.subtasks.forEach((subtask, idx) => {
+    flattenedSubtasks.forEach(({ subtask, depth }, idx) => {
       const sy = subtaskStartY + idx * metrics.subtaskHeight;
-      const sx = contentX;
+      const indentLevel = Math.min(depth, maxSubtaskIndentLevel);
+      const indentX = indentLevel * subtaskIndentPx;
+      const sx = contentX + indentX;
       const subtaskKey = `${issue.id}:${subtask.id}`;
       const subtaskRowRect = { x: x + 4, y: sy - 2, width: w - 8, height: metrics.subtaskHeight };
       if (rectMap) {
@@ -1417,7 +1452,8 @@ function drawCard(
       // Text
       ctx.fillStyle = isStClosed ? theme.textSecondary : theme.textPrimary;
       ctx.font = `${isStClosed ? '400' : '500'} ${subtaskFontSize}px Inter, sans-serif`;
-      const subjectText = truncateText(ctx, subtask.subject, contentW - checkSize - 8);
+      const subjectMaxWidth = Math.max(24, contentW - indentX - checkSize - 8);
+      const subjectText = truncateText(ctx, subtask.subject, subjectMaxWidth);
       const textMetrics = ctx.measureText(subjectText);
 
       const subjectRect = {
@@ -1429,6 +1465,19 @@ function drawCard(
 
       if (rectMap) {
         rectMap.subtaskSubjects.set(subtaskKey, subjectRect);
+      }
+
+      if (depth > 0) {
+        const guideX = Math.max(contentX + 3, sx - 7);
+        ctx.save();
+        ctx.strokeStyle = theme.borderStrong;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(guideX, sy - 1);
+        ctx.lineTo(guideX, sy + checkSize / 2);
+        ctx.lineTo(sx - 2, sy + checkSize / 2);
+        ctx.stroke();
+        ctx.restore();
       }
 
       // Draw subtask subject with underline if hovered
