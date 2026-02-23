@@ -45,7 +45,11 @@ jobs:
       - name: Prepare test database
         run: |
           docker compose -f .github/e2e/docker-compose.yml exec -T db \
-            mariadb -uroot -ppassword -e "CREATE DATABASE IF NOT EXISTS redmine_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+            mariadb -uroot -ppassword -e "
+              CREATE DATABASE IF NOT EXISTS redmine_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+              GRANT ALL PRIVILEGES ON redmine_test.* TO 'redmine'@'%';
+              FLUSH PRIVILEGES;
+            "
 
       - name: Configure Redmine database.yml for production/test
         run: |
