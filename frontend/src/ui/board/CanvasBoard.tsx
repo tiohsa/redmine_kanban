@@ -1348,7 +1348,9 @@ function drawCard(
   // 8. Subtasks (New)
   if (issue.subtasks && issue.subtasks.length > 0) {
     const subtaskFontSize = Math.max(10, fontSize - 1);
-    const subtaskAreaY = y + metrics.cardBaseHeight - 4;
+    // Align the divider to the actual metadata rows so larger fonts / wrapped subjects
+    // do not cause the separator to overlap assignee or priority text.
+    const subtaskAreaY = row2Y + metaFontSize + 12;
     const subtaskStartY = subtaskAreaY + 16;
 
     // Register subtask area for hit exclusion (from separator line to bottom of card)
