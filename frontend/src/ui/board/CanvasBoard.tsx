@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle } from 'react';
-import type { BoardData, Column, Issue, Lane, Subtask } from '../types';
+import type { BoardData, Column, Issue, Lane } from '../types';
 import type { BoardCommand } from './commands';
 import type { BoardState } from './state';
 import { cellKey } from './state';
+import { findSubtaskInTree, flattenSubtasks } from '../subtasksTree';
 
 // Base metrics that are not affected by font size
 const baseMetrics = {
@@ -120,35 +121,6 @@ type HitResult =
   | { kind: 'priority'; issueId: number }
   | { kind: 'date'; issueId: number }
   | { kind: 'empty' };
-
-type FlattenedSubtaskRow = {
-  issueId: number;
-  depth: number;
-  subtask: Subtask;
-};
-
-function flattenSubtasks(subtasks?: Subtask[], depth = 0): FlattenedSubtaskRow[] {
-  if (!subtasks || subtasks.length === 0) return [];
-
-  const rows: FlattenedSubtaskRow[] = [];
-  for (const subtask of subtasks) {
-    rows.push({ issueId: subtask.id, depth, subtask });
-    if (subtask.subtasks?.length) {
-      rows.push(...flattenSubtasks(subtask.subtasks, depth + 1));
-    }
-  }
-  return rows;
-}
-
-function findNestedSubtaskById(subtasks: Subtask[] | undefined, subtaskId: number): Subtask | null {
-  if (!subtasks || subtasks.length === 0) return null;
-  for (const subtask of subtasks) {
-    if (subtask.id === subtaskId) return subtask;
-    const nested = findNestedSubtaskById(subtask.subtasks, subtaskId);
-    if (nested) return nested;
-  }
-  return null;
-}
 
 export type CanvasBoardHandle = {
   scrollToTop: () => void;
@@ -485,7 +457,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       if (isBusy(hit.subtaskId)) return;
       const issue = state.cardsById.get(hit.issueId);
       if (issue && onSubtaskToggle) {
-        const subtask = findNestedSubtaskById(issue.subtasks, hit.subtaskId);
+        const subtask = findSubtaskInTree(issue.subtasks, hit.subtaskId);
         if (subtask) {
           onSubtaskToggle(hit.subtaskId, subtask.is_closed);
         }
@@ -627,7 +599,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         if (issue) {
           const text = newHover.kind === 'card_subject'
             ? issue.subject
-            : findNestedSubtaskById(issue.subtasks, Number(newHover.id.split(':')[1]))?.subject;
+            : findSubtaskInTree(issue.subtasks, Number(newHover.id.split(':')[1]))?.subject;
 
           if (text) {
             setTooltip({ text, x: Math.min(event.clientX, window.innerWidth - 320), y: event.clientY + 16 });
