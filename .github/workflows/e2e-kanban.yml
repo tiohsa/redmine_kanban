@@ -22,6 +22,12 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Install frontend dependencies
+        run: npm install --prefix frontend
+
+      - name: Run frontend unit tests
+        run: npm --prefix frontend run test -- --run
+
       - name: Install E2E dependencies
         run: npm install --prefix e2e
 
