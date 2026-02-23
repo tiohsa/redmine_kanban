@@ -31,6 +31,7 @@ test('kanban page loads without request errors and without Loading text', async 
   const consoleErrors = [];
   const pageErrors = [];
   const requestErrors = [];
+  const kanbanDataPath = '/projects/ecookbook/kanban/data';
 
   page.on('console', (msg) => {
     if (msg.type() === 'error') {
@@ -58,6 +59,12 @@ test('kanban page loads without request errors and without Loading text', async 
 
   await adminLogin(page, redmineBase);
 
+  const boardDataResponsePromise = page.waitForResponse((response) => {
+    if (!response.url().includes(kanbanDataPath)) return false;
+    const request = response.request();
+    return request.method() === 'GET' && (request.resourceType() === 'fetch' || request.resourceType() === 'xhr');
+  });
+
   await page.goto(`${redmineBase}/projects/ecookbook/kanban`);
   await page.waitForLoadState('networkidle');
 
@@ -67,8 +74,8 @@ test('kanban page loads without request errors and without Loading text', async 
   await expect(page.getByText(/^Loading$/)).toHaveCount(0);
   await expect(page.getByText(/^読み込み中$/)).toHaveCount(0);
 
-  const dataResponse = await page.request.get(`${redmineBase}/projects/ecookbook/kanban/data`);
-  expect(dataResponse.ok()).toBeTruthy();
+  const dataResponse = await boardDataResponsePromise;
+  expect(dataResponse.ok(), `kanban data request failed: ${dataResponse.status()} ${dataResponse.url()}`).toBeTruthy();
   const dataJson = await dataResponse.json();
   expect(dataJson.ok).toBeTruthy();
   expect(dataJson.labels).toBeTruthy();

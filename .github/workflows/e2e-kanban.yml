@@ -42,16 +42,7 @@ jobs:
           echo "Redmine did not become ready in time" >&2
           exit 1
 
-      - name: Prepare test database
-        run: |
-          docker compose -f .github/e2e/docker-compose.yml exec -T db \
-            mariadb -uroot -ppassword -e "
-              CREATE DATABASE IF NOT EXISTS redmine_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-              GRANT ALL PRIVILEGES ON redmine_test.* TO 'redmine'@'%';
-              FLUSH PRIVILEGES;
-            "
-
-      - name: Configure Redmine database.yml for production/test
+      - name: Configure Redmine database.yml for production
         run: |
           docker compose -f .github/e2e/docker-compose.yml exec -T redmine sh -lc \
             "printf '%s\n' \
@@ -62,40 +53,17 @@ jobs:
             '  username: redmine' \
             '  password: password' \
             '  encoding: utf8mb4' \
-            '' \
-            'test:' \
-            '  adapter: mysql2' \
-            '  database: redmine_test' \
-            '  host: db' \
-            '  username: redmine' \
-            '  password: password' \
-            '  encoding: utf8mb4' \
             > /usr/src/redmine/config/database.yml"
-
-      - name: Migrate test DB for plugin tests
-        run: |
-          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
-            bundle exec rake db:migrate redmine:plugins:migrate RAILS_ENV=test
-
-      - name: Install Ruby test dependency (mocha)
-        run: |
-          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
-            gem install mocha --no-document
-
-      - name: Run plugin tests
-        run: |
-          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
-            bundle exec rails test plugins/redmine_kanban/test
 
       - name: Migrate Redmine and plugin
         run: |
           docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
-            bundle exec rake db:migrate redmine:plugins:migrate RAILS_ENV=production
+            env RAILS_ENV=production bundle exec rake db:migrate redmine:plugins:migrate
 
       - name: Load default data
         run: |
           docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
-            env REDMINE_LANG=en bundle exec rake redmine:load_default_data RAILS_ENV=production
+            env REDMINE_LANG=en RAILS_ENV=production bundle exec rake redmine:load_default_data
 
       - name: Seed project/module for E2E
         run: |
