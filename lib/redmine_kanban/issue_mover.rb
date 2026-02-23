@@ -1,5 +1,7 @@
 module RedmineKanban
   class IssueMover
+    include ParamNormalizer
+
     def initialize(project:, issue:, user:)
       @project = project
       @issue = issue
@@ -69,28 +71,10 @@ module RedmineKanban
           raise ActiveRecord::Rollback
         end
 
-        if priority_id != :no_change
-          issue_priority_error = ensure_priority_applied!(@issue, priority_id)
-          if issue_priority_error
-            error_result = error(issue_priority_error)
-            raise ActiveRecord::Rollback
-          end
-        end
-
-        if priority_id != :no_change
-          child_error = update_children_priority!(priority_id)
-          if child_error
-            error_result = error(child_error)
-            raise ActiveRecord::Rollback
-          end
-        end
-
-        if priority_id != :no_change
-          issue_priority_error = ensure_priority_applied!(@issue, priority_id)
-          if issue_priority_error
-            error_result = error(issue_priority_error)
-            raise ActiveRecord::Rollback
-          end
+        priority_error = apply_priority_updates!(priority_id)
+        if priority_error
+          error_result = error(priority_error)
+          raise ActiveRecord::Rollback
         end
 
         if preserve_parent_priority
@@ -126,9 +110,7 @@ module RedmineKanban
     end
 
     def normalize_lock_version(value)
-      return nil if value.nil? || value.to_s.strip == ''
-
-      value.to_i
+      normalize_optional_lock_version(value)
     end
 
     def normalize_priority_id(value, provided)
@@ -157,6 +139,15 @@ module RedmineKanban
 
     def should_update_assignee?
       @settings.lane_type == 'assignee'
+    end
+
+    def apply_priority_updates!(priority_id)
+      return nil if priority_id == :no_change
+
+      # 親・子更新の前後で親チケットに意図した優先度が残るよう再適用する。
+      ensure_priority_applied!(@issue, priority_id) ||
+        update_children_priority!(priority_id) ||
+        ensure_priority_applied!(@issue, priority_id)
     end
 
     def update_children_priority!(priority_id)

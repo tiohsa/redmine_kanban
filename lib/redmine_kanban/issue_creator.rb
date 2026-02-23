@@ -1,5 +1,7 @@
 module RedmineKanban
   class IssueCreator
+    include ParamNormalizer
+
     def initialize(project:, user:)
       @project = project
       @user = user
@@ -55,25 +57,15 @@ module RedmineKanban
     end
 
     def normalize_assigned_to_id(value)
-      return nil if value.nil? || value.to_s == '' || value.to_s == 'null'
-
-      value.to_i
+      normalize_nullable_id(value)
     end
 
     def normalize_priority_id(value)
-      v = value.to_s.strip
-      return nil if v.empty?
-
-      v.to_i
+      normalize_optional_integer(value)
     end
 
     def normalize_date(value)
-      v = value.to_s.strip
-      return nil if v.empty?
-
-      Date.parse(v)
-    rescue ArgumentError
-      nil
+      normalize_optional_date(value)
     end
 
     def error(message: nil, field_errors: {})

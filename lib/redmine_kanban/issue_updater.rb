@@ -1,5 +1,7 @@
 module RedmineKanban
   class IssueUpdater
+    include ParamNormalizer
+
     def initialize(project:, user:)
       @project = project
       @user = user
@@ -81,28 +83,19 @@ module RedmineKanban
     private
 
     def normalize_tracker_id(value)
-      v = value.to_s.strip
-      return nil if v.empty?
-      v.to_i
+      normalize_optional_integer(value)
     end
 
     def normalize_assigned_to_id(value)
-      return nil if value.nil? || value.to_s == '' || value.to_s == 'null'
-      value.to_i
+      normalize_nullable_id(value)
     end
 
     def normalize_priority_id(value)
-      v = value.to_s.strip
-      return nil if v.empty?
-      v.to_i
+      normalize_optional_integer(value)
     end
 
     def normalize_date(value)
-      v = value.to_s.strip
-      return nil if v.empty?
-      Date.parse(v)
-    rescue ArgumentError
-      nil
+      normalize_optional_date(value)
     end
 
     def normalize_done_ratio(value)
@@ -112,9 +105,7 @@ module RedmineKanban
     end
 
     def normalize_lock_version(value)
-      return nil if value.nil? || value.to_s.strip.empty?
-
-      value.to_i
+      normalize_optional_lock_version(value)
     end
 
     def status_allowed?(issue, status_id)
