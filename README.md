@@ -30,11 +30,11 @@ Redmine Kanban helps teams keep flow healthy and visible. It focuses on limiting
 - **Canvas-Based Rendering**: High-performance board rendering using HTML Canvas for smooth scrolling and large dataset handling.
 - **WIP Control**: Limit work-in-progress (WIP) per column or assignee. Configurable behavior on limit exceed (block or warn).
 - **Aging Detection**: Highlight tasks that have not been updated for a long time. Thresholds are configurable.
-- **Swimlanes**: Switch lanes by assignee, version, or parent issue.
-- **Drag & Drop**: Intuitive card movement with Redmine workflow-aware status transitions.
+- **Swimlanes**: Switch lanes by assignee or priority (or disable lanes for a single-row board).
+- **Drag & Drop**: Intuitive card movement with Redmine workflow-aware status transitions. Cards can also be grabbed from the subtask area.
 - **Advanced Filtering**: Filter by assignee, due date, priority, blocked status, and more.
 - **Direct Creation from Board**: Create new tickets from column headers or cells during standups.
-- **Subtask Display**: View parent issue subtasks and toggle completion.
+- **Nested Subtask Display**: View subtasks recursively (child / grandchild / deeper) with indentation, and toggle completion.
 - **Undo Function**: Restore accidentally deleted tasks.
 - **Project Filter**: Filter across projects and subprojects.
 
@@ -84,7 +84,7 @@ pnpm run build
 
 Adjust these options in the plugin configuration screen:
 
-- **Swimlane Type**: Assignee / Version / Parent Issue
+- **Swimlane Type**: None / Assignee / Priority
 - **Issue Display Limit**: Max number of cards to display
 - **Hidden Statuses**: Statuses to hide from the board
 - **WIP Limit Mode**: Per column / Per column × lane
@@ -169,6 +169,11 @@ REDMINE_BASE_URL=http://127.0.0.1:3002 \
 | POST | `/projects/:project_id/kanban/issues` | Create ticket |
 | PATCH | `/projects/:project_id/kanban/issues/:id` | Update ticket |
 | DELETE | `/projects/:project_id/kanban/issues/:id` | Delete ticket |
+
+Board data notes:
+
+- `issues[].subtasks` is a recursive tree (`subtasks[].subtasks...`) for nested subtasks.
+- Subtask rows shown in the canvas are flattened on the frontend for rendering/hit-testing, but the API preserves hierarchy.
 
 Related UI route:
 
