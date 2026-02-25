@@ -46,9 +46,14 @@ type UpdatePayload = {
 export function App({ dataUrl }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const filtersStorageKey = useMemo(() => {
+    const normalizedDataUrl = dataUrl.replace(/\?.*$/, '');
+    const scope = normalizedDataUrl.replace(/\/data$/, '');
+    return `rk_filters:${scope}`;
+  }, [dataUrl]);
   const [filters, setFilters] = useState<Filters>(() => {
     try {
-      const v = localStorage.getItem('rk_filters');
+      const v = localStorage.getItem(filtersStorageKey);
       if (v) {
         const parsed = JSON.parse(v);
         return {
@@ -265,11 +270,11 @@ export function App({ dataUrl }: Props) {
 
   React.useEffect(() => {
     try {
-      localStorage.setItem('rk_filters', JSON.stringify(filters));
+      localStorage.setItem(filtersStorageKey, JSON.stringify(filters));
     } catch {
       // ignore
     }
-  }, [filters]);
+  }, [filters, filtersStorageKey]);
 
   useEffect(() => {
     try {
