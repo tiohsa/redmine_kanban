@@ -943,7 +943,7 @@ export function App({ dataUrl }: Props) {
               });
             } catch (e: any) {
               console.error("Priority update failed", e);
-              setError(e.message || "Priority update failed");
+              setError(resolveMutationError(e, data.labels, data.labels.update_failed));
             }
           }}
         />

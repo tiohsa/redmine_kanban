@@ -203,6 +203,73 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_equal current_priority.id, issue.priority_id
   end
 
+  def test_update_parent_priority_with_closed_children_keeps_selected_priority
+    default_priority = IssuePriority.active.where(name: 'Normal').first || IssuePriority.active.first
+    target_priority = (IssuePriority.active.where.not(id: default_priority&.id).last || IssuePriority.active.last)
+    closed_status = IssueStatus.where(is_closed: true).first || IssueStatus.first
+    open_status = IssueStatus.where(is_closed: false).first || IssueStatus.first
+    assert_not_nil default_priority
+    assert_not_nil target_priority
+    assert_not_nil closed_status
+    assert_not_nil open_status
+
+    parent = build_issue(subject: 'Parent issue')
+    child1 = build_issue(subject: 'Child 1', parent_issue_id: parent.id)
+    child2 = build_issue(subject: 'Child 2', parent_issue_id: parent.id)
+
+    parent.update!(status: open_status, priority: default_priority)
+    child1.update!(status: closed_status, priority: default_priority)
+    child2.update!(status: closed_status, priority: default_priority)
+
+    patch(
+      :update,
+      params: {
+        project_id: @project.identifier,
+        id: parent.id,
+        issue: {
+          priority_id: target_priority.id,
+          lock_version: parent.lock_version
+        }
+      }
+    )
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal true, json['ok']
+
+    [parent, child1, child2].each(&:reload)
+    assert_equal target_priority.id, parent.priority_id
+    assert_equal target_priority.id, child1.priority_id
+    assert_equal target_priority.id, child2.priority_id
+  end
+
+  def test_update_rejects_invalid_priority_and_keeps_current_priority
+    current_priority = IssuePriority.active.where(name: 'High').first || IssuePriority.active.last || IssuePriority.active.first
+    assert_not_nil current_priority
+
+    issue = build_issue(subject: 'Priority guard issue')
+    issue.update!(priority: current_priority)
+
+    patch(
+      :update,
+      params: {
+        project_id: @project.identifier,
+        id: issue.id,
+        issue: {
+          priority_id: 'no_priority',
+          lock_version: issue.lock_version
+        }
+      }
+    )
+
+    assert_response :unprocessable_entity
+    json = JSON.parse(@response.body)
+    assert_equal false, json['ok']
+
+    issue.reload
+    assert_equal current_priority.id, issue.priority_id
+  end
+
   def test_create_subtask_inherits_basic_properties_from_parent_when_not_specified
     parent = build_issue(subject: 'Parent issue')
     parent.update!(
