@@ -3,6 +3,21 @@ import { getCleanDialogStyles } from './board/iframeStyles';
 import { extractIssueIdFromUrl } from './utils/url';
 import { useBulkSubtaskMutation } from './hooks/useBulkSubtaskMutation';
 
+const REDMINE_ERROR_SELECTORS = ['#errorExplanation', '.flash.error', '.flash-error'] as const;
+
+export function hasRedmineFormError(doc: Document): boolean {
+    return REDMINE_ERROR_SELECTORS.some((selector) => doc.querySelector(selector) !== null);
+}
+
+export function isIssueShowUrl(currentUrl: string): boolean {
+    const normalizedUrl = currentUrl.split('#')[0];
+    return /\/issues\/\d+(?:\?.*)?$/.test(normalizedUrl) && !normalizedUrl.includes('/edit');
+}
+
+export function shouldTreatEditLoadAsSuccess(currentUrl: string, doc: Document): boolean {
+    return isIssueShowUrl(currentUrl) && !hasRedmineFormError(doc);
+}
+
 type Props = {
     url: string;
     issueId: number;
@@ -76,9 +91,8 @@ export function IframeEditDialog({ url, issueId, mode = 'edit', labels, baseUrl,
                             return;
                         }
                     } else {
-                        // For edit mode, check if we're on issue show page (not edit)
-                        const isShowPage = /\/issues\/\d+$/.test(currentUrl) && !currentUrl.includes('/edit');
-                        if (isShowPage) {
+                        // For edit mode, require both show URL and no visible validation/flash errors.
+                        if (shouldTreatEditLoadAsSuccess(currentUrl, doc)) {
                             handleSuccess(issueId);
                             return;
                         }
