@@ -9,6 +9,12 @@ import { replaceIssueInBoard, updateIssueInBoard, useIssueMutation } from './use
 import { findSubtaskInTree } from './subtasksTree';
 import { getCleanDialogStyles } from './board/iframeStyles';
 import { IframeEditDialog } from './IframeEditDialog';
+import {
+  buildProjectScopeFromDataUrl,
+  makeScopedStorageKey,
+  readScopedBooleanWithLegacy,
+  readScopedNumberSetWithLegacy,
+} from './utils/storage';
 
 type Props = { dataUrl: string };
 
@@ -46,11 +52,16 @@ type UpdatePayload = {
 export function App({ dataUrl }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const filtersStorageKey = useMemo(() => {
-    const normalizedDataUrl = dataUrl.replace(/\?.*$/, '');
-    const scope = normalizedDataUrl.replace(/\/data$/, '');
-    return `rk_filters:${scope}`;
-  }, [dataUrl]);
+  const projectScope = useMemo(() => buildProjectScopeFromDataUrl(dataUrl), [dataUrl]);
+  const filtersStorageKey = useMemo(() => makeScopedStorageKey('rk_filters', projectScope), [projectScope]);
+  const hiddenStatusStorageKey = useMemo(
+    () => makeScopedStorageKey('rk_hidden_status_ids', projectScope),
+    [projectScope],
+  );
+  const priorityLaneStorageKey = useMemo(
+    () => makeScopedStorageKey('rk_priority_lane_enabled', projectScope),
+    [projectScope],
+  );
   const [filters, setFilters] = useState<Filters>(() => {
     try {
       const v = localStorage.getItem(filtersStorageKey);
@@ -130,11 +141,7 @@ export function App({ dataUrl }: Props) {
   const [busyIssueIds, setBusyIssueIds] = useState<Set<number>>(new Set());
   const busyIssueIdsRef = useRef<Set<number>>(new Set());
   const [hiddenStatusIds, setHiddenStatusIds] = useState<Set<number>>(() => {
-    try {
-      const v = localStorage.getItem('rk_hidden_status_ids');
-      if (v) return new Set(JSON.parse(v).map(Number));
-    } catch { }
-    return new Set();
+    return readScopedNumberSetWithLegacy(hiddenStatusStorageKey, 'rk_hidden_status_ids', new Set());
   });
   const [fontSize, setFontSize] = useState<number>(() => {
     try {
@@ -151,16 +158,12 @@ export function App({ dataUrl }: Props) {
     }
   });
   const [priorityLaneEnabled, setPriorityLaneEnabled] = useState(() => {
-    try {
-      return localStorage.getItem('rk_priority_lane_enabled') === '1';
-    } catch {
-      return false;
-    }
+    return readScopedBooleanWithLegacy(priorityLaneStorageKey, 'rk_priority_lane_enabled', false);
   });
 
   const queryClient = useQueryClient();
   const boardRef = useRef<CanvasBoardHandle>(null);
-  const baseUrl = useMemo(() => dataUrl.replace(/\/data$/, ''), [dataUrl]);
+  const baseUrl = useMemo(() => projectScope, [projectScope]);
 
   const projectIdsKey = useMemo(
     () => filters.projectIds.slice().sort((a, b) => a - b).join(','),
@@ -258,9 +261,9 @@ export function App({ dataUrl }: Props) {
 
   React.useEffect(() => {
     try {
-      localStorage.setItem('rk_hidden_status_ids', JSON.stringify(Array.from(hiddenStatusIds)));
+      localStorage.setItem(hiddenStatusStorageKey, JSON.stringify(Array.from(hiddenStatusIds)));
     } catch { }
-  }, [hiddenStatusIds]);
+  }, [hiddenStatusIds, hiddenStatusStorageKey]);
 
   React.useEffect(() => {
     try {
@@ -286,11 +289,11 @@ export function App({ dataUrl }: Props) {
 
   useEffect(() => {
     try {
-      localStorage.setItem('rk_priority_lane_enabled', priorityLaneEnabled ? '1' : '0');
+      localStorage.setItem(priorityLaneStorageKey, priorityLaneEnabled ? '1' : '0');
     } catch {
       // ignore
     }
-  }, [priorityLaneEnabled]);
+  }, [priorityLaneEnabled, priorityLaneStorageKey]);
 
   const displayData = useMemo(() => {
     if (!data) return null;
