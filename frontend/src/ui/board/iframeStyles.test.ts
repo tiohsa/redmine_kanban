@@ -29,4 +29,18 @@ describe('getCleanDialogStyles', () => {
     expect(css).toContain('#content');
     expect(css).toContain('margin: 0 !important');
   });
+
+  it('should include compact issue header rules for issue dialogs', () => {
+    const css = getCleanDialogStyles({ variant: 'issue-compact' });
+    expect(css).toContain('padding: 2.5px 10px 10px !important');
+    expect(css).toContain('#content > h2');
+    expect(css).toContain('#content > #issue-form');
+    expect(css).toContain('#content > .issue.details');
+  });
+
+  it('should not include compact issue header rules for default dialogs', () => {
+    const css = getCleanDialogStyles({ variant: 'default' });
+    expect(css).not.toContain('padding: 2.5px 10px 10px !important');
+    expect(css).not.toContain('#content > .issue.details');
+  });
 });

@@ -45,7 +45,7 @@ export function IframeCreateDialog({ url, labels, baseUrl, queryKey, onClose, on
 
       if (doc) {
         const style = doc.createElement('style');
-        style.textContent = getCleanDialogStyles();
+        style.textContent = getCleanDialogStyles({ variant: 'issue-compact' });
         doc.head.appendChild(style);
 
         // Detect successful creation by checking URL
@@ -145,12 +145,12 @@ export function IframeCreateDialog({ url, labels, baseUrl, queryKey, onClose, on
 
   return (
     <div className="rk-modal-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
-      <div className="rk-iframe-dialog-container" onClick={(e) => e.stopPropagation()}>
+      <div className="rk-iframe-dialog-container rk-iframe-dialog-container-issue" onClick={(e) => e.stopPropagation()}>
         <div className="rk-iframe-wrapper">
           <iframe className="rk-iframe-dialog-frame" src={url} onLoad={handleLoad} />
         </div>
 
-        <div className="rk-create-footer">
+        <div className="rk-create-footer rk-create-footer-compact">
           <div className="rk-subtask-input">
             <label className="rk-label">{labels.bulk_subtask_title}</label>
             <textarea
@@ -161,7 +161,7 @@ export function IframeCreateDialog({ url, labels, baseUrl, queryKey, onClose, on
               disabled={isSubmitting}
             />
           </div>
-          <div className="rk-modal-actions">
+          <div className="rk-modal-actions rk-modal-actions-start">
             <button type="button" className="rk-btn" onClick={onClose} disabled={isSubmitting}>
               {labels.cancel}
             </button>

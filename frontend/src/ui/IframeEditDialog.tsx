@@ -35,6 +35,7 @@ export function IframeEditDialog({ url, issueId, mode = 'edit', labels, baseUrl,
     const [isLoading, setIsLoading] = useState(true);
     const [iframeRef, setIframeRef] = useState<HTMLIFrameElement | null>(null);
     const isSubmittingRef = useRef(false);
+    const isIssueDialog = mode !== 'time_entry';
 
     const bulkMutation = useBulkSubtaskMutation(baseUrl, queryKey);
 
@@ -63,7 +64,9 @@ export function IframeEditDialog({ url, issueId, mode = 'edit', labels, baseUrl,
 
             if (doc) {
                 const style = doc.createElement('style');
-                style.textContent = getCleanDialogStyles();
+                style.textContent = getCleanDialogStyles({
+                    variant: isIssueDialog ? 'issue-compact' : 'default',
+                });
                 doc.head.appendChild(style);
 
                 // Add Escape key listener for the iframe content
@@ -209,38 +212,34 @@ export function IframeEditDialog({ url, issueId, mode = 'edit', labels, baseUrl,
         : mode === 'time_entry'
             ? (isSubmitting ? labels.saving : labels.save)
             : (isSubmitting ? labels.saving : labels.save);
+    const dialogContainerClassName = `rk-iframe-dialog-container${isIssueDialog ? ' rk-iframe-dialog-container-issue' : ''}`;
+    const footerClassName = `rk-create-footer${isIssueDialog ? ' rk-create-footer-compact' : ''}`;
+    const actionsClassName = `rk-modal-actions${isIssueDialog ? ' rk-modal-actions-start' : ''}`;
 
     const [isSubtasksOpen, setIsSubtasksOpen] = useState(false);
 
     return (
         <div className="rk-modal-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
-            <div className="rk-iframe-dialog-container" onClick={(e) => e.stopPropagation()}>
+            <div className={dialogContainerClassName} onClick={(e) => e.stopPropagation()}>
                 <div className="rk-iframe-wrapper">
                     <iframe className="rk-iframe-dialog-frame" src={url} onLoad={handleLoad} />
                 </div>
 
-                <div className="rk-create-footer">
+                <div className={footerClassName}>
                     {mode !== 'time_entry' && (
                         <div className="rk-subtask-input">
                             <button
                                 type="button"
                                 className="rk-subtask-toggle"
                                 onClick={() => setIsSubtasksOpen(!isSubtasksOpen)}
-                                style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    padding: 0,
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '4px',
-                                    color: 'inherit',
-                                    fontSize: 'inherit',
-                                    fontWeight: 'inherit',
-                                }}
                             >
-                                <span style={{ transform: isSubtasksOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▶</span>
-                                <label className="rk-label" style={{ cursor: 'pointer', margin: 0 }}>{labels.bulk_subtask_title}</label>
+                                <span
+                                    className="rk-subtask-toggle-icon"
+                                    style={{ transform: isSubtasksOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                                >
+                                    ▶
+                                </span>
+                                <label className="rk-label rk-subtask-toggle-label">{labels.bulk_subtask_title}</label>
                             </button>
                             {isSubtasksOpen && (
                                 <textarea
@@ -249,12 +248,12 @@ export function IframeEditDialog({ url, issueId, mode = 'edit', labels, baseUrl,
                                     onChange={e => setSubtasks(e.target.value)}
                                     placeholder={labels.bulk_subtask_placeholder}
                                     disabled={isSubmitting}
-                                    style={{ marginTop: '8px' }}
+                                    className="rk-subtask-textarea"
                                 />
                             )}
                         </div>
                     )}
-                    <div className="rk-modal-actions">
+                    <div className={actionsClassName}>
                         <button type="button" className="rk-btn" onClick={onClose} disabled={isSubmitting}>
                             {labels.cancel}
                         </button>

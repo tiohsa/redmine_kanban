@@ -1156,59 +1156,75 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 
 
 .rk-create-footer {
-
   padding: 16px;
-
   border-top: 1px solid var(--rk-border);
-
   background: #f8fafc;
-
   display: flex;
-
   flex-direction: column;
-
   gap: 16px;
-
 }
 
-
+.rk-create-footer-compact {
+  padding: 4px 16px;
+  gap: 4px;
+}
 
 .rk-subtask-input {
-
   display: flex;
-
   flex-direction: column;
-
   gap: 8px;
-
 }
 
+.rk-create-footer-compact .rk-subtask-input {
+  gap: 4px;
+}
 
+.rk-subtask-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.rk-create-footer-compact .rk-subtask-toggle {
+  min-height: 18px;
+  line-height: 1;
+}
+
+.rk-subtask-toggle-icon {
+  transition: transform 0.2s;
+}
+
+.rk-subtask-toggle-label {
+  cursor: pointer;
+  margin: 0;
+}
+
+.rk-subtask-textarea {
+  margin-top: 4px;
+}
 
 .rk-subtask-input textarea {
-
   min-height: 80px;
-
   padding: 12px;
-
   border: 1px solid var(--rk-border);
-
   border-radius: 6px;
-
   font-family: inherit;
-
   resize: vertical;
-
 }
 
-
-
 .rk-create-footer .rk-modal-actions {
-
   margin-top: 0;
-
   padding-top: 0;
-
   border-top: none;
+}
 
+.rk-modal-actions-start {
+  justify-content: flex-start;
 }
