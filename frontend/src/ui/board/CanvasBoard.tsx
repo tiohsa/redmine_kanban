@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 import type { BoardData, Column, Issue, Lane } from '../types';
 import type { BoardCommand } from './commands';
+import { getBoardCursor } from './cursor';
 import type { BoardState } from './state';
 import { cellKey } from './state';
 import { findSubtaskInTree, flattenSubtasks } from '../subtasksTree';
@@ -204,11 +205,28 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   const drawRef = useRef<() => void>(() => { });
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
 
+  const clearHoverState = React.useCallback(() => {
+    hoverRef.current = null;
+    hoveredCardIssueIdRef.current = null;
+    hoveredSubtaskKeyRef.current = null;
+    setTooltip(null);
+  }, []);
+
   const clearDragState = React.useCallback(() => {
     dragRef.current = null;
-    setCursor('default');
+    setCursor(getBoardCursor({ phase: 'idle' }));
     scheduleRender();
   }, []);
+
+  const resetPointerState = React.useCallback((preservePendingDrop: boolean = false) => {
+    clearHoverState();
+    if (preservePendingDrop && dragRef.current?.dropTargetCellKey) {
+      setCursor(getBoardCursor({ phase: 'pending-drop' }));
+      scheduleRender();
+      return;
+    }
+    clearDragState();
+  }, [clearDragState, clearHoverState]);
 
   const measureCtx = useMemo(() => {
     const canvas = document.createElement('canvas');
@@ -557,7 +575,6 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     const drag = dragRef.current;
 
     if (!drag) {
-      let nextCursor = 'default';
       const hit = hitTest(point, rectMapRef.current, state, data);
       let newHover: { kind: 'card_subject' | 'subtask_subject'; id: string } | null = null;
       let newHoveredCardIssueId: number | null = null;
@@ -583,15 +600,9 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       }
 
       if (hit.kind === 'card_subject') {
-        nextCursor = 'pointer';
         newHover = { kind: 'card_subject', id: String(hit.issueId) };
       } else if (hit.kind === 'subtask_subject') {
-        nextCursor = 'pointer';
         newHover = { kind: 'subtask_subject', id: `${hit.issueId}:${hit.subtaskId}` };
-      } else if (hit.kind === 'card' || hit.kind === 'subtask_area' || hit.kind === 'subtask_row') {
-        nextCursor = canMove ? 'grab' : 'default';
-      } else if (hit.kind === 'add' || hit.kind === 'delete' || hit.kind === 'subtask_check' || hit.kind === 'subtask_edit' || hit.kind === 'subtask_delete' || hit.kind === 'edit' || hit.kind === 'visibility' || hit.kind === 'priority' || hit.kind === 'date') {
-        nextCursor = 'pointer';
       }
 
       if (newHover) {
@@ -609,7 +620,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         setTooltip(null);
       }
 
-      setCursor(nextCursor);
+      setCursor(getBoardCursor({ phase: 'idle', hitKind: hit.kind }));
 
       // Update hover state and re-render if changed
       const currentHover = hoverRef.current;
@@ -625,6 +636,11 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       return;
     }
 
+    if (drag.dropTargetCellKey) {
+      setCursor(getBoardCursor({ phase: 'pending-drop' }));
+      return;
+    }
+
     drag.current = point;
     if (!drag.dragging) {
       const dx = Math.abs(point.x - drag.start.x);
@@ -637,7 +653,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     if (drag.dragging) {
       const hit = hitTestCell(point, rectMapRef.current, data);
       drag.targetCellKey = hit ? cellKey(hit.statusId, hit.laneId) : null;
-      setCursor('grabbing');
+      setCursor(getBoardCursor({ phase: 'dragging' }));
     }
 
     scheduleRender();
@@ -665,7 +681,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
 
         drag.dropTargetCellKey = cellKey(hit.statusId, hit.laneId);
         drag.dropCommittedAt = Date.now();
-        setCursor('default');
+        setCursor(getBoardCursor({ phase: 'pending-drop' }));
         scheduleRender();
         return;
       }
@@ -684,6 +700,18 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     clearDragState();
   };
 
+  const handlePointerCancel = () => {
+    resetPointerState();
+  };
+
+  const handleLostPointerCapture = () => {
+    resetPointerState(true);
+  };
+
+  const handlePointerLeave = () => {
+    resetPointerState(true);
+  };
+
   return (
     <div
       ref={containerRef}
@@ -697,16 +725,9 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onPointerLeave={() => {
-          // Keep pending drop visual state until optimistic/server data confirms
-          // the move, otherwise card can momentarily snap back to origin lane.
-          if (dragRef.current?.dropTargetCellKey) return;
-          hoverRef.current = null;
-          hoveredCardIssueIdRef.current = null;
-          hoveredSubtaskKeyRef.current = null;
-          setTooltip(null);
-          clearDragState();
-        }}
+        onPointerCancel={handlePointerCancel}
+        onLostPointerCapture={handleLostPointerCapture}
+        onPointerLeave={handlePointerLeave}
       />
       {tooltip && (
         <div
