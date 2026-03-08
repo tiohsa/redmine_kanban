@@ -89,11 +89,13 @@ module RedmineKanban
       hide_priority_lanes: :label_kanban_hide_priority_lanes
     }.freeze
 
-    def initialize(project:, user:, project_ids: nil)
+    def initialize(project:, user:, project_ids: nil, issue_status_ids: nil, exclude_status_ids: nil)
       @project = project
       @user = user
       @settings = Settings.new(Setting.plugin_redmine_kanban)
-      @project_ids = project_ids.presence || [@project.id]
+      @project_ids = normalize_ids(project_ids).presence || [@project.id]
+      @issue_status_ids = normalize_ids(issue_status_ids)
+      @exclude_status_ids = normalize_ids(exclude_status_ids)
     end
 
     def to_h
@@ -103,10 +105,12 @@ module RedmineKanban
         { id: s.id, name: s.name, is_closed: s.is_closed }
       end
 
-      issues = fetch_issues(columns.map { |c| c[:id] })
-      lanes = build_lanes(issues)
+      status_ids = columns.map { |c| c[:id] }
+      issues = fetch_issues(status_ids)
+      lane_assignee_ids = @settings.lane_type == 'none' ? [] : fetch_lane_assignee_ids(status_ids)
+      lanes = build_lanes(lane_assignee_ids)
 
-      counts = fetch_column_counts(columns.map { |c| c[:id] })
+      counts = fetch_column_counts(status_ids)
       wip_limits = @settings.wip_limits
 
       {
@@ -149,15 +153,25 @@ module RedmineKanban
     end
 
     def fetch_issues(status_ids)
-      relation = Issue.visible(@user).where(project_id: @project_ids).where(status_id: status_ids)
+      relation = base_issue_scope(status_ids)
+      relation = relation.where(status_id: filtered_status_ids(status_ids))
       relation = relation.includes(:assigned_to, :priority, :status, :project)
       relation.order(updated_on: :desc).limit(@settings.issue_limit).to_a
     end
 
-    def build_lanes(issues)
+    def fetch_lane_assignee_ids(status_ids)
+      base_issue_scope(status_ids)
+        .order(updated_on: :desc)
+        .limit(@settings.issue_limit)
+        .pluck(:assigned_to_id)
+        .compact
+        .uniq
+    end
+
+    def build_lanes(assigned_to_ids)
       return [{ id: 'none', name: l(:label_kanban_all), assigned_to_id: nil }] if @settings.lane_type == 'none'
 
-      ids = issues.map(&:assigned_to_id).uniq.compact
+      ids = assigned_to_ids.uniq
       users = User.where(id: ids).sorted.to_a
       lanes = [{ id: 'unassigned', name: l(:label_kanban_unassigned), assigned_to_id: nil }]
       lanes.concat(users.map { |u| { id: u.id, name: u.name, assigned_to_id: u.id } })
@@ -189,7 +203,25 @@ module RedmineKanban
     end
 
     def fetch_column_counts(status_ids)
-      Issue.visible(@user).where(project_id: @project_ids, status_id: status_ids).group(:status_id).count
+      base_issue_scope(status_ids).group(:status_id).count
+    end
+
+    def base_issue_scope(status_ids)
+      Issue.visible(@user).where(project_id: @project_ids, status_id: status_ids)
+    end
+
+    def filtered_status_ids(status_ids)
+      ids = status_ids.uniq
+      ids &= @issue_status_ids if @issue_status_ids.any?
+      ids -= @exclude_status_ids if @exclude_status_ids.any?
+      ids
+    end
+
+    def normalize_ids(values)
+      Array(values).filter_map do |value|
+        id = value.to_i
+        id if id.positive?
+      end.uniq
     end
 
     def issue_to_h(issue)

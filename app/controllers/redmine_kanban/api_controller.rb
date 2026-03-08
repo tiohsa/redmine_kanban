@@ -9,7 +9,13 @@ module RedmineKanban
     before_action :require_delete_permission, only: [:destroy]
 
     def index
-      render json: BoardData.new(project: @project, user: User.current, project_ids: params[:project_ids]).to_h
+      render json: BoardData.new(
+        project: @project,
+        user: User.current,
+        project_ids: normalize_integer_array_param(params[:project_ids]),
+        issue_status_ids: normalize_integer_array_param(params[:issue_status_ids]),
+        exclude_status_ids: normalize_integer_array_param(params[:exclude_status_ids])
+      ).to_h
     end
 
     def move
@@ -93,6 +99,13 @@ module RedmineKanban
       render_404 unless @issue.project == @project || @issue.project.is_descendant_of?(@project)
     rescue ActiveRecord::RecordNotFound
       render_404
+    end
+
+    def normalize_integer_array_param(values)
+      Array(values).filter_map do |value|
+        id = value.to_i
+        id if id.positive?
+      end
     end
   end
 end
