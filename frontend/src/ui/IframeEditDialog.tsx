@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { getCleanDialogStyles } from './board/iframeStyles';
+import { CleanDialogStyleVariant, getCleanDialogStyles } from './board/iframeStyles';
 import { extractIssueIdFromUrl } from './utils/url';
 import { useBulkSubtaskMutation } from './hooks/useBulkSubtaskMutation';
 
@@ -16,6 +16,17 @@ export function isIssueShowUrl(currentUrl: string): boolean {
 
 export function shouldTreatEditLoadAsSuccess(currentUrl: string, doc: Document): boolean {
     return isIssueShowUrl(currentUrl) && !hasRedmineFormError(doc);
+}
+
+export function resolveDialogStyleVariant(
+    mode: Props['mode'] = 'edit',
+    currentUrl: string,
+    fallbackUrl: string
+): CleanDialogStyleVariant {
+    if (mode === 'time_entry') {
+        return 'default';
+    }
+    return isIssueShowUrl(currentUrl || fallbackUrl) ? 'issue-view' : 'issue-compact';
 }
 
 type Props = {
@@ -64,8 +75,9 @@ export function IframeEditDialog({ url, issueId, mode = 'edit', labels, baseUrl,
 
             if (doc) {
                 const style = doc.createElement('style');
+                const styleVariant = resolveDialogStyleVariant(mode, currentUrl, url);
                 style.textContent = getCleanDialogStyles({
-                    variant: isIssueDialog ? 'issue-compact' : 'default',
+                    variant: styleVariant,
                 });
                 doc.head.appendChild(style);
 

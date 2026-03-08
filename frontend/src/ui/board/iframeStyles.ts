@@ -16,7 +16,7 @@ const ISSUE_DIALOG_HIDE_SELECTORS = [
   '#issue-form > a[href*="/issues"]',
 ];
 
-export type CleanDialogStyleVariant = 'default' | 'issue-compact';
+export type CleanDialogStyleVariant = 'default' | 'issue-compact' | 'issue-view';
 
 type GetCleanDialogStylesOptions = {
   variant?: CleanDialogStyleVariant;
@@ -48,9 +48,25 @@ const ISSUE_COMPACT_STYLE_RULES = `
   }
 `;
 
+const ISSUE_VIEW_STYLE_RULES = `
+  #content > .contextual:has(+ h2.inline-block) {
+    display: none !important;
+  }
+  #sidebar,
+  #sidebar-switch-panel,
+  #sidebar-handler,
+  #sidebar-handler-container {
+    display: none !important;
+  }
+`;
+
 export function getCleanDialogStyles({ variant = 'default' }: GetCleanDialogStylesOptions = {}): string {
+  const includeCompactRules = variant === 'issue-compact' || variant === 'issue-view';
+  const includeIssueViewRules = variant === 'issue-view';
+
   return `
     ${BASE_DIALOG_STYLE_RULES}
-    ${variant === 'issue-compact' ? ISSUE_COMPACT_STYLE_RULES : ''}
+    ${includeCompactRules ? ISSUE_COMPACT_STYLE_RULES : ''}
+    ${includeIssueViewRules ? ISSUE_VIEW_STYLE_RULES : ''}
   `;
 }
