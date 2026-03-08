@@ -9,6 +9,8 @@ import { replaceIssueInBoard, updateIssueInBoard, useIssueMutation } from './use
 import { findSubtaskInTree } from './subtasksTree';
 import { getCleanDialogStyles } from './board/iframeStyles';
 import { IframeEditDialog } from './IframeEditDialog';
+import { applyBoardDataFilters, buildVisibleIssues, type Filters } from './boardFilters';
+import { buildBoardDataUrl, buildBoardQueryKey } from './boardQuery';
 import {
   buildProjectScopeFromDataUrl,
   makeScopedStorageKey,
@@ -17,17 +19,6 @@ import {
 } from './utils/storage';
 
 type Props = { dataUrl: string };
-
-type Filters = {
-  assignee: 'all' | 'me' | 'unassigned' | string;
-  q: string;
-  due: 'all' | 'overdue' | 'thisweek' | '3days' | '7days' | '1day' | 'custom' | 'none';
-  dueDays?: number;
-  priority: string[]; // Multiple selection
-  priorityFilterEnabled: boolean;
-  projectIds: number[]; // Multiple selection
-  statusIds: number[]; // Multiple selection
-};
 
 type ModalContext = { statusId: number; laneId?: string | number; issueId?: number };
 
@@ -165,23 +156,17 @@ export function App({ dataUrl }: Props) {
   const boardRef = useRef<CanvasBoardHandle>(null);
   const baseUrl = useMemo(() => projectScope, [projectScope]);
 
-  const projectIdsKey = useMemo(
-    () => filters.projectIds.slice().sort((a, b) => a - b).join(','),
-    [filters.projectIds]
-  );
   const boardQueryKey = useMemo(
-    () => ['kanban', 'board', baseUrl, projectIdsKey] as const,
-    [baseUrl, projectIdsKey]
+    () => buildBoardQueryKey(baseUrl, filters.projectIds, filters.statusIds, hiddenStatusIds),
+    [baseUrl, filters.projectIds, filters.statusIds, hiddenStatusIds]
   );
 
   const boardQuery = useQuery({
     queryKey: boardQueryKey,
     queryFn: async () => {
-      const params = new URLSearchParams();
-      filters.projectIds.forEach((id) => params.append('project_ids[]', String(id)));
-      const qs = params.toString();
-      const url = `${baseUrl}/data${qs ? `?${qs}` : ''}`;
-      return getJson<BoardData>(url);
+      return getJson<BoardData>(
+        buildBoardDataUrl(baseUrl, filters.projectIds, filters.statusIds, hiddenStatusIds)
+      );
     },
     placeholderData: (prev) => prev,
   });
@@ -302,34 +287,12 @@ export function App({ dataUrl }: Props) {
 
   const effectiveLaneType = displayData?.meta.lane_type;
 
-  // Filter data based on showSubtasks and statusIds
   const filteredData = useMemo(() => {
-    if (!displayData) return null;
-    let res = displayData;
-    if (!showSubtasks) {
-      res = {
-        ...res,
-        issues: res.issues.filter(issue => !issue.parent_id)
-      };
-    }
-    if (filters.statusIds.length > 0) {
-      res = {
-        ...res,
-        columns: res.columns.filter(c => filters.statusIds.includes(c.id))
-      };
-    }
-    return res;
+    return applyBoardDataFilters(displayData, showSubtasks, filters.statusIds);
   }, [displayData, showSubtasks, filters.statusIds]);
 
   const issues = useMemo(() => {
-    let filtered = filterIssues(filteredData?.issues ?? [], filteredData, filters);
-    // Filter out issues in hidden status lanes
-    filtered = filtered.filter(it => !hiddenStatusIds.has(it.status_id));
-
-    if (pendingDeleteIssue) {
-      filtered = filtered.filter((i) => i.id !== pendingDeleteIssue.id);
-    }
-    return filtered;
+    return buildVisibleIssues(filteredData, filters, hiddenStatusIds, pendingDeleteIssue);
   }, [filteredData, filters, pendingDeleteIssue, hiddenStatusIds]);
   const priorityRank = useMemo(() => {
     const m = new Map<number, number>();
@@ -1264,95 +1227,6 @@ function resolveSubtaskStatus(data: BoardData, currentClosed: boolean): number |
     return data.columns.find((c) => !c.is_closed)?.id ?? null;
   }
   return data.columns.find((c) => c.is_closed)?.id ?? null;
-}
-
-function startOfWeek(date: Date): Date {
-  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const day = (d.getDay() + 6) % 7;
-  d.setDate(d.getDate() - day);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function endOfWeek(date: Date): Date {
-  const s = startOfWeek(date);
-  const e = new Date(s);
-  e.setDate(e.getDate() + 7);
-  e.setMilliseconds(e.getMilliseconds() - 1);
-  return e;
-}
-
-function filterIssues(issues: Issue[], data: BoardData | null, filters: Filters): Issue[] {
-  const q = filters.q.trim().toLowerCase();
-  const now = new Date();
-  const now0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const start = startOfWeek(now);
-  const end = endOfWeek(now);
-
-  return issues.filter((it) => {
-    if (q && !it.subject.toLowerCase().includes(q)) return false;
-
-    if (filters.assignee !== 'all') {
-      if (filters.assignee === 'me') {
-        if (String(it.assigned_to_id) !== String(data?.meta.current_user_id)) return false;
-      } else if (filters.assignee === 'unassigned') {
-        if (it.assigned_to_id !== null) return false;
-      } else {
-        if (String(it.assigned_to_id) !== String(filters.assignee)) return false;
-      }
-    }
-
-    if (filters.priorityFilterEnabled) {
-      if (filters.priority.length === 0) return false;
-      if (!filters.priority.includes(String(it.priority_id))) return false;
-    }
-
-    if (filters.due !== 'all') {
-      if (!it.due_date) return filters.due === 'none';
-      if (filters.due === 'none') return false;
-
-      const due = parseISODate(it.due_date);
-      if (!due) return false;
-
-      if (filters.due === 'overdue') return due < now0;
-      if (filters.due === 'thisweek') return due >= start && due <= end;
-
-      if (filters.due === '3days') {
-        const limit = new Date(now0);
-        limit.setDate(now0.getDate() + 3);
-        return due >= now0 && due < limit;
-      }
-
-      if (filters.due === '7days') {
-        const limit = new Date(now0);
-        limit.setDate(now0.getDate() + 7);
-        return due >= now0 && due < limit;
-      }
-
-      if (filters.due === '1day') {
-        const limit = new Date(now0);
-        limit.setDate(now0.getDate() + 1);
-        return due >= now0 && due < limit;
-      }
-
-      if (filters.due === 'custom') {
-        const days = filters.dueDays ?? 7;
-        const limit = new Date(now0);
-        limit.setDate(now0.getDate() + days);
-        return due >= now0 && due < limit;
-      }
-    }
-
-    return true;
-  });
-}
-
-function parseISODate(dateString: string): Date | null {
-  const parts = dateString.split('-');
-  if (parts.length !== 3) return null;
-  const [y, m, d] = parts.map((x) => Number(x));
-  if (!y || !m || !d) return null;
-  return new Date(y, m - 1, d);
 }
 
 // Custom Dropdown Component

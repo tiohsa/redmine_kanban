@@ -18,6 +18,68 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     @request.session[:user_id] = @user.id
   end
 
+  def test_index_without_filter_params_keeps_response_shape
+    build_issue(subject: 'Visible issue')
+
+    get :index, params: { project_id: @project.identifier }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+
+    assert_equal true, json['ok']
+    assert_kind_of Array, json['columns']
+    assert_kind_of Array, json['issues']
+    assert_kind_of Array, json['lanes']
+    assert_kind_of Hash, json['labels']
+    assert_equal @project.id, json.dig('meta', 'project_id')
+  end
+
+  def test_index_filters_issues_by_issue_status_ids_without_changing_columns_or_counts
+    status_a, status_b = distinct_open_statuses
+    issue_a = build_issue(subject: 'Status filter keep', status: status_a)
+    issue_b = build_issue(subject: 'Status filter drop', status: status_b)
+
+    baseline = index_response
+
+    json = index_response(issue_status_ids: [status_a.id])
+
+    assert_includes json['issues'].map { |issue| issue['id'] }, issue_a.id
+    refute_includes json['issues'].map { |issue| issue['id'] }, issue_b.id
+    assert_includes json['columns'].map { |column| column['id'] }, status_b.id
+    assert_equal column_counts_by_status(baseline), column_counts_by_status(json)
+  end
+
+  def test_index_filters_issues_by_exclude_status_ids_without_changing_columns_or_counts
+    status_a, status_b = distinct_open_statuses
+    issue_a = build_issue(subject: 'Exclude filter keep', status: status_a)
+    issue_b = build_issue(subject: 'Exclude filter drop', status: status_b)
+
+    baseline = index_response
+
+    json = index_response(exclude_status_ids: [status_b.id])
+
+    assert_includes json['issues'].map { |issue| issue['id'] }, issue_a.id
+    refute_includes json['issues'].map { |issue| issue['id'] }, issue_b.id
+    assert_includes json['columns'].map { |column| column['id'] }, status_b.id
+    assert_equal column_counts_by_status(baseline), column_counts_by_status(json)
+  end
+
+  def test_index_keeps_assignee_lane_from_unfiltered_issue_pool
+    status_a, status_b = distinct_open_statuses
+    other_user = User.active.where.not(id: @user.id).first
+    assert_not_nil other_user
+    ensure_member!(other_user)
+
+    lane_seed_issue = build_issue(subject: 'Lane seed', status: status_a, assigned_to: other_user)
+    visible_issue = build_issue(subject: 'Visible issue', status: status_b, assigned_to: @user)
+
+    json = index_response(issue_status_ids: [status_b.id])
+
+    assert_includes json['issues'].map { |issue| issue['id'] }, visible_issue.id
+    refute_includes json['issues'].map { |issue| issue['id'] }, lane_seed_issue.id
+    assert_includes json['lanes'].map { |lane| lane['assigned_to_id'] }, other_user.id
+  end
+
   def test_update_works_without_plugin_authorize_mapping
     issue = build_issue
 
@@ -358,18 +420,18 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     @role.add_permission!(:delete_issues) unless @role.permissions.include?(:delete_issues)
   end
 
-  def ensure_member!
-    member = Member.find_by(project_id: @project.id, user_id: @user.id) || Member.create!(project: @project, user: @user)
+  def ensure_member!(user = @user)
+    member = Member.find_by(project_id: @project.id, user_id: user.id) || Member.create!(project: @project, user: user)
     return if member.roles.include?(@role)
 
     member.roles << @role
     member.save!
   end
 
-  def build_issue(subject: 'Test issue', parent_issue_id: nil)
+  def build_issue(subject: 'Test issue', parent_issue_id: nil, status: nil, assigned_to: nil, priority: nil)
     tracker = @project.trackers.first || Tracker.first
-    status = IssueStatus.default || IssueStatus.first
-    priority = IssuePriority.active.first
+    status ||= IssueStatus.default || IssueStatus.first
+    priority ||= IssuePriority.active.first
     issue = Issue.new(
       project: @project,
       tracker: tracker,
@@ -377,9 +439,30 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
       status: status,
       subject: subject,
       parent_issue_id: parent_issue_id,
-      priority: priority
+      priority: priority,
+      assigned_to: assigned_to
     )
     issue.save!
     issue
+  end
+
+  def distinct_open_statuses
+    statuses = IssueStatus.where(is_closed: false).limit(2).to_a
+    statuses << IssueStatus.where.not(id: statuses.map(&:id)).first if statuses.size < 2
+    statuses.compact!
+    assert_equal 2, statuses.size
+
+    statuses
+  end
+
+  def index_response(extra_params = {})
+    get :index, params: { project_id: @project.identifier }.merge(extra_params)
+    assert_response :success
+
+    JSON.parse(@response.body)
+  end
+
+  def column_counts_by_status(json)
+    json['columns'].to_h { |column| [column['id'], column['count']] }
   end
 end
