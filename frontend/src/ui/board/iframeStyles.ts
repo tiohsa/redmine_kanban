@@ -16,9 +16,57 @@ const ISSUE_DIALOG_HIDE_SELECTORS = [
   '#issue-form > a[href*="/issues"]',
 ];
 
-export function getCleanDialogStyles(): string {
+export type CleanDialogStyleVariant = 'default' | 'issue-compact' | 'issue-view';
+
+type GetCleanDialogStylesOptions = {
+  variant?: CleanDialogStyleVariant;
+};
+
+const BASE_DIALOG_STYLE_RULES = `
+  ${ISSUE_DIALOG_HIDE_SELECTORS.join(', ')} { display: none !important; }
+  #content { margin: 0 !important; width: 100% !important; padding: 10px !important; }
+`;
+
+const ISSUE_COMPACT_STYLE_RULES = `
+  #content { padding: 2.5px 10px 10px !important; }
+  #content > h2 {
+    margin: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    line-height: 1.05 !important;
+    min-height: 0 !important;
+  }
+  #content > h2 + *,
+  #content > .issue.details,
+  #content > #issue-form {
+    margin-top: 2.5px !important;
+  }
+  #content > #issue-form > :first-child,
+  #content > .issue.details > :first-child {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+  }
+`;
+
+const ISSUE_VIEW_STYLE_RULES = `
+  #content > .contextual:has(+ h2.inline-block) {
+    display: none !important;
+  }
+  #sidebar,
+  #sidebar-switch-panel,
+  #sidebar-handler,
+  #sidebar-handler-container {
+    display: none !important;
+  }
+`;
+
+export function getCleanDialogStyles({ variant = 'default' }: GetCleanDialogStylesOptions = {}): string {
+  const includeCompactRules = variant === 'issue-compact' || variant === 'issue-view';
+  const includeIssueViewRules = variant === 'issue-view';
+
   return `
-    ${ISSUE_DIALOG_HIDE_SELECTORS.join(', ')} { display: none !important; }
-    #content { margin: 0 !important; width: 100% !important; padding: 10px !important; }
+    ${BASE_DIALOG_STYLE_RULES}
+    ${includeCompactRules ? ISSUE_COMPACT_STYLE_RULES : ''}
+    ${includeIssueViewRules ? ISSUE_VIEW_STYLE_RULES : ''}
   `;
 }

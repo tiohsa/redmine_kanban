@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { hasRedmineFormError, isIssueShowUrl, shouldTreatEditLoadAsSuccess } from './IframeEditDialog';
+import {
+  hasRedmineFormError,
+  isIssueShowUrl,
+  resolveDialogStyleVariant,
+  shouldTreatEditLoadAsSuccess,
+} from './IframeEditDialog';
 
 function createDoc(html: string): Document {
   return new DOMParser().parseFromString(html, 'text/html');
@@ -29,5 +34,12 @@ describe('IframeEditDialog edit success detection', () => {
     const doc = createDoc('<html><body><div class="flash error">error</div></body></html>');
     expect(hasRedmineFormError(doc)).toBe(true);
     expect(shouldTreatEditLoadAsSuccess('/issues/123', doc)).toBe(false);
+  });
+
+  it('uses the sidebarless variant for show URLs only', () => {
+    expect(resolveDialogStyleVariant('edit', '/issues/123', '/issues/123')).toBe('issue-view');
+    expect(resolveDialogStyleVariant('edit', '/issues/123/edit', '/issues/123/edit')).toBe('issue-compact');
+    expect(resolveDialogStyleVariant('create', '/projects/demo/issues/new', '/projects/demo/issues/new')).toBe('issue-compact');
+    expect(resolveDialogStyleVariant('time_entry', '/issues/123/time_entries/new', '/issues/123/time_entries/new')).toBe('default');
   });
 });
