@@ -83,3 +83,7 @@ ja:
   label_kanban_updated_subtask_failed: "チケット #%{id} を更新しましたが、子チケットの作成に失敗しました"
   label_kanban_deleted_with_undo: "#%{id} を削除しました（Undoで再作成）"
   label_kanban_url_clickable: "（URLをクリックできます）"
+  label_kanban_issue_create_dialog_title: "チケット登録"
+  label_kanban_issue_edit_dialog_title: "チケット編集"
+  label_kanban_issue_info_dialog_title: "チケット情報"
+  label_kanban_open_in_redmine: "Redmine標準画面を開く"

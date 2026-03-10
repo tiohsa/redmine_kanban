@@ -86,7 +86,11 @@ module RedmineKanban
       fit_all: :label_kanban_fit_all,
       time_entry_permission_required: :label_kanban_time_entry_permission_required,
       show_priority_lanes: :label_kanban_show_priority_lanes,
-      hide_priority_lanes: :label_kanban_hide_priority_lanes
+      hide_priority_lanes: :label_kanban_hide_priority_lanes,
+      issue_create_dialog_title: :label_kanban_issue_create_dialog_title,
+      issue_edit_dialog_title: :label_kanban_issue_edit_dialog_title,
+      issue_info_dialog_title: :label_kanban_issue_info_dialog_title,
+      open_in_redmine: :label_kanban_open_in_redmine
     }.freeze
 
     def initialize(project:, user:, project_ids: nil, issue_status_ids: nil, exclude_status_ids: nil)

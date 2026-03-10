@@ -25,6 +25,7 @@ type GetCleanDialogStylesOptions = {
 const BASE_DIALOG_STYLE_RULES = `
   ${ISSUE_DIALOG_HIDE_SELECTORS.join(', ')} { display: none !important; }
   #content { margin: 0 !important; width: 100% !important; padding: 10px !important; }
+  #content > h2 { display: none !important; }
 `;
 
 const ISSUE_COMPACT_STYLE_RULES = `
