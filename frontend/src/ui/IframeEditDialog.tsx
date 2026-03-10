@@ -237,7 +237,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
     const dialogTitle = mode === 'create'
         ? (labels.issue_create_dialog_title ?? 'Create issue')
         : issueTitle && issueId > 0
-            ? issueTitle
+            ? `${issueTitle} #${issueId}`
             : isViewDialog
                 ? (labels.issue_info_dialog_title ?? 'Issue details')
                 : (labels.issue_edit_dialog_title ?? 'Edit issue');
