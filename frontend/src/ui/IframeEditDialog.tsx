@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CleanDialogStyleVariant, getCleanDialogStyles } from './board/iframeStyles';
+import { IssueDialogHeader } from './IssueDialogHeader';
 import { extractIssueIdFromUrl } from './utils/url';
 import { useBulkSubtaskMutation } from './hooks/useBulkSubtaskMutation';
 
@@ -32,6 +33,7 @@ export function resolveDialogStyleVariant(
 type Props = {
     url: string;
     issueId: number;
+    issueTitle?: string;
     mode?: 'create' | 'edit' | 'time_entry';
     labels: Record<string, string>;
     baseUrl: string;
@@ -40,11 +42,12 @@ type Props = {
     onSuccess: (message: string) => void;
 };
 
-export function IframeEditDialog({ url, issueId, mode = 'edit', labels, baseUrl, queryKey, onClose, onSuccess }: Props) {
+export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labels, baseUrl, queryKey, onClose, onSuccess }: Props) {
     const [subtasks, setSubtasks] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [iframeRef, setIframeRef] = useState<HTMLIFrameElement | null>(null);
+    const [currentUrl, setCurrentUrl] = useState(url);
     const isSubmittingRef = useRef(false);
     const isIssueDialog = mode !== 'time_entry';
 
@@ -72,6 +75,9 @@ export function IframeEditDialog({ url, issueId, mode = 'edit', labels, baseUrl,
         try {
             const doc = iframe.contentDocument;
             const currentUrl = iframe.contentWindow?.location.href ?? '';
+            if (currentUrl) {
+                setCurrentUrl(currentUrl);
+            }
 
             if (doc) {
                 const style = doc.createElement('style');
@@ -227,12 +233,32 @@ export function IframeEditDialog({ url, issueId, mode = 'edit', labels, baseUrl,
     const dialogContainerClassName = `rk-iframe-dialog-container${isIssueDialog ? ' rk-iframe-dialog-container-issue' : ''}`;
     const footerClassName = `rk-create-footer${isIssueDialog ? ' rk-create-footer-compact' : ''}`;
     const actionsClassName = `rk-modal-actions${isIssueDialog ? ' rk-modal-actions-start' : ''}`;
+    const isViewDialog = mode !== 'create' && isIssueShowUrl(currentUrl || url);
+    const dialogTitle = mode === 'create'
+        ? (labels.issue_create_dialog_title ?? 'Create issue')
+        : issueTitle && issueId > 0
+            ? issueTitle
+            : isViewDialog
+                ? (labels.issue_info_dialog_title ?? 'Issue details')
+                : (labels.issue_edit_dialog_title ?? 'Edit issue');
+    const issueDialogLinkUrl = mode === 'time_entry' ? null : (currentUrl || url);
+    const issueDialogLinkLabel = labels.open_in_redmine ?? 'Open in Redmine';
+    const closeLabel = labels.close ?? 'Close';
 
     const [isSubtasksOpen, setIsSubtasksOpen] = useState(false);
 
     return (
         <div className="rk-modal-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
             <div className={dialogContainerClassName} onClick={(e) => e.stopPropagation()}>
+                {isIssueDialog ? (
+                    <IssueDialogHeader
+                        title={dialogTitle}
+                        linkUrl={issueDialogLinkUrl}
+                        linkAriaLabel={issueDialogLinkLabel}
+                        onClose={onClose}
+                        closeAriaLabel={closeLabel}
+                    />
+                ) : null}
                 <div className="rk-iframe-wrapper">
                     <iframe className="rk-iframe-dialog-frame" src={url} onLoad={handleLoad} />
                 </div>

@@ -974,6 +974,37 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   font-weight: 700;
 }
 
+.rk-issue-dialog-head {
+  margin-bottom: 8px;
+}
+
+.rk-issue-dialog-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rk-issue-dialog-title-wrap h3 {
+  font-size: 1rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rk-issue-dialog-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.rk-issue-dialog-link,
+.rk-issue-dialog-close {
+  color: #0f5ea8;
+}
+
 .rk-form {
   display: flex;
   flex-direction: column;
@@ -997,12 +1028,62 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 }
 
 .rk-modal-actions {
-  margin-top: 16px;
+  margin-top: 8px;
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
-  padding-top: 16px;
+  gap: 8px;
+  padding-top: 8px;
   border-top: 1px solid var(--rk-border);
+}
+
+.rk-modal-actions .rk-btn,
+.rk-create-footer .rk-btn {
+  min-width: 96px;
+  height: 36px;
+  padding: 0 18px;
+  border-radius: 6px;
+  border: 1px solid #c9d2de;
+  background: linear-gradient(180deg, #ffffff 0%, #f6f8fb 100%);
+  color: #243447;
+  font-size: 0.95rem;
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.rk-modal-actions .rk-btn:hover,
+.rk-create-footer .rk-btn:hover {
+  background: linear-gradient(180deg, #ffffff 0%, #eef2f7 100%);
+  border-color: #b7c2cf;
+  color: #17212b;
+  box-shadow: none;
+}
+
+.rk-modal-actions .rk-btn.rk-btn-primary,
+.rk-create-footer .rk-btn.rk-btn-primary {
+  border-color: #2d74da;
+  background: linear-gradient(180deg, #2f80ed 0%, #2a6fdb 100%);
+  color: #fff;
+  font-weight: 700;
+}
+
+.rk-modal-actions .rk-btn.rk-btn-primary:hover,
+.rk-create-footer .rk-btn.rk-btn-primary:hover {
+  border-color: #2566c7;
+  background: linear-gradient(180deg, #3a8bf3 0%, #2566cf 100%);
+  color: #fff;
+}
+
+.rk-modal-actions .rk-btn:disabled,
+.rk-create-footer .rk-btn:disabled {
+  opacity: 0.6;
+  box-shadow: none;
+}
+
+.rk-create-footer.rk-create-footer-compact .rk-btn {
+  min-width: 48px;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 0.8rem;
 }
 
 /* Ensure textareas and inputs in modal have enough space */
@@ -1139,6 +1220,13 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 
 }
 
+.rk-iframe-dialog-container-issue .rk-issue-dialog-head {
+  margin: 0;
+  padding: 8px 12px 6px;
+  border-bottom: 1px solid var(--rk-border);
+  background: linear-gradient(180deg, #fbfdff 0%, #f8fafc 100%);
+}
+
 
 
 .rk-iframe-wrapper {
@@ -1165,8 +1253,8 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 }
 
 .rk-create-footer-compact {
-  padding: 4px 16px;
-  gap: 4px;
+  padding: 2px 12px;
+  gap: 2px;
 }
 
 .rk-subtask-input {
@@ -1176,7 +1264,7 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 }
 
 .rk-create-footer-compact .rk-subtask-input {
-  gap: 4px;
+  gap: 2px;
 }
 
 .rk-subtask-toggle {
@@ -1193,7 +1281,7 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 }
 
 .rk-create-footer-compact .rk-subtask-toggle {
-  min-height: 18px;
+  min-height: 14px;
   line-height: 1;
 }
 

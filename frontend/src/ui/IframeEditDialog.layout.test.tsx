@@ -28,14 +28,20 @@ const labels: Record<string, string> = {
   created_subtask_failed: '作成失敗 %{id}',
   updated_subtask_failed: '更新失敗 %{id}',
   successful_update: '更新成功',
+  issue_create_dialog_title: 'チケット登録',
+  issue_edit_dialog_title: 'チケット編集',
+  issue_info_dialog_title: 'チケット情報',
+  open_in_redmine: 'Redmine標準画面を開く',
+  close: '閉じる',
 };
 
 describe('IframeEditDialog layout variants', () => {
   it('applies compact issue layout classes for issue dialogs', () => {
-    const { container } = render(
+    const { container, getByRole } = render(
       <IframeEditDialog
         url="/issues/1/edit"
         issueId={1}
+        issueTitle="Feature request"
         labels={labels}
         baseUrl="/projects/demo/kanban"
         queryKey={['kanban', 'board']}
@@ -47,6 +53,11 @@ describe('IframeEditDialog layout variants', () => {
     expect(container.querySelector('.rk-iframe-dialog-container-issue')).not.toBeNull();
     expect(container.querySelector('.rk-create-footer-compact')).not.toBeNull();
     expect(container.querySelector('.rk-modal-actions-start')).not.toBeNull();
+    expect(getByRole('heading', { name: 'Feature request #1' })).toBeTruthy();
+    expect(
+      container.querySelector<HTMLAnchorElement>('a[aria-label="Redmine標準画面を開く"]')?.getAttribute('href')
+    ).toBe('/issues/1/edit');
+    expect(getByRole('button', { name: '閉じる' })).toBeTruthy();
   });
 
   it('keeps time entry dialogs on the default layout', () => {
@@ -66,5 +77,6 @@ describe('IframeEditDialog layout variants', () => {
     expect(container.querySelector('.rk-iframe-dialog-container-issue')).toBeNull();
     expect(container.querySelector('.rk-create-footer-compact')).toBeNull();
     expect(container.querySelector('.rk-modal-actions-start')).toBeNull();
+    expect(container.querySelector('a[aria-label="Redmine標準画面を開く"]')).toBeNull();
   });
 });

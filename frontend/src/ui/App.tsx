@@ -9,6 +9,8 @@ import { replaceIssueInBoard, updateIssueInBoard, useIssueMutation } from './use
 import { findSubtaskInTree } from './subtasksTree';
 import { getCleanDialogStyles } from './board/iframeStyles';
 import { IframeEditDialog } from './IframeEditDialog';
+import { IssueDialogHeader } from './IssueDialogHeader';
+import { buildDefaultIssueCreateUrl, type ModalContext } from './issueDialog';
 import { applyBoardDataFilters, buildVisibleIssues, type Filters } from './boardFilters';
 import { buildBoardDataUrl, buildBoardQueryKey } from './boardQuery';
 import {
@@ -19,8 +21,6 @@ import {
 } from './utils/storage';
 
 type Props = { dataUrl: string };
-
-type ModalContext = { statusId: number; laneId?: string | number; issueId?: number };
 
 type FitMode = 'none' | 'width';
 
@@ -81,7 +81,7 @@ export function App({ dataUrl }: Props) {
 
   const [pendingDeleteIssue, setPendingDeleteIssue] = useState<Issue | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
-  const [iframeEditContext, setIframeEditContext] = useState<{ url: string; issueId: number } | null>(null);
+  const [iframeEditContext, setIframeEditContext] = useState<{ url: string; issueId: number; issueTitle?: string } | null>(null);
   const [iframeCreateUrl, setIframeCreateUrl] = useState<string | null>(null);
   const [iframeTimeEntryUrl, setIframeTimeEntryUrl] = useState<string | null>(null);
   const [priorityPopup, setPriorityPopup] = useState<{ issueId: number; currentId: number; x: number; y: number } | null>(null);
@@ -305,40 +305,20 @@ export function App({ dataUrl }: Props) {
   }, [filteredData, issues, sortKey, priorityRank]);
 
   const openCreate = (ctx: ModalContext) => {
-    // Generate Redmine new issue URL with query params
-    // baseUrl is like /projects/ecookbook/kanban, we need /projects/ecookbook/issues/new
-    const projectUrl = baseUrl.replace(/\/kanban$/, '');
-    const params = new URLSearchParams();
-    if (data?.meta.project_id) {
-      params.append('project_id', String(data.meta.project_id));
-    }
-    if (ctx.statusId) {
-      params.append('issue[status_id]', String(ctx.statusId));
-    }
-    // Handle assignee from laneId if applicable
-    if (ctx.laneId && effectiveLaneType === 'assignee' && ctx.laneId !== 'unassigned' && ctx.laneId !== 'none') {
-      params.append('issue[assigned_to_id]', String(ctx.laneId));
-    }
-    if (ctx.laneId !== undefined && effectiveLaneType === 'priority') {
-      if (ctx.laneId === 'no_priority') {
-        params.append('issue[priority_id]', '');
-      } else if (ctx.laneId !== 'none') {
-        params.append('issue[priority_id]', String(ctx.laneId));
-      }
-    }
-
-    setIframeCreateUrl(`${projectUrl}/issues/new?${params.toString()}`);
+    setIframeCreateUrl(buildDefaultIssueCreateUrl(baseUrl, data?.meta.project_id, effectiveLaneType, ctx));
   };
   const openEdit = (issueId: number) => {
     const issue = data?.issues.find((i) => i.id === issueId);
     if (!issue) return;
-    setIframeEditContext({ url: issue.urls.issue_edit, issueId });
+    const trackerName = data?.lists.trackers.find((t: { id: number, name: string }) => t.id === issue.tracker_id)?.name ?? '';
+    setIframeEditContext({ url: issue.urls.issue_edit, issueId, issueTitle: `${trackerName} #${issueId} ${issue.subject}`.trim() });
   };
 
   const openView = (issueId: number) => {
     const issue = data?.issues.find((i) => i.id === issueId);
     if (!issue) return;
-    setIframeEditContext({ url: issue.urls.issue, issueId });
+    const trackerName = data?.lists.trackers.find((t: { id: number, name: string }) => t.id === issue.tracker_id)?.name ?? '';
+    setIframeEditContext({ url: issue.urls.issue, issueId, issueTitle: `${trackerName} #${issueId} ${issue.subject}`.trim() });
   };
 
 
@@ -730,7 +710,10 @@ export function App({ dataUrl }: Props) {
                 // Previously it forced /edit. We remove that forcing for general clicks.
                 // However, verification needed: does `onEditClick` get called with /edit?
                 // Subtask info provides `issue.urls.issue` (show). So it will View.
-                setIframeEditContext({ url: urlPath, issueId });
+                const issue = data?.issues.find((it) => it.id === issueId);
+                const trackerName = issue ? (data?.lists.trackers.find((t: { id: number, name: string }) => t.id === issue.tracker_id)?.name ?? '') : '';
+                const issueTitle = issue ? `${trackerName} #${issueId} ${issue.subject}`.trim() : undefined;
+                setIframeEditContext({ url: urlPath, issueId, issueTitle });
               }
             }}
             onPriorityClick={(issueId, currentPriorityId, x, y) => {
@@ -757,6 +740,7 @@ export function App({ dataUrl }: Props) {
       {data && modal ? (
         <IssueModal
           data={data}
+          baseUrl={baseUrl}
           ctx={modal}
           onClose={() => setModal(null)}
           onSaved={async (payload, isEdit) => {
@@ -835,6 +819,7 @@ export function App({ dataUrl }: Props) {
         <IframeEditDialog
           url={iframeEditContext.url}
           issueId={iframeEditContext.issueId}
+          issueTitle={iframeEditContext.issueTitle}
           labels={data.labels}
           baseUrl={baseUrl}
           queryKey={boardQueryKey}
@@ -1920,12 +1905,14 @@ function linkifyText(text: string): React.ReactNode[] {
 
 function IssueModal({
   data,
+  baseUrl,
   ctx,
   onClose,
   onSaved,
   onDeleted,
 }: {
   data: BoardData;
+  baseUrl: string;
   ctx: ModalContext;
   onClose: () => void;
   onSaved: (payload: Record<string, unknown>, isEdit: boolean) => Promise<void>;
@@ -1938,6 +1925,18 @@ function IssueModal({
   const issue = ctx.issueId ? data.issues.find((i) => i.id === ctx.issueId) : null;
   const isEdit = !!issue;
   const canDelete = isEdit && data.meta.can_delete;
+  const modalTitle = isEdit
+    ? `${issue.subject} #${issue.id}`
+    : (labels.issue_create_dialog_title ?? 'Create issue');
+  const defaultLinkUrl = isEdit
+    ? issue?.urls.issue_edit
+    : buildDefaultIssueCreateUrl(
+      baseUrl,
+      data.meta.project_id,
+      data.meta.lane_type,
+      ctx,
+    );
+  const defaultLinkAriaLabel = labels.open_in_redmine ?? 'Open in Redmine';
 
   const [subtasksSubjects, setSubtasksSubjects] = useState(''); // Renamed from 'subjects'
 
@@ -2031,8 +2030,11 @@ function IssueModal({
   return (
     <div className="rk-modal-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
       <div className="rk-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="rk-modal-head">
-        </div>
+        <IssueDialogHeader
+          title={modalTitle}
+          linkUrl={defaultLinkUrl}
+          linkAriaLabel={defaultLinkAriaLabel}
+        />
 
         <form className="rk-form" onSubmit={(e) => { e.preventDefault(); void submit(); }}> {/* Changed to form and added onSubmit */}
           <label className="rk-field">
