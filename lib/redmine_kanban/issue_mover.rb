@@ -1,6 +1,9 @@
 module RedmineKanban
   class IssueMover
     include ParamNormalizer
+    include PriorityPropagation
+    include IssueWorkflow
+    include ServiceResponse
 
     def initialize(project:, issue:, user:)
       @project = project
@@ -10,7 +13,7 @@ module RedmineKanban
     end
 
     def move(status_id:, assigned_to_id: nil, priority_id: nil, assigned_to_provided: false, priority_provided: false, lock_version: nil)
-      return error('権限がありません') unless @issue.editable?
+      return error_response('権限がありません') unless @issue.editable?
 
       status_id = status_id.to_i
       assigned_to_id = normalize_assigned_to_id(assigned_to_id, assigned_to_provided)
@@ -18,20 +21,20 @@ module RedmineKanban
       lock_version = normalize_lock_version(lock_version)
 
       if priority_id == :invalid
-        return error('優先度の値が不正です')
+        return error_response('優先度の値が不正です')
       end
 
-      unless status_allowed?(status_id)
-        return error('ワークフロー上、このステータスへ遷移できません')
+      unless status_allowed_for?(@issue, status_id)
+        return error_response('ワークフロー上、このステータスへ遷移できません')
       end
 
-      wip_check = WipChecker.new(project: @project, settings: @settings, user: @user).check_move(
+      wip_check = check_wip!(
         issue: @issue,
-        target_status_id: status_id,
-        target_assigned_to_id: assigned_to_id == :no_change ? @issue.assigned_to_id : assigned_to_id
+        status_id: status_id,
+        assigned_to_id: assigned_to_id == :no_change ? @issue.assigned_to_id : assigned_to_id,
       )
       if wip_check[:blocked]
-        return error(wip_check[:message])
+        return error_response(wip_check[:message])
       end
       warning = wip_check[:message]
 
@@ -67,20 +70,20 @@ module RedmineKanban
         @issue.lock_version = lock_version if lock_version
 
         unless @issue.save
-          error_result = error(@issue.errors.full_messages.join(', '))
+          error_result = error_response(@issue.errors.full_messages.join(', '))
           raise ActiveRecord::Rollback
         end
 
-        priority_error = apply_priority_updates!(priority_id)
+        priority_error = apply_priority_updates!(@issue, priority_id)
         if priority_error
-          error_result = error(priority_error)
+          error_result = error_response(priority_error)
           raise ActiveRecord::Rollback
         end
 
         if preserve_parent_priority
           parent_error = restore_parent_priority!(parent_priority_before)
           if parent_error
-            error_result = error(parent_error)
+            error_result = error_response(parent_error)
             raise ActiveRecord::Rollback
           end
         end
@@ -89,15 +92,15 @@ module RedmineKanban
       return error_result if error_result
 
       if priority_id.is_a?(Integer)
-        reconcile_error = reconcile_priorities_after_commit!(priority_id)
-        return error(reconcile_error) if reconcile_error
+        reconcile_error = reconcile_priorities_after_commit!(@issue, priority_id)
+        return error_response(reconcile_error) if reconcile_error
       end
 
-      result = { ok: true, issue: BoardData.new(project: @issue.project, user: @user).send(:issue_to_h, @issue) }
+      result = { ok: true, issue: BoardIssuePresenter.new(user: @user).issue_to_h(@issue) }
       result[:warning] = warning if warning.present?
       result
     rescue ActiveRecord::StaleObjectError
-      error('他ユーザにより更新されました', status: :conflict)
+      error_response('他ユーザにより更新されました', status: :conflict)
     end
 
     private
@@ -115,15 +118,7 @@ module RedmineKanban
 
     def normalize_priority_id(value, provided)
       return :no_change unless provided
-      v = value.to_s.strip
-      return nil if v == '' || v == 'null'
-      return :invalid unless v.match?(/\A\d+\z/)
-
-      parsed = v.to_i
-      return :invalid unless parsed.positive?
-      return :invalid unless IssuePriority.active.exists?(id: parsed)
-
-      parsed
+      normalize_active_priority_id(value)
     end
 
     def restore_parent_priority!(expected_priority_id)
@@ -141,67 +136,5 @@ module RedmineKanban
       @settings.lane_type == 'assignee'
     end
 
-    def apply_priority_updates!(priority_id)
-      return nil if priority_id == :no_change
-
-      # 親・子更新の前後で親チケットに意図した優先度が残るよう再適用する。
-      ensure_priority_applied!(@issue, priority_id) ||
-        update_children_priority!(priority_id) ||
-        ensure_priority_applied!(@issue, priority_id)
-    end
-
-    def update_children_priority!(priority_id)
-      value = priority_id
-
-      @issue.children.each do |child|
-        return "子チケット ##{child.id} を更新できません" unless child.editable?
-
-        child.init_journal(@user)
-        child.safe_attributes = { 'priority_id' => value }
-        unless child.save
-          return child.errors.full_messages.join(', ')
-        end
-
-        child_priority_error = ensure_priority_applied!(child, priority_id)
-        return child_priority_error if child_priority_error
-      end
-
-      nil
-    end
-
-    def ensure_priority_applied!(issue, priority_id)
-      return nil unless priority_id.is_a?(Integer)
-      return nil if issue.priority_id == priority_id
-
-      issue.update_column(:priority_id, priority_id)
-      issue.priority_id = priority_id
-      nil
-    rescue StandardError => e
-      "チケット ##{issue.id} の優先度を反映できません: #{e.message}"
-    end
-
-    def reconcile_priorities_after_commit!(priority_id)
-      @issue.reload
-      issue_error = ensure_priority_applied!(@issue, priority_id)
-      return issue_error if issue_error
-
-      @issue.children.each do |child|
-        child.reload
-        child_error = ensure_priority_applied!(child, priority_id)
-        return child_error if child_error
-      end
-
-      nil
-    end
-
-    def status_allowed?(status_id)
-      return true if status_id == @issue.status_id
-
-      @issue.new_statuses_allowed_to(@user).map(&:id).include?(status_id)
-    end
-
-    def error(message, status: :unprocessable_entity)
-      { ok: false, message: message, http_status: status }
-    end
   end
 end

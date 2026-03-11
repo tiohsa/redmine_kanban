@@ -1,5 +1,7 @@
 module RedmineKanban
   class ApiController < ApplicationController
+    include ArrayParamNormalizer
+
     skip_before_action :authorize, only: [:update, :destroy]
 
     before_action :find_issue, only: [:move, :update, :destroy]
@@ -20,43 +22,24 @@ module RedmineKanban
 
     def move
       payload = params[:issue] || params
-      result = IssueMover.new(project: @project, issue: @issue, user: User.current).move(
+      render_service_result(IssueMover.new(project: @project, issue: @issue, user: User.current).move(
         status_id: payload[:status_id],
         assigned_to_id: payload[:assigned_to_id],
         priority_id: payload[:priority_id],
         assigned_to_provided: payload.key?(:assigned_to_id),
         priority_provided: payload.key?(:priority_id),
         lock_version: payload[:lock_version]
-      )
-
-      if result[:ok]
-        render json: result
-      else
-        render json: result, status: result[:http_status] || :unprocessable_entity
-      end
+      ))
     end
 
     def create
       issue_params = params[:issue] || params
-      result = IssueCreator.new(project: @project, user: User.current).create(params: issue_params)
-
-      if result[:ok]
-        render json: result
-      else
-        render json: result, status: :unprocessable_entity
-      end
+      render_service_result(IssueCreator.new(project: @project, user: User.current).create(params: issue_params))
     end
 
     def update
       payload = params[:issue] || params
-      result = IssueUpdater.new(project: @project, user: User.current).update(issue_id: @issue.id, params: payload)
-
-      if result[:ok]
-        render json: result
-      else
-        status = result[:http_status] || :unprocessable_entity
-        render json: result, status: status
-      end
+      render_service_result(IssueUpdater.new(project: @project, user: User.current).update(issue_id: @issue.id, params: payload))
     end
 
     def destroy
@@ -71,27 +54,27 @@ module RedmineKanban
 
     def require_move_permission
       issue_project = @issue.project
-      return if User.current.allowed_to?(:manage_redmine_kanban, @project) && User.current.allowed_to?(:edit_issues, issue_project)
-
-      render json: { ok: false, message: '権限がありません' }, status: :forbidden
+      require_permission!(
+        User.current.allowed_to?(:manage_redmine_kanban, @project) && User.current.allowed_to?(:edit_issues, issue_project)
+      )
     end
 
     def require_create_permission
-      return if User.current.allowed_to?(:manage_redmine_kanban, @project) && User.current.allowed_to?(:add_issues, @project)
-
-      render json: { ok: false, message: '権限がありません' }, status: :forbidden
+      require_permission!(
+        User.current.allowed_to?(:manage_redmine_kanban, @project) && User.current.allowed_to?(:add_issues, @project)
+      )
     end
 
     def require_update_permission
-      return if User.current.allowed_to?(:view_redmine_kanban, @project) && User.current.allowed_to?(:edit_issues, @project)
-
-      render json: { ok: false, message: '権限がありません' }, status: :forbidden
+      require_permission!(
+        User.current.allowed_to?(:view_redmine_kanban, @project) && User.current.allowed_to?(:edit_issues, @project)
+      )
     end
 
     def require_delete_permission
-      return if User.current.allowed_to?(:view_redmine_kanban, @project) && User.current.allowed_to?(:delete_issues, @project)
-
-      render json: { ok: false, message: '権限がありません' }, status: :forbidden
+      require_permission!(
+        User.current.allowed_to?(:view_redmine_kanban, @project) && User.current.allowed_to?(:delete_issues, @project)
+      )
     end
 
     def find_issue
@@ -101,11 +84,18 @@ module RedmineKanban
       render_404
     end
 
-    def normalize_integer_array_param(values)
-      Array(values).filter_map do |value|
-        id = value.to_i
-        id if id.positive?
+    def render_service_result(result)
+      if result[:ok]
+        render json: result
+      else
+        render json: result, status: result[:http_status] || :unprocessable_entity
       end
+    end
+
+    def require_permission!(allowed)
+      return if allowed
+
+      render json: { ok: false, message: '権限がありません' }, status: :forbidden
     end
   end
 end

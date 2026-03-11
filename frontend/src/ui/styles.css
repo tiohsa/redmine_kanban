@@ -1227,6 +1227,15 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   background: linear-gradient(180deg, #fbfdff 0%, #f8fafc 100%);
 }
 
+.rk-iframe-dialog-container-time-entry {
+  width: min(1120px, calc(100vw - 32px));
+  max-height: min(390px, calc(100vh - 32px));
+}
+
+.rk-iframe-dialog-container-time-entry .rk-iframe-wrapper {
+  min-height: 0;
+}
+
 
 
 .rk-iframe-wrapper {
@@ -1255,6 +1264,11 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 .rk-create-footer-compact {
   padding: 2px 12px;
   gap: 2px;
+}
+
+.rk-create-footer-time-entry {
+  padding: 10px 12px 12px;
+  gap: 6px;
 }
 
 .rk-subtask-input {

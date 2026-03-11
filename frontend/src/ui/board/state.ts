@@ -1,4 +1,5 @@
 import type { BoardData, Column, Issue, Lane } from '../types';
+import { resolveBoardLaneId } from './keys';
 import { sortIssues, type SortKey } from './sort';
 
 export type BoardState = {
@@ -28,7 +29,7 @@ export function buildBoardState(
 
   const cardsByCell = new Map<string, number[]>();
   for (const issue of issues) {
-    const laneId = resolveLaneId(data, issue);
+    const laneId = resolveBoardLaneId(data, issue);
     const key = cellKey(issue.status_id, laneId);
     const list = cardsByCell.get(key) ?? [];
     list.push(issue.id);
@@ -58,12 +59,4 @@ export function cellKey(statusId: number, laneId: string | number) {
   return `${statusId}:${String(laneId)}`;
 }
 
-export function resolveLaneId(data: BoardData, issue: Issue): string | number {
-  if (data.meta.lane_type === 'assignee') {
-    return issue.assigned_to_id ?? 'unassigned';
-  }
-  if (data.meta.lane_type === 'priority') {
-    return issue.priority_id ?? 'no_priority';
-  }
-  return 'none';
-}
+export { resolveBoardLaneId as resolveLaneId } from './keys';
