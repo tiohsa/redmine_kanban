@@ -2,40 +2,11 @@ import React, { useEffect, useMemo, useRef, useState, forwardRef, useImperativeH
 import type { BoardData, Column, Issue, Lane } from '../types';
 import type { BoardCommand } from './commands';
 import { getBoardCursor } from './cursor';
+import { buildSubtaskKey, laneIdToAssignee, laneIdToPriority, parseCellKey, parseSubtaskKey, resolveBoardLaneId } from './keys';
+import { getMetrics } from './metrics';
 import type { BoardState } from './state';
 import { cellKey } from './state';
 import { findSubtaskInTree, flattenSubtasks } from '../subtasksTree';
-
-// Base metrics that are not affected by font size
-const baseMetrics = {
-  columnWidth: 260,
-  columnGap: 0,
-  laneHeaderWidth: 120,
-  headerHeight: 40,
-  laneTitleHeight: 32,
-  laneGap: 0,
-  cellPadding: 12,
-  cardGap: 10,
-  boardPaddingBottom: 24,
-};
-
-function getMetrics(fontSize: number) {
-  // cardBaseHeight needs to accommodate:
-  // - 8px top padding
-  // - fontSize for subject
-  // - 9px gap
-  // - metaFontSize for row1 (ID, assignee)
-  // - 7px gap
-  // - metaFontSize for row2 (priority, due date)
-  // - 12px bottom padding
-  const metaFontSize = Math.max(10, fontSize - 2);
-  const cardBaseHeight = 8 + fontSize + 9 + metaFontSize + 7 + metaFontSize + 16;
-  return {
-    ...baseMetrics,
-    cardBaseHeight,
-    subtaskHeight: fontSize + 12,    // Dynamic based on font size
-  };
-}
 
 const dragThreshold = 4;
 const subtaskIndentPx = 14;
@@ -274,7 +245,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
 
     const issue = state.cardsById.get(drag.issueId);
     if (issue) {
-      const currentCell = cellKey(issue.status_id, resolveLaneId(data, issue));
+      const currentCell = cellKey(issue.status_id, resolveBoardLaneId(data, issue));
       if (currentCell === drag.dropTargetCellKey) {
         clearDragState();
         return;
@@ -554,7 +525,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       if (isBusy(hit.issueId)) return;
       const issue = state.cardsById.get(hit.issueId);
       if (!issue) return;
-      const originLaneId = resolveLaneId(data, issue);
+      const originLaneId = resolveBoardLaneId(data, issue);
       dragRef.current = {
         issueId: hit.issueId,
         start: point,
@@ -1403,7 +1374,7 @@ function drawCard(
       const indentLevel = Math.min(depth, maxSubtaskIndentLevel);
       const indentX = indentLevel * subtaskIndentPx;
       const sx = contentX + indentX;
-      const subtaskKey = `${issue.id}:${subtask.id}`;
+      const subtaskKey = buildSubtaskKey(issue.id, subtask.id);
       const subtaskRowRect = { x: x + 4, y: sy - 2, width: w - 8, height: metrics.subtaskHeight };
       if (rectMap) {
         rectMap.subtaskRows.set(subtaskKey, subtaskRowRect);
@@ -1686,32 +1657,32 @@ function hitTest(
 ): HitResult {
   for (const [key, rect] of rectMap.subtaskEditButtons) {
     if (pointInRect(point, rect)) {
-      const [issueIdStr, subtaskIdStr] = key.split(':');
-      return { kind: 'subtask_edit', issueId: parseInt(issueIdStr), subtaskId: parseInt(subtaskIdStr) };
+      const { issueId, subtaskId } = parseSubtaskKey(key);
+      return { kind: 'subtask_edit', issueId, subtaskId };
     }
   }
   for (const [key, rect] of rectMap.subtaskDeleteButtons) {
     if (pointInRect(point, rect)) {
-      const [issueIdStr, subtaskIdStr] = key.split(':');
-      return { kind: 'subtask_delete', issueId: parseInt(issueIdStr), subtaskId: parseInt(subtaskIdStr) };
+      const { issueId, subtaskId } = parseSubtaskKey(key);
+      return { kind: 'subtask_delete', issueId, subtaskId };
     }
   }
   for (const [key, rect] of rectMap.subtaskChecks) {
     if (pointInRect(point, rect)) {
-      const [issueIdStr, subtaskIdStr] = key.split(':');
-      return { kind: 'subtask_check', issueId: parseInt(issueIdStr), subtaskId: parseInt(subtaskIdStr) };
+      const { issueId, subtaskId } = parseSubtaskKey(key);
+      return { kind: 'subtask_check', issueId, subtaskId };
     }
   }
   for (const [key, rect] of rectMap.subtaskSubjects) {
     if (pointInRect(point, rect)) {
-      const [issueIdStr, subtaskIdStr] = key.split(':');
-      return { kind: 'subtask_subject', issueId: parseInt(issueIdStr), subtaskId: parseInt(subtaskIdStr) };
+      const { issueId, subtaskId } = parseSubtaskKey(key);
+      return { kind: 'subtask_subject', issueId, subtaskId };
     }
   }
   for (const [key, rect] of rectMap.subtaskRows) {
     if (pointInRect(point, rect)) {
-      const [issueIdStr, subtaskIdStr] = key.split(':');
-      return { kind: 'subtask_row', issueId: parseInt(issueIdStr), subtaskId: parseInt(subtaskIdStr) };
+      const { issueId, subtaskId } = parseSubtaskKey(key);
+      return { kind: 'subtask_row', issueId, subtaskId };
     }
   }
   for (const [issueId, rect] of rectMap.editButtons) {
@@ -1830,43 +1801,6 @@ function truncateText(ctx: CanvasRenderingContext2D, text: string, maxWidth: num
   return t + '...';
 }
 
-function parseCellKey(key: string, data: BoardData): [number, string | number] {
-  const [status, lane] = key.split(':');
-  const statusId = Number(status);
-  if (data.meta.lane_type === 'none') return [statusId, 'none'];
-  if (lane === 'unassigned') return [statusId, 'unassigned'];
-  if (lane === 'no_priority') return [statusId, 'no_priority'];
-  const parsedLane = Number(lane);
-  return [statusId, Number.isFinite(parsedLane) ? parsedLane : lane];
-}
-
-function resolveLaneId(data: BoardData, issue: Issue): string | number {
-  if (data.meta.lane_type === 'assignee') return issue.assigned_to_id ?? 'unassigned';
-  if (data.meta.lane_type === 'priority') return issue.priority_id ?? 'no_priority';
-  return 'none';
-}
-
-function laneIdToAssignee(
-  data: BoardData,
-  laneId: string | number,
-  fallback: number | null
-): number | null {
-  if (data.meta.lane_type !== 'assignee') return fallback;
-  if (laneId === 'unassigned') return null;
-  const parsed = Number(laneId);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function laneIdToPriority(
-  data: BoardData,
-  laneId: string | number,
-  fallback: number | null
-): number | null | undefined {
-  if (data.meta.lane_type !== 'priority') return fallback;
-  if (laneId === 'no_priority') return null;
-  const parsed = Number(laneId);
-  return Number.isFinite(parsed) ? parsed : null;
-}
 
 function pointInRect(point: { x: number; y: number }, rect: Rect) {
   return (

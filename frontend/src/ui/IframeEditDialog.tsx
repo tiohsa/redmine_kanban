@@ -25,7 +25,7 @@ export function resolveDialogStyleVariant(
     fallbackUrl: string
 ): CleanDialogStyleVariant {
     if (mode === 'time_entry') {
-        return 'default';
+        return 'time-entry-compact';
     }
     return isIssueShowUrl(currentUrl || fallbackUrl) ? 'issue-view' : 'issue-compact';
 }
@@ -50,6 +50,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
     const [currentUrl, setCurrentUrl] = useState(url);
     const isSubmittingRef = useRef(false);
     const isIssueDialog = mode !== 'time_entry';
+    const isTimeEntryDialog = mode === 'time_entry';
 
     const bulkMutation = useBulkSubtaskMutation(baseUrl, queryKey);
 
@@ -230,14 +231,18 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
         : mode === 'time_entry'
             ? (isSubmitting ? labels.saving : labels.save)
             : (isSubmitting ? labels.saving : labels.save);
-    const dialogContainerClassName = `rk-iframe-dialog-container${isIssueDialog ? ' rk-iframe-dialog-container-issue' : ''}`;
-    const footerClassName = `rk-create-footer${isIssueDialog ? ' rk-create-footer-compact' : ''}`;
-    const actionsClassName = `rk-modal-actions${isIssueDialog ? ' rk-modal-actions-start' : ''}`;
+    const dialogContainerClassName = `rk-iframe-dialog-container${isIssueDialog ? ' rk-iframe-dialog-container-issue' : ''}${isTimeEntryDialog ? ' rk-iframe-dialog-container-time-entry' : ''}`;
+    const footerClassName = `rk-create-footer${isIssueDialog || isTimeEntryDialog ? ' rk-create-footer-compact' : ''}${isTimeEntryDialog ? ' rk-create-footer-time-entry' : ''}`;
+    const actionsClassName = `rk-modal-actions${isIssueDialog || isTimeEntryDialog ? ' rk-modal-actions-start' : ''}`;
     const isViewDialog = mode !== 'create' && isIssueShowUrl(currentUrl || url);
+    const resolvedIssueTitle =
+        issueTitle && issueId > 0 && !issueTitle.includes(`#${issueId}`)
+            ? `${issueTitle} #${issueId}`
+            : issueTitle;
     const dialogTitle = mode === 'create'
         ? (labels.issue_create_dialog_title ?? 'Create issue')
-        : issueTitle && issueId > 0
-            ? `${issueTitle} #${issueId}`
+        : resolvedIssueTitle && issueId > 0
+            ? resolvedIssueTitle
             : isViewDialog
                 ? (labels.issue_info_dialog_title ?? 'Issue details')
                 : (labels.issue_edit_dialog_title ?? 'Edit issue');

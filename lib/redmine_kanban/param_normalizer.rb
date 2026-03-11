@@ -29,5 +29,17 @@ module RedmineKanban
 
       value.to_i
     end
+
+    def normalize_active_priority_id(value)
+      v = value.to_s.strip
+      return nil if v.empty? || v == 'null'
+      return :invalid unless v.match?(/\A\d+\z/)
+
+      parsed = v.to_i
+      return :invalid unless parsed.positive?
+      return :invalid unless IssuePriority.active.exists?(id: parsed)
+
+      parsed
+    end
   end
 end

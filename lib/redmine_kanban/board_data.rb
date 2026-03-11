@@ -139,13 +139,8 @@ module RedmineKanban
           )
         end,
         lanes: lanes,
-        lists: {
-          assignees: assignees_list,
-          trackers: trackers_list,
-          priorities: priorities_list,
-          projects: projects_list
-        },
-        issues: issues.map { |issue| issue_to_h(issue) },
+        lists: lists_builder.build,
+        issues: issues.map { |issue| issue_presenter.issue_to_h(issue) },
         labels: labels
       }
     end
@@ -182,30 +177,6 @@ module RedmineKanban
       lanes
     end
 
-    def projects_list
-      base_depth = @project.ancestors.count
-      @project.self_and_descendants.visible.to_a.map do |p|
-        { id: p.id, name: p.name, level: p.ancestors.count - base_depth }
-      end
-    end
-
-    def assignees_list
-      # Use assignable users from all selected projects
-      projects = Project.where(id: @project_ids).to_a
-      users = projects.map(&:assignable_users).flatten.uniq.sort_by { |u| u.name.to_s.downcase }
-      [{ id: nil, name: l(:label_kanban_unassigned) }] + users.map { |u| { id: u.id, name: u.name } }
-    end
-
-    def trackers_list
-      # Use trackers from all selected projects
-      trackers = Project.where(id: @project_ids).includes(:trackers).flat_map(&:trackers).uniq.sort_by(&:position)
-      trackers.map { |t| { id: t.id, name: t.name } }
-    end
-
-    def priorities_list
-      IssuePriority.active.sorted.to_a.map { |p| { id: p.id, name: p.name } }
-    end
-
     def fetch_column_counts(status_ids)
       base_issue_scope(status_ids).group(:status_id).count
     end
@@ -228,63 +199,20 @@ module RedmineKanban
       end.uniq
     end
 
-    def issue_to_h(issue)
-      {
-        id: issue.id,
-        parent_id: issue.parent_id,
-        subject: issue.subject,
-        status_id: issue.status_id,
-        can_log_time: @user.allowed_to?(:log_time, issue.project),
-        lock_version: issue.lock_version,
-        status_name: issue.status&.name,
-        status_is_closed: issue.status&.is_closed,
-        tracker_id: issue.tracker_id,
-        description: issue.description,
-        assigned_to_id: issue.assigned_to_id,
-        assigned_to_name: issue.assigned_to&.name,
-        start_date: issue.start_date&.to_s,
-        due_date: issue.due_date&.to_s,
-        priority_id: issue.priority_id,
-        priority_name: issue.priority&.name,
-        done_ratio: issue.done_ratio,
-        updated_on: issue.updated_on&.iso8601,
-        aging_days: aging_days(issue),
-        project: { id: issue.project_id, name: issue.project.name },
-        subtasks: subtask_tree(issue),
-        urls: {
-          issue: Rails.application.routes.url_helpers.issue_path(issue),
-          issue_edit: Rails.application.routes.url_helpers.edit_issue_path(issue)
-        }
-      }
-    end
-
-    def aging_days(issue)
-      return 0 unless issue.updated_on
-
-      (Date.current - issue.updated_on.to_date).to_i
-    end
-
-    def subtask_tree(issue)
-      issue.children.visible.map { |child| subtask_to_h(child) }
-    end
-
-    def subtask_to_h(issue)
-      {
-        id: issue.id,
-        subject: issue.subject,
-        status_id: issue.status_id,
-        is_closed: issue.status.is_closed?,
-        lock_version: issue.lock_version,
-        subtasks: subtask_tree(issue)
-      }
-    end
-
     def labels
       LABEL_TRANSLATION_KEYS.transform_values { |translation_key| l(translation_key) }
     end
 
     def l(key, options = {})
       ::I18n.t(key, **options)
+    end
+
+    def issue_presenter
+      @issue_presenter ||= BoardIssuePresenter.new(user: @user)
+    end
+
+    def lists_builder
+      @lists_builder ||= BoardListsBuilder.new(project: @project, project_ids: @project_ids, user: @user)
     end
   end
 end

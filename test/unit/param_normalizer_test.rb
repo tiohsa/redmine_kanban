@@ -20,6 +20,10 @@ class RedmineKanbanParamNormalizerTest < ActiveSupport::TestCase
     def optional_lock_version(value)
       send(:normalize_optional_lock_version, value)
     end
+
+    def active_priority_id(value)
+      send(:normalize_active_priority_id, value)
+    end
   end
 
   def setup
@@ -50,5 +54,17 @@ class RedmineKanbanParamNormalizerTest < ActiveSupport::TestCase
     assert_nil @normalizer.optional_lock_version(nil)
     assert_nil @normalizer.optional_lock_version(' ')
     assert_equal 7, @normalizer.optional_lock_version('7')
+  end
+
+  def test_normalize_active_priority_id
+    active_priority = IssuePriority.active.first
+    assert_not_nil active_priority
+
+    assert_nil @normalizer.active_priority_id(nil)
+    assert_nil @normalizer.active_priority_id('')
+    assert_nil @normalizer.active_priority_id('null')
+    assert_equal :invalid, @normalizer.active_priority_id('abc')
+    assert_equal :invalid, @normalizer.active_priority_id('0')
+    assert_equal active_priority.id, @normalizer.active_priority_id(active_priority.id.to_s)
   end
 end
