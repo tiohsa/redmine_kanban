@@ -4,6 +4,7 @@ import React from 'react';
 import { render } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { IframeEditDialog } from './IframeEditDialog';
+import { getCleanDialogStyles } from './board/iframeStyles';
 
 const mutateAsyncMock = vi.hoisted(() => vi.fn());
 
@@ -60,7 +61,7 @@ describe('IframeEditDialog layout variants', () => {
     expect(getByRole('button', { name: '閉じる' })).toBeTruthy();
   });
 
-  it('keeps time entry dialogs on the default layout', () => {
+  it('uses compact time entry layout without issue header chrome', () => {
     const { container } = render(
       <IframeEditDialog
         url="/issues/1/time_entries/new"
@@ -75,8 +76,23 @@ describe('IframeEditDialog layout variants', () => {
     );
 
     expect(container.querySelector('.rk-iframe-dialog-container-issue')).toBeNull();
-    expect(container.querySelector('.rk-create-footer-compact')).toBeNull();
-    expect(container.querySelector('.rk-modal-actions-start')).toBeNull();
+    expect(container.querySelector('.rk-iframe-dialog-container-time-entry')).not.toBeNull();
+    expect(container.querySelector('.rk-create-footer-compact')).not.toBeNull();
+    expect(container.querySelector('.rk-create-footer-time-entry')).not.toBeNull();
+    expect(container.querySelector('.rk-modal-actions-start')).not.toBeNull();
     expect(container.querySelector('a[aria-label="Redmine標準画面を開く"]')).toBeNull();
+    expect(container.querySelector('.rk-issue-dialog-head')).toBeNull();
+  });
+
+  it('hides native time entry buttons inside the iframe styles', () => {
+    const styles = getCleanDialogStyles({ variant: 'time-entry-compact' });
+
+    expect(styles).toContain('#content > p.buttons');
+    expect(styles).toContain('#content > a.icon-cancel');
+    expect(styles).toContain('#content a[href*="/kanban"]');
+    expect(styles).toContain('#new_time_entry p.buttons');
+    expect(styles).toContain('#new_time_entry input[name="commit"]');
+    expect(styles).toContain('#new_time_entry a.icon-cancel');
+    expect(styles).toContain('#new_time_entry a[href*="/kanban"]');
   });
 });

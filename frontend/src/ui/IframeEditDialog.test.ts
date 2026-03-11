@@ -2,8 +2,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   hasRedmineFormError,
-  isIssueShowUrl,
   resolveDialogStyleVariant,
+  isIssueShowUrl,
   shouldTreatEditLoadAsSuccess,
 } from './IframeEditDialog';
 
@@ -40,6 +40,6 @@ describe('IframeEditDialog edit success detection', () => {
     expect(resolveDialogStyleVariant('edit', '/issues/123', '/issues/123')).toBe('issue-view');
     expect(resolveDialogStyleVariant('edit', '/issues/123/edit', '/issues/123/edit')).toBe('issue-compact');
     expect(resolveDialogStyleVariant('create', '/projects/demo/issues/new', '/projects/demo/issues/new')).toBe('issue-compact');
-    expect(resolveDialogStyleVariant('time_entry', '/issues/123/time_entries/new', '/issues/123/time_entries/new')).toBe('default');
+    expect(resolveDialogStyleVariant('time_entry', '/issues/123/time_entries/new', '/issues/123/time_entries/new')).toBe('time-entry-compact');
   });
 });
