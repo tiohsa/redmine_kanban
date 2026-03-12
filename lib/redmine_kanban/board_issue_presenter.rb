@@ -26,6 +26,7 @@ module RedmineKanban
         updated_on: issue.updated_on&.iso8601,
         aging_days: aging_days(issue),
         project: { id: issue.project_id, name: issue.project.name },
+        permissions: permissions_for(issue),
         subtasks: subtask_tree(issue),
         urls: {
           issue: Rails.application.routes.url_helpers.issue_path(issue),
@@ -53,7 +54,17 @@ module RedmineKanban
         status_id: issue.status_id,
         is_closed: issue.status.is_closed?,
         lock_version: issue.lock_version,
+        permissions: permissions_for(issue),
         subtasks: subtask_tree(issue),
+      }
+    end
+
+    def permissions_for(issue)
+      project = issue.project
+      {
+        can_move: @user.allowed_to?(:manage_redmine_kanban, project) && @user.allowed_to?(:edit_issues, project),
+        can_edit: @user.allowed_to?(:view_redmine_kanban, project) && @user.allowed_to?(:edit_issues, project),
+        can_delete: @user.allowed_to?(:view_redmine_kanban, project) && @user.allowed_to?(:delete_issues, project),
       }
     end
   end

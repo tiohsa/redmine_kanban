@@ -1,6 +1,6 @@
 import type { BoardData } from './types';
 
-export type ModalContext = { statusId: number; laneId?: string | number; issueId?: number };
+export type ModalContext = { statusId: number; laneId?: string | number; issueId?: number; projectId?: number };
 
 export function buildDefaultIssueCreateUrl(
   baseUrl: string,
@@ -10,9 +10,10 @@ export function buildDefaultIssueCreateUrl(
 ): string {
   const projectUrl = baseUrl.replace(/\/kanban$/, '');
   const params = new URLSearchParams();
+  const effectiveProjectId = ctx.projectId ?? projectId;
 
-  if (projectId) {
-    params.append('project_id', String(projectId));
+  if (effectiveProjectId) {
+    params.append('project_id', String(effectiveProjectId));
   }
   if (ctx.statusId) {
     params.append('issue[status_id]', String(ctx.statusId));

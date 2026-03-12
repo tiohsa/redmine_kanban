@@ -25,6 +25,8 @@ type ToolbarProps = {
   onToggleTimeEntryOnClose: () => void;
   priorityLaneEnabled: boolean;
   onTogglePriorityLane: () => void;
+  viewableProjectsEnabled: boolean;
+  onToggleViewableProjects: () => void;
 };
 
 function Dropdown<T extends string>({
@@ -382,9 +384,12 @@ export function KanbanToolbar({
   onToggleTimeEntryOnClose,
   priorityLaneEnabled,
   onTogglePriorityLane,
+  viewableProjectsEnabled,
+  onToggleViewableProjects,
 }: ToolbarProps) {
   const assignees = data.lists.assignees ?? [];
   const labels = data.labels;
+  const projectOptions = (viewableProjectsEnabled ? data.lists.viewable_projects : data.lists.projects) ?? [];
   const assigneeOptions = [
     { id: 'all', name: labels.all },
     { id: 'me', name: labels.me },
@@ -448,7 +453,7 @@ export function KanbanToolbar({
         <MultiSelectDropdown
           label={labels.project}
           icon="folder"
-          options={(data.lists.projects ?? []).map((project) => ({
+          options={projectOptions.map((project) => ({
             id: String(project.id),
             name: '\xA0'.repeat(project.level * 2) + project.name,
           }))}
@@ -564,6 +569,15 @@ export function KanbanToolbar({
           title={timeEntryOnClose ? (labels.disable_time_entry_on_close ?? 'Disable time entry on close') : (labels.enable_time_entry_on_close ?? 'Enable time entry on close')}
         >
           <span className="rk-icon">schedule</span>
+        </button>
+
+        <button
+          type="button"
+          className={`rk-btn ${viewableProjectsEnabled ? 'rk-btn-toggle-active' : ''}`}
+          onClick={onToggleViewableProjects}
+          title={viewableProjectsEnabled ? labels.hide_viewable_projects : labels.show_viewable_projects}
+        >
+          <span className="rk-icon">folder_shared</span>
         </button>
 
         <button

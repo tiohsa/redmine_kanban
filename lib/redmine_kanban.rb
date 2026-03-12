@@ -6,6 +6,7 @@ end
 
 require_relative 'redmine_kanban/settings'
 require_relative 'redmine_kanban/wip_checker'
+require_relative 'redmine_kanban/project_catalog'
 require_relative 'redmine_kanban/board_data'
 require_relative 'redmine_kanban/board_issue_presenter'
 require_relative 'redmine_kanban/board_lists_builder'

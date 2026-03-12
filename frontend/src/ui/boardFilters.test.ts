@@ -44,6 +44,8 @@ function makeBoardData(issues: Issue[]): BoardData {
       trackers: [{ id: 1, name: 'Bug' }],
       priorities: [{ id: 1, name: 'Normal' }],
       projects: [{ id: 1, name: 'Demo', level: 0 }],
+      viewable_projects: [{ id: 1, name: 'Demo', level: 0 }],
+      creatable_projects: [{ id: 1, name: 'Demo', level: 0 }],
     },
     issues,
     labels: {

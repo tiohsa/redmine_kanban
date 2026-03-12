@@ -42,7 +42,7 @@ function makeBoardData(issues: Issue[]): BoardData {
       { id: 2, name: 'Closed', is_closed: true, count: 0 },
     ],
     lanes: [],
-    lists: { assignees: [], trackers: [], priorities: [], projects: [] },
+    lists: { assignees: [], trackers: [], priorities: [], projects: [], viewable_projects: [], creatable_projects: [] },
     issues,
     labels: {},
   };

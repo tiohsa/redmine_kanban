@@ -19,7 +19,20 @@ export type Subtask = {
   status_id: number;
   is_closed: boolean;
   lock_version?: number;
+  permissions?: IssuePermissions;
   subtasks?: Subtask[];
+};
+
+export type IssuePermissions = {
+  can_move: boolean;
+  can_edit: boolean;
+  can_delete: boolean;
+};
+
+export type ProjectListItem = {
+  id: number;
+  name: string;
+  level: number;
 };
 
 export type Issue = {
@@ -41,6 +54,7 @@ export type Issue = {
   aging_days?: number;
   done_ratio?: number;
   subtasks?: Subtask[];
+  permissions?: IssuePermissions;
   urls: {
     issue: string;
     issue_edit: string;
@@ -52,7 +66,9 @@ export type Lists = {
   assignees: { id: number | null; name: string }[];
   trackers: { id: number; name: string }[];
   priorities: { id: number; name: string }[];
-  projects: { id: number; name: string; level: number }[];
+  projects: ProjectListItem[];
+  viewable_projects: ProjectListItem[];
+  creatable_projects: ProjectListItem[];
 };
 
 export type Meta = {
