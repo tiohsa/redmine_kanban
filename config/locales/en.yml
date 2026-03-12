@@ -86,3 +86,5 @@ en:
   label_kanban_issue_edit_dialog_title: "Edit Issue"
   label_kanban_issue_info_dialog_title: "Issue Details"
   label_kanban_open_in_redmine: "Open in Redmine"
+  label_kanban_show_viewable_projects: "Show viewable projects"
+  label_kanban_hide_viewable_projects: "Show subtree projects only"

@@ -104,7 +104,7 @@ type Props = {
   canMove: boolean;
   canCreate: boolean;
   onCommand: (command: BoardCommand) => void;
-  onCreate: (ctx: { statusId: number; laneId?: string | number }) => void;
+  onCreate: (ctx: { statusId: number; laneId?: string | number; projectId?: number }) => void;
   onEdit: (issueId: number) => void;
   onView: (issueId: number) => void;
   onDelete: (issueId: number, source: 'card' | 'subtask') => void;
@@ -445,6 +445,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     if (hit.kind === 'subtask_check') {
       if (isBusy(hit.subtaskId)) return;
       const issue = state.cardsById.get(hit.issueId);
+      if (!subtaskPermissions(issue, hit.subtaskId)?.can_move) return;
       if (issue && onSubtaskToggle) {
         const subtask = findSubtaskInTree(issue.subtasks, hit.subtaskId);
         if (subtask) {
@@ -462,12 +463,16 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
 
     if (hit.kind === 'subtask_edit') {
       if (isBusy(hit.subtaskId)) return;
+      const issue = state.cardsById.get(hit.issueId);
+      if (!subtaskPermissions(issue, hit.subtaskId)?.can_edit) return;
       onEdit(hit.subtaskId);
       return;
     }
 
     if (hit.kind === 'subtask_delete') {
       if (isBusy(hit.subtaskId)) return;
+      const issue = state.cardsById.get(hit.issueId);
+      if (!subtaskPermissions(issue, hit.subtaskId)?.can_delete) return;
       onDelete(hit.subtaskId, 'subtask');
       return;
     }
@@ -480,6 +485,8 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
 
     if (hit.kind === 'edit') {
       if (isBusy(hit.issueId)) return;
+      const issue = state.cardsById.get(hit.issueId);
+      if (!canEditIssue(issue)) return;
       onEdit(hit.issueId);
       return;
     }
@@ -496,6 +503,8 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
 
     if (hit.kind === 'delete') {
       if (isBusy(hit.issueId)) return;
+      const issue = state.cardsById.get(hit.issueId);
+      if (!canDeleteIssue(issue)) return;
       onDelete(hit.issueId, 'card');
       return;
     }
@@ -504,6 +513,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       if (isBusy(hit.issueId)) return;
       event.preventDefault();
       const issue = state.cardsById.get(hit.issueId);
+      if (!canEditIssue(issue)) return;
       if (issue && onPriorityClick) {
         onPriorityClick(hit.issueId, issue.priority_id ?? 2, event.clientX, event.clientY);
       }
@@ -515,6 +525,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       if (isBusy(hit.issueId)) return;
       event.preventDefault();
       const issue = state.cardsById.get(hit.issueId);
+      if (!canEditIssue(issue)) return;
       if (issue && onDateClick) {
         onDateClick(hit.issueId, issue.due_date ?? null, event.clientX, event.clientY);
       }
@@ -524,7 +535,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     if (hit.kind === 'card' || hit.kind === 'subtask_area' || hit.kind === 'subtask_row') {
       if (isBusy(hit.issueId)) return;
       const issue = state.cardsById.get(hit.issueId);
-      if (!issue) return;
+      if (!issue || !canMoveIssue(issue)) return;
       const originLaneId = resolveBoardLaneId(data, issue);
       dragRef.current = {
         issueId: hit.issueId,
@@ -637,7 +648,8 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
 
     if (drag.dragging) {
       const hit = hitTestCell(point, rectMapRef.current, data);
-      if (hit && canMove) {
+      const draggedIssue = state.cardsById.get(drag.issueId);
+      if (hit && canMove && canMoveIssue(draggedIssue)) {
         const issue = state.cardsById.get(drag.issueId);
         const assignedToId = laneIdToAssignee(data, hit.laneId, issue?.assigned_to_id ?? null);
         const priorityId = laneIdToPriority(data, hit.laneId, issue?.priority_id ?? null);
@@ -727,6 +739,22 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   );
 }
 );
+
+function canMoveIssue(issue?: Issue | null) {
+  return !!issue?.permissions?.can_move;
+}
+
+function canEditIssue(issue?: Issue | null) {
+  return !!issue?.permissions?.can_edit;
+}
+
+function canDeleteIssue(issue?: Issue | null) {
+  return !!issue?.permissions?.can_delete;
+}
+
+function subtaskPermissions(issue: Issue | undefined, subtaskId: number) {
+  return findSubtaskInTree(issue?.subtasks, subtaskId)?.permissions;
+}
 
 function computeLayout(
   state: BoardState,
@@ -1459,7 +1487,10 @@ function drawCard(
       const isSubtaskActionVisible = hoveredSubtaskKey === subtaskKey;
       if (isSubtaskActionVisible && rectMap) {
         const actionIconSize = 20;
-        const actionCount = 1 + (data.meta.can_delete ? 1 : 0);
+        const canEditSubtask = !!subtask.permissions?.can_edit;
+        const canDeleteSubtask = !!subtask.permissions?.can_delete;
+        const actionCount = Number(canEditSubtask) + Number(canDeleteSubtask);
+        if (actionCount === 0) return;
         let subtaskButtonRightX = x + w - 6;
         const overlayPadX = 3;
         const overlayPadY = 2;
@@ -1477,7 +1508,7 @@ function drawCard(
         ctx.font = '18px "Material Symbols Outlined"';
         ctx.textBaseline = 'middle';
 
-        if (data.meta.can_delete) {
+        if (canDeleteSubtask) {
           const subtaskDeleteRect = {
             x: subtaskButtonRightX - actionIconSize,
             y: sy - 2,
@@ -1490,15 +1521,17 @@ function drawCard(
           subtaskButtonRightX -= actionIconSize;
         }
 
-        const subtaskEditRect = {
-          x: subtaskButtonRightX - actionIconSize,
-          y: sy - 2,
-          width: actionIconSize,
-          height: actionIconSize,
-        };
-        rectMap.subtaskEditButtons.set(subtaskKey, subtaskEditRect);
-        ctx.fillStyle = theme.textSecondary;
-        ctx.fillText('edit', subtaskEditRect.x, subtaskEditRect.y + subtaskEditRect.height / 2);
+        if (canEditSubtask) {
+          const subtaskEditRect = {
+            x: subtaskButtonRightX - actionIconSize,
+            y: sy - 2,
+            width: actionIconSize,
+            height: actionIconSize,
+          };
+          rectMap.subtaskEditButtons.set(subtaskKey, subtaskEditRect);
+          ctx.fillStyle = theme.textSecondary;
+          ctx.fillText('edit', subtaskEditRect.x, subtaskEditRect.y + subtaskEditRect.height / 2);
+        }
         ctx.restore();
       }
     });
@@ -1512,9 +1545,11 @@ function drawCard(
   if (rectMap) {
     const actionIconSize = 24;
     let buttonRightX = x + w - 4;
-    const actionButtonCount = 1 + (data.meta.can_delete ? 1 : 0);
+    const canEditCard = canEditIssue(issue);
+    const canDeleteCard = canDeleteIssue(issue);
+    const actionButtonCount = Number(canEditCard) + Number(canDeleteCard);
 
-    if (isActionIconsVisible) {
+    if (isActionIconsVisible && actionButtonCount > 0) {
       const overlayPadX = 3;
       const overlayPadY = 2;
       const overlayWidth = actionButtonCount * actionIconSize + overlayPadX * 2;
@@ -1534,7 +1569,7 @@ function drawCard(
     }
 
     // Delete Button
-    if (isActionIconsVisible && data.meta.can_delete) {
+    if (isActionIconsVisible && canDeleteCard) {
       const deleteRect = {
         x: buttonRightX - actionIconSize,
         y: y + 4,
@@ -1547,7 +1582,7 @@ function drawCard(
       buttonRightX -= actionIconSize;
     }
 
-    if (isActionIconsVisible) {
+    if (isActionIconsVisible && canEditCard) {
       const editRect = {
         x: buttonRightX - actionIconSize,
         y: y + 4,

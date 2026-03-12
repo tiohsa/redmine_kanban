@@ -87,3 +87,5 @@ ja:
   label_kanban_issue_edit_dialog_title: "チケット編集"
   label_kanban_issue_info_dialog_title: "チケット情報"
   label_kanban_open_in_redmine: "Redmine標準画面を開く"
+  label_kanban_show_viewable_projects: "閲覧可能プロジェクトを表示"
+  label_kanban_hide_viewable_projects: "現在配下プロジェクトのみ表示"

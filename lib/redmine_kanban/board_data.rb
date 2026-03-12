@@ -90,14 +90,17 @@ module RedmineKanban
       issue_create_dialog_title: :label_kanban_issue_create_dialog_title,
       issue_edit_dialog_title: :label_kanban_issue_edit_dialog_title,
       issue_info_dialog_title: :label_kanban_issue_info_dialog_title,
-      open_in_redmine: :label_kanban_open_in_redmine
+      open_in_redmine: :label_kanban_open_in_redmine,
+      show_viewable_projects: :label_kanban_show_viewable_projects,
+      hide_viewable_projects: :label_kanban_hide_viewable_projects
     }.freeze
 
     def initialize(project:, user:, project_ids: nil, issue_status_ids: nil, exclude_status_ids: nil)
       @project = project
       @user = user
       @settings = Settings.new(Setting.plugin_redmine_kanban)
-      @project_ids = normalize_ids(project_ids).presence || [@project.id]
+      @project_catalog = ProjectCatalog.new(user: @user)
+      @project_ids = sanitize_project_ids(normalize_ids(project_ids)).presence || [@project.id]
       @issue_status_ids = normalize_ids(issue_status_ids)
       @exclude_status_ids = normalize_ids(exclude_status_ids)
     end
@@ -197,6 +200,11 @@ module RedmineKanban
         id = value.to_i
         id if id.positive?
       end.uniq
+    end
+
+    def sanitize_project_ids(ids)
+      allowed_ids = @project_catalog.viewable_project_ids
+      ids.select { |id| allowed_ids.include?(id) }
     end
 
     def labels

@@ -16,6 +16,11 @@ function makeIssue(id: number, attrs: Partial<Issue> = {}): Issue {
     description: '',
     assigned_to_id: null,
     lock_version: 1,
+    permissions: {
+      can_move: true,
+      can_edit: true,
+      can_delete: true,
+    },
     urls: { issue: `/issues/${id}`, issue_edit: `/issues/${id}/edit` },
     ...attrs,
   };
@@ -42,7 +47,7 @@ function makeBoardData(issue: Issue): BoardData {
       { id: 2, name: 'Closed', is_closed: false, count: 0 },
     ],
     lanes: [],
-    lists: { assignees: [], trackers: [], priorities: [], projects: [] },
+    lists: { assignees: [], trackers: [], priorities: [], projects: [], viewable_projects: [], creatable_projects: [] },
     issues: [issue],
     labels: {},
   };

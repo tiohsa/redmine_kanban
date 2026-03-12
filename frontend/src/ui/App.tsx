@@ -18,6 +18,21 @@ import { useKanbanPreferences } from './useKanbanPreferences';
 
 type Props = { dataUrl: string };
 
+export function normalizeProjectIds(projectIds: number[], allowedProjectIds: Set<number>): number[] {
+  return projectIds.filter((projectId) => allowedProjectIds.has(projectId));
+}
+
+export function resolveDefaultCreateProjectId(
+  selectedProjectIds: number[],
+  creatableProjectIds: Set<number>,
+  fallbackProjectId: number | undefined,
+): number | null {
+  const selectedCreatableProjectId = selectedProjectIds.find((projectId) => creatableProjectIds.has(projectId));
+  if (selectedCreatableProjectId) return selectedCreatableProjectId;
+  if (fallbackProjectId && creatableProjectIds.has(fallbackProjectId)) return fallbackProjectId;
+  return null;
+}
+
 export function App({ dataUrl }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +59,8 @@ export function App({ dataUrl }: Props) {
     setTimeEntryOnClose,
     priorityLaneEnabled,
     setPriorityLaneEnabled,
+    viewableProjectsEnabled,
+    setViewableProjectsEnabled,
   } = useKanbanPreferences(dataUrl);
 
   const baseUrl = useMemo(() => projectScope, [projectScope]);
@@ -78,6 +95,23 @@ export function App({ dataUrl }: Props) {
     return buildDisplayData(data, priorityLaneEnabled);
   }, [data, priorityLaneEnabled]);
 
+  const projectOptions = useMemo(
+    () => (viewableProjectsEnabled ? data?.lists.viewable_projects : data?.lists.projects) ?? [],
+    [data, viewableProjectsEnabled],
+  );
+  const allowedProjectIds = useMemo(() => new Set(projectOptions.map((project) => project.id)), [projectOptions]);
+  const creatableProjectIds = useMemo(
+    () => new Set((data?.lists.creatable_projects ?? []).map((project) => project.id)),
+    [data],
+  );
+
+  useEffect(() => {
+    if (!data) return;
+    const normalizedProjectIds = normalizeProjectIds(filters.projectIds, allowedProjectIds);
+    if (normalizedProjectIds.length === filters.projectIds.length) return;
+    setFilters((previous) => ({ ...previous, projectIds: normalizedProjectIds }));
+  }, [allowedProjectIds, data, filters.projectIds, setFilters]);
+
   const effectiveLaneType = displayData?.meta.lane_type;
   const dialogs = useKanbanDialogs(baseUrl, data, effectiveLaneType);
   const actions = useKanbanActions({
@@ -111,8 +145,16 @@ export function App({ dataUrl }: Props) {
     return buildBoardState(filteredData, issues, sortKey, priorityRank);
   }, [filteredData, issues, priorityRank, sortKey]);
 
-  const canMove = !!data?.meta.can_move;
-  const canCreate = !!data?.meta.can_create;
+  const canMove = issues.some((issue) => issue.permissions?.can_move);
+  const selectedProjectIds = useMemo(
+    () => (filters.projectIds.length > 0 ? filters.projectIds : data?.meta.project_id ? [data.meta.project_id] : []),
+    [data?.meta.project_id, filters.projectIds],
+  );
+  const defaultCreateProjectId = useMemo(
+    () => resolveDefaultCreateProjectId(selectedProjectIds, creatableProjectIds, data?.meta.project_id),
+    [creatableProjectIds, data?.meta.project_id, selectedProjectIds],
+  );
+  const canCreate = defaultCreateProjectId !== null;
 
   return (
     <div className={`rk-root${fullWindow ? ' rk-root-fullwindow' : ''}`}>
@@ -146,14 +188,17 @@ export function App({ dataUrl }: Props) {
           onChangeFontSize={setFontSize}
           canCreate={canCreate}
           onCreate={() => {
+            if (defaultCreateProjectId === null) return;
             const defaultStatus = data.columns.find((column) => !column.is_closed)?.id ?? data.columns[0]?.id ?? 1;
-            dialogs.openCreate({ statusId: defaultStatus });
+            dialogs.openCreate({ statusId: defaultStatus, projectId: defaultCreateProjectId });
           }}
           onScrollToTop={() => boardRef.current?.scrollToTop()}
           timeEntryOnClose={timeEntryOnClose}
           onToggleTimeEntryOnClose={() => setTimeEntryOnClose((value) => !value)}
           priorityLaneEnabled={priorityLaneEnabled}
           onTogglePriorityLane={() => setPriorityLaneEnabled((value) => !value)}
+          viewableProjectsEnabled={viewableProjectsEnabled}
+          onToggleViewableProjects={() => setViewableProjectsEnabled((value) => !value)}
         />
       ) : (
         <div className="rk-empty">{labels?.fetching_data}</div>
@@ -176,7 +221,12 @@ export function App({ dataUrl }: Props) {
                 actions.moveIssue(command.issueId, command.statusId, command.assignedToId, command.priorityId);
               }
             }}
-            onCreate={dialogs.openCreate}
+            onCreate={(ctx) => {
+              dialogs.openCreate({
+                ...ctx,
+                projectId: ctx.projectId ?? defaultCreateProjectId ?? undefined,
+              });
+            }}
             onEdit={dialogs.openEdit}
             onView={dialogs.openView}
             onDelete={actions.requestDelete}

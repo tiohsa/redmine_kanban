@@ -32,7 +32,11 @@ export function KanbanIssueModal({ data, baseUrl, ctx, onClose, onSaved, onDelet
   })();
 
   const [subject, setSubject] = useState(issue?.subject ?? '');
-  const [projectId, setProjectId] = useState(issue?.project?.id ? String(issue.project.id) : String(data.meta.project_id));
+  const [projectId, setProjectId] = useState(
+    issue?.project?.id
+      ? String(issue.project.id)
+      : String(ctx.projectId ?? data.meta.project_id),
+  );
   const [trackerId, setTrackerId] = useState(issue?.tracker_id ? String(issue.tracker_id) : String(defaultTracker));
   const [assigneeId, setAssigneeId] = useState(issue?.assigned_to_id ? String(issue.assigned_to_id) : defaultAssignee);
   const [dueDate, setDueDate] = useState(issue?.due_date ?? '');
@@ -117,7 +121,7 @@ export function KanbanIssueModal({ data, baseUrl, ctx, onClose, onSaved, onDelet
           <label className="rk-field">
             <span className="rk-label">{labels.project}</span>
             <select value={projectId} onChange={(event) => setProjectId(event.target.value)} disabled={isEdit}>
-              {data.lists.projects.map((project) => (
+              {data.lists.creatable_projects.map((project) => (
                 <option key={project.id} value={project.id}>
                   {'\u00A0'.repeat(project.level * 2)}{project.name}
                 </option>

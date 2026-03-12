@@ -44,6 +44,7 @@ export function useKanbanPreferences(dataUrl: string) {
   const filtersStorageKey = useMemo(() => makeScopedStorageKey('rk_filters', projectScope), [projectScope]);
   const hiddenStatusStorageKey = useMemo(() => makeScopedStorageKey('rk_hidden_status_ids', projectScope), [projectScope]);
   const priorityLaneStorageKey = useMemo(() => makeScopedStorageKey('rk_priority_lane_enabled', projectScope), [projectScope]);
+  const viewableProjectsStorageKey = useMemo(() => makeScopedStorageKey('rk_viewable_projects_enabled', projectScope), [projectScope]);
 
   const [filters, setFilters] = useState<Filters>(() => readFilters(filtersStorageKey));
   const [fullWindow, setFullWindow] = useState(() => {
@@ -109,6 +110,9 @@ export function useKanbanPreferences(dataUrl: string) {
   });
   const [priorityLaneEnabled, setPriorityLaneEnabled] = useState(() =>
     readScopedBooleanWithLegacy(priorityLaneStorageKey, 'rk_priority_lane_enabled', false),
+  );
+  const [viewableProjectsEnabled, setViewableProjectsEnabled] = useState(() =>
+    readScopedBooleanWithLegacy(viewableProjectsStorageKey, 'rk_viewable_projects_enabled', false),
   );
 
   useEffect(() => {
@@ -194,6 +198,14 @@ export function useKanbanPreferences(dataUrl: string) {
     }
   }, [priorityLaneEnabled, priorityLaneStorageKey]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(viewableProjectsStorageKey, viewableProjectsEnabled ? '1' : '0');
+    } catch {
+      // ignore
+    }
+  }, [viewableProjectsEnabled, viewableProjectsStorageKey]);
+
   return {
     projectScope,
     filters,
@@ -214,5 +226,7 @@ export function useKanbanPreferences(dataUrl: string) {
     setTimeEntryOnClose,
     priorityLaneEnabled,
     setPriorityLaneEnabled,
+    viewableProjectsEnabled,
+    setViewableProjectsEnabled,
   };
 }

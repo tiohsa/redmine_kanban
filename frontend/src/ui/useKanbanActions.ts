@@ -161,7 +161,7 @@ export function useKanbanActions({
 
   const createIssueMutation = useMutation({
     mutationFn: async (payload: Record<string, unknown>) => {
-      return postJson<{ ok: boolean; issue?: Issue }>(`${baseUrl}/issues`, payload, 'POST');
+      return postJson<{ ok: boolean; issue?: Issue }>(`${baseUrl}/issues`, { issue: payload }, 'POST');
     },
     onSettled: () => {
       void refresh();
@@ -242,8 +242,9 @@ export function useKanbanActions({
     try {
       const response = await postJson<{ ok: boolean; issue?: Issue; message?: string }>(
         `${baseUrl}/issues`,
-        {
+        { issue: {
           subject: pendingDeleteIssue.subject,
+          project_id: pendingDeleteIssue.project?.id,
           description: pendingDeleteIssue.description,
           status_id: pendingDeleteIssue.status_id,
           assigned_to_id: pendingDeleteIssue.assigned_to_id,
@@ -251,7 +252,7 @@ export function useKanbanActions({
           priority_id: pendingDeleteIssue.priority_id,
           start_date: pendingDeleteIssue.start_date,
           due_date: pendingDeleteIssue.due_date,
-        },
+        } },
         'POST',
       );
 

@@ -407,6 +407,83 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_equal true, json['ok']
   end
 
+  def test_index_returns_viewable_projects_and_allows_non_descendant_filter_selection
+    other_project = build_project(name: 'Other Kanban', identifier: "other-kanban-#{Time.now.to_i}")
+    other_issue = build_issue(subject: 'Other project issue', project: other_project)
+
+    json = index_response(project_ids: [other_project.id])
+
+    assert_includes json.dig('lists', 'viewable_projects').map { |project| project['id'] }, other_project.id
+    assert_includes json.dig('lists', 'creatable_projects').map { |project| project['id'] }, other_project.id
+    assert_equal [other_issue.id], json['issues'].map { |issue| issue['id'] }
+  end
+
+  def test_move_allows_issue_from_non_descendant_project
+    other_project = build_project(name: 'Move Target', identifier: "move-target-#{Time.now.to_i}")
+    issue = build_issue(subject: 'Cross project move', project: other_project)
+    closed_status = IssueStatus.where.not(id: issue.status_id).where(is_closed: true).first || IssueStatus.where.not(id: issue.status_id).first
+    assert_not_nil closed_status
+
+    patch(
+      :move,
+      params: {
+        project_id: @project.identifier,
+        id: issue.id,
+        issue: {
+          status_id: closed_status.id,
+          lock_version: issue.lock_version
+        }
+      }
+    )
+
+    assert_response :success
+    issue.reload
+    assert_equal closed_status.id, issue.status_id
+  end
+
+  def test_update_allows_issue_from_non_descendant_project
+    other_project = build_project(name: 'Update Target', identifier: "update-target-#{Time.now.to_i}")
+    issue = build_issue(subject: 'Before update', project: other_project)
+
+    patch(
+      :update,
+      params: {
+        project_id: @project.identifier,
+        id: issue.id,
+        issue: {
+          subject: 'After update',
+          lock_version: issue.lock_version
+        }
+      }
+    )
+
+    assert_response :success
+    issue.reload
+    assert_equal 'After update', issue.subject
+  end
+
+  def test_create_uses_issue_project_id_for_non_descendant_project
+    other_project = build_project(name: 'Create Target', identifier: "create-target-#{Time.now.to_i}")
+
+    assert_difference('Issue.where(project_id: other_project.id).count', 1) do
+      post(
+        :create,
+        params: {
+          project_id: @project.identifier,
+          issue: {
+            subject: 'Created in other project',
+            project_id: other_project.id,
+            tracker_id: other_project.trackers.first&.id || Tracker.first.id,
+          }
+        }
+      )
+    end
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal other_project.id, json.dig('issue', 'project', 'id')
+  end
+
   private
 
   def enable_kanban_module!
@@ -416,24 +493,25 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
   def grant_permissions!
     @role.add_permission!(:view_redmine_kanban) unless @role.permissions.include?(:view_redmine_kanban)
     @role.add_permission!(:manage_redmine_kanban) unless @role.permissions.include?(:manage_redmine_kanban)
+    @role.add_permission!(:add_issues) unless @role.permissions.include?(:add_issues)
     @role.add_permission!(:edit_issues) unless @role.permissions.include?(:edit_issues)
     @role.add_permission!(:delete_issues) unless @role.permissions.include?(:delete_issues)
   end
 
-  def ensure_member!(user = @user)
-    member = Member.find_by(project_id: @project.id, user_id: user.id) || Member.create!(project: @project, user: user)
+  def ensure_member!(user = @user, project = @project)
+    member = Member.find_by(project_id: project.id, user_id: user.id) || Member.create!(project: project, user: user)
     return if member.roles.include?(@role)
 
     member.roles << @role
     member.save!
   end
 
-  def build_issue(subject: 'Test issue', parent_issue_id: nil, status: nil, assigned_to: nil, priority: nil)
-    tracker = @project.trackers.first || Tracker.first
+  def build_issue(subject: 'Test issue', parent_issue_id: nil, status: nil, assigned_to: nil, priority: nil, project: @project)
+    tracker = project.trackers.first || Tracker.first
     status ||= IssueStatus.default || IssueStatus.first
     priority ||= IssuePriority.active.first
     issue = Issue.new(
-      project: @project,
+      project: project,
       tracker: tracker,
       author: @user,
       status: status,
@@ -444,6 +522,17 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     )
     issue.save!
     issue
+  end
+
+  def build_project(name:, identifier:)
+    project = Project.new(name: name, identifier: identifier)
+    project.save!
+    EnabledModule.find_or_create_by!(project_id: project.id, name: 'issue_tracking')
+    EnabledModule.find_or_create_by!(project_id: project.id, name: 'redmine_kanban')
+    tracker = @project.trackers.first || Tracker.first
+    project.trackers << tracker unless project.trackers.include?(tracker)
+    ensure_member!(@user, project)
+    project
   end
 
   def distinct_open_statuses

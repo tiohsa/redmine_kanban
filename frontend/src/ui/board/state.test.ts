@@ -26,7 +26,7 @@ function makeBoardData(laneType: BoardData['meta']['lane_type']): BoardData {
       { id: 10, name: 'Me', assigned_to_id: 10 },
       { id: 'unassigned', name: 'Unassigned', assigned_to_id: null },
     ],
-    lists: { assignees: [], trackers: [], priorities: [], projects: [] },
+    lists: { assignees: [], trackers: [], priorities: [], projects: [], viewable_projects: [], creatable_projects: [] },
     issues: [],
     labels: {},
   };

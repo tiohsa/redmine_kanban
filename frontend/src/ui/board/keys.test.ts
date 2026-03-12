@@ -19,7 +19,7 @@ const baseData: BoardData = {
   },
   columns: [],
   lanes: [],
-  lists: { assignees: [], trackers: [], priorities: [], projects: [] },
+  lists: { assignees: [], trackers: [], priorities: [], projects: [], viewable_projects: [], creatable_projects: [] },
   issues: [],
   labels: {},
 };

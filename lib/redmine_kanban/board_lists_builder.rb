@@ -12,16 +12,23 @@ module RedmineKanban
         trackers: trackers_list,
         priorities: priorities_list,
         projects: projects_list,
+        viewable_projects: viewable_projects_list,
+        creatable_projects: creatable_projects_list,
       }
     end
 
     private
 
     def projects_list
-      base_depth = @project.ancestors.count
-      @project.self_and_descendants.visible.to_a.map do |project|
-        { id: project.id, name: project.name, level: project.ancestors.count - base_depth }
-      end
+      project_catalog.subtree_projects(root: @project)
+    end
+
+    def viewable_projects_list
+      project_catalog.viewable_projects
+    end
+
+    def creatable_projects_list
+      project_catalog.creatable_projects
     end
 
     def assignees_list
@@ -37,6 +44,10 @@ module RedmineKanban
 
     def priorities_list
       IssuePriority.active.sorted.to_a.map { |priority| { id: priority.id, name: priority.name } }
+    end
+
+    def project_catalog
+      @project_catalog ||= ProjectCatalog.new(user: @user)
     end
   end
 end
