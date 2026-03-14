@@ -27,6 +27,7 @@ type ToolbarProps = {
   onTogglePriorityLane: () => void;
   viewableProjectsEnabled: boolean;
   onToggleViewableProjects: () => void;
+  onOpenHelp: () => void;
 };
 
 function Dropdown<T extends string>({
@@ -386,6 +387,7 @@ export function KanbanToolbar({
   onTogglePriorityLane,
   viewableProjectsEnabled,
   onToggleViewableProjects,
+  onOpenHelp,
 }: ToolbarProps) {
   const assignees = data.lists.assignees ?? [];
   const labels = data.labels;
@@ -616,6 +618,10 @@ export function KanbanToolbar({
           closeOnSelect={false}
           labels={labels}
         />
+
+        <button type="button" className="rk-btn" onClick={onOpenHelp} title={labels.help ?? 'Help'}>
+          <span className="rk-icon">help_outline</span>
+        </button>
       </div>
     </div>
   );

@@ -24,6 +24,7 @@ export function useKanbanDialogs(
   const [iframeTimeEntryUrl, setIframeTimeEntryUrl] = useState<string | null>(null);
   const [priorityPopup, setPriorityPopup] = useState<PriorityPopupState | null>(null);
   const [datePopup, setDatePopup] = useState<DatePopupState | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const openCreate = useCallback((ctx: ModalContext) => {
     setIframeCreateUrl(buildDefaultIssueCreateUrl(baseUrl, data?.meta.project_id, effectiveLaneType, ctx));
@@ -77,5 +78,7 @@ export function useKanbanDialogs(
     openEdit,
     openView,
     openIssueUrl,
+    helpOpen,
+    setHelpOpen,
   };
 }
