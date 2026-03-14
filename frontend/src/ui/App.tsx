@@ -11,6 +11,7 @@ import { KanbanIssueModal } from './KanbanIssueModal';
 import { KanbanPopupHost } from './KanbanPopupHost';
 import { DatePopup, PriorityPopup } from './KanbanPopups';
 import { KanbanToolbar } from './KanbanToolbar';
+import { HelpDialog } from './HelpDialog';
 import { fieldError, buildDisplayData, resolveMutationError } from './kanbanShared';
 import { useKanbanActions } from './useKanbanActions';
 import { useKanbanDialogs } from './useKanbanDialogs';
@@ -199,6 +200,7 @@ export function App({ dataUrl }: Props) {
           onTogglePriorityLane={() => setPriorityLaneEnabled((value) => !value)}
           viewableProjectsEnabled={viewableProjectsEnabled}
           onToggleViewableProjects={() => setViewableProjectsEnabled((value) => !value)}
+          onOpenHelp={() => dialogs.setHelpOpen(true)}
         />
       ) : (
         <div className="rk-empty">{labels?.fetching_data}</div>
@@ -409,6 +411,13 @@ export function App({ dataUrl }: Props) {
               setError(resolveMutationError(caught, data.labels, data.labels.update_failed));
             }
           }}
+        />
+      ) : null}
+
+      {dialogs.helpOpen && data ? (
+        <HelpDialog
+          labels={data.labels}
+          onClose={() => dialogs.setHelpOpen(false)}
         />
       ) : null}
 
