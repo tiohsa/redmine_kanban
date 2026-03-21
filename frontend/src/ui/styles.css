@@ -975,19 +975,27 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 }
 
 .rk-issue-dialog-head {
-  margin-bottom: 8px;
+  margin: 0;
+  padding: 2px 12px;
+  border-bottom: 1px solid var(--rk-border);
+  background: #fff;
 }
 
 .rk-issue-dialog-title-wrap {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1;
   min-width: 0;
+  padding-right: 12px;
 }
 
 .rk-issue-dialog-title-wrap h3 {
+  margin: 0;
   font-size: 1rem;
   line-height: 1.2;
+  font-weight: 700;
+  color: var(--rk-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1000,9 +1008,28 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   flex-shrink: 0;
 }
 
+.rk-issue-dialog-actions .rk-icon-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border-color: var(--rk-border);
+  background: #fff;
+  color: #333;
+}
+
+.rk-issue-dialog-actions .rk-icon-btn:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: var(--rk-text-primary);
+}
+
+.rk-issue-dialog-actions .rk-icon {
+  font-size: 18px;
+}
+
 .rk-issue-dialog-link,
 .rk-issue-dialog-close {
-  color: #0f5ea8;
+  color: inherit;
 }
 
 .rk-form {
@@ -1199,37 +1226,33 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 /* Iframe Create Dialog Enhancements */
 
 .rk-iframe-dialog-container {
-
   background: var(--rk-bg-surface);
-
   border-radius: 12px;
-
   box-shadow: var(--rk-shadow-md);
-
-  width: calc(100vw - 48px);
-
-  height: calc(100vh - 48px);
-
   display: flex;
-
   flex-direction: column;
-
   overflow: hidden;
-
   position: relative;
-
 }
 
 .rk-iframe-dialog-container-issue .rk-issue-dialog-head {
   margin: 0;
-  padding: 8px 12px 6px;
+  padding: 2px 12px;
   border-bottom: 1px solid var(--rk-border);
-  background: linear-gradient(180deg, #fbfdff 0%, #f8fafc 100%);
+  background: #fff;
+}
+
+.rk-iframe-dialog-container-issue .rk-issue-dialog-title-wrap {
+  gap: 8px;
+  padding-right: 12px;
+}
+
+.rk-iframe-dialog-container-issue .rk-issue-dialog-title-wrap h3 {
+  font-size: 14px;
 }
 
 .rk-iframe-dialog-container-time-entry {
-  width: min(1120px, calc(100vw - 32px));
-  max-height: min(390px, calc(100vh - 32px));
+  max-height: none;
 }
 
 .rk-iframe-dialog-container-time-entry .rk-iframe-wrapper {
@@ -1239,15 +1262,11 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 
 
 .rk-iframe-wrapper {
-
   flex: 1;
-
   overflow: hidden;
-
   position: relative;
-
   background: #fff;
-
+  min-height: 0;
 }
 
 
@@ -1267,8 +1286,8 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 }
 
 .rk-create-footer-time-entry {
-  padding: 10px 12px 12px;
-  gap: 6px;
+  padding: 2px 12px 4px;
+  gap: 2px;
 }
 
 .rk-subtask-input {
@@ -1329,6 +1348,47 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 
 .rk-modal-actions-start {
   justify-content: flex-start;
+}
+
+.rk-iframe-dialog-container-issue .rk-create-footer,
+.rk-iframe-dialog-container-time-entry .rk-create-footer {
+  background: #fff;
+}
+
+.rk-iframe-dialog-container-issue .rk-create-footer-compact,
+.rk-iframe-dialog-container-time-entry .rk-create-footer-time-entry {
+  padding: 2px 12px 4px;
+  gap: 2px;
+}
+
+.rk-iframe-dialog-container-issue .rk-subtask-input,
+.rk-iframe-dialog-container-time-entry .rk-subtask-input {
+  gap: 2px;
+}
+
+.rk-iframe-dialog-container-issue .rk-subtask-toggle,
+.rk-iframe-dialog-container-time-entry .rk-subtask-toggle {
+  min-height: 14px;
+  line-height: 1;
+}
+
+.rk-iframe-dialog-container-issue .rk-modal-actions,
+.rk-iframe-dialog-container-time-entry .rk-modal-actions {
+  gap: 6px;
+}
+
+.rk-iframe-dialog-container-issue .rk-create-footer .rk-btn,
+.rk-iframe-dialog-container-issue .rk-modal-actions .rk-btn,
+.rk-iframe-dialog-container-time-entry .rk-create-footer .rk-btn,
+.rk-iframe-dialog-container-time-entry .rk-modal-actions .rk-btn {
+  min-width: 88px;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 0.85rem;
+}
+
+.issue-iframe-loading {
+  visibility: hidden;
 }
 
 /* Help Dialog */
