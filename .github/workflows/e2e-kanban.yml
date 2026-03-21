@@ -106,7 +106,7 @@ jobs:
         run: npm --prefix frontend run typecheck
 
   test:
-    name: frontend-unit-test
+    name: test
     needs: init
     runs-on: ubuntu-latest
     steps:
