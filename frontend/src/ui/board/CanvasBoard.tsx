@@ -1250,7 +1250,6 @@ function drawCard(
   if (issue.priority_id) {
     let bg = theme.badgeBg;
     let fg = theme.badgeText;
-    let icon = '';
 
     // Priority Colors - use index-based palette for distinct colors
     const priorities = data.lists.priorities ?? [];

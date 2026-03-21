@@ -13,7 +13,7 @@ services:
       retries: 20
 
   redmine:
-    image: redmine:5.1
+    image: ${REDMINE_IMAGE:-redmine:6.1}
     depends_on:
       db:
         condition: service_healthy
@@ -29,3 +29,9 @@ services:
       RAILS_ENV: production
     volumes:
       - ../../:/usr/src/redmine/plugins/redmine_kanban
+    healthcheck:
+      test: ["CMD-SHELL", "ruby -rsocket -e \"TCPSocket.new('127.0.0.1', 3000).close\""]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s

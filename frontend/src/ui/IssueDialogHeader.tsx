@@ -6,17 +6,29 @@ type Props = {
   linkAriaLabel: string;
   onClose?: () => void;
   closeAriaLabel?: string;
+  compact?: boolean;
+  iconButtonSize?: number;
+  dataTestId?: string;
 };
 
-export function IssueDialogHeader({
+export const IssueDialogHeader = React.forwardRef<HTMLDivElement, Props>(function IssueDialogHeader({
   title,
   linkUrl,
   linkAriaLabel,
   onClose,
   closeAriaLabel,
-}: Props) {
+  compact = false,
+  iconButtonSize,
+  dataTestId,
+}, ref) {
+  const compactIconButtonSize = iconButtonSize ? `${iconButtonSize}px` : undefined;
+
   return (
-    <div className="rk-modal-head rk-issue-dialog-head">
+    <div
+      ref={ref}
+      data-testid={dataTestId}
+      className={`rk-modal-head rk-issue-dialog-head${compact ? ' rk-issue-dialog-head-compact' : ''}`}
+    >
       <div className="rk-issue-dialog-title-wrap">
         <h3>{title}</h3>
       </div>
@@ -30,6 +42,10 @@ export function IssueDialogHeader({
             rel="noopener noreferrer"
             aria-label={linkAriaLabel}
             title={linkAriaLabel}
+            style={compactIconButtonSize ? {
+              width: compactIconButtonSize,
+              height: compactIconButtonSize,
+            } : undefined}
           >
             <span className="rk-icon">open_in_new</span>
           </a>
@@ -41,6 +57,10 @@ export function IssueDialogHeader({
             aria-label={closeAriaLabel ?? 'Close'}
             title={closeAriaLabel ?? 'Close'}
             onClick={onClose}
+            style={compactIconButtonSize ? {
+              width: compactIconButtonSize,
+              height: compactIconButtonSize,
+            } : undefined}
           >
             <span className="rk-icon">close</span>
           </button>
@@ -48,4 +68,4 @@ export function IssueDialogHeader({
       </div>
     </div>
   );
-}
+});

@@ -45,12 +45,18 @@ type GetCleanDialogStylesOptions = {
 
 const BASE_DIALOG_STYLE_RULES = `
   ${ISSUE_DIALOG_HIDE_SELECTORS.join(', ')} { display: none !important; }
+  html, body, #wrapper, #main { height: auto !important; min-height: 0 !important; }
+  html, body { overflow-y: auto !important; }
+  body { background: #fff !important; }
   #content { margin: 0 !important; width: 100% !important; padding: 10px !important; }
   #content > h2 { display: none !important; }
 `;
 
 const TIME_ENTRY_BASE_STYLE_RULES = `
   ${TIME_ENTRY_DIALOG_HIDE_SELECTORS.join(', ')} { display: none !important; }
+  html, body, #wrapper, #main { height: auto !important; min-height: 0 !important; }
+  html, body { overflow-y: auto !important; }
+  body { background: #fff !important; }
   #content { margin: 0 !important; width: 100% !important; padding: 8px 10px 10px !important; }
   #content > h2 { display: none !important; }
 `;
