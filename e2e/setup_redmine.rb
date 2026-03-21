@@ -2,8 +2,18 @@
 
 password = 'admin1234'
 
-admin = User.find_by(login: 'admin')
-raise 'admin user not found' unless admin
+admin = User.find_by(login: 'admin') || User.where(admin: true).first
+unless admin
+  admin = User.new(
+    login: 'admin',
+    firstname: 'Admin',
+    lastname: 'User',
+    mail: 'admin@example.com',
+    admin: true,
+    language: 'en',
+    status: User::STATUS_ACTIVE
+  )
+end
 
 admin.password = password
 admin.password_confirmation = password

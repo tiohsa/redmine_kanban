@@ -18,7 +18,7 @@ It goes beyond simple task visualization with WIP limits, aging detection, and f
 - [Development](#development)
 - [Testing](#testing)
 - [API Endpoints](#api-endpoints)
-- [CI (E2E)](#ci-e2e)
+- [CI](#ci)
 - [License](#license)
 
 ## Overview
@@ -175,17 +175,20 @@ Board data notes:
 - `issues[].subtasks` is a recursive tree (`subtasks[].subtasks...`) for nested subtasks.
 - Subtask rows shown in the canvas are flattened on the frontend for rendering/hit-testing, but the API preserves hierarchy.
 
-## CI (E2E)
+## CI
 
 GitHub Actions workflow: `.github/workflows/e2e-kanban.yml`
 
-The CI job:
+The CI workflow runs:
 
-- installs E2E dependencies in `e2e/`
-- starts Redmine using `.github/e2e/docker-compose.yml`
-- runs migrations and loads default Redmine data
-- seeds `ecookbook` + enables the Kanban module via `e2e/setup_redmine.rb`
-- runs Playwright smoke tests (`e2e/tests/kanban-smoke.spec.js`)
+- frontend `build`
+- frontend `lint`
+- frontend `typecheck`
+- frontend unit tests with Vitest
+- Playwright E2E on Redmine 6.1
+- Playwright compatibility smoke test on Redmine 6.0
+
+Both browser jobs start Redmine using `.github/e2e/docker-compose.yml`, run migrations, load default data, seed `ecookbook` via `e2e/setup_redmine.rb`, and upload Playwright reports on completion.
 
 ## License
 
