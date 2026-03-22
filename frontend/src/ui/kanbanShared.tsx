@@ -25,6 +25,18 @@ export type SubtaskInfo = {
   assignedToId?: number | null;
 };
 
+export type ResolvedBoardIssue = {
+  id: number;
+  subject: string;
+  lockVersion: number | null;
+  assignedToId?: number | null;
+  issueUrl: string;
+  issueEditUrl: string;
+  kind: 'issue' | 'subtask';
+  trackerId?: number;
+  parentIssueId?: number;
+};
+
 export function fieldError(fieldErrors: any): string | null {
   if (!fieldErrors) return null;
   if (fieldErrors.subject?.length) return fieldErrors.subject[0];
@@ -87,26 +99,55 @@ export function buildDisplayData(data: BoardData, priorityLaneEnabled: boolean):
   };
 }
 
-export function findSubtask(data: BoardData, subtaskId: number): SubtaskInfo | null {
-  const issue = data.issues.find((it) => it.id === subtaskId);
+function buildIssueUrls(issueId: number): Pick<ResolvedBoardIssue, 'issueUrl' | 'issueEditUrl'> {
+  return {
+    issueUrl: `/issues/${issueId}`,
+    issueEditUrl: `/issues/${issueId}/edit`,
+  };
+}
+
+export function resolveBoardIssue(data: BoardData, issueId: number): ResolvedBoardIssue | null {
+  const issue = data.issues.find((it) => it.id === issueId);
   if (issue) {
     return {
+      id: issue.id,
+      subject: issue.subject,
       lockVersion: issue.lock_version ?? null,
       assignedToId: issue.assigned_to_id ?? null,
+      issueUrl: issue.urls.issue,
+      issueEditUrl: issue.urls.issue_edit,
+      kind: 'issue',
+      trackerId: issue.tracker_id,
+      parentIssueId: issue.parent_id ?? undefined,
     };
   }
 
   for (const parent of data.issues) {
-    const subtask = findSubtaskInTree(parent.subtasks, subtaskId);
-    if (subtask) {
-      return {
-        lockVersion: subtask.lock_version ?? null,
-        assignedToId: undefined,
-      };
-    }
+    const subtask = findSubtaskInTree(parent.subtasks, issueId);
+    if (!subtask) continue;
+
+    return {
+      id: subtask.id,
+      subject: subtask.subject,
+      lockVersion: subtask.lock_version ?? null,
+      assignedToId: undefined,
+      ...buildIssueUrls(subtask.id),
+      kind: 'subtask',
+      parentIssueId: parent.id,
+    };
   }
 
   return null;
+}
+
+export function findSubtask(data: BoardData, subtaskId: number): SubtaskInfo | null {
+  const resolved = resolveBoardIssue(data, subtaskId);
+  if (!resolved) return null;
+
+  return {
+    lockVersion: resolved.lockVersion,
+    assignedToId: resolved.assignedToId,
+  };
 }
 
 export function resolveSubtaskStatus(data: BoardData, currentClosed: boolean): number | null {
