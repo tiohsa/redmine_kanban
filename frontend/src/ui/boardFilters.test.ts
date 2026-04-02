@@ -87,9 +87,23 @@ describe('applyBoardDataFilters', () => {
       makeIssue(2, 1, 'Child', { parent_id: 1 }),
     ]);
 
-    const filtered = applyBoardDataFilters(data, false, []);
+    const filtered = applyBoardDataFilters(data, true, []);
 
     expect(filtered?.issues.map((issue) => issue.id)).toEqual([1]);
+  });
+
+  it('hides nested subtasks from parent cards when subtasks are shown as separate cards', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Parent', {
+        subtasks: [{ id: 3, subject: 'Nested', status_id: 1, is_closed: false }],
+      }),
+      makeIssue(2, 1, 'Child', { parent_id: 1 }),
+    ]);
+
+    const filtered = applyBoardDataFilters(data, false, []);
+
+    expect(filtered?.issues.map((issue) => issue.id)).toEqual([1, 2]);
+    expect(filtered?.issues[0]?.subtasks).toEqual([]);
   });
 });
 

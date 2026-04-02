@@ -34,7 +34,7 @@ Redmine Kanban helps teams keep flow healthy and visible. It focuses on limiting
 - **Drag & Drop**: Intuitive card movement with Redmine workflow-aware status transitions. Cards can also be grabbed from the subtask area.
 - **Advanced Filtering**: Filter by assignee, due date, priority, blocked status, and more.
 - **Direct Creation from Board**: Create new tickets from column headers or cells during standups.
-- **Nested Subtask Display**: View subtasks recursively (child / grandchild / deeper) with indentation, and toggle completion.
+- **Nested Subtask Display**: View subtasks recursively (child / grandchild / deeper) either inside parent cards or as separate cards, and toggle completion.
 - **Undo Function**: Restore accidentally deleted tasks.
 - **Project Filter**: Filter across projects and subprojects.
 
