@@ -19,10 +19,18 @@ export function applyBoardDataFilters(
   if (!displayData) return null;
 
   let result = displayData;
-  if (!showSubtasks) {
+  if (showSubtasks) {
     result = {
       ...result,
       issues: result.issues.filter((issue) => !issue.parent_id),
+    };
+  } else {
+    result = {
+      ...result,
+      issues: result.issues.map((issue) => ({
+        ...issue,
+        subtasks: [],
+      })),
     };
   }
   if (statusIds.length > 0) {
