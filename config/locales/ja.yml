@@ -116,4 +116,4 @@ ja:
   label_kanban_help_quick_edit_title: "クイック編集"
   label_kanban_help_quick_edit_desc: "カード上の「優先度」や「期日」のバッジをクリックすると、その場で値を変更できます。"
   label_kanban_help_subtask_title: "子チケットの操作"
-  label_kanban_help_subtask_desc: "カード内のチェックボックスをクリックすることで、子チケットの完了/未完了を素早く切り替えられます。"
+  label_kanban_help_subtask_desc: "子チケットのチェックボックスをクリックすると、完了/未完了を素早く切り替えられます。親チケット内表示でも個別カード表示でも操作できます。"

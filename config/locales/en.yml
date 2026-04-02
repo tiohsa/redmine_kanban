@@ -115,4 +115,4 @@ en:
   label_kanban_help_quick_edit_title: "Quick Edit"
   label_kanban_help_quick_edit_desc: "Click the 'Priority' or 'Due Date' badges on a card to change their values in place."
   label_kanban_help_subtask_title: "Subtask Operations"
-  label_kanban_help_subtask_desc: "Quickly toggle subtasks between completed and uncompleted by clicking the checkboxes within a card."
+  label_kanban_help_subtask_desc: "Quickly toggle subtasks between completed and uncompleted by clicking their checkboxes. This works whether subtasks are shown inside parent cards or as separate cards."
