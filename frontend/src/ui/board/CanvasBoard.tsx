@@ -213,7 +213,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     [state, data, canCreate, metrics, size.width, fitMode, measureCtx, fontSize]
   );
 
-  const theme = useMemo(() => readTheme(containerRef.current), [size.width, size.height]);
+  const theme = useMemo(() => readTheme(containerRef.current), []);
 
   // Scale calculation is now handled directly in draw() to ensure it's always in sync with the latest layout and size.
   useEffect(() => {
@@ -264,6 +264,21 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     containerRef.current.style.cursor = cursor;
   }, [cursor]);
 
+  const updateScroll = React.useCallback((x: number, y: number) => {
+    const board = boardSizeRef.current;
+    const scale = scaleRef.current;
+    const visibleW = size.width / scale;
+    const visibleH = size.height / scale;
+    const maxX = Math.max(0, board.width - visibleW);
+    const maxY = Math.max(0, board.height - visibleH);
+
+    scrollRef.current = {
+      x: clamp(x, 0, maxX),
+      y: clamp(y, 0, maxY),
+    };
+    scheduleRender();
+  }, [size.height, size.width]);
+
   useEffect(() => {
     void document.fonts.ready.then(() => {
       scheduleRender();
@@ -286,7 +301,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
 
     container.addEventListener('wheel', onWheel, { passive: false });
     return () => container.removeEventListener('wheel', onWheel);
-  }, []);
+  }, [updateScroll]);
 
   const scheduleRender = () => {
     if (renderHandle.current !== null) return;
@@ -403,21 +418,6 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   };
 
   drawRef.current = draw;
-
-  const updateScroll = (x: number, y: number) => {
-    const board = boardSizeRef.current;
-    const scale = scaleRef.current;
-    const visibleW = size.width / scale;
-    const visibleH = size.height / scale;
-    const maxX = Math.max(0, board.width - visibleW);
-    const maxY = Math.max(0, board.height - visibleH);
-
-    scrollRef.current = {
-      x: clamp(x, 0, maxX),
-      y: clamp(y, 0, maxY),
-    };
-    scheduleRender();
-  };
 
   function toBoardPoint(
     event: React.PointerEvent,
