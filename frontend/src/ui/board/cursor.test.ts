@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { getBoardCursor } from './cursor';
 
 describe('getBoardCursor', () => {
-  it('returns move for card and subtask hover areas', () => {
+  it('returns move for card body and subtask areas', () => {
     expect(getBoardCursor({ phase: 'idle', hitKind: 'card' })).toBe('move');
     expect(getBoardCursor({ phase: 'idle', hitKind: 'subtask_row' })).toBe('move');
     expect(getBoardCursor({ phase: 'idle', hitKind: 'subtask_area' })).toBe('move');
+  });
+
+  it('returns default for lane headers', () => {
+    expect(getBoardCursor({ phase: 'idle', hitKind: 'lane_header' })).toBe('default');
   });
 
   it('returns pointer for subject and action targets', () => {
@@ -15,8 +19,8 @@ describe('getBoardCursor', () => {
     expect(getBoardCursor({ phase: 'idle', hitKind: 'add' })).toBe('pointer');
   });
 
-  it('returns move for cell areas', () => {
-    expect(getBoardCursor({ phase: 'idle', hitKind: 'cell' })).toBe('move');
+  it('returns default for cell areas', () => {
+    expect(getBoardCursor({ phase: 'idle', hitKind: 'cell' })).toBe('default');
   });
 
   it('returns default for empty areas', () => {
