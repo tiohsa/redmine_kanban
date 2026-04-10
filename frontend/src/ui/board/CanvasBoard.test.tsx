@@ -54,7 +54,7 @@ function makeBoardData(issue: Issue): BoardData {
 }
 
 function createCanvasContext(): CanvasRenderingContext2D {
-  const noop = () => {};
+  const noop = () => { };
   return {
     save: noop,
     restore: noop,
@@ -76,7 +76,7 @@ function createCanvasContext(): CanvasRenderingContext2D {
 }
 
 class ResizeObserverMock {
-  constructor(private readonly callback: ResizeObserverCallback) {}
+  constructor(private readonly callback: ResizeObserverCallback) { }
 
   observe(target: Element) {
     this.callback(
@@ -100,8 +100,8 @@ class ResizeObserverMock {
     );
   }
 
-  disconnect() {}
-  unobserve() {}
+  disconnect() { }
+  unobserve() { }
 }
 
 describe('CanvasBoard cursor lifecycle', () => {
@@ -188,7 +188,7 @@ describe('CanvasBoard cursor lifecycle', () => {
 
     fireEvent.pointerMove(canvas, { clientX: 200, clientY: 100, pointerId: 1 });
     await waitFor(() => {
-      expect(board.style.cursor).toBe('pointer');
+      expect(board.style.cursor).toBe('move');
     });
 
     fireEvent.pointerDown(canvas, { clientX: 200, clientY: 100, pointerId: 1 });
@@ -204,7 +204,7 @@ describe('CanvasBoard cursor lifecycle', () => {
 
     fireEvent.pointerMove(canvas, { clientX: 200, clientY: 100, pointerId: 2 });
     await waitFor(() => {
-      expect(board.style.cursor).toBe('pointer');
+      expect(board.style.cursor).toBe('move');
     });
 
     fireEvent.pointerDown(canvas, { clientX: 200, clientY: 100, pointerId: 2 });
