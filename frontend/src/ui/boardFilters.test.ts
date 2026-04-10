@@ -56,7 +56,7 @@ function makeBoardData(issues: Issue[]): BoardData {
 
 function makeFilters(overrides: Partial<Filters> = {}): Filters {
   return {
-    assignee: 'all',
+    assigneeIds: [],
     q: '',
     due: 'all',
     dueDays: 7,
@@ -117,5 +117,39 @@ describe('buildVisibleIssues', () => {
     const issues = buildVisibleIssues(data, makeFilters(), new Set([2]), null);
 
     expect(issues.map((issue) => issue.id)).toEqual([1]);
+  });
+
+  it('filters issues by multiple selected assignees using OR semantics', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Mine', { assigned_to_id: 7 }),
+      makeIssue(2, 1, 'Other', { assigned_to_id: 8 }),
+      makeIssue(3, 1, 'Unassigned', { assigned_to_id: null }),
+    ]);
+
+    const issues = buildVisibleIssues(data, makeFilters({ assigneeIds: ['7', '8'] }), new Set(), null);
+
+    expect(issues.map((issue) => issue.id)).toEqual([1, 2]);
+  });
+
+  it('includes unassigned issues when unassigned is selected', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Assigned', { assigned_to_id: 7 }),
+      makeIssue(2, 1, 'Unassigned', { assigned_to_id: null }),
+    ]);
+
+    const issues = buildVisibleIssues(data, makeFilters({ assigneeIds: ['unassigned'] }), new Set(), null);
+
+    expect(issues.map((issue) => issue.id)).toEqual([2]);
+  });
+
+  it('treats an empty assignee selection as all issues visible', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Assigned', { assigned_to_id: 7 }),
+      makeIssue(2, 1, 'Unassigned', { assigned_to_id: null }),
+    ]);
+
+    const issues = buildVisibleIssues(data, makeFilters({ assigneeIds: [] }), new Set(), null);
+
+    expect(issues.map((issue) => issue.id)).toEqual([1, 2]);
   });
 });

@@ -86,4 +86,43 @@ describe('buildBoardState', () => {
     expect(state.cardsByCell.get('1:unassigned')).toEqual([3]);
     expect(state.cardsById.get(1)?.subject).toBe('Issue 1');
   });
+
+  it('keeps only selected assignee lanes when assignee lane filters are present', () => {
+    const data = makeBoardData('assignee');
+    const issues = [makeIssue(1, { assigned_to_id: 10 })];
+
+    const state = buildBoardState(data, issues, 'updated_desc', new Map(), ['10']);
+
+    expect(state.laneOrder).toEqual([10]);
+    expect(state.lanes.map((lane) => lane.id)).toEqual([10]);
+  });
+
+  it('keeps unassigned lane when unassigned is selected', () => {
+    const data = makeBoardData('assignee');
+    const issues = [makeIssue(1, { assigned_to_id: null })];
+
+    const state = buildBoardState(data, issues, 'updated_desc', new Map(), ['unassigned']);
+
+    expect(state.laneOrder).toEqual(['unassigned']);
+    expect(state.lanes.map((lane) => lane.id)).toEqual(['unassigned']);
+  });
+
+  it('keeps selected lanes even when there are no visible cards in them', () => {
+    const data = makeBoardData('assignee');
+    const issues = [makeIssue(1, { assigned_to_id: null })];
+
+    const state = buildBoardState(data, issues, 'updated_desc', new Map(), ['10']);
+
+    expect(state.laneOrder).toEqual([10]);
+    expect(state.cardsByCell.get('1:10')).toBeUndefined();
+  });
+
+  it('does not filter non-assignee lanes by assigneeIds', () => {
+    const data = makeBoardData('priority');
+    const issues = [makeIssue(1, { assigned_to_id: 10 })];
+
+    const state = buildBoardState(data, issues, 'updated_desc', new Map(), ['10']);
+
+    expect(state.lanes.map((lane) => lane.id)).toEqual([10, 'unassigned']);
+  });
 });

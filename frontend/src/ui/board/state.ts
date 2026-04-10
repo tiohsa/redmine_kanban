@@ -15,10 +15,11 @@ export function buildBoardState(
   data: BoardData,
   issues: Issue[],
   sortKey: SortKey,
-  priorityRank: Map<number, number>
+  priorityRank: Map<number, number>,
+  assigneeIds: string[] = [],
 ): BoardState {
   const columns = data.columns ?? [];
-  const lanes = data.lanes ?? [];
+  const lanes = filterVisibleLanes(data, data.lanes ?? [], assigneeIds);
   const columnOrder = columns.map((c) => c.id);
   const laneOrder = data.meta.lane_type === 'none' ? ['none'] : lanes.map((l) => l.id);
 
@@ -53,6 +54,23 @@ export function buildBoardState(
     cardsById,
     cardsByCell,
   };
+}
+
+function filterVisibleLanes(data: BoardData, lanes: Lane[], assigneeIds: string[]): Lane[] {
+  if (data.meta.lane_type !== 'assignee' || assigneeIds.length === 0) return lanes;
+
+  const visibleLaneIds = new Set<string | number>();
+  for (const assigneeId of assigneeIds) {
+    if (assigneeId === 'unassigned') {
+      visibleLaneIds.add('unassigned');
+      continue;
+    }
+
+    const parsedId = Number(assigneeId);
+    visibleLaneIds.add(Number.isFinite(parsedId) ? parsedId : assigneeId);
+  }
+
+  return lanes.filter((lane) => visibleLaneIds.has(lane.id));
 }
 
 export function cellKey(statusId: number, laneId: string | number) {
