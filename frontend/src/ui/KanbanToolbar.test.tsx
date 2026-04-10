@@ -31,7 +31,7 @@ function makeData(): BoardData {
         { id: 8, name: 'Bob' },
       ],
       trackers: [{ id: 1, name: 'Bug' }],
-      priorities: [{ id: 1, name: 'Normal' }],
+      priorities: [{ id: 1, name: 'Normal' }, { id: 2, name: 'High' }],
       projects: [{ id: 1, name: 'Demo', level: 0 }],
       viewable_projects: [{ id: 1, name: 'Demo', level: 0 }],
       creatable_projects: [{ id: 1, name: 'Demo', level: 0 }],
@@ -47,6 +47,7 @@ function makeData(): BoardData {
       filter_task: 'Filter task',
       font_size: 'Font size',
       help: 'Help',
+      issue_priority: 'Priority',
       me: 'Me',
       not_set: 'Not set',
       overdue: 'Overdue',
@@ -135,5 +136,16 @@ describe('KanbanToolbar', () => {
     fireEvent.click(resetButton);
 
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ assigneeIds: [] }));
+  });
+
+  it('includes not-set in priority filter options', () => {
+    const { container } = renderToolbar(makeFilters());
+
+    const triggers = Array.from(container.querySelectorAll('.rk-dropdown-trigger'));
+    const priorityTrigger = triggers.find((element) => element.textContent?.includes('Priority'));
+    if (!(priorityTrigger instanceof HTMLDivElement)) throw new Error('Priority trigger not found');
+    fireEvent.click(priorityTrigger);
+
+    expect(screen.getByText('Not set')).toBeTruthy();
   });
 });

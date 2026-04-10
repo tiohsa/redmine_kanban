@@ -406,7 +406,10 @@ export function KanbanToolbar({
     { id: 'custom', name: labels.within_specified_days ?? '指定した日以内' },
     { id: 'none', name: labels.not_set },
   ];
-  const priorityOptions = (data.lists.priorities ?? []).map((priority) => ({ id: String(priority.id), name: priority.name }));
+  const priorityOptions = [
+    ...(data.lists.priorities ?? []).map((priority) => ({ id: String(priority.id), name: priority.name })),
+    { id: 'no_priority', name: labels.not_set },
+  ];
   const priorityValue = filters.priorityFilterEnabled ? filters.priority : priorityOptions.map((option) => option.id);
 
   return (

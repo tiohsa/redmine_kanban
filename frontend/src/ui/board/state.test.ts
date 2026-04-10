@@ -33,7 +33,10 @@ function makeBoardData(laneType: BoardData['meta']['lane_type']): BoardData {
         { id: 20, name: 'Other' },
       ],
       trackers: [],
-      priorities: [],
+      priorities: [
+        { id: 1, name: 'Low' },
+        { id: 2, name: 'High' },
+      ],
       projects: [],
       viewable_projects: [],
       creatable_projects: [],
@@ -143,6 +146,42 @@ describe('buildBoardState', () => {
 
     const state = buildBoardState(data, issues, 'updated_desc', new Map(), ['10']);
 
-    expect(state.lanes.map((lane) => lane.id)).toEqual([10, 'unassigned']);
+    expect(state.lanes.map((lane) => lane.id)).toEqual([1, 2, 'no_priority']);
+  });
+
+  it('shows all priority lanes including no_priority when priority filter is disabled', () => {
+    const data = makeBoardData('priority');
+
+    const state = buildBoardState(data, [], 'updated_desc', new Map(), [], [], false);
+
+    expect(state.lanes.map((lane) => lane.id)).toEqual([1, 2, 'no_priority']);
+  });
+
+  it('keeps only selected priority lanes when priority filter is enabled', () => {
+    const data = makeBoardData('priority');
+
+    const state = buildBoardState(data, [], 'updated_desc', new Map(), [], ['2'], true);
+
+    expect(state.lanes.map((lane) => lane.id)).toEqual([2]);
+  });
+
+  it('keeps selected priority lanes even when there are no visible cards in them', () => {
+    const data = makeBoardData('priority');
+    const issues = [makeIssue(1, { priority_id: 1 })];
+
+    const state = buildBoardState(data, issues, 'updated_desc', new Map(), [], ['2'], true);
+
+    expect(state.lanes.map((lane) => lane.id)).toEqual([2]);
+    expect(state.cardsByCell.get('1:2')).toBeUndefined();
+  });
+
+  it('shows no_priority lane only when selected while priority filter is enabled', () => {
+    const data = makeBoardData('priority');
+
+    const hiddenState = buildBoardState(data, [], 'updated_desc', new Map(), [], ['1'], true);
+    const visibleState = buildBoardState(data, [], 'updated_desc', new Map(), [], ['no_priority'], true);
+
+    expect(hiddenState.lanes.map((lane) => lane.id)).toEqual([1]);
+    expect(visibleState.lanes.map((lane) => lane.id)).toEqual(['no_priority']);
   });
 });

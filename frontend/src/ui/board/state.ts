@@ -17,9 +17,11 @@ export function buildBoardState(
   sortKey: SortKey,
   priorityRank: Map<number, number>,
   assigneeIds: string[] = [],
+  priorityIds: string[] = [],
+  priorityFilterEnabled: boolean = false,
 ): BoardState {
   const columns = data.columns ?? [];
-  const lanes = buildVisibleLanes(data, assigneeIds);
+  const lanes = buildVisibleLanes(data, assigneeIds, priorityIds, priorityFilterEnabled);
   const columnOrder = columns.map((c) => c.id);
   const laneOrder = data.meta.lane_type === 'none' ? ['none'] : lanes.map((l) => l.id);
 
@@ -56,7 +58,15 @@ export function buildBoardState(
   };
 }
 
-function buildVisibleLanes(data: BoardData, assigneeIds: string[]): Lane[] {
+function buildVisibleLanes(
+  data: BoardData,
+  assigneeIds: string[],
+  priorityIds: string[],
+  priorityFilterEnabled: boolean,
+): Lane[] {
+  if (data.meta.lane_type === 'priority') {
+    return buildVisiblePriorityLanes(data, priorityIds, priorityFilterEnabled);
+  }
   if (data.meta.lane_type !== 'assignee') return data.lanes ?? [];
 
   const availableLanes = (data.lists.assignees ?? []).map((assignee) => ({
@@ -76,6 +86,38 @@ function buildVisibleLanes(data: BoardData, assigneeIds: string[]): Lane[] {
 
     const parsedId = Number(assigneeId);
     visibleLaneIds.add(Number.isFinite(parsedId) ? parsedId : assigneeId);
+  }
+
+  return availableLanes.filter((lane) => visibleLaneIds.has(lane.id));
+}
+
+function buildVisiblePriorityLanes(data: BoardData, priorityIds: string[], priorityFilterEnabled: boolean): Lane[] {
+  const availableLanes = [
+    ...(data.lists.priorities ?? []).map((priority) => ({
+      id: priority.id,
+      name: priority.name,
+      priority_id: priority.id,
+      assigned_to_id: null,
+    })),
+    {
+      id: 'no_priority',
+      name: data.labels.not_set,
+      priority_id: null,
+      assigned_to_id: null,
+    },
+  ];
+
+  if (!priorityFilterEnabled || priorityIds.length === 0) return availableLanes;
+
+  const visibleLaneIds = new Set<string | number>();
+  for (const priorityId of priorityIds) {
+    if (priorityId === 'no_priority') {
+      visibleLaneIds.add('no_priority');
+      continue;
+    }
+
+    const parsedId = Number(priorityId);
+    visibleLaneIds.add(Number.isFinite(parsedId) ? parsedId : priorityId);
   }
 
   return availableLanes.filter((lane) => visibleLaneIds.has(lane.id));

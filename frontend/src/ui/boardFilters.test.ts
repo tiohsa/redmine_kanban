@@ -42,7 +42,7 @@ function makeBoardData(issues: Issue[]): BoardData {
     lists: {
       assignees: [{ id: null, name: 'Unassigned' }],
       trackers: [{ id: 1, name: 'Bug' }],
-      priorities: [{ id: 1, name: 'Normal' }],
+      priorities: [{ id: 1, name: 'Normal' }, { id: 2, name: 'High' }],
       projects: [{ id: 1, name: 'Demo', level: 0 }],
       viewable_projects: [{ id: 1, name: 'Demo', level: 0 }],
       creatable_projects: [{ id: 1, name: 'Demo', level: 0 }],
@@ -149,6 +149,39 @@ describe('buildVisibleIssues', () => {
     ]);
 
     const issues = buildVisibleIssues(data, makeFilters({ assigneeIds: [] }), new Set(), null);
+
+    expect(issues.map((issue) => issue.id)).toEqual([1, 2]);
+  });
+
+  it('includes no-priority issues when no_priority is selected', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Prioritized', { priority_id: 1 }),
+      makeIssue(2, 1, 'No priority', { priority_id: null }),
+    ]);
+
+    const issues = buildVisibleIssues(
+      data,
+      makeFilters({ priority: ['no_priority'], priorityFilterEnabled: true }),
+      new Set(),
+      null,
+    );
+
+    expect(issues.map((issue) => issue.id)).toEqual([2]);
+  });
+
+  it('matches numeric priorities and no_priority with OR semantics', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Normal', { priority_id: 1 }),
+      makeIssue(2, 1, 'No priority', { priority_id: null }),
+      makeIssue(3, 1, 'High', { priority_id: 2 }),
+    ]);
+
+    const issues = buildVisibleIssues(
+      data,
+      makeFilters({ priority: ['1', 'no_priority'], priorityFilterEnabled: true }),
+      new Set(),
+      null,
+    );
 
     expect(issues.map((issue) => issue.id)).toEqual([1, 2]);
   });

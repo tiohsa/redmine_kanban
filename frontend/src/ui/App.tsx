@@ -158,8 +158,16 @@ export function App({ dataUrl }: Props) {
   }, [data]);
   const boardState = useMemo(() => {
     if (!filteredData) return null;
-    return buildBoardState(filteredData, issues, sortKey, priorityRank, filters.assigneeIds);
-  }, [filteredData, issues, priorityRank, sortKey, filters.assigneeIds]);
+    return buildBoardState(
+      filteredData,
+      issues,
+      sortKey,
+      priorityRank,
+      filters.assigneeIds,
+      filters.priority,
+      filters.priorityFilterEnabled,
+    );
+  }, [filteredData, issues, priorityRank, sortKey, filters.assigneeIds, filters.priority, filters.priorityFilterEnabled]);
 
   const canMove = issues.some((issue) => issue.permissions?.can_move);
   const selectedProjectIds = useMemo(

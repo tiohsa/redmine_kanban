@@ -96,7 +96,11 @@ function filterIssues(issues: Issue[], data: BoardData | null, filters: Filters)
 
     if (filters.priorityFilterEnabled) {
       if (filters.priority.length === 0) return false;
-      if (!filters.priority.includes(String(issue.priority_id))) return false;
+      const matchesPriority = filters.priority.some((priorityId) => {
+        if (priorityId === 'no_priority') return issue.priority_id === null;
+        return String(issue.priority_id) === priorityId;
+      });
+      if (!matchesPriority) return false;
     }
 
     if (filters.due !== 'all') {
