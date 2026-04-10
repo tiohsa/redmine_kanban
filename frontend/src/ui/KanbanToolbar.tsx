@@ -393,8 +393,6 @@ export function KanbanToolbar({
   const labels = data.labels;
   const projectOptions = (viewableProjectsEnabled ? data.lists.viewable_projects : data.lists.projects) ?? [];
   const assigneeOptions = [
-    { id: 'all', name: labels.all },
-    { id: 'me', name: labels.me },
     { id: 'unassigned', name: labels.unassigned },
     ...assignees.filter((assignee) => assignee.id !== null).map((assignee) => ({ id: String(assignee.id), name: assignee.name })),
   ];
@@ -408,7 +406,10 @@ export function KanbanToolbar({
     { id: 'custom', name: labels.within_specified_days ?? '指定した日以内' },
     { id: 'none', name: labels.not_set },
   ];
-  const priorityOptions = (data.lists.priorities ?? []).map((priority) => ({ id: String(priority.id), name: priority.name }));
+  const priorityOptions = [
+    ...(data.lists.priorities ?? []).map((priority) => ({ id: String(priority.id), name: priority.name })),
+    { id: 'no_priority', name: labels.not_set },
+  ];
   const priorityValue = filters.priorityFilterEnabled ? filters.priority : priorityOptions.map((option) => option.id);
 
   return (
@@ -437,15 +438,16 @@ export function KanbanToolbar({
       <div className="rk-toolbar-separator" />
 
       <div className="rk-toolbar-group">
-        <Dropdown
+        <MultiSelectDropdown
           label={labels.assignee}
           icon="person"
           options={assigneeOptions}
-          value={filters.assignee}
-          onChange={(value) => onChange({ ...filters, assignee: value })}
-          onReset={() => onChange({ ...filters, assignee: 'all' })}
-          closeOnSelect={false}
+          value={filters.assigneeIds}
+          onChange={(value) => onChange({ ...filters, assigneeIds: value })}
+          onReset={() => onChange({ ...filters, assigneeIds: [] })}
           labels={labels}
+          includeAllOption
+          allLabel={labels.all}
         />
       </div>
 

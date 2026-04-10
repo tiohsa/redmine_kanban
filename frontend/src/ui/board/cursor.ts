@@ -31,21 +31,22 @@ export function getBoardCursor({ phase, hitKind = 'empty' }: CursorOptions): Boa
 
   switch (hitKind) {
     case 'card':
+    case 'subtask_row':
+    case 'subtask_area':
+    case 'cell':
+      return 'move';
     case 'add':
     case 'delete':
     case 'subtask_check':
     case 'subtask_subject':
-    case 'subtask_row':
     case 'subtask_edit':
     case 'subtask_delete':
-    case 'subtask_area':
     case 'card_subject':
     case 'edit':
     case 'visibility':
     case 'priority':
     case 'date':
       return 'pointer';
-    case 'cell':
     case 'empty':
     default:
       return 'default';

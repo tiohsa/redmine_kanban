@@ -42,7 +42,7 @@ function makeBoardData(issues: Issue[]): BoardData {
     lists: {
       assignees: [{ id: null, name: 'Unassigned' }],
       trackers: [{ id: 1, name: 'Bug' }],
-      priorities: [{ id: 1, name: 'Normal' }],
+      priorities: [{ id: 1, name: 'Normal' }, { id: 2, name: 'High' }],
       projects: [{ id: 1, name: 'Demo', level: 0 }],
       viewable_projects: [{ id: 1, name: 'Demo', level: 0 }],
       creatable_projects: [{ id: 1, name: 'Demo', level: 0 }],
@@ -56,7 +56,7 @@ function makeBoardData(issues: Issue[]): BoardData {
 
 function makeFilters(overrides: Partial<Filters> = {}): Filters {
   return {
-    assignee: 'all',
+    assigneeIds: [],
     q: '',
     due: 'all',
     dueDays: 7,
@@ -117,5 +117,72 @@ describe('buildVisibleIssues', () => {
     const issues = buildVisibleIssues(data, makeFilters(), new Set([2]), null);
 
     expect(issues.map((issue) => issue.id)).toEqual([1]);
+  });
+
+  it('filters issues by multiple selected assignees using OR semantics', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Mine', { assigned_to_id: 7 }),
+      makeIssue(2, 1, 'Other', { assigned_to_id: 8 }),
+      makeIssue(3, 1, 'Unassigned', { assigned_to_id: null }),
+    ]);
+
+    const issues = buildVisibleIssues(data, makeFilters({ assigneeIds: ['7', '8'] }), new Set(), null);
+
+    expect(issues.map((issue) => issue.id)).toEqual([1, 2]);
+  });
+
+  it('includes unassigned issues when unassigned is selected', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Assigned', { assigned_to_id: 7 }),
+      makeIssue(2, 1, 'Unassigned', { assigned_to_id: null }),
+    ]);
+
+    const issues = buildVisibleIssues(data, makeFilters({ assigneeIds: ['unassigned'] }), new Set(), null);
+
+    expect(issues.map((issue) => issue.id)).toEqual([2]);
+  });
+
+  it('treats an empty assignee selection as all issues visible', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Assigned', { assigned_to_id: 7 }),
+      makeIssue(2, 1, 'Unassigned', { assigned_to_id: null }),
+    ]);
+
+    const issues = buildVisibleIssues(data, makeFilters({ assigneeIds: [] }), new Set(), null);
+
+    expect(issues.map((issue) => issue.id)).toEqual([1, 2]);
+  });
+
+  it('includes no-priority issues when no_priority is selected', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Prioritized', { priority_id: 1 }),
+      makeIssue(2, 1, 'No priority', { priority_id: null }),
+    ]);
+
+    const issues = buildVisibleIssues(
+      data,
+      makeFilters({ priority: ['no_priority'], priorityFilterEnabled: true }),
+      new Set(),
+      null,
+    );
+
+    expect(issues.map((issue) => issue.id)).toEqual([2]);
+  });
+
+  it('matches numeric priorities and no_priority with OR semantics', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Normal', { priority_id: 1 }),
+      makeIssue(2, 1, 'No priority', { priority_id: null }),
+      makeIssue(3, 1, 'High', { priority_id: 2 }),
+    ]);
+
+    const issues = buildVisibleIssues(
+      data,
+      makeFilters({ priority: ['1', 'no_priority'], priorityFilterEnabled: true }),
+      new Set(),
+      null,
+    );
+
+    expect(issues.map((issue) => issue.id)).toEqual([1, 2]);
   });
 });

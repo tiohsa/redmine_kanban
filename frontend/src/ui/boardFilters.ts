@@ -1,7 +1,7 @@
 import type { BoardData, Issue } from './types';
 
 export type Filters = {
-  assignee: 'all' | 'me' | 'unassigned' | string;
+  assigneeIds: string[];
   q: string;
   due: 'all' | 'overdue' | 'thisweek' | '3days' | '7days' | '1day' | 'custom' | 'none';
   dueDays?: number;
@@ -84,19 +84,23 @@ function filterIssues(issues: Issue[], data: BoardData | null, filters: Filters)
   return issues.filter((issue) => {
     if (q && !issue.subject.toLowerCase().includes(q)) return false;
 
-    if (filters.assignee !== 'all') {
-      if (filters.assignee === 'me') {
-        if (String(issue.assigned_to_id) !== String(data?.meta.current_user_id)) return false;
-      } else if (filters.assignee === 'unassigned') {
-        if (issue.assigned_to_id !== null) return false;
-      } else if (String(issue.assigned_to_id) !== String(filters.assignee)) {
+    if (filters.assigneeIds.length > 0) {
+      const matchesAssignee = filters.assigneeIds.some((assigneeId) => {
+        if (assigneeId === 'unassigned') return issue.assigned_to_id === null;
+        return String(issue.assigned_to_id) === assigneeId;
+      });
+      if (!matchesAssignee) {
         return false;
       }
     }
 
     if (filters.priorityFilterEnabled) {
       if (filters.priority.length === 0) return false;
-      if (!filters.priority.includes(String(issue.priority_id))) return false;
+      const matchesPriority = filters.priority.some((priorityId) => {
+        if (priorityId === 'no_priority') return issue.priority_id === null;
+        return String(issue.priority_id) === priorityId;
+      });
+      if (!matchesPriority) return false;
     }
 
     if (filters.due !== 'all') {

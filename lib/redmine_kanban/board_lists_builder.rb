@@ -34,7 +34,7 @@ module RedmineKanban
     def assignees_list
       projects = Project.where(id: @project_ids).to_a
       users = projects.map(&:assignable_users).flatten.uniq.sort_by { |user| user.name.to_s.downcase }
-      [{ id: nil, name: ::I18n.t(:label_kanban_unassigned) }] + users.map { |user| { id: user.id, name: user.name } }
+      [{ id: nil, name: ::I18n.t("redmine_kanban.label_unassigned") }] + users.map { |user| { id: user.id, name: user.name } }
     end
 
     def trackers_list

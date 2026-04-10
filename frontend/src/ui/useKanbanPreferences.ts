@@ -5,7 +5,7 @@ import { buildProjectScopeFromDataUrl, makeScopedStorageKey, readScopedBooleanWi
 import type { FitMode } from './kanbanShared';
 
 const DEFAULT_FILTERS: Filters = {
-  assignee: 'all',
+  assigneeIds: [],
   q: '',
   due: 'all',
   priority: [],
@@ -20,7 +20,7 @@ function readFilters(storageKey: string): Filters {
     if (value) {
       const parsed = JSON.parse(value);
       return {
-        assignee: parsed.assignee || 'all',
+        assigneeIds: Array.isArray(parsed.assigneeIds) ? parsed.assigneeIds.map(String) : [],
         q: parsed.q || '',
         due: parsed.due || 'all',
         dueDays: parsed.dueDays || 7,
