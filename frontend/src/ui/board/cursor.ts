@@ -18,6 +18,7 @@ export type BoardCursorHitKind =
   | 'visibility'
   | 'priority'
   | 'date'
+  | 'lane_header'
   | 'empty';
 
 type CursorOptions = {
@@ -33,7 +34,6 @@ export function getBoardCursor({ phase, hitKind = 'empty' }: CursorOptions): Boa
     case 'card':
     case 'subtask_row':
     case 'subtask_area':
-    case 'cell':
       return 'move';
     case 'add':
     case 'delete':

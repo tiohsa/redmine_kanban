@@ -31,6 +31,7 @@ type RectMap = {
   visibilityButtons: Map<number, Rect>; // key: statusId
   priorityBadges: Map<number, Rect>;
   dateBadges: Map<number, Rect>;
+  laneHeaders: Map<string | number, Rect>;
 };
 
 type CanvasTheme = {
@@ -92,6 +93,7 @@ type HitResult =
   | { kind: 'visibility'; statusId: number }
   | { kind: 'priority'; issueId: number }
   | { kind: 'date'; issueId: number }
+  | { kind: 'lane_header'; laneId: string | number }
   | { kind: 'empty' };
 
 export type CanvasBoardHandle = {
@@ -162,6 +164,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     visibilityButtons: new Map(),
     priorityBadges: new Map(),
     dateBadges: new Map(),
+    laneHeaders: new Map(),
   });
   const scrollRef = useRef({ x: 0, y: 0 });
   const boardSizeRef = useRef({ width: 0, height: 0 });
@@ -376,6 +379,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       visibilityButtons: new Map(),
       priorityBadges: new Map(),
       dateBadges: new Map(),
+      laneHeaders: new Map(),
     };
 
     ctx.save();
@@ -985,8 +989,11 @@ function drawLaneLabels(
   lanes.forEach((lane, index) => {
     const laneLayout = layout.laneLayouts[index];
     if (!laneLayout) return;
+    const headerRect = { x: 0, y: laneLayout.y, width: metrics.laneHeaderWidth, height: laneLayout.height };
+    if (rectMap) rectMap.laneHeaders.set(lane.id, headerRect);
+
     ctx.fillStyle = theme.surface;
-    ctx.fillRect(0, laneLayout.y, metrics.laneHeaderWidth, laneLayout.height);
+    ctx.fillRect(headerRect.x, headerRect.y, headerRect.width, headerRect.height);
     ctx.fillStyle = theme.textPrimary;
     ctx.font = '600 12px Inter, sans-serif'; // Slightly smaller font for narrower width
     ctx.fillText(lane.name, 8, laneLayout.y + metrics.laneTitleHeight / 2);
@@ -1759,13 +1766,18 @@ function hitTest(
   for (const [issueId, rect] of rectMap.cards) {
     if (pointInRect(point, rect)) return { kind: 'card', issueId };
   }
-  for (const [key, rect] of rectMap.addButtons) {
-    if (pointInRect(point, rect)) {
-      const [statusId, laneId] = parseCellKey(key, data);
-      return { kind: 'add', statusId, laneId };
+    for (const [key, rect] of rectMap.addButtons) {
+      if (pointInRect(point, rect)) {
+        const [statusId, laneId] = parseCellKey(key, data);
+        return { kind: 'add', statusId, laneId };
+      }
     }
-  }
-  for (const [key, rect] of rectMap.cells) {
+    for (const [laneId, rect] of rectMap.laneHeaders) {
+      if (pointInRect(point, rect)) {
+        return { kind: 'lane_header', laneId };
+      }
+    }
+    for (const [key, rect] of rectMap.cells) {
     if (pointInRect(point, rect)) {
       const [statusId, laneId] = parseCellKey(key, data);
       return { kind: 'cell', statusId, laneId };
