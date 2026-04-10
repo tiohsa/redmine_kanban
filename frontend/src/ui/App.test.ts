@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeProjectIds, resolveDefaultCreateProjectId } from './App';
+import { normalizeAssigneeIds, normalizeProjectIds, resolveDefaultCreateProjectId } from './App';
 import { buildDefaultIssueCreateUrl } from './issueDialog';
 
 describe('buildDefaultIssueCreateUrl', () => {
@@ -34,6 +34,14 @@ describe('buildDefaultIssueCreateUrl', () => {
 describe('project filter helpers', () => {
   it('prunes project ids to the allowed option set', () => {
     expect(normalizeProjectIds([1, 4, 2], new Set([2, 3]))).toEqual([2]);
+  });
+
+  it('prunes assignee ids to the allowed option set while keeping unassigned', () => {
+    expect(normalizeAssigneeIds(['7', 'unassigned', '9'], new Set(['7', '8']))).toEqual(['7', 'unassigned']);
+  });
+
+  it('drops stale assignee ids that are no longer selectable', () => {
+    expect(normalizeAssigneeIds(['9'], new Set(['7', '8']))).toEqual([]);
   });
 
   it('prefers selected creatable project for default create target', () => {

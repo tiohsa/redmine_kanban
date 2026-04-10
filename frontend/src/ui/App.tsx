@@ -23,6 +23,10 @@ export function normalizeProjectIds(projectIds: number[], allowedProjectIds: Set
   return projectIds.filter((projectId) => allowedProjectIds.has(projectId));
 }
 
+export function normalizeAssigneeIds(assigneeIds: string[], allowedAssigneeIds: Set<string>): string[] {
+  return assigneeIds.filter((assigneeId) => assigneeId === 'unassigned' || allowedAssigneeIds.has(assigneeId));
+}
+
 export function resolveDefaultCreateProjectId(
   selectedProjectIds: number[],
   creatableProjectIds: Set<number>,
@@ -101,6 +105,10 @@ export function App({ dataUrl }: Props) {
     [data, viewableProjectsEnabled],
   );
   const allowedProjectIds = useMemo(() => new Set(projectOptions.map((project) => project.id)), [projectOptions]);
+  const allowedAssigneeIds = useMemo(
+    () => new Set((data?.lists.assignees ?? []).filter((assignee) => assignee.id !== null).map((assignee) => String(assignee.id))),
+    [data],
+  );
   const creatableProjectIds = useMemo(
     () => new Set((data?.lists.creatable_projects ?? []).map((project) => project.id)),
     [data],
@@ -112,6 +120,13 @@ export function App({ dataUrl }: Props) {
     if (normalizedProjectIds.length === filters.projectIds.length) return;
     setFilters((previous) => ({ ...previous, projectIds: normalizedProjectIds }));
   }, [allowedProjectIds, data, filters.projectIds, setFilters]);
+
+  useEffect(() => {
+    if (!data) return;
+    const normalizedAssigneeIds = normalizeAssigneeIds(filters.assigneeIds, allowedAssigneeIds);
+    if (normalizedAssigneeIds.length === filters.assigneeIds.length) return;
+    setFilters((previous) => ({ ...previous, assigneeIds: normalizedAssigneeIds }));
+  }, [allowedAssigneeIds, data, filters.assigneeIds, setFilters]);
 
   const effectiveLaneType = displayData?.meta.lane_type;
   const dialogs = useKanbanDialogs(baseUrl, data, effectiveLaneType);
