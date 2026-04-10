@@ -19,7 +19,7 @@ export function buildBoardState(
   assigneeIds: string[] = [],
 ): BoardState {
   const columns = data.columns ?? [];
-  const lanes = filterVisibleLanes(data, data.lanes ?? [], assigneeIds);
+  const lanes = buildVisibleLanes(data, assigneeIds);
   const columnOrder = columns.map((c) => c.id);
   const laneOrder = data.meta.lane_type === 'none' ? ['none'] : lanes.map((l) => l.id);
 
@@ -56,8 +56,16 @@ export function buildBoardState(
   };
 }
 
-function filterVisibleLanes(data: BoardData, lanes: Lane[], assigneeIds: string[]): Lane[] {
-  if (data.meta.lane_type !== 'assignee' || assigneeIds.length === 0) return lanes;
+function buildVisibleLanes(data: BoardData, assigneeIds: string[]): Lane[] {
+  if (data.meta.lane_type !== 'assignee') return data.lanes ?? [];
+
+  const availableLanes = (data.lists.assignees ?? []).map((assignee) => ({
+    id: assignee.id ?? 'unassigned',
+    name: assignee.name,
+    assigned_to_id: assignee.id,
+  }));
+
+  if (assigneeIds.length === 0) return availableLanes;
 
   const visibleLaneIds = new Set<string | number>();
   for (const assigneeId of assigneeIds) {
@@ -70,7 +78,7 @@ function filterVisibleLanes(data: BoardData, lanes: Lane[], assigneeIds: string[
     visibleLaneIds.add(Number.isFinite(parsedId) ? parsedId : assigneeId);
   }
 
-  return lanes.filter((lane) => visibleLaneIds.has(lane.id));
+  return availableLanes.filter((lane) => visibleLaneIds.has(lane.id));
 }
 
 export function cellKey(statusId: number, laneId: string | number) {

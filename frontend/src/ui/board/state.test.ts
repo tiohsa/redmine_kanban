@@ -26,7 +26,18 @@ function makeBoardData(laneType: BoardData['meta']['lane_type']): BoardData {
       { id: 10, name: 'Me', assigned_to_id: 10 },
       { id: 'unassigned', name: 'Unassigned', assigned_to_id: null },
     ],
-    lists: { assignees: [], trackers: [], priorities: [], projects: [], viewable_projects: [], creatable_projects: [] },
+    lists: {
+      assignees: [
+        { id: null, name: 'Unassigned' },
+        { id: 10, name: 'Me' },
+        { id: 20, name: 'Other' },
+      ],
+      trackers: [],
+      priorities: [],
+      projects: [],
+      viewable_projects: [],
+      creatable_projects: [],
+    },
     issues: [],
     labels: {},
   };
@@ -81,10 +92,19 @@ describe('buildBoardState', () => {
     const state = buildBoardState(data, issues, 'updated_desc', new Map());
 
     expect(state.columnOrder).toEqual([1, 2]);
-    expect(state.laneOrder).toEqual([10, 'unassigned']);
+    expect(state.laneOrder).toEqual(['unassigned', 10, 20]);
     expect(state.cardsByCell.get('1:10')).toEqual([1, 2]);
     expect(state.cardsByCell.get('1:unassigned')).toEqual([3]);
     expect(state.cardsById.get(1)?.subject).toBe('Issue 1');
+  });
+
+  it('uses all assignee filter candidates as lanes when no assignee is selected', () => {
+    const data = makeBoardData('assignee');
+
+    const state = buildBoardState(data, [], 'updated_desc', new Map());
+
+    expect(state.laneOrder).toEqual(['unassigned', 10, 20]);
+    expect(state.lanes.map((lane) => lane.id)).toEqual(['unassigned', 10, 20]);
   });
 
   it('keeps only selected assignee lanes when assignee lane filters are present', () => {
