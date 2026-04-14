@@ -146,7 +146,7 @@ describe('buildBoardState', () => {
 
     const state = buildBoardState(data, issues, 'updated_desc', new Map(), ['10']);
 
-    expect(state.lanes.map((lane) => lane.id)).toEqual([1, 2, 'no_priority']);
+    expect(state.lanes.map((lane) => lane.id)).toEqual([2, 1, 'no_priority']);
   });
 
   it('shows all priority lanes including no_priority when priority filter is disabled', () => {
@@ -154,7 +154,23 @@ describe('buildBoardState', () => {
 
     const state = buildBoardState(data, [], 'updated_desc', new Map(), [], [], false);
 
+    expect(state.lanes.map((lane) => lane.id)).toEqual([2, 1, 'no_priority']);
+  });
+
+  it('uses low to high lane order only for priority_asc', () => {
+    const data = makeBoardData('priority');
+
+    const state = buildBoardState(data, [], 'priority_asc', new Map(), [], [], false);
+
     expect(state.lanes.map((lane) => lane.id)).toEqual([1, 2, 'no_priority']);
+  });
+
+  it('keeps high to low lane order for non-priority sort keys', () => {
+    const data = makeBoardData('priority');
+
+    const state = buildBoardState(data, [], 'due_asc', new Map(), [], [], false);
+
+    expect(state.lanes.map((lane) => lane.id)).toEqual([2, 1, 'no_priority']);
   });
 
   it('keeps only selected priority lanes when priority filter is enabled', () => {
@@ -183,5 +199,13 @@ describe('buildBoardState', () => {
 
     expect(hiddenState.lanes.map((lane) => lane.id)).toEqual([1]);
     expect(visibleState.lanes.map((lane) => lane.id)).toEqual(['no_priority']);
+  });
+
+  it('keeps no_priority lane at the end in priority_asc', () => {
+    const data = makeBoardData('priority');
+
+    const state = buildBoardState(data, [], 'priority_asc', new Map(), [], ['1', '2', 'no_priority'], true);
+
+    expect(state.lanes.map((lane) => lane.id)).toEqual([1, 2, 'no_priority']);
   });
 });
