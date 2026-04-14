@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findSubtask, resolveBoardIssue } from './kanbanShared';
+import { buildDisplayData, findSubtask, resolveBoardIssue } from './kanbanShared';
 import type { BoardData, Issue } from './types';
 
 function makeIssue(id: number, attrs: Partial<Issue> = {}): Issue {
@@ -132,5 +132,21 @@ describe('findSubtask', () => {
       lockVersion: 11,
       assignedToId: undefined,
     });
+  });
+});
+
+describe('buildDisplayData', () => {
+  it('builds priority lanes in high-to-low order with no_priority at the end', () => {
+    const data = makeBoardData([]);
+    data.lists.priorities = [
+      { id: 1, name: 'Low' },
+      { id: 2, name: 'High' },
+    ];
+    data.labels = { not_set: 'Not set' };
+
+    const displayData = buildDisplayData(data, true);
+
+    expect(displayData.meta.lane_type).toBe('priority');
+    expect(displayData.lanes.map((lane) => lane.id)).toEqual([2, 1, 'no_priority']);
   });
 });

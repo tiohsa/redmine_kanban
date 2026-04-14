@@ -21,7 +21,7 @@ export function buildBoardState(
   priorityFilterEnabled: boolean = false,
 ): BoardState {
   const columns = data.columns ?? [];
-  const lanes = buildVisibleLanes(data, assigneeIds, priorityIds, priorityFilterEnabled);
+  const lanes = buildVisibleLanes(data, sortKey, assigneeIds, priorityIds, priorityFilterEnabled);
   const columnOrder = columns.map((c) => c.id);
   const laneOrder = data.meta.lane_type === 'none' ? ['none'] : lanes.map((l) => l.id);
 
@@ -60,12 +60,13 @@ export function buildBoardState(
 
 function buildVisibleLanes(
   data: BoardData,
+  sortKey: SortKey,
   assigneeIds: string[],
   priorityIds: string[],
   priorityFilterEnabled: boolean,
 ): Lane[] {
   if (data.meta.lane_type === 'priority') {
-    return buildVisiblePriorityLanes(data, priorityIds, priorityFilterEnabled);
+    return buildVisiblePriorityLanes(data, sortKey, priorityIds, priorityFilterEnabled);
   }
   if (data.meta.lane_type !== 'assignee') return data.lanes ?? [];
 
@@ -91,9 +92,18 @@ function buildVisibleLanes(
   return availableLanes.filter((lane) => visibleLaneIds.has(lane.id));
 }
 
-function buildVisiblePriorityLanes(data: BoardData, priorityIds: string[], priorityFilterEnabled: boolean): Lane[] {
+function buildVisiblePriorityLanes(
+  data: BoardData,
+  sortKey: SortKey,
+  priorityIds: string[],
+  priorityFilterEnabled: boolean,
+): Lane[] {
+  const shouldSortAscending = sortKey === 'priority_asc';
+  const priorities = [...(data.lists.priorities ?? [])];
+  if (!shouldSortAscending) priorities.reverse();
+
   const availableLanes = [
-    ...(data.lists.priorities ?? []).map((priority) => ({
+    ...priorities.map((priority) => ({
       id: priority.id,
       name: priority.name,
       priority_id: priority.id,
