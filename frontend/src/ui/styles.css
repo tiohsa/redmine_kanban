@@ -1,72 +1,74 @@
 @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Outfit:wght@100..900&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&family=Noto+Sans+JP:wght@100..900&display=swap');
 
-/* Modern Color Palette (Tailwind-like) */
+/* MiniMax Inspired Design System */
 :root {
-  --rk-bg-main: #f1f5f9;
-  /* Slate 100 - Light Gray Background */
+  /* Surface & Background */
+  --rk-bg-main: #ffffff;
   --rk-bg-surface: #ffffff;
-  --rk-border: #e2e8f0;
-  /* Slate 200 */
+  --rk-bg-secondary: #f0f0f0;
+
+  /* Borders */
+  --rk-border: #e5e7eb;
+  --rk-border-light: #f2f3f5;
   --rk-border-strong: #cbd5e1;
-  /* Slate 300 */
-  --rk-text-primary: #1e293b;
-  /* Slate 800 */
-  --rk-text-secondary: #64748b;
-  /* Slate 500 */
-  --rk-primary: #4f46e5;
-  /* Indigo 600 */
-  --rk-primary-hover: #4338ca;
-  /* Indigo 700 */
+
+  /* Text Colors */
+  --rk-text-primary: #222222;
+  --rk-text-dark: #18181b;
+  --rk-text-secondary: #45515e;
+  --rk-text-muted: #8e8e93;
+
+  /* Brand Colors */
+  --rk-brand-blue: #1456f0;
+  --rk-primary: #3b82f6;
+  --rk-primary-hover: #2563eb;
+  --rk-primary-active: #1d4ed8;
+
+  /* Semantic */
   --rk-danger: #ef4444;
-  /* Red 500 */
   --rk-danger-bg: #fef2f2;
-  /* Red 50 */
   --rk-warn: #f59e0b;
-  /* Amber 500 */
   --rk-warn-bg: #fffbeb;
-  /* Amber 50 */
-  /* Sticky Note Colors (Post-it like) */
+  --rk-success-bg: #e8ffea;
+
+  /* Sticky Note Colors (Matching brand spectrum) */
   --rk-note-lime: #bef264;
-  /* Lime 300 */
   --rk-note-orange: #fdba74;
-  /* Orange 300 */
   --rk-note-blue: #93c5fd;
-  /* Blue 300 */
   --rk-note-pink: #f9a8d4;
-  /* Pink 300 */
   --rk-note-yellow: #fde047;
-  /* Yellow 300 */
   --rk-note-purple: #d8b4fe;
-  /* Purple 300 */
   --rk-note-teal: #5eead4;
-  /* Teal 300 */
 
-  /* Column Background Colors (Subtle) */
-  --rk-col-bg-1: #f1f5f9;
-  /* Slate */
-  --rk-col-bg-2: #eff6ff;
-  /* Blue */
-  --rk-col-bg-3: #fefce8;
-  /* Yellow */
-  --rk-col-bg-4: #f0fdf4;
-  /* Green */
-  --rk-col-bg-5: #faf5ff;
-  /* Purple */
-  --rk-col-bg-6: #fff7ed;
-  /* Orange */
-  --rk-col-bg-7: #fdf2f8;
-  /* Pink */
+  /* Column Background Colors (Subtle - White in MiniMax) */
+  --rk-col-bg-1: #ffffff;
+  --rk-col-bg-2: #ffffff;
+  --rk-col-bg-3: #ffffff;
+  --rk-col-bg-4: #ffffff;
+  --rk-col-bg-5: #ffffff;
+  --rk-col-bg-6: #ffffff;
+  --rk-col-bg-7: #ffffff;
 
-  --rk-shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
-  --rk-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  --rk-shadow-md: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  /* Shadows */
+  --rk-shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.08);
+  --rk-shadow: rgba(0, 0, 0, 0.08) 0px 4px 6px;
+  --rk-shadow-md: rgba(36, 36, 36, 0.08) 0px 12px 16px -4px;
+  --rk-shadow-glow: rgba(44, 30, 116, 0.16) 0px 0px 15px;
+
+  /* Typography */
+  --rk-font-ui: 'DM Sans', 'Noto Sans JP', sans-serif;
+  --rk-font-display: 'Outfit', 'Noto Sans JP', sans-serif;
+  --rk-font-mid: 'Poppins', 'Noto Sans JP', sans-serif;
+  --rk-font-data: 'Roboto', 'Noto Sans JP', sans-serif;
 }
 
 .rk-root {
   margin-top: 4px;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--rk-font-ui);
   color: var(--rk-text-primary);
   line-height: 1.5;
+  background-color: var(--rk-bg-main);
 }
 
 .rk-popup-host {
@@ -84,7 +86,7 @@
   background: var(--rk-bg-surface);
   border: 1px solid var(--rk-border);
   border-left-width: 4px;
-  border-radius: 12px;
+  border-radius: 8px;
   box-shadow: var(--rk-shadow-md);
   padding: 12px 12px;
 }
@@ -139,10 +141,12 @@
 
 .rk-title {
   margin: 0;
-  font-size: 1.5rem;
-  font-weight: 700;
+  font-family: var(--rk-font-display);
+  font-size: 32px;
+  font-weight: 600;
   color: var(--rk-text-primary);
   letter-spacing: -0.025em;
+  line-height: 0.88;
 }
 
 .rk-status {
@@ -157,9 +161,7 @@
   padding: 4px 12px;
   border-radius: 9999px;
   background: #e0e7ff;
-  /* Indigo 100 */
   color: #3730a3;
-  /* Indigo 800 */
   display: inline-flex;
   align-items: center;
 }
@@ -167,52 +169,36 @@
 .rk-pill-warn {
   background: var(--rk-warn-bg);
   color: #92400e;
-  /* Amber 800 */
 }
 
 .rk-pill-error {
   background: var(--rk-danger-bg);
   color: #991b1b;
-  /* Red 800 */
 }
 
-/* Toolbar Adjustments */
 .rk-toolbar {
   margin-bottom: 0;
-  /* Remove gap between toolbar and board if desired, or keep small */
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  /* Tighter gap */
   align-items: center;
   background: var(--rk-bg-surface);
-  padding: 4px 8px;
-  /* Compact padding */
+  padding: 8px 12px;
   border: 1px solid var(--rk-border);
   border-bottom: none;
-  /* Connect to board if intended, but keeping generic style for now */
   border-radius: 8px 8px 0 0;
-  /* Top rounded only if connecting */
   box-shadow: none;
-  /* Remove shadow for flatter look or keep minimal */
 }
 
-/* If the user wants separate toolbar, maybe keep margin but small. 
-   "Remove gap between header and lane" usually means Canvas Header and Lane.
-   But "Header part to attached header design" might mean Toolbar.
-   Let's assume Board Header (Canvas) <-> Lane (Canvas) gap first.
-   But for Toolbar optimization: */
 .rk-toolbar-group {
   display: flex;
   align-items: center;
   gap: 4px;
-  /* Tighter group */
 }
 
 .rk-toolbar-separator {
   width: 1px;
   height: 20px;
-  /* Slightly shorter */
   background: var(--rk-border);
   margin: 0 2px;
 }
@@ -232,17 +218,16 @@
   -webkit-font-smoothing: antialiased;
 }
 
-/* Custom Dropdown Styling */
 .rk-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 4px;
   height: 32px;
-  padding: 0 8px;
+  padding: 0 12px;
   border: 1px solid var(--rk-border);
-  border-radius: 6px;
-  font-size: 0.85rem;
+  border-radius: 8px;
+  font-size: 14px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
@@ -252,14 +237,14 @@
 }
 
 .rk-btn:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
+  background: var(--rk-bg-secondary);
+  border-color: var(--rk-border-strong);
   color: var(--rk-text-primary);
 }
 
 .rk-btn-toggle-active {
-  background: #eff6ff !important;
-  border-color: #93c5fd !important;
+  background: var(--rk-success-bg) !important;
+  border-color: var(--rk-primary) !important;
   color: var(--rk-primary) !important;
 }
 
@@ -268,25 +253,23 @@
   align-items: center;
   gap: 4px;
   height: 32px;
-  /* Compact height */
-  padding: 0 8px;
+  padding: 0 12px;
   background: #fff;
   border: 1px solid var(--rk-border);
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
   color: var(--rk-text-secondary);
-  font-size: 0.85rem;
+  font-size: 14px;
   font-weight: 500;
   user-select: none;
   min-width: auto;
-  /* Remove fixed min-width */
 }
 
 .rk-dropdown-trigger:hover,
 .rk-dropdown-trigger.rk-active {
-  background: #f8fafc;
-  border-color: #cbd5e1;
+  background: var(--rk-bg-secondary);
+  border-color: var(--rk-border-strong);
   color: var(--rk-text-primary);
 }
 
@@ -316,7 +299,7 @@
 
 .rk-dropdown-title {
   padding: 8px 12px;
-  font-size: 0.9rem;
+  font-size: 14px;
   font-weight: 700;
   color: var(--rk-text-primary);
   border-bottom: 1px solid var(--rk-border);
@@ -328,11 +311,11 @@
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s;
   color: var(--rk-text-primary);
-  font-size: 0.875rem;
+  font-size: 14px;
 }
 
 .rk-dropdown-item:hover {
@@ -396,40 +379,28 @@
     opacity: 0;
     transform: translateY(-4px);
   }
-
   to {
     opacity: 1;
     transform: translateY(0);
   }
 }
 
-@keyframes rk-spin {
-  0% {
-    transform: rotate(0deg);
-  }
-
-  100% {
-    transform: rotate(360deg);
-  }
-}
-
-/* Updated Search Input to match Dropdown trigger */
 .rk-search-box {
   display: flex;
   align-items: center;
   gap: 6px;
   height: 32px;
-  padding: 0 8px;
+  padding: 0 12px;
   background: #fff;
   border: 1px solid var(--rk-border);
-  border-radius: 6px;
+  border-radius: 8px;
   transition: all 0.2s;
   min-width: 180px;
 }
 
 .rk-search-box:focus-within {
   border-color: var(--rk-primary);
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 .rk-search-box input {
@@ -461,14 +432,12 @@
   color: var(--rk-text-primary);
 }
 
-/* Ensure labels are vertically centered and visible */
 .rk-label {
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--rk-text-secondary);
   white-space: nowrap;
   line-height: 32px;
-  /* Vertical align with inputs */
 }
 
 .rk-check {
@@ -485,7 +454,6 @@
   position: relative;
   min-height: 480px;
   height: calc(100vh - 180px);
-  /* Fill most of the viewport */
 }
 
 .rk-canvas-board {
@@ -495,7 +463,7 @@
   position: relative;
   background: var(--rk-bg-main);
   border: 1px solid var(--rk-border);
-  border-radius: 12px;
+  border-radius: 8px;
   box-shadow: var(--rk-shadow);
   overflow: hidden;
 }
@@ -513,7 +481,6 @@
   background: var(--rk-bg-surface);
   border-bottom: 1px solid var(--rk-border);
   box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05);
-  /* Subtle shadow for header */
 }
 
 .rk-header-lane-layout {
@@ -532,7 +499,8 @@
 }
 
 .rk-header-lane-label {
-  font-weight: 700;
+  font-family: var(--rk-font-display);
+  font-weight: 600;
   color: var(--rk-text-secondary);
   border-right: 1px solid var(--rk-border);
   display: flex;
@@ -540,8 +508,9 @@
 }
 
 .rk-col-title {
-  font-weight: 700;
-  font-size: 0.95rem;
+  font-family: var(--rk-font-display);
+  font-weight: 600;
+  font-size: 16px;
   color: var(--rk-text-primary);
 }
 
@@ -580,10 +549,10 @@
 
 .rk-lane-label {
   padding: 16px;
-  background: #f8fafc;
-  /* Slightly different from cell */
-  font-weight: 700;
-  font-size: 0.9rem;
+  background: var(--rk-bg-surface);
+  font-family: var(--rk-font-display);
+  font-weight: 500;
+  font-size: 14px;
   display: flex;
   align-items: center;
   border-right: 1px solid var(--rk-border);
@@ -592,7 +561,6 @@
 
 .rk-cell {
   background: var(--rk-bg-main);
-  /* Default cell bg */
   padding: 12px;
   min-height: 160px;
   display: flex;
@@ -601,18 +569,11 @@
   transition: background-color 0.2s;
 }
 
-/* Ensure consistent borders even with gap */
-.rk-grid>.rk-cell {
-  background: var(--rk-bg-main);
-}
-
 .rk-cell-over {
   background: #eff6ff !important;
-  /* Blue 50 */
   box-shadow: inset 0 0 0 2px var(--rk-primary);
 }
 
-/* Card Styling */
 .rk-card {
   border: 1px solid var(--rk-border);
   border-radius: 8px;
@@ -622,10 +583,8 @@
   transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
   position: relative;
   user-select: none;
-  /* Prevent text selection during drag */
 }
 
-/* Hover effect for cards */
 .rk-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--rk-shadow-md);
@@ -671,7 +630,6 @@
 .rk-card-dragging {
   cursor: grabbing;
   transition: none !important;
-  /* Disable transition during drag for instant movement */
 }
 
 .rk-card-title {
@@ -681,10 +639,6 @@
   line-height: 1.4;
   word-break: break-word;
   overflow-wrap: break-word;
-}
-
-.rk-card-has-delete .rk-card-title {
-  padding-right: 28px;
 }
 
 .rk-card-title a {
@@ -711,48 +665,39 @@
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  border-radius: 6px;
-  background: #f1f5f9;
-  /* Slate 100 */
+  border-radius: 4px;
+  background: var(--rk-bg-secondary);
   color: var(--rk-text-secondary);
+  font-family: var(--rk-font-ui);
   font-weight: 500;
   border: 1px solid transparent;
 }
 
 .rk-badge-priority-low {
   background: #e0f2fe;
-  /* Sky 100 */
   color: #0369a1;
-  /* Sky 700 */
 }
 
 .rk-badge-priority-normal {
   background: #f1f5f9;
-  /* Slate 100 (Default) */
   color: var(--rk-text-secondary);
 }
 
 .rk-badge-priority-high {
   background: #fef9c3;
-  /* Yellow 100 */
   color: #a16207;
-  /* Yellow 700 */
   border-color: #fde047;
 }
 
 .rk-badge-priority-urgent {
   background: #ffedd5;
-  /* Orange 100 */
   color: #c2410c;
-  /* Orange 700 */
   border-color: #fdba74;
 }
 
 .rk-badge-priority-immediate {
   background: #fee2e2;
-  /* Red 100 */
   color: #b91c1c;
-  /* Red 700 */
   border-color: #fca5a5;
   font-weight: 700;
 }
@@ -766,7 +711,6 @@
 .rk-aging-warn {
   background: var(--rk-warn-bg);
   color: #b45309;
-  /* Amber 700 */
   border-color: #fde68a;
 }
 
@@ -777,45 +721,21 @@
 }
 
 .rk-btn-primary {
-  background: var(--rk-primary);
-  border-color: var(--rk-primary);
+  background: var(--rk-text-dark);
+  border-color: var(--rk-text-dark);
   color: #fff;
 }
 
 .rk-btn-primary:hover {
-  background: var(--rk-primary-hover);
-  border-color: var(--rk-primary-hover);
+  background: #333;
+  border-color: #333;
   color: #fff;
-}
-
-.rk-btn:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
-  box-shadow: var(--rk-shadow-sm);
-}
-
-.rk-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.rk-btn-primary {
-  background: var(--rk-primary);
-  border-color: var(--rk-primary);
-  color: #fff;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-}
-
-.rk-btn-primary:hover {
-  background: var(--rk-primary-hover);
-  border-color: var(--rk-primary-hover);
 }
 
 .rk-btn-danger {
   background: var(--rk-danger);
   border-color: var(--rk-danger);
   color: #fff;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
 }
 
 .rk-btn-danger:hover {
@@ -871,7 +791,6 @@
   height: auto;
 }
 
-/* Full-window mode: hide Redmine chrome and pin the SPA to the viewport. */
 body.rk-kanban-fullwindow {
   overflow: hidden;
 }
@@ -907,12 +826,10 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   color: var(--rk-primary);
 }
 
-/* Modal */
 .rk-modal-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(15, 23, 42, 0.5);
-  /* Backdrop blur feel */
   backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
@@ -920,7 +837,6 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   z-index: 9999;
 }
 
-/* Modal Adjustments */
 .rk-modal {
   width: 600px;
   max-width: calc(100vw - 32px);
@@ -930,13 +846,10 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   padding: 24px;
   box-shadow: var(--rk-shadow-md);
   animation: rk-modal-in 0.2s ease-out;
-  /* Ensure modal content is visible */
   display: flex;
   flex-direction: column;
   max-height: 90vh;
-  /* Prevent overflowing viewport height */
   overflow-y: auto;
-  /* Scroll if too tall */
 }
 
 .rk-modal-sm {
@@ -954,7 +867,6 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
     opacity: 0;
     transform: scale(0.95);
   }
-
   to {
     opacity: 1;
     transform: scale(1);
@@ -970,13 +882,14 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 
 .rk-modal-head h3 {
   margin: 0;
-  font-size: 1.25rem;
-  font-weight: 700;
+  font-family: var(--rk-font-display);
+  font-size: 24px;
+  font-weight: 500;
 }
 
 .rk-issue-dialog-head {
   margin: 0;
-  padding: 2px 12px;
+  padding: 4px 12px;
   border-bottom: 1px solid var(--rk-border);
   background: #fff;
 }
@@ -992,9 +905,10 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 
 .rk-issue-dialog-title-wrap h3 {
   margin: 0;
-  font-size: 1rem;
-  line-height: 1.2;
-  font-weight: 700;
+  font-family: var(--rk-font-display);
+  font-size: 18px;
+  line-height: 1.5;
+  font-weight: 500;
   color: var(--rk-text-primary);
   white-space: nowrap;
   overflow: hidden;
@@ -1036,7 +950,6 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  /* increased gap for clarity */
 }
 
 .rk-row2 {
@@ -1067,36 +980,36 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 .rk-create-footer .rk-btn {
   min-width: 96px;
   height: 36px;
-  padding: 0 18px;
-  border-radius: 6px;
-  border: 1px solid #c9d2de;
-  background: linear-gradient(180deg, #ffffff 0%, #f6f8fb 100%);
-  color: #243447;
-  font-size: 0.95rem;
+  padding: 0 20px;
+  border-radius: 8px;
+  border: 1px solid var(--rk-border);
+  background: #fff;
+  color: var(--rk-text-dark);
+  font-size: 14px;
   font-weight: 500;
   box-shadow: none;
 }
 
 .rk-modal-actions .rk-btn:hover,
 .rk-create-footer .rk-btn:hover {
-  background: linear-gradient(180deg, #ffffff 0%, #eef2f7 100%);
-  border-color: #b7c2cf;
-  color: #17212b;
+  background: var(--rk-bg-secondary);
+  border-color: var(--rk-border-strong);
+  color: var(--rk-text-dark);
   box-shadow: none;
 }
 
 .rk-modal-actions .rk-btn.rk-btn-primary,
 .rk-create-footer .rk-btn.rk-btn-primary {
-  border-color: #2d74da;
-  background: linear-gradient(180deg, #2f80ed 0%, #2a6fdb 100%);
+  border-color: var(--rk-text-dark);
+  background: var(--rk-text-dark);
   color: #fff;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .rk-modal-actions .rk-btn.rk-btn-primary:hover,
 .rk-create-footer .rk-btn.rk-btn-primary:hover {
-  border-color: #2566c7;
-  background: linear-gradient(180deg, #3a8bf3 0%, #2566cf 100%);
+  border-color: #333;
+  background: #333;
   color: #fff;
 }
 
@@ -1106,14 +1019,6 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   box-shadow: none;
 }
 
-.rk-create-footer.rk-create-footer-compact .rk-btn {
-  min-width: 48px;
-  height: 24px;
-  padding: 0 8px;
-  font-size: 0.8rem;
-}
-
-/* Ensure textareas and inputs in modal have enough space */
 .rk-form textarea {
   min-height: 100px;
   padding: 12px;
@@ -1123,7 +1028,6 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   resize: vertical;
 }
 
-/* Override previous rk-field for modal to be explicit */
 .rk-form .rk-field {
   display: flex;
   flex-direction: column;
@@ -1134,8 +1038,8 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 
 .rk-form .rk-label {
   line-height: normal;
-  /* Reset line height for stacked labels */
-  font-weight: 600;
+  font-family: var(--rk-font-mid);
+  font-weight: 500;
   color: var(--rk-text-primary);
 }
 
@@ -1165,11 +1069,6 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   line-height: 1.5;
-}
-
-.rk-desc-preview-body a {
-  color: var(--rk-primary);
-  text-decoration: underline;
 }
 
 .rk-iframe-dialog {
@@ -1210,20 +1109,11 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 }
 
 .rk-iframe-dialog-frame {
-
   flex: 1;
-
   border: none;
-
   width: 100%;
-
   height: 100%;
-
 }
-
-
-
-/* Iframe Create Dialog Enhancements */
 
 .rk-iframe-dialog-container {
   background: var(--rk-bg-surface);
@@ -1235,32 +1125,6 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   position: relative;
 }
 
-.rk-iframe-dialog-container-issue .rk-issue-dialog-head {
-  margin: 0;
-  padding: 2px 12px;
-  border-bottom: 1px solid var(--rk-border);
-  background: #fff;
-}
-
-.rk-iframe-dialog-container-issue .rk-issue-dialog-title-wrap {
-  gap: 8px;
-  padding-right: 12px;
-}
-
-.rk-iframe-dialog-container-issue .rk-issue-dialog-title-wrap h3 {
-  font-size: 14px;
-}
-
-.rk-iframe-dialog-container-time-entry {
-  max-height: none;
-}
-
-.rk-iframe-dialog-container-time-entry .rk-iframe-wrapper {
-  min-height: 0;
-}
-
-
-
 .rk-iframe-wrapper {
   flex: 1;
   overflow: hidden;
@@ -1269,35 +1133,19 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   min-height: 0;
 }
 
-
-
 .rk-create-footer {
   padding: 16px;
   border-top: 1px solid var(--rk-border);
-  background: #f8fafc;
+  background: #fff;
   display: flex;
   flex-direction: column;
   gap: 16px;
-}
-
-.rk-create-footer-compact {
-  padding: 2px 12px;
-  gap: 2px;
-}
-
-.rk-create-footer-time-entry {
-  padding: 2px 12px 4px;
-  gap: 2px;
 }
 
 .rk-subtask-input {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.rk-create-footer-compact .rk-subtask-input {
-  gap: 2px;
 }
 
 .rk-subtask-toggle {
@@ -1313,20 +1161,6 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   text-align: left;
 }
 
-.rk-create-footer-compact .rk-subtask-toggle {
-  min-height: 14px;
-  line-height: 1;
-}
-
-.rk-subtask-toggle-icon {
-  transition: transform 0.2s;
-}
-
-.rk-subtask-toggle-label {
-  cursor: pointer;
-  margin: 0;
-}
-
 .rk-subtask-textarea {
   margin-top: 4px;
 }
@@ -1338,57 +1172,6 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   border-radius: 6px;
   font-family: inherit;
   resize: vertical;
-}
-
-.rk-create-footer .rk-modal-actions {
-  margin-top: 0;
-  padding-top: 0;
-  border-top: none;
-}
-
-.rk-modal-actions-start {
-  justify-content: flex-start;
-}
-
-.rk-iframe-dialog-container-issue .rk-create-footer,
-.rk-iframe-dialog-container-time-entry .rk-create-footer {
-  background: #fff;
-}
-
-.rk-iframe-dialog-container-issue .rk-create-footer-compact,
-.rk-iframe-dialog-container-time-entry .rk-create-footer-time-entry {
-  padding: 2px 12px 4px;
-  gap: 2px;
-}
-
-.rk-iframe-dialog-container-issue .rk-subtask-input,
-.rk-iframe-dialog-container-time-entry .rk-subtask-input {
-  gap: 2px;
-}
-
-.rk-iframe-dialog-container-issue .rk-subtask-toggle,
-.rk-iframe-dialog-container-time-entry .rk-subtask-toggle {
-  min-height: 14px;
-  line-height: 1;
-}
-
-.rk-iframe-dialog-container-issue .rk-modal-actions,
-.rk-iframe-dialog-container-time-entry .rk-modal-actions {
-  gap: 6px;
-}
-
-.rk-iframe-dialog-container-issue .rk-create-footer .rk-btn,
-.rk-iframe-dialog-container-issue .rk-modal-actions .rk-btn,
-.rk-iframe-dialog-container-time-entry .rk-create-footer .rk-btn,
-.rk-iframe-dialog-container-time-entry .rk-modal-actions .rk-btn {
-  min-width: 88px;
-  height: 28px;
-  padding: 0 12px;
-  font-size: 0.85rem;
-}
-
-.issue-iframe-loading {
-  visibility: hidden;
 }
 
 /* Help Dialog */
@@ -1412,7 +1195,7 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid var(--rk-border);
-  background: #f8fafc;
+  background: #fff;
 }
 
 .rk-help-title-wrap {
@@ -1423,8 +1206,9 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 
 .rk-help-title-wrap h3 {
   margin: 0;
-  font-size: 1.25rem;
-  font-weight: 700;
+  font-family: var(--rk-font-display);
+  font-size: 24px;
+  font-weight: 500;
 }
 
 .rk-help-content {
@@ -1499,7 +1283,7 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 .rk-help-footer {
   padding: 16px 24px;
   border-top: 1px solid var(--rk-border);
-  background: #f8fafc;
+  background: #fff;
   display: flex;
   justify-content: flex-start;
 }
