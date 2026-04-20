@@ -16,6 +16,7 @@
   /* Text Colors */
   --rk-text-primary: #222222;
   --rk-text-dark: #18181b;
+  --rk-text-charcoal: #181e25;
   --rk-text-secondary: #45515e;
   --rk-text-muted: #8e8e93;
 
@@ -224,53 +225,73 @@
   justify-content: center;
   gap: 4px;
   height: 32px;
-  padding: 0 12px;
+  width: 32px;
+  padding: 0;
   border: 1px solid var(--rk-border);
-  border-radius: 8px;
+  border-radius: 6px;
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
-  background: #fff;
-  color: var(--rk-text-secondary);
+  background: #ffffff;
+  color: var(--rk-text-dark);
   white-space: nowrap;
+  position: relative;
 }
 
 .rk-btn:hover {
-  background: var(--rk-bg-secondary);
-  border-color: var(--rk-border-strong);
-  color: var(--rk-text-primary);
+  background: #eff6ff;
+  color: var(--rk-brand-blue);
 }
 
 .rk-btn-toggle-active {
-  background: var(--rk-success-bg) !important;
-  border-color: var(--rk-primary) !important;
-  color: var(--rk-primary) !important;
+  background: #eff6ff !important;
+  color: var(--rk-brand-blue) !important;
+}
+
+.rk-active-soft {
+  background: #eff6ff !important;
+  color: var(--rk-brand-blue) !important;
 }
 
 .rk-dropdown-trigger {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   height: 32px;
-  padding: 0 12px;
-  background: #fff;
+  width: 32px;
+  padding: 0;
+  background: #ffffff;
   border: 1px solid var(--rk-border);
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
-  color: var(--rk-text-secondary);
+  color: var(--rk-text-dark);
   font-size: 14px;
   font-weight: 500;
   user-select: none;
-  min-width: auto;
+  min-width: 32px;
+  position: relative;
 }
 
 .rk-dropdown-trigger:hover,
 .rk-dropdown-trigger.rk-active {
-  background: var(--rk-bg-secondary);
-  border-color: var(--rk-border-strong);
-  color: var(--rk-text-primary);
+  background: #eff6ff;
+  border-color: #3b82f6;
+  color: var(--rk-brand-blue);
+}
+
+.rk-dropdown-trigger-labeled {
+  width: auto;
+  padding: 0 12px;
+  gap: 8px;
+}
+
+.rk-dropdown-trigger-labeled span:not(.rk-icon) {
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .rk-dropdown-trigger .rk-icon {
@@ -432,6 +453,19 @@
   color: var(--rk-text-primary);
 }
 
+.rk-indicator-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  background-color: var(--rk-primary);
+  border-radius: 50%;
+  border: 1.5px solid #eff6ff;
+  pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
 .rk-label {
   font-size: 0.875rem;
   font-weight: 500;
@@ -576,10 +610,10 @@
 
 .rk-card {
   border: 1px solid var(--rk-border);
-  border-radius: 8px;
+  border-radius: 16px;
   padding: 16px;
   background: var(--rk-bg-surface);
-  box-shadow: var(--rk-shadow-sm);
+  box-shadow: var(--rk-shadow);
   transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
   position: relative;
   user-select: none;
@@ -721,15 +755,15 @@
 }
 
 .rk-btn-primary {
-  background: var(--rk-text-dark);
-  border-color: var(--rk-text-dark);
-  color: #fff;
+  background: var(--rk-text-charcoal);
+  border-color: var(--rk-text-charcoal);
+  color: #ffffff;
 }
 
 .rk-btn-primary:hover {
-  background: #333;
-  border-color: #333;
-  color: #fff;
+  background: #2b3542;
+  border-color: #2b3542;
+  color: #ffffff;
 }
 
 .rk-btn-danger {
@@ -1000,16 +1034,16 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 
 .rk-modal-actions .rk-btn.rk-btn-primary,
 .rk-create-footer .rk-btn.rk-btn-primary {
-  border-color: var(--rk-text-dark);
-  background: var(--rk-text-dark);
+  border-color: var(--rk-text-charcoal);
+  background: var(--rk-text-charcoal);
   color: #fff;
   font-weight: 600;
 }
 
 .rk-modal-actions .rk-btn.rk-btn-primary:hover,
 .rk-create-footer .rk-btn.rk-btn-primary:hover {
-  border-color: #333;
-  background: #333;
+  border-color: #2b3542;
+  background: #2b3542;
   color: #fff;
 }
 

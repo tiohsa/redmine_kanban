@@ -956,8 +956,19 @@ function drawHeaders(
     const isHidden = hiddenStatusIds?.has(column.id);
     const visX = x + 12 + nameWidth + 8;
     const visY = (layout.headerHeight - 16) / 2;
+    const badgeSize = 24;
+    const bgX = visX - 4;
+    const bgY = (layout.headerHeight - badgeSize) / 2;
+
+    // Draw background (like the image)
+    if (!isHidden) {
+      ctx.fillStyle = '#eff6ff';
+      roundedRect(ctx, bgX, bgY, badgeSize, badgeSize, 6);
+      ctx.fill();
+    }
+
     // Add offsetY to the rect coordinates because the header is sticky but pointer events are in global coordinates
-    const visRect = { x: visX - 4, y: visY - 4 + offsetY, width: 24, height: 24 };
+    const visRect = { x: bgX, y: bgY + offsetY, width: badgeSize, height: badgeSize };
     if (rectMap) rectMap.visibilityButtons.set(column.id, visRect);
 
     drawIcon(ctx, isHidden ? 'visibility_off' : 'visibility', visX, visY + 2, 16, isHidden ? theme.textSecondary : theme.primary);
