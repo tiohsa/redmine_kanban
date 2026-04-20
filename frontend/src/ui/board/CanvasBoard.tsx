@@ -965,6 +965,9 @@ function drawHeaders(
       ctx.fillStyle = '#eff6ff';
       roundedRect(ctx, bgX, bgY, badgeSize, badgeSize, 6);
       ctx.fill();
+      ctx.strokeStyle = theme.border;
+      ctx.lineWidth = 1;
+      ctx.stroke();
     }
 
     // Add offsetY to the rect coordinates because the header is sticky but pointer events are in global coordinates

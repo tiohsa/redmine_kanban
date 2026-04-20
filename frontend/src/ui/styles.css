@@ -242,16 +242,19 @@
 .rk-btn:hover {
   background: #eff6ff;
   color: var(--rk-brand-blue);
+  border-color: var(--rk-border) !important;
 }
 
 .rk-btn-toggle-active {
   background: #eff6ff !important;
   color: var(--rk-brand-blue) !important;
+  border-color: var(--rk-border) !important;
 }
 
 .rk-active-soft {
   background: #eff6ff !important;
   color: var(--rk-brand-blue) !important;
+  border-color: var(--rk-border) !important;
 }
 
 .rk-dropdown-trigger {
@@ -278,7 +281,7 @@
 .rk-dropdown-trigger:hover,
 .rk-dropdown-trigger.rk-active {
   background: #eff6ff;
-  border-color: #3b82f6;
+  border-color: var(--rk-border) !important;
   color: var(--rk-brand-blue);
 }
 
@@ -289,7 +292,7 @@
 }
 
 .rk-dropdown-trigger-labeled span:not(.rk-icon) {
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
 }
@@ -400,6 +403,7 @@
     opacity: 0;
     transform: translateY(-4px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -901,6 +905,7 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
     opacity: 0;
     transform: scale(0.95);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
