@@ -198,7 +198,12 @@ function MultiSelectDropdown({
         title={title}
       >
         <span className="rk-icon">{icon}</span>
-        {showTriggerLabel ? <span>{label}</span> : null}
+        {showTriggerLabel ? (
+          <span>
+            {label}
+            {selectedCount > 0 ? ` (${selectedCount})` : ''}
+          </span>
+        ) : null}
         {showDot ? <span className="rk-indicator-dot" /> : null}
       </div>
 
