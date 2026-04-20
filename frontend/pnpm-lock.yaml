@@ -20,18 +20,9 @@ importers:
       '@fontsource-variable/noto-sans-jp':
         specifier: ^5.2.10
         version: 5.2.10
-      '@fontsource-variable/outfit':
-        specifier: ^5.2.8
-        version: 5.2.8
       '@fontsource/material-symbols-outlined':
         specifier: ^5.2.42
         version: 5.2.42
-      '@fontsource/poppins':
-        specifier: ^5.2.7
-        version: 5.2.7
-      '@fontsource/roboto':
-        specifier: ^5.2.10
-        version: 5.2.10
       '@tanstack/react-query':
         specifier: ^5.62.7
         version: 5.90.12(react@18.3.1)
@@ -578,17 +569,8 @@ packages:
   '@fontsource-variable/noto-sans-jp@5.2.10':
     resolution: {integrity: sha512-m0XfZ38rZtCaGAuAQL0cBPQ6fc/RguYEOqw66zvuLOV9vNRUBf9MFqyoazTu2JVCRIcnkrxbwF29UUaHHgTKdg==}
 
-  '@fontsource-variable/outfit@5.2.8':
-    resolution: {integrity: sha512-4oUDCZx/Tcz6HZP423w/niqEH31Gks5IsqHV2ZZz1qKHaVIZdj2f0/S1IK2n8jl6Xo0o3N+3RjNHlV9R73ozQA==}
-
   '@fontsource/material-symbols-outlined@5.2.42':
     resolution: {integrity: sha512-zqpdvl/vga8OSxbqpkpJu4zJ6i0APTww7v8s9Qw+ENBr+UeLxTuOT/3XD8Lc3RH2WRv2QmptbJvU3JT6Ppni7Q==}
-
-  '@fontsource/poppins@5.2.7':
-    resolution: {integrity: sha512-6uQyPmseo4FgI97WIhA4yWRlNaoLk4vSDK/PyRwdqqZb5zAEuc+Kunt8JTMcsHYUEGYBtN15SNkMajMdqUSUmg==}
-
-  '@fontsource/roboto@5.2.10':
-    resolution: {integrity: sha512-8HlA5FtSfz//oFSr2eL7GFXAiE7eIkcGOtx7tjsLKq+as702x9+GU7K95iDeWFapHC4M2hv9RrpXKRTGGBI8Zg==}
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -2107,13 +2089,7 @@ snapshots:
 
   '@fontsource-variable/noto-sans-jp@5.2.10': {}
 
-  '@fontsource-variable/outfit@5.2.8': {}
-
   '@fontsource/material-symbols-outlined@5.2.42': {}
-
-  '@fontsource/poppins@5.2.7': {}
-
-  '@fontsource/roboto@5.2.10': {}
 
   '@humanfs/core@0.19.2':
     dependencies:

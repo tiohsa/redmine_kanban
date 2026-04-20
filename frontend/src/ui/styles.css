@@ -55,15 +55,12 @@
   --rk-shadow-glow: rgba(44, 30, 116, 0.16) 0px 0px 15px;
 
   /* Typography */
-  --rk-font-ui: 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif;
-  --rk-font-display: 'Outfit Variable', 'Noto Sans JP Variable', sans-serif;
-  --rk-font-mid: 'Poppins', 'Noto Sans JP Variable', sans-serif;
-  --rk-font-data: 'Roboto', 'Noto Sans JP Variable', sans-serif;
+  --rk-font-main: 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif;
 }
 
 .rk-root {
   margin-top: 4px;
-  font-family: var(--rk-font-ui);
+  font-family: var(--rk-font-main);
   color: var(--rk-text-primary);
   line-height: 1.5;
   background-color: var(--rk-bg-main);
@@ -562,7 +559,7 @@
 }
 
 .rk-header-lane-label {
-  font-family: var(--rk-font-display);
+  font-family: var(--rk-font-main);
   font-weight: 600;
   color: var(--rk-text-secondary);
   border-right: 1px solid var(--rk-border);
@@ -571,7 +568,7 @@
 }
 
 .rk-col-title {
-  font-family: var(--rk-font-display);
+  font-family: var(--rk-font-main);
   font-weight: 600;
   font-size: 16px;
   color: var(--rk-text-primary);
@@ -613,7 +610,7 @@
 .rk-lane-label {
   padding: 16px;
   background: var(--rk-bg-surface);
-  font-family: var(--rk-font-display);
+  font-family: var(--rk-font-main);
   font-weight: 500;
   font-size: 14px;
   display: flex;
