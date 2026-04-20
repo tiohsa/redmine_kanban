@@ -1,6 +1,20 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+// Import bundled fonts (Self-hosted via Fontsource)
+import '@fontsource-variable/dm-sans';
+import '@fontsource-variable/noto-sans-jp';
+import '@fontsource-variable/outfit';
+import '@fontsource/poppins/400.css';
+import '@fontsource/poppins/500.css';
+import '@fontsource/poppins/600.css';
+import '@fontsource/poppins/700.css';
+import '@fontsource/roboto/400.css';
+import '@fontsource/roboto/500.css';
+import '@fontsource/roboto/700.css';
+import '@fontsource/material-symbols-outlined';
+
 import { App } from './ui/App';
 import './ui/styles.css';
 

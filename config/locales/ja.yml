@@ -143,3 +143,7 @@ ja:
     label_no_change: "（変更しない）"
     label_set_today: "移動日（当日）を設定"
     label_clear: "（クリアする）"
+    label_sort_by: "並び替え: "
+    label_scroll_top: "ページトップへ"
+    label_enable_time_entry_on_close: "完了時に工数入力を有効にする"
+    label_disable_time_entry_on_close: "完了時に工数入力を無効にする"

@@ -960,21 +960,14 @@ function drawHeaders(
     const bgX = visX - 4;
     const bgY = (layout.headerHeight - badgeSize) / 2;
 
-    // Draw background (like the image)
-    if (!isHidden) {
-      ctx.fillStyle = '#eff6ff';
-      roundedRect(ctx, bgX, bgY, badgeSize, badgeSize, 6);
-      ctx.fill();
-      ctx.strokeStyle = theme.border;
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    }
+    // Background is now integrated into header background to blend in
+    // No explicit background rectangle or border anymore
 
     // Add offsetY to the rect coordinates because the header is sticky but pointer events are in global coordinates
     const visRect = { x: bgX, y: bgY + offsetY, width: badgeSize, height: badgeSize };
     if (rectMap) rectMap.visibilityButtons.set(column.id, visRect);
 
-    drawIcon(ctx, isHidden ? 'visibility_off' : 'visibility', visX, visY + 2, 16, isHidden ? theme.textSecondary : theme.primary);
+    drawIcon(ctx, isHidden ? 'visibility_off' : 'visibility', visX, visY + 3, 16, theme.textSecondary);
 
     ctx.strokeStyle = theme.border;
     ctx.lineWidth = 1;

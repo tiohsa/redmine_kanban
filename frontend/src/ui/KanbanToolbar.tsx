@@ -81,7 +81,7 @@ function Dropdown<T extends string>({
     <div className="rk-dropdown-container">
       <div
         ref={triggerRef}
-        className={`rk-dropdown-trigger ${showTriggerLabel ? 'rk-dropdown-trigger-labeled' : ''} ${open ? 'rk-active' : ''}`}
+        className={`rk-dropdown-trigger ${showTriggerLabel ? 'rk-dropdown-trigger-labeled' : ''} ${open ? 'rk-active' : ''} ${showDot ? 'rk-active-soft' : ''}`}
         onClick={() => setOpen(!open)}
         title={selectedName}
       >
@@ -193,7 +193,7 @@ function MultiSelectDropdown({
     <div className="rk-dropdown-container">
       <div
         ref={triggerRef}
-        className={`rk-dropdown-trigger ${showTriggerLabel ? 'rk-dropdown-trigger-labeled' : ''} ${open ? 'rk-active' : ''}`}
+        className={`rk-dropdown-trigger ${showTriggerLabel ? 'rk-dropdown-trigger-labeled' : ''} ${open ? 'rk-active' : ''} ${showDot ? 'rk-active-soft' : ''}`}
         onClick={() => setOpen(!open)}
         title={title}
       >
@@ -312,7 +312,7 @@ function SearchDropdown({
     <div className="rk-dropdown-container">
       <div
         ref={triggerRef}
-        className={`rk-dropdown-trigger ${showTriggerLabel ? 'rk-dropdown-trigger-labeled' : ''} ${open ? 'rk-active' : ''}`}
+        className={`rk-dropdown-trigger ${showTriggerLabel ? 'rk-dropdown-trigger-labeled' : ''} ${open ? 'rk-active' : ''} ${value ? 'rk-active-soft' : ''}`}
         onClick={() => setOpen(!open)}
         title={label}
       >
@@ -361,16 +361,19 @@ function SortButton({
   label,
   icon,
   onClick,
+  labels,
 }: {
   active: boolean;
   direction: 'asc' | 'desc' | null;
   label: string;
   icon: string;
   onClick: () => void;
+  labels: Record<string, string>;
 }) {
   return (
-    <button type="button" className={`rk-btn ${active ? 'rk-btn-toggle-active' : ''}`} onClick={onClick} title={label}>
+    <button type="button" className={`rk-btn rk-btn-labeled ${active ? 'rk-btn-toggle-active' : ''}`} onClick={onClick} title={(labels?.sort_by || '') + label}>
       <span className="rk-icon" style={{ fontSize: '18px' }}>{icon}</span>
+      <span className="rk-btn-label">{label}</span>
       {active ? <span className="rk-indicator-dot" /> : null}
     </button>
   );
@@ -414,8 +417,8 @@ export function KanbanToolbar({
     { id: 'thisweek', name: labels.this_week },
     { id: '3days', name: labels.within_3_days },
     { id: '7days', name: labels.within_1_week },
-    { id: '1day', name: labels.within_1_day ?? '1日以内' },
-    { id: 'custom', name: labels.within_specified_days ?? '指定した日以内' },
+    { id: '1day', name: labels.within_1_day },
+    { id: 'custom', name: labels.within_specified_days },
     { id: 'none', name: labels.not_set },
   ];
   const priorityOptions = [
@@ -429,7 +432,7 @@ export function KanbanToolbar({
       {canCreate ? (
         <>
           <div className="rk-toolbar-group">
-            <div className="rk-dropdown-trigger" onClick={onCreate} title={labels.create ?? 'Create'} role="button">
+            <div className="rk-dropdown-trigger" onClick={onCreate} title={labels.create} role="button">
               <span className="rk-icon">add</span>
             </div>
           </div>
@@ -563,6 +566,7 @@ export function KanbanToolbar({
           label={labels.issue_due_date}
           icon="event"
           onClick={() => onChangeSort(sortKey === 'due_asc' ? 'due_desc' : 'due_asc')}
+          labels={labels}
         />
         <SortButton
           active={sortKey.startsWith('priority_')}
@@ -570,6 +574,7 @@ export function KanbanToolbar({
           label={labels.issue_priority}
           icon="sort"
           onClick={() => onChangeSort(sortKey === 'priority_desc' ? 'priority_asc' : 'priority_desc')}
+          labels={labels}
         />
         <SortButton
           active={sortKey.startsWith('updated_')}
@@ -577,6 +582,7 @@ export function KanbanToolbar({
           label={labels.updated}
           icon="update"
           onClick={() => onChangeSort('updated_asc')}
+          labels={labels}
         />
       </div>
 
@@ -597,7 +603,7 @@ export function KanbanToolbar({
           type="button"
           className={`rk-btn ${timeEntryOnClose ? 'rk-btn-toggle-active' : ''}`}
           onClick={onToggleTimeEntryOnClose}
-          title={timeEntryOnClose ? (labels.disable_time_entry_on_close ?? 'Disable time entry on close') : (labels.enable_time_entry_on_close ?? 'Enable time entry on close')}
+          title={timeEntryOnClose ? labels.disable_time_entry_on_close : labels.enable_time_entry_on_close}
         >
           <span className="rk-icon">schedule</span>
           {timeEntryOnClose ? <span className="rk-indicator-dot" /> : null}
@@ -638,7 +644,7 @@ export function KanbanToolbar({
           {fullWindow ? <span className="rk-indicator-dot" /> : null}
         </button>
 
-        <button type="button" className="rk-btn" onClick={onScrollToTop} title="Top">
+        <button type="button" className="rk-btn" onClick={onScrollToTop} title={labels.scroll_top}>
           <span className="rk-icon">vertical_align_top</span>
         </button>
 
@@ -653,7 +659,7 @@ export function KanbanToolbar({
           labels={labels}
         />
 
-        <button type="button" className="rk-btn" onClick={onOpenHelp} title={labels.help ?? 'Help'}>
+        <button type="button" className="rk-btn" onClick={onOpenHelp} title={labels.help}>
           <span className="rk-icon">help_outline</span>
         </button>
       </div>

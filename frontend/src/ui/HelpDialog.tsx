@@ -53,7 +53,7 @@ export function HelpDialog({ labels, onClose }: Props) {
             <span className="rk-icon" style={{ fontSize: '24px' }}>help_outline</span>
             <h3>{labels.help}</h3>
           </div>
-          <button type="button" className="rk-icon-btn rk-help-close-x" onClick={onClose} title="close-x" aria-label="close-x">
+          <button type="button" className="rk-icon-btn rk-help-close-x" onClick={onClose} title={labels.close} aria-label={labels.close}>
             <span className="rk-icon">close</span>
           </button>
         </div>
