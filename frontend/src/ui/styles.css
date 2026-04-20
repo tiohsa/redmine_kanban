@@ -1,4 +1,3 @@
-
 /* MiniMax Inspired Design System */
 :root {
   /* Surface & Background */
@@ -349,7 +348,7 @@
 
 .rk-dropdown-title {
   padding: 8px 12px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--rk-text-primary);
   border-bottom: 1px solid var(--rk-border);
@@ -365,7 +364,7 @@
   cursor: pointer;
   transition: background 0.15s;
   color: var(--rk-text-primary);
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .rk-dropdown-item:hover {
@@ -414,7 +413,7 @@
   background: none;
   border: none;
   color: var(--rk-primary);
-  font-size: 0.875rem;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   border-radius: 6px;
@@ -457,7 +456,7 @@
 .rk-search-box input {
   border: none;
   outline: none;
-  font-size: 0.875rem;
+  font-size: 13px;
   width: 100%;
   color: var(--rk-text-primary);
 }
