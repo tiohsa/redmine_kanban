@@ -1,5 +1,6 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
-import { getCleanDialogStyles } from './iframeStyles';
+import { applyLinkTargetBlank, getCleanDialogStyles } from './iframeStyles';
 
 describe('getCleanDialogStyles', () => {
   it('should return CSS containing display: none for Redmine headers', () => {
@@ -61,5 +62,36 @@ describe('getCleanDialogStyles', () => {
     const css = getCleanDialogStyles({ variant: 'issue-compact' });
     expect(css).not.toContain('#sidebar-handler-container');
     expect(css).not.toContain('#content > .contextual:has(+ h2.inline-block)');
+  });
+});
+
+describe('applyLinkTargetBlank', () => {
+  it('should set target blank for links inside wiki content', () => {
+    const doc = document.implementation.createHTMLDocument('iframe');
+    doc.body.innerHTML = '<div class="wiki"><a href="https://example.com">Example</a></div>';
+
+    applyLinkTargetBlank(doc);
+
+    expect(doc.querySelector<HTMLAnchorElement>('.wiki a')?.target).toBe('_blank');
+  });
+
+  it('should set noopener noreferrer for links inside wiki content', () => {
+    const doc = document.implementation.createHTMLDocument('iframe');
+    doc.body.innerHTML = '<div class="wiki"><a href="https://example.com">Example</a></div>';
+
+    applyLinkTargetBlank(doc);
+
+    expect(doc.querySelector<HTMLAnchorElement>('.wiki a')?.rel).toBe('noopener noreferrer');
+  });
+
+  it('should not modify links outside wiki content', () => {
+    const doc = document.implementation.createHTMLDocument('iframe');
+    doc.body.innerHTML = '<a href="/issues/1">Issue</a><div class="wiki"><a href="https://example.com">Example</a></div>';
+    const outsideLink = doc.querySelector<HTMLAnchorElement>('body > a');
+
+    applyLinkTargetBlank(doc);
+
+    expect(outsideLink?.getAttribute('target')).toBeNull();
+    expect(outsideLink?.getAttribute('rel')).toBeNull();
   });
 });

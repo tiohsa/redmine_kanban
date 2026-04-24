@@ -824,7 +824,7 @@ function measureCardHeight(
   let h = metrics.cardBaseHeight;
 
   if (ctx && fontSize && cardWidth) {
-    ctx.font = `400 ${fontSize}px Inter, sans-serif`;
+    ctx.font = `400 ${fontSize}px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif`;
     const stripWidth = 5;
     const contentW = cardWidth - metrics.cellPadding * 2 - stripWidth - 16;
     // Action icons are drawn as hover overlays, so they do not reserve layout space.
@@ -906,23 +906,23 @@ function drawHeaders(
     ctx.stroke();
   }
 
-  ctx.font = '600 14px Inter, sans-serif';
+  ctx.font = "500 14px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif";
   ctx.textBaseline = 'middle';
 
   columns.forEach((column, index) => {
     const x = layout.gridStartX + index * layout.columnWidth;
 
-    ctx.font = '600 13px Inter, sans-serif';
+    ctx.font = "500 13px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif";
     const limit = column.wip_limit ?? null;
     const count = column.count ?? 0;
     const over = limit && count > limit;
 
     const badgeText = (limit || count > 0) ? (limit ? `${count} / ${limit}` : String(count)) : '';
-    ctx.font = '500 11px Inter, sans-serif';
+    ctx.font = "500 11px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif";
     const badgeWidth = badgeText ? ctx.measureText(badgeText).width + 10 : 0;
     const visIconWidth = 24;
 
-    ctx.font = '600 13px Inter, sans-serif';
+    ctx.font = "500 13px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif";
     const maxNameWidth = layout.columnWidth - 12 - (badgeWidth ? badgeWidth + 24 : 12) - visIconWidth;
     const displayName = truncateText(ctx, column.name, maxNameWidth);
 
@@ -943,7 +943,7 @@ function drawHeaders(
       ctx.fill();
       if (over) ctx.stroke();
 
-      ctx.font = '500 11px Inter, sans-serif';
+      ctx.font = "500 11px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif";
       ctx.fillStyle = over ? theme.danger : theme.textSecondary;
       ctx.textAlign = 'center';
       ctx.fillText(badgeText, badgeX + badgeWidth / 2, badgeY + badgeHeight / 2);
@@ -956,11 +956,18 @@ function drawHeaders(
     const isHidden = hiddenStatusIds?.has(column.id);
     const visX = x + 12 + nameWidth + 8;
     const visY = (layout.headerHeight - 16) / 2;
+    const badgeSize = 24;
+    const bgX = visX - 4;
+    const bgY = (layout.headerHeight - badgeSize) / 2;
+
+    // Background is now integrated into header background to blend in
+    // No explicit background rectangle or border anymore
+
     // Add offsetY to the rect coordinates because the header is sticky but pointer events are in global coordinates
-    const visRect = { x: visX - 4, y: visY - 4 + offsetY, width: 24, height: 24 };
+    const visRect = { x: bgX, y: bgY + offsetY, width: badgeSize, height: badgeSize };
     if (rectMap) rectMap.visibilityButtons.set(column.id, visRect);
 
-    drawIcon(ctx, isHidden ? 'visibility_off' : 'visibility', visX, visY + 2, 16, isHidden ? theme.textSecondary : theme.primary);
+    drawIcon(ctx, isHidden ? 'visibility_off' : 'visibility', visX, visY + 3, 16, theme.textSecondary);
 
     ctx.strokeStyle = theme.border;
     ctx.lineWidth = 1;
@@ -984,7 +991,7 @@ function drawLaneLabels(
   metrics: ReturnType<typeof getMetrics>
 ) {
   ctx.save();
-  ctx.font = '600 13px Inter, sans-serif';
+  ctx.font = "500 13px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif";
   ctx.textBaseline = 'middle';
   lanes.forEach((lane, index) => {
     const laneLayout = layout.laneLayouts[index];
@@ -995,7 +1002,7 @@ function drawLaneLabels(
     ctx.fillStyle = theme.surface;
     ctx.fillRect(headerRect.x, headerRect.y, headerRect.width, headerRect.height);
     ctx.fillStyle = theme.textPrimary;
-    ctx.font = '600 12px Inter, sans-serif'; // Slightly smaller font for narrower width
+    ctx.font = "500 12px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif"; // Slightly smaller font for narrower width
     ctx.fillText(lane.name, 8, laneLayout.y + metrics.laneTitleHeight / 2);
 
     ctx.strokeStyle = theme.border;
@@ -1050,7 +1057,7 @@ function drawCells(
   const columns = state.columnOrder;
 
   ctx.save();
-  ctx.font = '500 12px Inter, sans-serif';
+  ctx.font = "500 12px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif";
   ctx.textBaseline = 'top';
 
   layout.laneLayouts.forEach((laneLayout) => {
@@ -1161,12 +1168,12 @@ function drawCard(
 
   // 1. Draw Card Shadow
   ctx.shadowColor = 'rgba(0, 0, 0, 0.08)';
-  ctx.shadowBlur = 4;
-  ctx.shadowOffsetY = 2;
+  ctx.shadowBlur = 6;
+  ctx.shadowOffsetY = 4;
 
   // 2. Draw Card Body
   ctx.fillStyle = theme.surface;
-  roundedRect(ctx, x, y, w, h, radius);
+  roundedRect(ctx, x, y, w, h, 8); // 8px radius
   ctx.fill();
 
   ctx.shadowColor = 'transparent';
@@ -1191,7 +1198,7 @@ function drawCard(
 
   // 4. Subject
   ctx.fillStyle = theme.textPrimary;
-  ctx.font = `400 ${fontSize}px Inter, sans-serif`;
+  ctx.font = `500 ${fontSize}px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif`;
   ctx.textBaseline = 'top';
 
   const subjectY = y + 8;
@@ -1229,7 +1236,7 @@ function drawCard(
   // 5. Metadata Row 1: ID | Assignee
   // Adjust rowY based on subject lines
   const row1Y = subjectY + subjectTotalHeight + 6;
-  ctx.font = `400 ${metaFontSize}px Inter, sans-serif`;
+  ctx.font = `400 ${metaFontSize}px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif`;
   ctx.fillStyle = theme.textSecondary;
 
   ctx.fillText(idText, contentX, row1Y);
@@ -1449,7 +1456,7 @@ function drawCard(
 
       // Text
       ctx.fillStyle = isStClosed ? theme.textSecondary : theme.textPrimary;
-      ctx.font = `${isStClosed ? '400' : '500'} ${subtaskFontSize}px Inter, sans-serif`;
+      ctx.font = `${isStClosed ? '400' : '500'} ${subtaskFontSize}px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif`;
       const subjectMaxWidth = Math.max(24, contentW - indentX - checkSize - 8);
       const subjectText = truncateText(ctx, subtask.subject, subjectMaxWidth);
       const textMetrics = ctx.measureText(subjectText);
@@ -1655,7 +1662,7 @@ function drawIconBox(ctx: CanvasRenderingContext2D, rect: Rect, color: string, l
   ctx.fill();
   ctx.stroke();
   ctx.fillStyle = color;
-  ctx.font = '700 10px Inter, sans-serif';
+  ctx.font = "700 10px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif";
   ctx.textBaseline = 'middle';
   const textWidth = ctx.measureText(label).width;
   ctx.fillText(label, rect.x + (rect.width - textWidth) / 2, rect.y + rect.height / 2 + 0.5);
@@ -1899,22 +1906,22 @@ function getCardColor(trackerId: number, theme: CanvasTheme): string {
 
 function readTheme(container: HTMLDivElement | null): CanvasTheme {
   const fallback = {
-    bgMain: '#f1f5f9', // Slate 100
+    bgMain: '#ffffff',
     surface: '#ffffff',
-    border: '#e2e8f0',
+    border: '#e5e7eb',
     borderStrong: '#cbd5e1',
-    textPrimary: '#1e293b',
-    textSecondary: '#64748b',
-    primary: '#4f46e5',
+    textPrimary: '#222222',
+    textSecondary: '#45515e',
+    primary: '#3b82f6',
     danger: '#ef4444',
     warn: '#f59e0b',
     warnBg: '#fffbeb',
     dangerBg: '#fef2f2',
-    shadow: 'rgba(15, 23, 42, 0.12)',
+    shadow: 'rgba(0, 0, 0, 0.08)',
     noteColors: ['#bef264', '#fdba74', '#93c5fd', '#f9a8d4', '#fde047', '#d8b4fe', '#5eead4'],
-    columnBgs: ['#f1f5f9', '#eff6ff', '#fefce8', '#f0fdf4', '#faf5ff', '#fff7ed', '#fdf2f8'],
-    badgeBg: '#f1f5f9',
-    badgeText: '#64748b',
+    columnBgs: ['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff'],
+    badgeBg: '#f0f0f0',
+    badgeText: '#45515e',
     badgeLowBg: '#dcfce7',
     badgeLowColor: '#15803d',
     badgeHighBg: '#fef9c3', // Yellow-100
@@ -2006,7 +2013,7 @@ function drawBadge(
   borderColor?: string
 ): number {
   ctx.save();
-  ctx.font = `500 ${fontSize}px Inter, sans-serif`;
+  ctx.font = `500 ${fontSize}px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif`;
   const textWidth = ctx.measureText(text).width;
   const paddingX = Math.max(4, Math.round(fontSize * 0.5));
   const paddingY = Math.max(2, Math.round(fontSize * 0.2));

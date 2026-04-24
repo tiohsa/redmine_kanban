@@ -22,13 +22,14 @@ export default defineConfig(({ mode }) => ({
     },
     rollupOptions: {
       output: {
-        // Enforce IIFE wrapping to prevent scoped variables from leaking (e.g. minified '$')
         assetFileNames: (assetInfo) => {
           const name = assetInfo.name || '';
           if (name.endsWith('.css')) return 'stylesheets/redmine_kanban_spa.css';
+          if (name.match(/\.(woff2?|eot|ttf|otf)$/)) return 'fonts/[name][extname]';
           return 'assets/[name][extname]';
         },
       },
     },
+    assetsInlineLimit: 0,
   },
 }));

@@ -142,3 +142,7 @@ en:
     label_no_change: "(No change)"
     label_set_today: "Set current date"
     label_clear: "(Clear)"
+    label_sort_by: "Sort by: "
+    label_scroll_top: "Scroll to top"
+    label_enable_time_entry_on_close: "Enable time entry on close"
+    label_disable_time_entry_on_close: "Disable time entry on close"
