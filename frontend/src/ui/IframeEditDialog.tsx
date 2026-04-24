@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getCleanDialogStyles, type CleanDialogStyleVariant } from './board/iframeStyles';
+import { applyLinkTargetBlank, getCleanDialogStyles, type CleanDialogStyleVariant } from './board/iframeStyles';
 import { IssueDialogHeader } from './IssueDialogHeader';
 import { extractIssueIdFromUrl } from './utils/url';
 import { useBulkSubtaskMutation } from './hooks/useBulkSubtaskMutation';
@@ -241,6 +241,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
           variant: styleVariant,
         });
         doc.head.appendChild(style);
+        applyLinkTargetBlank(doc);
 
         const errorMessage = getRedmineFormErrorMessage(doc);
         setIframeError(errorMessage);

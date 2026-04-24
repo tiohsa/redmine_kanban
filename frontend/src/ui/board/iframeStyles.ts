@@ -43,6 +43,14 @@ type GetCleanDialogStylesOptions = {
   variant?: CleanDialogStyleVariant;
 };
 
+export function applyLinkTargetBlank(doc: Document): void {
+  const links = doc.querySelectorAll<HTMLAnchorElement>('.wiki a');
+  links.forEach((link) => {
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+  });
+}
+
 const BASE_DIALOG_STYLE_RULES = `
   ${ISSUE_DIALOG_HIDE_SELECTORS.join(', ')} { display: none !important; }
   html, body, #wrapper, #main { height: auto !important; min-height: 0 !important; }
