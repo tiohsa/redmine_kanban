@@ -22,7 +22,6 @@ export default defineConfig(({ mode }) => ({
     },
     rollupOptions: {
       output: {
-        // Enforce IIFE wrapping to prevent scoped variables from leaking (e.g. minified '$')
         assetFileNames: (assetInfo) => {
           const name = assetInfo.name || '';
           if (name.endsWith('.css')) return 'stylesheets/redmine_kanban_spa.css';
