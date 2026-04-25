@@ -14,9 +14,25 @@ const DEFAULT_FILTERS: Filters = {
   statusIds: [],
 };
 
+function readStorageValue(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeStorageValue(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // ignore
+  }
+}
+
 function readFilters(storageKey: string): Filters {
   try {
-    const value = localStorage.getItem(storageKey);
+    const value = readStorageValue(storageKey);
     if (value) {
       const parsed = JSON.parse(value);
       return {
@@ -48,44 +64,28 @@ export function useKanbanPreferences(dataUrl: string) {
 
   const [filters, setFilters] = useState<Filters>(() => readFilters(filtersStorageKey));
   const [fullWindow, setFullWindow] = useState(() => {
-    try {
-      return localStorage.getItem('rk_fullwindow') === '1';
-    } catch {
-      return false;
-    }
+    return readStorageValue('rk_fullwindow') === '1';
   });
   const [fitMode, setFitMode] = useState<FitMode>(() => {
-    try {
-      const value = localStorage.getItem('rk_fit_mode');
-      if (value === 'none' || value === 'width') return value;
-      if (localStorage.getItem('rk_fit_to_screen') === '1') return 'width';
-    } catch {
-      // ignore
-    }
+    const value = readStorageValue('rk_fit_mode');
+    if (value === 'none' || value === 'width') return value;
+    if (readStorageValue('rk_fit_to_screen') === '1') return 'width';
     return 'none';
   });
   const [showSubtasks, setShowSubtasks] = useState(() => {
-    try {
-      return localStorage.getItem('rk_show_subtasks') !== '0';
-    } catch {
-      return true;
-    }
+    return readStorageValue('rk_show_subtasks') !== '0';
   });
   const [sortKey, setSortKey] = useState<SortKey>(() => {
-    try {
-      const value = localStorage.getItem('rk_sortkey');
-      if (
-        value === 'updated_desc' ||
-        value === 'updated_asc' ||
-        value === 'due_asc' ||
-        value === 'due_desc' ||
-        value === 'priority_desc' ||
-        value === 'priority_asc'
-      ) {
-        return value;
-      }
-    } catch {
-      // ignore
+    const value = readStorageValue('rk_sortkey');
+    if (
+      value === 'updated_desc' ||
+      value === 'updated_asc' ||
+      value === 'due_asc' ||
+      value === 'due_desc' ||
+      value === 'priority_desc' ||
+      value === 'priority_asc'
+    ) {
+      return value;
     }
     return 'updated_desc';
   });
@@ -93,20 +93,12 @@ export function useKanbanPreferences(dataUrl: string) {
     readScopedNumberSetWithLegacy(hiddenStatusStorageKey, 'rk_hidden_status_ids', new Set()),
   );
   const [fontSize, setFontSize] = useState<number>(() => {
-    try {
-      const value = localStorage.getItem('rk_font_size');
-      if (value) return parseInt(value, 10);
-    } catch {
-      // ignore
-    }
+    const value = readStorageValue('rk_font_size');
+    if (value) return parseInt(value, 10);
     return 13;
   });
   const [timeEntryOnClose, setTimeEntryOnClose] = useState(() => {
-    try {
-      return localStorage.getItem('rk_time_entry_on_close') === '1';
-    } catch {
-      return false;
-    }
+    return readStorageValue('rk_time_entry_on_close') === '1';
   });
   const [priorityLaneEnabled, setPriorityLaneEnabled] = useState(() =>
     readScopedBooleanWithLegacy(priorityLaneStorageKey, 'rk_priority_lane_enabled', false),
@@ -123,11 +115,7 @@ export function useKanbanPreferences(dataUrl: string) {
       document.body.classList.remove(className);
     }
 
-    try {
-      localStorage.setItem('rk_fullwindow', fullWindow ? '1' : '0');
-    } catch {
-      // ignore
-    }
+    writeStorageValue('rk_fullwindow', fullWindow ? '1' : '0');
 
     return () => {
       document.body.classList.remove(className);
@@ -135,75 +123,39 @@ export function useKanbanPreferences(dataUrl: string) {
   }, [fullWindow]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('rk_fit_mode', fitMode);
-    } catch {
-      // ignore
-    }
+    writeStorageValue('rk_fit_mode', fitMode);
   }, [fitMode]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('rk_sortkey', sortKey);
-    } catch {
-      // ignore
-    }
+    writeStorageValue('rk_sortkey', sortKey);
   }, [sortKey]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(filtersStorageKey, JSON.stringify(filters));
-    } catch {
-      // ignore
-    }
+    writeStorageValue(filtersStorageKey, JSON.stringify(filters));
   }, [filters, filtersStorageKey]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(hiddenStatusStorageKey, JSON.stringify(Array.from(hiddenStatusIds)));
-    } catch {
-      // ignore
-    }
+    writeStorageValue(hiddenStatusStorageKey, JSON.stringify(Array.from(hiddenStatusIds)));
   }, [hiddenStatusIds, hiddenStatusStorageKey]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('rk_show_subtasks', showSubtasks ? '1' : '0');
-    } catch {
-      // ignore
-    }
+    writeStorageValue('rk_show_subtasks', showSubtasks ? '1' : '0');
   }, [showSubtasks]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('rk_font_size', String(fontSize));
-    } catch {
-      // ignore
-    }
+    writeStorageValue('rk_font_size', String(fontSize));
   }, [fontSize]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('rk_time_entry_on_close', timeEntryOnClose ? '1' : '0');
-    } catch {
-      // ignore
-    }
+    writeStorageValue('rk_time_entry_on_close', timeEntryOnClose ? '1' : '0');
   }, [timeEntryOnClose]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(priorityLaneStorageKey, priorityLaneEnabled ? '1' : '0');
-    } catch {
-      // ignore
-    }
+    writeStorageValue(priorityLaneStorageKey, priorityLaneEnabled ? '1' : '0');
   }, [priorityLaneEnabled, priorityLaneStorageKey]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(viewableProjectsStorageKey, viewableProjectsEnabled ? '1' : '0');
-    } catch {
-      // ignore
-    }
+    writeStorageValue(viewableProjectsStorageKey, viewableProjectsEnabled ? '1' : '0');
   }, [viewableProjectsEnabled, viewableProjectsStorageKey]);
 
   return {

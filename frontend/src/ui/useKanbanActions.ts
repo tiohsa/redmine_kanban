@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import type { QueryKey } from '@tanstack/react-query';
 import type { BoardData, Issue } from './types';
-import { postJson } from './http';
+import { isHttpError, postJson } from './http';
 import { replaceIssueInBoard, updateIssueInBoard, useIssueMutation } from './useIssueMutation';
 import { findSubtask, resolveAssigneeName, resolveMutationError, resolvePriorityName, resolveSubtaskStatus, type IssueMutationResult, type MovePayload, type UpdatePayload } from './kanbanShared';
 
@@ -172,8 +172,8 @@ export function useKanbanActions({
     try {
       await postJson(`${baseUrl}/issues/${issueId}`, {}, 'DELETE');
       await refresh();
-    } catch (error: any) {
-      const payload = error?.payload as any;
+    } catch (error: unknown) {
+      const payload = isHttpError<{ message?: string }>(error) ? error.payload : null;
       setError(payload?.message || (data ? data.labels.delete_failed : ''));
       setPendingDeleteIssue(null);
       await refresh();

@@ -30,6 +30,32 @@ type ToolbarProps = {
   onOpenHelp: () => void;
 };
 
+function useDropdownDismiss(open: boolean, onDismiss: () => void) {
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (
+        triggerRef.current &&
+        !triggerRef.current.contains(target) &&
+        menuRef.current &&
+        !menuRef.current.contains(target)
+      ) {
+        onDismiss();
+      }
+    };
+
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [onDismiss, open]);
+
+  return { triggerRef, menuRef };
+}
+
 function Dropdown<T extends string>({
   label,
   icon,
@@ -56,24 +82,7 @@ function Dropdown<T extends string>({
   showTriggerLabel?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleClick = (event: MouseEvent) => {
-      if (
-        triggerRef.current &&
-        !triggerRef.current.contains(event.target as Node) &&
-        menuRef.current &&
-        !menuRef.current.contains(event.target as Node)
-      ) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [open]);
+  const { triggerRef, menuRef } = useDropdownDismiss(open, () => setOpen(false));
 
   const selectedName = options.find((option) => option.id === value)?.name ?? value;
 
@@ -159,24 +168,7 @@ function MultiSelectDropdown({
   showTriggerLabel?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleClick = (event: MouseEvent) => {
-      if (
-        triggerRef.current &&
-        !triggerRef.current.contains(event.target as Node) &&
-        menuRef.current &&
-        !menuRef.current.contains(event.target as Node)
-      ) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [open]);
+  const { triggerRef, menuRef } = useDropdownDismiss(open, () => setOpen(false));
 
   const optionIds = useMemo(() => options.map((option) => option.id), [options]);
   const optionIdSet = useMemo(() => new Set(optionIds), [optionIds]);
@@ -274,8 +266,7 @@ function SearchDropdown({
   showTriggerLabel?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const { triggerRef, menuRef } = useDropdownDismiss(open, () => setOpen(false));
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -296,22 +287,6 @@ function SearchDropdown({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onChange, open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const handleClick = (event: MouseEvent) => {
-      if (
-        triggerRef.current &&
-        !triggerRef.current.contains(event.target as Node) &&
-        menuRef.current &&
-        !menuRef.current.contains(event.target as Node)
-      ) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [open]);
 
   return (
     <div className="rk-dropdown-container">

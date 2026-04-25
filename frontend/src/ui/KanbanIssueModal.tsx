@@ -96,8 +96,8 @@ export function KanbanIssueModal({ data, baseUrl, ctx, onClose, onSaved, onDelet
       }
 
       await onSaved(payload, isEdit);
-    } catch (caught: any) {
-      setError(caught?.message ?? (isEdit ? labels.update_failed : labels.create_failed));
+    } catch (caught: unknown) {
+      setError(caught instanceof Error ? caught.message : (isEdit ? labels.update_failed : labels.create_failed));
     } finally {
       setSaving(false);
     }

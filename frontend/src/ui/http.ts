@@ -3,6 +3,22 @@ export function csrfToken(): string | null {
   return meta?.content || null;
 }
 
+export class HttpError<TPayload = unknown> extends Error {
+  readonly status: number;
+  readonly payload: TPayload | null;
+
+  constructor(status: number, payload: TPayload | null) {
+    super(`HTTP ${status}`);
+    this.name = 'HttpError';
+    this.status = status;
+    this.payload = payload;
+  }
+}
+
+export function isHttpError<TPayload = unknown>(error: unknown): error is HttpError<TPayload> {
+  return error instanceof HttpError;
+}
+
 export async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
   if (!res.ok) throw new Error(`GET ${url} failed: ${res.status}`);
@@ -22,10 +38,7 @@ export async function postJson<T>(url: string, body: Record<string, unknown>, me
   });
   const json = (await res.json().catch(() => null)) as T | null;
   if (!res.ok) {
-    const err = new Error(`HTTP ${res.status}`);
-    (err as any).payload = json;
-    (err as any).status = res.status;
-    throw err;
+    throw new HttpError(res.status, json);
   }
   return (json as T) ?? ({} as T);
 }

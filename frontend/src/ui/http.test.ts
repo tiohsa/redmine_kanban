@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { csrfToken, getJson, postJson } from './http';
+import { HttpError, csrfToken, getJson, postJson } from './http';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -67,10 +67,12 @@ describe('postJson', () => {
 
     try {
       await postJson('/api/issue', { issue: { subject: '' } });
-    } catch (e: any) {
-      expect(e.message).toBe('HTTP 422');
-      expect(e.status).toBe(422);
-      expect(e.payload).toEqual({ message: 'Validation failed' });
+    } catch (e: unknown) {
+      expect(e).toBeInstanceOf(HttpError);
+      const error = e as HttpError<{ message: string }>;
+      expect(error.message).toBe('HTTP 422');
+      expect(error.status).toBe(422);
+      expect(error.payload).toEqual({ message: 'Validation failed' });
       return;
     }
 

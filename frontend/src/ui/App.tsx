@@ -12,7 +12,7 @@ import { KanbanPopupHost } from './KanbanPopupHost';
 import { DatePopup, PriorityPopup } from './KanbanPopups';
 import { KanbanToolbar } from './KanbanToolbar';
 import { HelpDialog } from './HelpDialog';
-import { fieldError, buildDisplayData, resolveMutationError } from './kanbanShared';
+import { buildDisplayData, payloadFieldError, payloadMessage, resolveMutationError } from './kanbanShared';
 import { useKanbanActions } from './useKanbanActions';
 import { useKanbanDialogs } from './useKanbanDialogs';
 import { useKanbanPreferences } from './useKanbanPreferences';
@@ -299,11 +299,10 @@ export function App({ dataUrl }: Props) {
                   lockVersion: issue.lock_version,
                 });
                 dialogs.setModal(null);
-              } catch (caught: any) {
-                const payloadError = caught?.payload as any;
+              } catch (caught: unknown) {
                 throw new Error(
-                  payloadError?.message ||
-                  fieldError(payloadError?.field_errors) ||
+                  payloadMessage(caught) ||
+                  payloadFieldError(caught) ||
                   resolveMutationError(caught, data.labels, data.labels.update_failed),
                 );
               }
@@ -338,9 +337,8 @@ export function App({ dataUrl }: Props) {
               }
 
               dialogs.setModal(null);
-            } catch (caught: any) {
-              const payloadError = caught?.payload as any;
-              throw new Error(payloadError?.message || fieldError(payloadError?.field_errors) || data.labels.create_failed);
+            } catch (caught: unknown) {
+              throw new Error(payloadMessage(caught) || payloadFieldError(caught) || data.labels.create_failed);
             }
           }}
           onDeleted={async (issueId) => {
@@ -430,7 +428,7 @@ export function App({ dataUrl }: Props) {
                 patch: { priority_id: nextPriorityId },
                 lockVersion: data.issues.find((issue) => issue.id === popup.issueId)?.lock_version ?? null,
               });
-            } catch (caught: any) {
+            } catch (caught: unknown) {
               setError(resolveMutationError(caught, data.labels, data.labels.update_failed));
             }
           }}
@@ -461,8 +459,8 @@ export function App({ dataUrl }: Props) {
                 patch: { due_date: newDate },
                 lockVersion: data.issues.find((issue) => issue.id === popup.issueId)?.lock_version ?? null,
               });
-            } catch (caught: any) {
-              setError(caught?.message || 'Date update failed');
+            } catch (caught: unknown) {
+              setError(caught instanceof Error ? caught.message : 'Date update failed');
             } finally {
               dialogs.setDatePopup(null);
             }

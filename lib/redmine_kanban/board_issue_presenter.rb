@@ -10,7 +10,7 @@ module RedmineKanban
         parent_id: issue.parent_id,
         subject: issue.subject,
         status_id: issue.status_id,
-        can_log_time: @user.allowed_to?(:log_time, issue.project),
+        can_log_time: permission_policy.can_log_time?(issue.project),
         lock_version: issue.lock_version,
         status_name: issue.status&.name,
         status_is_closed: issue.status&.is_closed,
@@ -62,10 +62,14 @@ module RedmineKanban
     def permissions_for(issue)
       project = issue.project
       {
-        can_move: @user.allowed_to?(:manage_redmine_kanban, project) && @user.allowed_to?(:edit_issues, project),
-        can_edit: @user.allowed_to?(:view_redmine_kanban, project) && @user.allowed_to?(:edit_issues, project),
-        can_delete: @user.allowed_to?(:view_redmine_kanban, project) && @user.allowed_to?(:delete_issues, project),
+        can_move: permission_policy.can_move_issue?(project),
+        can_edit: permission_policy.can_update_issue?(project),
+        can_delete: permission_policy.can_delete_issue?(project),
       }
+    end
+
+    def permission_policy
+      @permission_policy ||= PermissionPolicy.new(user: @user)
     end
   end
 end
