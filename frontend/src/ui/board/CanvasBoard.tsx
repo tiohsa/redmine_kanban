@@ -14,6 +14,8 @@ const maxSubtaskIndentLevel = 6;
 
 type Rect = { x: number; y: number; width: number; height: number };
 
+type CanvasBackingStoreState = { width: number; height: number; dpr: number };
+
 type RectMap = {
   cards: Map<number, Rect>;
   cells: Map<string, Rect>;
@@ -170,6 +172,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   const boardSizeRef = useRef({ width: 0, height: 0 });
   const dragRef = useRef<DragState | null>(null);
   const renderHandle = useRef<number | null>(null);
+  const backingStoreRef = useRef<CanvasBackingStoreState>({ width: 0, height: 0, dpr: 1 });
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [cursor, setCursor] = useState('default');
   const scaleRef = useRef(1);
@@ -178,6 +181,14 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   const hoveredSubtaskKeyRef = useRef<string | null>(null);
   const drawRef = useRef<() => void>(() => { });
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
+
+  const scheduleRender = React.useCallback(() => {
+    if (renderHandle.current !== null) return;
+    renderHandle.current = requestAnimationFrame(() => {
+      renderHandle.current = null;
+      drawRef.current();
+    });
+  }, []);
 
   const clearHoverState = React.useCallback(() => {
     hoverRef.current = null;
@@ -190,7 +201,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     dragRef.current = null;
     setCursor(getBoardCursor({ phase: 'idle' }));
     scheduleRender();
-  }, []);
+  }, [scheduleRender]);
 
   const resetPointerState = React.useCallback((preservePendingDrop: boolean = false) => {
     clearHoverState();
@@ -200,7 +211,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       return;
     }
     clearDragState();
-  }, [clearDragState, clearHoverState]);
+  }, [clearDragState, clearHoverState, scheduleRender]);
 
   const measureCtx = useMemo(() => {
     const canvas = document.createElement('canvas');
@@ -221,7 +232,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   // Scale calculation is now handled directly in draw() to ensure it's always in sync with the latest layout and size.
   useEffect(() => {
     scheduleRender();
-  }, [fitMode]);
+  }, [fitMode, scheduleRender]);
 
   useEffect(() => {
     const node = containerRef.current;
@@ -240,7 +251,19 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   }, []);
   useEffect(() => {
     scheduleRender();
-  }, [size, state, data.meta, canCreate, canMove, theme, fontSize]);
+  }, [size, state, data.meta, canCreate, canMove, theme, fontSize, scheduleRender]);
+
+  useEffect(() => {
+    const onViewportChange = () => {
+      scheduleRender();
+    };
+    window.addEventListener('resize', onViewportChange);
+    window.visualViewport?.addEventListener('resize', onViewportChange);
+    return () => {
+      window.removeEventListener('resize', onViewportChange);
+      window.visualViewport?.removeEventListener('resize', onViewportChange);
+    };
+  }, [scheduleRender]);
 
   useEffect(() => {
     const drag = dragRef.current;
@@ -280,13 +303,13 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       y: clamp(y, 0, maxY),
     };
     scheduleRender();
-  }, [size.height, size.width]);
+  }, [size.height, size.width, scheduleRender]);
 
   useEffect(() => {
     void document.fonts.ready.then(() => {
       scheduleRender();
     });
-  }, []);
+  }, [scheduleRender]);
 
   // Register wheel event listener with { passive: false } to allow preventDefault
   useEffect(() => {
@@ -306,20 +329,12 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     return () => container.removeEventListener('wheel', onWheel);
   }, [updateScroll]);
 
-  const scheduleRender = () => {
-    if (renderHandle.current !== null) return;
-    renderHandle.current = requestAnimationFrame(() => {
-      renderHandle.current = null;
-      drawRef.current();
-    });
-  };
-
   useImperativeHandle(ref, () => ({
     scrollToTop: () => {
       scrollRef.current = { x: 0, y: 0 };
       scheduleRender();
     }
-  }));
+  }), [scheduleRender]);
 
   const draw = () => {
     const canvas = canvasRef.current;
@@ -328,12 +343,9 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     if (size.width <= 0 || size.height <= 0) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = size.width * dpr;
-    canvas.height = size.height * dpr;
-    canvas.style.width = `${size.width}px`;
-    canvas.style.height = `${size.height}px`;
-    ctx.scale(dpr, dpr);
+    const dpr = getCanvasDevicePixelRatio();
+    resizeCanvasBackingStoreIfNeeded(canvas, backingStoreRef.current, size.width, size.height, dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     ctx.clearRect(0, 0, size.width, size.height);
     ctx.fillStyle = theme.bgMain;
@@ -758,6 +770,36 @@ function canDeleteIssue(issue?: Issue | null) {
 
 function subtaskPermissions(issue: Issue | undefined, subtaskId: number) {
   return findSubtaskInTree(issue?.subtasks, subtaskId)?.permissions;
+}
+
+function getCanvasDevicePixelRatio() {
+  return Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+}
+
+function resizeCanvasBackingStoreIfNeeded(
+  canvas: HTMLCanvasElement,
+  backingStore: CanvasBackingStoreState,
+  cssWidth: number,
+  cssHeight: number,
+  dpr: number
+) {
+  const backingWidth = Math.floor(cssWidth * dpr);
+  const backingHeight = Math.floor(cssHeight * dpr);
+  if (
+    backingStore.width === backingWidth &&
+    backingStore.height === backingHeight &&
+    backingStore.dpr === dpr
+  ) {
+    return;
+  }
+
+  canvas.width = backingWidth;
+  canvas.height = backingHeight;
+  canvas.style.width = `${cssWidth}px`;
+  canvas.style.height = `${cssHeight}px`;
+  backingStore.width = backingWidth;
+  backingStore.height = backingHeight;
+  backingStore.dpr = dpr;
 }
 
 function computeLayout(
