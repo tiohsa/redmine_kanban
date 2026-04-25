@@ -190,6 +190,15 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     });
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (renderHandle.current !== null) {
+        cancelAnimationFrame(renderHandle.current);
+        renderHandle.current = null;
+      }
+    };
+  }, []);
+
   const clearHoverState = React.useCallback(() => {
     hoverRef.current = null;
     hoveredCardIssueIdRef.current = null;
@@ -306,6 +315,11 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   }, [size.height, size.width, scheduleRender]);
 
   useEffect(() => {
+    if (!document.fonts?.ready) {
+      scheduleRender();
+      return;
+    }
+
     void document.fonts.ready.then(() => {
       scheduleRender();
     });
@@ -773,6 +787,7 @@ function subtaskPermissions(issue: Issue | undefined, subtaskId: number) {
 }
 
 function getCanvasDevicePixelRatio() {
+  if (typeof window === 'undefined') return 1;
   return Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
 }
 
@@ -783,8 +798,8 @@ function resizeCanvasBackingStoreIfNeeded(
   cssHeight: number,
   dpr: number
 ) {
-  const backingWidth = Math.floor(cssWidth * dpr);
-  const backingHeight = Math.floor(cssHeight * dpr);
+  const backingWidth = Math.round(cssWidth * dpr);
+  const backingHeight = Math.round(cssHeight * dpr);
   if (
     backingStore.width === backingWidth &&
     backingStore.height === backingHeight &&

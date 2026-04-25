@@ -350,9 +350,40 @@ describe('CanvasBoard cursor lifecycle', () => {
     expect(canvas.style.height).toBe('600px');
   });
 
+  it('uses a rounded fractional DPR backing store while keeping CSS size unchanged', async () => {
+    setDevicePixelRatio(1.25);
+    const issue = makeIssue(4);
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+
+    const { container } = render(
+      <CanvasBoard
+        data={data}
+        state={state}
+        canMove
+        canCreate
+        onCommand={vi.fn()}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onView={vi.fn()}
+        onDelete={vi.fn()}
+        onEditClick={vi.fn()}
+        labels={data.labels}
+      />,
+    );
+
+    const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
+    await waitFor(() => {
+      expect(canvas.width).toBe(1000);
+      expect(canvas.height).toBe(750);
+    });
+    expect(canvas.style.width).toBe('800px');
+    expect(canvas.style.height).toBe('600px');
+  });
+
   it('applies DPR using setTransform before board scale', async () => {
     setDevicePixelRatio(2);
-    const issue = makeIssue(4);
+    const issue = makeIssue(5);
     const data = makeBoardData(issue);
     const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
     const context = createCanvasContextWithSpies();
@@ -381,7 +412,7 @@ describe('CanvasBoard cursor lifecycle', () => {
 
   it('caps DPR 4 to a 2x backing store', async () => {
     setDevicePixelRatio(4);
-    const issue = makeIssue(5);
+    const issue = makeIssue(6);
     const data = makeBoardData(issue);
     const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
     const context = createCanvasContextWithSpies();
