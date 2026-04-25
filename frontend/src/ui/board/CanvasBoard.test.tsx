@@ -44,7 +44,7 @@ function makeBoardData(issue: Issue): BoardData {
     },
     columns: [
       { id: 1, name: 'Open', is_closed: false, count: 1 },
-      { id: 2, name: 'Closed', is_closed: false, count: 0 },
+      { id: 2, name: 'Closed', is_closed: true, count: 0 },
     ],
     lanes: [],
     lists: { assignees: [], trackers: [], priorities: [], projects: [], viewable_projects: [], creatable_projects: [] },
@@ -73,6 +73,32 @@ function createCanvasContext(): CanvasRenderingContext2D {
     closePath: noop,
     quadraticCurveTo: noop,
   } as unknown as CanvasRenderingContext2D;
+}
+
+function createCanvasContextWithSpies() {
+  const noop = vi.fn();
+  const context = {
+    save: vi.fn(),
+    restore: vi.fn(),
+    scale: vi.fn(),
+    translate: vi.fn(),
+    clearRect: vi.fn(),
+    fillRect: vi.fn(),
+    beginPath: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    stroke: vi.fn(),
+    fill: vi.fn(),
+    fillText: vi.fn(),
+    measureText: (text: string) => ({ width: text.length * 7 }) as TextMetrics,
+    arc: noop,
+    closePath: noop,
+    quadraticCurveTo: noop,
+  } as unknown as CanvasRenderingContext2D & {
+    fillText: ReturnType<typeof vi.fn>;
+    lineTo: ReturnType<typeof vi.fn>;
+  };
+  return context;
 }
 
 class ResizeObserverMock {
@@ -235,5 +261,50 @@ describe('CanvasBoard cursor lifecycle', () => {
     await waitFor(() => {
       expect(board.style.cursor).toBe('default');
     });
+  });
+
+  it('draws completed issue and subtask titles in canvas with strikethrough lines', async () => {
+    const issue = makeIssue(2, {
+      subject: 'Closed issue',
+      status_id: 2,
+      subtasks: [{ id: 20, subject: 'Closed child', status_id: 2, is_closed: true }],
+    });
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const context = createCanvasContextWithSpies();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+
+    const { container } = render(
+      <CanvasBoard
+        data={data}
+        state={state}
+        canMove
+        canCreate
+        onCommand={vi.fn()}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onView={vi.fn()}
+        onDelete={vi.fn()}
+        onEditClick={vi.fn()}
+        labels={data.labels}
+      />,
+    );
+
+    const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
+    await waitFor(() => {
+      expect(canvas.width).toBeGreaterThan(0);
+      expect(context.fillText).toHaveBeenCalledWith('Closed issue', expect.any(Number), expect.any(Number));
+      expect(context.fillText).toHaveBeenCalledWith('Closed child', expect.any(Number), expect.any(Number));
+    });
+
+    const issueTextCall = context.fillText.mock.calls.find(([text]) => text === 'Closed issue');
+    const subtaskTextCall = context.fillText.mock.calls.find(([text]) => text === 'Closed child');
+    expect(issueTextCall).toBeTruthy();
+    expect(subtaskTextCall).toBeTruthy();
+
+    const [, issueX, issueY] = issueTextCall as [string, number, number];
+    const [, subtaskX, subtaskY] = subtaskTextCall as [string, number, number];
+    expect(context.lineTo).toHaveBeenCalledWith(issueX + 'Closed issue'.length * 7, issueY + 13 * 0.58);
+    expect(context.lineTo).toHaveBeenCalledWith(subtaskX + 'Closed child'.length * 7, subtaskY + 12 * 0.58);
   });
 });

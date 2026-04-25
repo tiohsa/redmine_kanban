@@ -1197,7 +1197,8 @@ function drawCard(
   const isActionIconsVisible = hoveredCardIssueId === issue.id;
 
   // 4. Subject
-  ctx.fillStyle = theme.textPrimary;
+  const subjectColor = isClosed ? theme.textSecondary : theme.textPrimary;
+  ctx.fillStyle = subjectColor;
   ctx.font = `500 ${fontSize}px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif`;
   ctx.textBaseline = 'top';
 
@@ -1218,13 +1219,21 @@ function drawCard(
   const isSubjectHovered = hover?.kind === 'card_subject' && hover.id === String(issue.id);
 
   subjectLines.forEach((line, index) => {
-    ctx.fillText(line, contentX, subjectY + index * (fontSize + 3));
-    if (isSubjectHovered) {
-      const lineWidth = ctx.measureText(line).width;
+    const lineWidth = ctx.measureText(line).width;
+    const currentY = subjectY + index * (fontSize + 3);
+    ctx.fillText(line, contentX, currentY);
+    if (isClosed) {
       ctx.beginPath();
-      ctx.strokeStyle = theme.textPrimary;
+      ctx.strokeStyle = subjectColor;
       ctx.lineWidth = 1;
-      const currentY = subjectY + index * (fontSize + 3);
+      ctx.moveTo(contentX, currentY + fontSize * 0.58);
+      ctx.lineTo(contentX + lineWidth, currentY + fontSize * 0.58);
+      ctx.stroke();
+    }
+    if (isSubjectHovered) {
+      ctx.beginPath();
+      ctx.strokeStyle = subjectColor;
+      ctx.lineWidth = 1;
       ctx.moveTo(contentX, currentY + fontSize + 1);
       ctx.lineTo(contentX + lineWidth, currentY + fontSize + 1);
       ctx.stroke();
@@ -1487,13 +1496,22 @@ function drawCard(
 
       // Draw subtask subject with underline if hovered
       const isSubtaskHovered = hover?.kind === 'subtask_subject' && hover.id === subtaskKey;
-      ctx.fillText(subjectText, sx + checkSize + 8, sy);
+      const subtaskTextX = sx + checkSize + 8;
+      ctx.fillText(subjectText, subtaskTextX, sy);
+      if (isStClosed) {
+        ctx.beginPath();
+        ctx.strokeStyle = ctx.fillStyle;
+        ctx.lineWidth = 1;
+        ctx.moveTo(subtaskTextX, sy + subtaskFontSize * 0.58);
+        ctx.lineTo(subtaskTextX + textMetrics.width, sy + subtaskFontSize * 0.58);
+        ctx.stroke();
+      }
       if (isSubtaskHovered) {
         ctx.beginPath();
         ctx.strokeStyle = ctx.fillStyle;
         ctx.lineWidth = 1;
-        ctx.moveTo(sx + checkSize + 8, sy + subtaskFontSize + 1);
-        ctx.lineTo(sx + checkSize + 8 + textMetrics.width, sy + subtaskFontSize + 1);
+        ctx.moveTo(subtaskTextX, sy + subtaskFontSize + 1);
+        ctx.lineTo(subtaskTextX + textMetrics.width, sy + subtaskFontSize + 1);
         ctx.stroke();
       }
 
