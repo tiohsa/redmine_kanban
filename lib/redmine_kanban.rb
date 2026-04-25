@@ -5,6 +5,7 @@ module RedmineKanban
 end
 
 require_relative 'redmine_kanban/settings'
+require_relative 'redmine_kanban/permission_policy'
 require_relative 'redmine_kanban/wip_checker'
 require_relative 'redmine_kanban/project_catalog'
 require_relative 'redmine_kanban/board_data'

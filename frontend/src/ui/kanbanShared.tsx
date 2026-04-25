@@ -1,6 +1,7 @@
 import React from 'react';
 import type { BoardData, Issue, Lane } from './types';
 import { findSubtaskInTree } from './subtasksTree';
+import { isHttpError } from './http';
 
 export type FitMode = 'none' | 'width';
 
@@ -37,10 +38,35 @@ export type ResolvedBoardIssue = {
   parentIssueId?: number;
 };
 
-export function fieldError(fieldErrors: any): string | null {
-  if (!fieldErrors) return null;
-  if (fieldErrors.subject?.length) return fieldErrors.subject[0];
+type FieldErrors = {
+  subject?: string[];
+};
+
+type ErrorPayload = {
+  message?: string;
+  field_errors?: FieldErrors;
+};
+
+function errorPayload(error: unknown): ErrorPayload | null {
+  if (!isHttpError<ErrorPayload>(error) || !error.payload || typeof error.payload !== 'object') return null;
+  return error.payload;
+}
+
+export function fieldError(fieldErrors: unknown): string | null {
+  if (!fieldErrors || typeof fieldErrors !== 'object' || !('subject' in fieldErrors)) return null;
+
+  const subject = (fieldErrors as FieldErrors).subject;
+  if (subject?.length) return subject[0];
   return null;
+}
+
+export function payloadMessage(error: unknown): string | null {
+  const payload = errorPayload(error);
+  return payload?.message ?? null;
+}
+
+export function payloadFieldError(error: unknown): string | null {
+  return fieldError(errorPayload(error)?.field_errors);
 }
 
 export function resolveMutationError(
@@ -48,14 +74,14 @@ export function resolveMutationError(
   labels: Record<string, string> | undefined,
   fallback?: string,
 ): string {
-  const status = (error as any)?.status as number | undefined;
-  const payloadMessage = (error as any)?.payload?.message as string | undefined;
+  const status = isHttpError<ErrorPayload>(error) ? error.status : undefined;
+  const message = payloadMessage(error);
 
   if (status === 409) {
     return labels?.conflict ?? '';
   }
 
-  return payloadMessage || fallback || labels?.update_failed || '';
+  return message || fallback || labels?.update_failed || '';
 }
 
 export function resolveAssigneeName(data: BoardData, assignedToId: number | null): string | null {

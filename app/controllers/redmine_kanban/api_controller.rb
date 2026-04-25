@@ -53,37 +53,27 @@ module RedmineKanban
     private
 
     def require_move_permission
-      issue_project = @issue.project
-      require_permission!(
-        User.current.allowed_to?(:manage_redmine_kanban, issue_project) && User.current.allowed_to?(:edit_issues, issue_project)
-      )
+      require_permission!(permission_policy.can_move_issue?(@issue.project))
     end
 
     def require_create_permission
       target_project = target_project_for_create
-      require_permission!(target_project.present?)
-      require_permission!(
-        User.current.allowed_to?(:manage_redmine_kanban, target_project) && User.current.allowed_to?(:add_issues, target_project)
-      )
+      return unless require_permission!(target_project.present?)
+
+      require_permission!(permission_policy.can_create_issue?(target_project))
     end
 
     def require_update_permission
-      issue_project = @issue.project
-      require_permission!(
-        User.current.allowed_to?(:view_redmine_kanban, issue_project) && User.current.allowed_to?(:edit_issues, issue_project)
-      )
+      require_permission!(permission_policy.can_update_issue?(@issue.project))
     end
 
     def require_delete_permission
-      issue_project = @issue.project
-      require_permission!(
-        User.current.allowed_to?(:view_redmine_kanban, issue_project) && User.current.allowed_to?(:delete_issues, issue_project)
-      )
+      require_permission!(permission_policy.can_delete_issue?(@issue.project))
     end
 
     def find_issue
       @issue = Issue.visible.find(params[:id])
-      render_404 unless User.current.allowed_to?(:view_redmine_kanban, @issue.project)
+      render_404 unless permission_policy.can_view_board?(@issue.project)
     rescue ActiveRecord::RecordNotFound
       render_404
     end
@@ -93,7 +83,7 @@ module RedmineKanban
       target_project_id = issue_params[:project_id].to_i
       if target_project_id.positive?
         project = Project.visible(User.current).find_by(id: target_project_id)
-        return project if project && User.current.allowed_to?(:view_redmine_kanban, project)
+        return project if permission_policy.can_view_board?(project)
 
         return nil
       end
@@ -110,9 +100,14 @@ module RedmineKanban
     end
 
     def require_permission!(allowed)
-      return if allowed
+      return true if allowed
 
       render json: { ok: false, message: '権限がありません' }, status: :forbidden
+      false
+    end
+
+    def permission_policy
+      @permission_policy ||= PermissionPolicy.new(user: User.current)
     end
   end
 end

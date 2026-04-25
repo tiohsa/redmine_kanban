@@ -160,9 +160,9 @@ module RedmineKanban
         meta: {
           project_id: @project.id,
           current_user_id: @user.id,
-          can_move: @user.allowed_to?(:manage_redmine_kanban, @project) && @user.allowed_to?(:edit_issues, @project),
-          can_create: @user.allowed_to?(:manage_redmine_kanban, @project) && @user.allowed_to?(:add_issues, @project),
-          can_delete: @user.allowed_to?(:delete_issues, @project),
+          can_move: permission_policy.can_move_issue?(@project),
+          can_create: permission_policy.can_create_issue?(@project),
+          can_delete: permission_policy.can_delete_issue?(@project),
           lane_type: @settings.lane_type,
           wip_limit_mode: @settings.wip_limit_mode,
           wip_exceed_behavior: @settings.wip_exceed_behavior,
@@ -187,6 +187,10 @@ module RedmineKanban
 
     def default_hidden_status_ids(statuses)
       []
+    end
+
+    def permission_policy
+      @permission_policy ||= PermissionPolicy.new(user: @user)
     end
 
     def fetch_issues(status_ids)
