@@ -58,6 +58,7 @@ function createCanvasContext(): CanvasRenderingContext2D {
   return {
     save: noop,
     restore: noop,
+    setTransform: noop,
     scale: noop,
     translate: noop,
     clearRect: noop,
@@ -80,6 +81,7 @@ function createCanvasContextWithSpies() {
   const context = {
     save: vi.fn(),
     restore: vi.fn(),
+    setTransform: vi.fn(),
     scale: vi.fn(),
     translate: vi.fn(),
     clearRect: vi.fn(),
@@ -97,8 +99,16 @@ function createCanvasContextWithSpies() {
   } as unknown as CanvasRenderingContext2D & {
     fillText: ReturnType<typeof vi.fn>;
     lineTo: ReturnType<typeof vi.fn>;
+    setTransform: ReturnType<typeof vi.fn>;
   };
   return context;
+}
+
+function setDevicePixelRatio(value: number) {
+  Object.defineProperty(window, 'devicePixelRatio', {
+    configurable: true,
+    value,
+  });
 }
 
 class ResizeObserverMock {
@@ -132,6 +142,7 @@ class ResizeObserverMock {
 
 describe('CanvasBoard cursor lifecycle', () => {
   beforeEach(() => {
+    setDevicePixelRatio(1);
     vi.stubGlobal('PointerEvent', MouseEvent);
     vi.stubGlobal('ResizeObserver', ResizeObserverMock);
     vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
@@ -306,5 +317,130 @@ describe('CanvasBoard cursor lifecycle', () => {
     const [, subtaskX, subtaskY] = subtaskTextCall as [string, number, number];
     expect(context.lineTo).toHaveBeenCalledWith(issueX + 'Closed issue'.length * 7, issueY + 13 * 0.58);
     expect(context.lineTo).toHaveBeenCalledWith(subtaskX + 'Closed child'.length * 7, subtaskY + 12 * 0.58);
+  });
+
+  it('uses a 2x backing store at DPR 2 while keeping CSS size unchanged', async () => {
+    setDevicePixelRatio(2);
+    const issue = makeIssue(3);
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+
+    const { container } = render(
+      <CanvasBoard
+        data={data}
+        state={state}
+        canMove
+        canCreate
+        onCommand={vi.fn()}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onView={vi.fn()}
+        onDelete={vi.fn()}
+        onEditClick={vi.fn()}
+        labels={data.labels}
+      />,
+    );
+
+    const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
+    await waitFor(() => {
+      expect(canvas.width).toBe(1600);
+      expect(canvas.height).toBe(1200);
+    });
+    expect(canvas.style.width).toBe('800px');
+    expect(canvas.style.height).toBe('600px');
+  });
+
+  it('uses a rounded fractional DPR backing store while keeping CSS size unchanged', async () => {
+    setDevicePixelRatio(1.25);
+    const issue = makeIssue(4);
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+
+    const { container } = render(
+      <CanvasBoard
+        data={data}
+        state={state}
+        canMove
+        canCreate
+        onCommand={vi.fn()}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onView={vi.fn()}
+        onDelete={vi.fn()}
+        onEditClick={vi.fn()}
+        labels={data.labels}
+      />,
+    );
+
+    const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
+    await waitFor(() => {
+      expect(canvas.width).toBe(1000);
+      expect(canvas.height).toBe(750);
+    });
+    expect(canvas.style.width).toBe('800px');
+    expect(canvas.style.height).toBe('600px');
+  });
+
+  it('applies DPR using setTransform before board scale', async () => {
+    setDevicePixelRatio(2);
+    const issue = makeIssue(5);
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const context = createCanvasContextWithSpies();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+
+    render(
+      <CanvasBoard
+        data={data}
+        state={state}
+        canMove
+        canCreate
+        onCommand={vi.fn()}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onView={vi.fn()}
+        onDelete={vi.fn()}
+        onEditClick={vi.fn()}
+        labels={data.labels}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(context.setTransform).toHaveBeenCalledWith(2, 0, 0, 2, 0, 0);
+    });
+  });
+
+  it('caps DPR 4 to a 2x backing store', async () => {
+    setDevicePixelRatio(4);
+    const issue = makeIssue(6);
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const context = createCanvasContextWithSpies();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+
+    const { container } = render(
+      <CanvasBoard
+        data={data}
+        state={state}
+        canMove
+        canCreate
+        onCommand={vi.fn()}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onView={vi.fn()}
+        onDelete={vi.fn()}
+        onEditClick={vi.fn()}
+        labels={data.labels}
+      />,
+    );
+
+    const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
+    await waitFor(() => {
+      expect(canvas.width).toBe(1600);
+      expect(canvas.height).toBe(1200);
+      expect(context.setTransform).toHaveBeenCalledWith(2, 0, 0, 2, 0, 0);
+    });
+    expect(canvas.style.width).toBe('800px');
+    expect(canvas.style.height).toBe('600px');
   });
 });

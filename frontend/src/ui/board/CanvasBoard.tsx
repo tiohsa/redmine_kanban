@@ -2,17 +2,30 @@ import React, { useEffect, useMemo, useRef, useState, forwardRef, useImperativeH
 import type { BoardData, Column, Issue, Lane } from '../types';
 import type { BoardCommand } from './commands';
 import { getBoardCursor } from './cursor';
+import type { Rect } from './canvasGeometry';
+import { clamp, pointInRect, rectIntersects, roundedRect } from './canvasGeometry';
+import {
+  canDeleteIssue,
+  canEditIssue,
+  canMoveIssue,
+  getHoverSnapshot,
+  getIssueFromHover,
+  getTooltipTextFromHover,
+  type HitResult,
+  subtaskPermissions,
+} from './canvasInteraction';
 import { buildSubtaskKey, laneIdToAssignee, laneIdToPriority, parseCellKey, parseSubtaskKey, resolveBoardLaneId } from './keys';
 import { getMetrics } from './metrics';
 import type { BoardState } from './state';
 import { cellKey } from './state';
 import { findSubtaskInTree, flattenSubtasks } from '../subtasksTree';
+import { truncateText, truncateTextLines } from './canvasText';
 
 const dragThreshold = 4;
 const subtaskIndentPx = 14;
 const maxSubtaskIndentLevel = 6;
 
-type Rect = { x: number; y: number; width: number; height: number };
+type CanvasBackingStoreState = { width: number; height: number; dpr: number };
 
 type RectMap = {
   cards: Map<number, Rect>;
@@ -75,26 +88,6 @@ type DragState = {
   dropTargetCellKey?: string | null;
   dropCommittedAt?: number;
 };
-
-type HitResult =
-  | { kind: 'card'; issueId: number }
-  | { kind: 'add'; statusId: number; laneId: string | number }
-  | { kind: 'delete'; issueId: number }
-
-  | { kind: 'subtask_check'; issueId: number; subtaskId: number }
-  | { kind: 'subtask_subject'; issueId: number; subtaskId: number }
-  | { kind: 'subtask_row'; issueId: number; subtaskId: number }
-  | { kind: 'subtask_edit'; issueId: number; subtaskId: number }
-  | { kind: 'subtask_delete'; issueId: number; subtaskId: number }
-  | { kind: 'subtask_area'; issueId: number }
-  | { kind: 'card_subject'; issueId: number }
-  | { kind: 'edit'; issueId: number }
-  | { kind: 'cell'; statusId: number; laneId: string | number }
-  | { kind: 'visibility'; statusId: number }
-  | { kind: 'priority'; issueId: number }
-  | { kind: 'date'; issueId: number }
-  | { kind: 'lane_header'; laneId: string | number }
-  | { kind: 'empty' };
 
 export type CanvasBoardHandle = {
   scrollToTop: () => void;
@@ -170,6 +163,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   const boardSizeRef = useRef({ width: 0, height: 0 });
   const dragRef = useRef<DragState | null>(null);
   const renderHandle = useRef<number | null>(null);
+  const backingStoreRef = useRef<CanvasBackingStoreState>({ width: 0, height: 0, dpr: 1 });
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [cursor, setCursor] = useState('default');
   const scaleRef = useRef(1);
@@ -178,6 +172,23 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   const hoveredSubtaskKeyRef = useRef<string | null>(null);
   const drawRef = useRef<() => void>(() => { });
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
+
+  const scheduleRender = React.useCallback(() => {
+    if (renderHandle.current !== null) return;
+    renderHandle.current = requestAnimationFrame(() => {
+      renderHandle.current = null;
+      drawRef.current();
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (renderHandle.current !== null) {
+        cancelAnimationFrame(renderHandle.current);
+        renderHandle.current = null;
+      }
+    };
+  }, []);
 
   const clearHoverState = React.useCallback(() => {
     hoverRef.current = null;
@@ -190,7 +201,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     dragRef.current = null;
     setCursor(getBoardCursor({ phase: 'idle' }));
     scheduleRender();
-  }, []);
+  }, [scheduleRender]);
 
   const resetPointerState = React.useCallback((preservePendingDrop: boolean = false) => {
     clearHoverState();
@@ -200,7 +211,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       return;
     }
     clearDragState();
-  }, [clearDragState, clearHoverState]);
+  }, [clearDragState, clearHoverState, scheduleRender]);
 
   const measureCtx = useMemo(() => {
     const canvas = document.createElement('canvas');
@@ -221,7 +232,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   // Scale calculation is now handled directly in draw() to ensure it's always in sync with the latest layout and size.
   useEffect(() => {
     scheduleRender();
-  }, [fitMode]);
+  }, [fitMode, scheduleRender]);
 
   useEffect(() => {
     const node = containerRef.current;
@@ -240,7 +251,19 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   }, []);
   useEffect(() => {
     scheduleRender();
-  }, [size, state, data.meta, canCreate, canMove, theme, fontSize]);
+  }, [size, state, data.meta, canCreate, canMove, theme, fontSize, scheduleRender]);
+
+  useEffect(() => {
+    const onViewportChange = () => {
+      scheduleRender();
+    };
+    window.addEventListener('resize', onViewportChange);
+    window.visualViewport?.addEventListener('resize', onViewportChange);
+    return () => {
+      window.removeEventListener('resize', onViewportChange);
+      window.visualViewport?.removeEventListener('resize', onViewportChange);
+    };
+  }, [scheduleRender]);
 
   useEffect(() => {
     const drag = dragRef.current;
@@ -280,13 +303,18 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       y: clamp(y, 0, maxY),
     };
     scheduleRender();
-  }, [size.height, size.width]);
+  }, [size.height, size.width, scheduleRender]);
 
   useEffect(() => {
+    if (!document.fonts?.ready) {
+      scheduleRender();
+      return;
+    }
+
     void document.fonts.ready.then(() => {
       scheduleRender();
     });
-  }, []);
+  }, [scheduleRender]);
 
   // Register wheel event listener with { passive: false } to allow preventDefault
   useEffect(() => {
@@ -306,20 +334,12 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     return () => container.removeEventListener('wheel', onWheel);
   }, [updateScroll]);
 
-  const scheduleRender = () => {
-    if (renderHandle.current !== null) return;
-    renderHandle.current = requestAnimationFrame(() => {
-      renderHandle.current = null;
-      drawRef.current();
-    });
-  };
-
   useImperativeHandle(ref, () => ({
     scrollToTop: () => {
       scrollRef.current = { x: 0, y: 0 };
       scheduleRender();
     }
-  }));
+  }), [scheduleRender]);
 
   const draw = () => {
     const canvas = canvasRef.current;
@@ -328,12 +348,9 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     if (size.width <= 0 || size.height <= 0) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = size.width * dpr;
-    canvas.height = size.height * dpr;
-    canvas.style.width = `${size.width}px`;
-    canvas.style.height = `${size.height}px`;
-    ctx.scale(dpr, dpr);
+    const dpr = getCanvasDevicePixelRatio();
+    resizeCanvasBackingStoreIfNeeded(canvas, backingStoreRef.current, size.width, size.height, dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     ctx.clearRect(0, 0, size.width, size.height);
     ctx.fillStyle = theme.bgMain;
@@ -445,115 +462,96 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     const point = toBoardPoint(event, scrollRef.current, canvasRef.current, scaleRef.current);
     const hit = hitTest(point, rectMapRef.current, state, data);
     const isBusy = (issueId: number) => busyIssueIds?.has(issueId) ?? false;
-
-    if (hit.kind === 'subtask_check') {
-      if (isBusy(hit.subtaskId)) return;
-      const issue = state.cardsById.get(hit.issueId);
-      if (!subtaskPermissions(issue, hit.subtaskId)?.can_move) return;
-      if (issue && onSubtaskToggle) {
+    switch (hit.kind) {
+      case 'subtask_check': {
+        if (isBusy(hit.subtaskId)) return;
+        const issue = state.cardsById.get(hit.issueId);
+        if (!subtaskPermissions(issue, hit.subtaskId)?.can_move) return;
+        if (!issue || !onSubtaskToggle) return;
         const subtask = findSubtaskInTree(issue.subtasks, hit.subtaskId);
-        if (subtask) {
-          onSubtaskToggle(hit.subtaskId, subtask.is_closed);
-        }
+        if (!subtask) return;
+        onSubtaskToggle(hit.subtaskId, subtask.is_closed);
+        return;
       }
-      return;
-    }
-
-    if (hit.kind === 'subtask_subject') {
-      if (isBusy(hit.subtaskId)) return;
-      onView(hit.subtaskId);
-      return;
-    }
-
-    if (hit.kind === 'subtask_edit') {
-      if (isBusy(hit.subtaskId)) return;
-      const issue = state.cardsById.get(hit.issueId);
-      if (!subtaskPermissions(issue, hit.subtaskId)?.can_edit) return;
-      onEdit(hit.subtaskId);
-      return;
-    }
-
-    if (hit.kind === 'subtask_delete') {
-      if (isBusy(hit.subtaskId)) return;
-      const issue = state.cardsById.get(hit.issueId);
-      if (!subtaskPermissions(issue, hit.subtaskId)?.can_delete) return;
-      onDelete(hit.subtaskId, 'subtask');
-      return;
-    }
-
-    if (hit.kind === 'card_subject') {
-      if (isBusy(hit.issueId)) return;
-      onView(hit.issueId);
-      return;
-    }
-
-    if (hit.kind === 'edit') {
-      if (isBusy(hit.issueId)) return;
-      const issue = state.cardsById.get(hit.issueId);
-      if (!canEditIssue(issue)) return;
-      onEdit(hit.issueId);
-      return;
-    }
-
-    if (hit.kind === 'add') {
-      onCreate({ statusId: hit.statusId, laneId: hit.laneId });
-      return;
-    }
-
-    if (hit.kind === 'visibility') {
-      onToggleStatusVisibility?.(hit.statusId);
-      return;
-    }
-
-    if (hit.kind === 'delete') {
-      if (isBusy(hit.issueId)) return;
-      const issue = state.cardsById.get(hit.issueId);
-      if (!canDeleteIssue(issue)) return;
-      onDelete(hit.issueId, 'card');
-      return;
-    }
-
-    if (hit.kind === 'priority') {
-      if (isBusy(hit.issueId)) return;
-      event.preventDefault();
-      const issue = state.cardsById.get(hit.issueId);
-      if (!canEditIssue(issue)) return;
-      if (issue && onPriorityClick) {
+      case 'subtask_subject':
+        if (isBusy(hit.subtaskId)) return;
+        onView(hit.subtaskId);
+        return;
+      case 'subtask_edit': {
+        if (isBusy(hit.subtaskId)) return;
+        const issue = state.cardsById.get(hit.issueId);
+        if (!subtaskPermissions(issue, hit.subtaskId)?.can_edit) return;
+        onEdit(hit.subtaskId);
+        return;
+      }
+      case 'subtask_delete': {
+        if (isBusy(hit.subtaskId)) return;
+        const issue = state.cardsById.get(hit.issueId);
+        if (!subtaskPermissions(issue, hit.subtaskId)?.can_delete) return;
+        onDelete(hit.subtaskId, 'subtask');
+        return;
+      }
+      case 'card_subject':
+        if (isBusy(hit.issueId)) return;
+        onView(hit.issueId);
+        return;
+      case 'edit': {
+        if (isBusy(hit.issueId)) return;
+        const issue = state.cardsById.get(hit.issueId);
+        if (!canEditIssue(issue)) return;
+        onEdit(hit.issueId);
+        return;
+      }
+      case 'add':
+        onCreate({ statusId: hit.statusId, laneId: hit.laneId });
+        return;
+      case 'visibility':
+        onToggleStatusVisibility?.(hit.statusId);
+        return;
+      case 'delete': {
+        if (isBusy(hit.issueId)) return;
+        const issue = state.cardsById.get(hit.issueId);
+        if (!canDeleteIssue(issue)) return;
+        onDelete(hit.issueId, 'card');
+        return;
+      }
+      case 'priority': {
+        if (isBusy(hit.issueId)) return;
+        event.preventDefault();
+        const issue = state.cardsById.get(hit.issueId);
+        if (!canEditIssue(issue) || !issue || !onPriorityClick) return;
         onPriorityClick(hit.issueId, issue.priority_id ?? 2, event.clientX, event.clientY);
+        return;
       }
-      return;
-    }
-
-
-    if (hit.kind === 'date') {
-      if (isBusy(hit.issueId)) return;
-      event.preventDefault();
-      const issue = state.cardsById.get(hit.issueId);
-      if (!canEditIssue(issue)) return;
-      if (issue && onDateClick) {
+      case 'date': {
+        if (isBusy(hit.issueId)) return;
+        event.preventDefault();
+        const issue = state.cardsById.get(hit.issueId);
+        if (!canEditIssue(issue) || !issue || !onDateClick) return;
         onDateClick(hit.issueId, issue.due_date ?? null, event.clientX, event.clientY);
+        return;
       }
-      return;
+      case 'card':
+      case 'subtask_area':
+      case 'subtask_row': {
+        if (isBusy(hit.issueId)) return;
+        const issue = state.cardsById.get(hit.issueId);
+        if (!issue || !canMoveIssue(issue)) return;
+        const originLaneId = resolveBoardLaneId(data, issue);
+        dragRef.current = {
+          issueId: hit.issueId,
+          start: point,
+          current: point,
+          origin: { statusId: issue.status_id, laneId: originLaneId },
+          dragging: false,
+          targetCellKey: null,
+        };
+        event.currentTarget.setPointerCapture(event.pointerId);
+        return;
+      }
+      default:
+        dragRef.current = null;
     }
-
-    if (hit.kind === 'card' || hit.kind === 'subtask_area' || hit.kind === 'subtask_row') {
-      if (isBusy(hit.issueId)) return;
-      const issue = state.cardsById.get(hit.issueId);
-      if (!issue || !canMoveIssue(issue)) return;
-      const originLaneId = resolveBoardLaneId(data, issue);
-      dragRef.current = {
-        issueId: hit.issueId,
-        start: point,
-        current: point,
-        origin: { statusId: issue.status_id, laneId: originLaneId },
-        dragging: false,
-        targetCellKey: null,
-      };
-      event.currentTarget.setPointerCapture(event.pointerId);
-      return;
-    }
-
-    dragRef.current = null;
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -562,46 +560,11 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
 
     if (!drag) {
       const hit = hitTest(point, rectMapRef.current, state, data);
-      let newHover: { kind: 'card_subject' | 'subtask_subject'; id: string } | null = null;
-      let newHoveredCardIssueId: number | null = null;
-      let newHoveredSubtaskKey: string | null = null;
-      if (
-        hit.kind === 'card' ||
-        hit.kind === 'card_subject' ||
-        hit.kind === 'edit' ||
-        hit.kind === 'delete' ||
-        hit.kind === 'priority' ||
-        hit.kind === 'date'
-      ) {
-        newHoveredCardIssueId = hit.issueId;
-      }
-      if (
-        hit.kind === 'subtask_row' ||
-        hit.kind === 'subtask_subject' ||
-        hit.kind === 'subtask_check' ||
-        hit.kind === 'subtask_edit' ||
-        hit.kind === 'subtask_delete'
-      ) {
-        newHoveredSubtaskKey = `${hit.issueId}:${hit.subtaskId}`;
-      }
-
-      if (hit.kind === 'card_subject') {
-        newHover = { kind: 'card_subject', id: String(hit.issueId) };
-      } else if (hit.kind === 'subtask_subject') {
-        newHover = { kind: 'subtask_subject', id: `${hit.issueId}:${hit.subtaskId}` };
-      }
-
-      if (newHover) {
-        const issue = state.cardsById.get(Number(newHover.kind === 'card_subject' ? newHover.id : newHover.id.split(':')[0]));
-        if (issue) {
-          const text = newHover.kind === 'card_subject'
-            ? issue.subject
-            : findSubtaskInTree(issue.subtasks, Number(newHover.id.split(':')[1]))?.subject;
-
-          if (text) {
-            setTooltip({ text, x: Math.min(event.clientX, window.innerWidth - 320), y: event.clientY + 16 });
-          }
-        }
+      const hoverSnapshot = getHoverSnapshot(hit);
+      const issue = getIssueFromHover(state.cardsById, hoverSnapshot.hover);
+      const tooltipText = issue ? getTooltipTextFromHover(issue, hoverSnapshot.hover) : undefined;
+      if (tooltipText) {
+        setTooltip({ text: tooltipText, x: Math.min(event.clientX, window.innerWidth - 320), y: event.clientY + 16 });
       } else {
         setTooltip(null);
       }
@@ -610,13 +573,14 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
 
       // Update hover state and re-render if changed
       const currentHover = hoverRef.current;
-      const hoverChanged = (currentHover?.kind !== newHover?.kind) || (currentHover?.id !== newHover?.id);
-      const cardHoverChanged = hoveredCardIssueIdRef.current !== newHoveredCardIssueId;
-      const subtaskHoverChanged = hoveredSubtaskKeyRef.current !== newHoveredSubtaskKey;
+      const hoverChanged =
+        currentHover?.kind !== hoverSnapshot.hover?.kind || currentHover?.id !== hoverSnapshot.hover?.id;
+      const cardHoverChanged = hoveredCardIssueIdRef.current !== hoverSnapshot.hoveredCardIssueId;
+      const subtaskHoverChanged = hoveredSubtaskKeyRef.current !== hoverSnapshot.hoveredSubtaskKey;
       if (hoverChanged || cardHoverChanged || subtaskHoverChanged) {
-        hoverRef.current = newHover;
-        hoveredCardIssueIdRef.current = newHoveredCardIssueId;
-        hoveredSubtaskKeyRef.current = newHoveredSubtaskKey;
+        hoverRef.current = hoverSnapshot.hover;
+        hoveredCardIssueIdRef.current = hoverSnapshot.hoveredCardIssueId;
+        hoveredSubtaskKeyRef.current = hoverSnapshot.hoveredSubtaskKey;
         scheduleRender();
       }
       return;
@@ -650,41 +614,40 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     const drag = dragRef.current;
     if (!drag) return;
 
-    if (drag.dragging) {
-      const hit = hitTestCell(point, rectMapRef.current, data);
-      const draggedIssue = state.cardsById.get(drag.issueId);
-      if (hit && canMove && canMoveIssue(draggedIssue)) {
-        const issue = state.cardsById.get(drag.issueId);
-        const assignedToId = laneIdToAssignee(data, hit.laneId, issue?.assigned_to_id ?? null);
-        const priorityId = laneIdToPriority(data, hit.laneId, issue?.priority_id ?? null);
-        onCommand({
-          type: 'move_issue',
-          issueId: drag.issueId,
-          statusId: hit.statusId,
-          laneId: hit.laneId,
-          assignedToId,
-          priorityId,
-        });
-
-        drag.dropTargetCellKey = cellKey(hit.statusId, hit.laneId);
-        drag.dropCommittedAt = Date.now();
-        setCursor(getBoardCursor({ phase: 'pending-drop' }));
-        scheduleRender();
-        return;
-      }
-    } else {
+    if (!drag.dragging) {
       // If we released on the same card and didn't drag, open the dialog
       // except for subtask checkbox area which is already handled in handlePointerDown
       const hit = hitTest(point, rectMapRef.current, state, data);
-      if (hit.kind === 'subtask_subject') {
-        onView(hit.subtaskId);
-      } else if (hit.kind === 'card_subject') {
-        // Open dialog when clicking on subject (but not on the rest of the card)
-        onView(hit.issueId);
-      }
+      if (hit.kind === 'subtask_subject') onView(hit.subtaskId);
+      if (hit.kind === 'card_subject') onView(hit.issueId);
+      clearDragState();
+      return;
     }
 
-    clearDragState();
+    const hit = hitTestCell(point, rectMapRef.current, data);
+    const draggedIssue = state.cardsById.get(drag.issueId);
+    if (!hit || !canMove || !canMoveIssue(draggedIssue)) {
+      clearDragState();
+      return;
+    }
+
+    const issue = state.cardsById.get(drag.issueId);
+    const assignedToId = laneIdToAssignee(data, hit.laneId, issue?.assigned_to_id ?? null);
+    const priorityId = laneIdToPriority(data, hit.laneId, issue?.priority_id ?? null);
+    onCommand({
+      type: 'move_issue',
+      issueId: drag.issueId,
+      statusId: hit.statusId,
+      laneId: hit.laneId,
+      assignedToId,
+      priorityId,
+    });
+
+    drag.dropTargetCellKey = cellKey(hit.statusId, hit.laneId);
+    drag.dropCommittedAt = Date.now();
+    setCursor(getBoardCursor({ phase: 'pending-drop' }));
+    scheduleRender();
+    return;
   };
 
   const handlePointerCancel = () => {
@@ -744,20 +707,35 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
 }
 );
 
-function canMoveIssue(issue?: Issue | null) {
-  return !!issue?.permissions?.can_move;
+function getCanvasDevicePixelRatio() {
+  if (typeof window === 'undefined') return 1;
+  return Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
 }
 
-function canEditIssue(issue?: Issue | null) {
-  return !!issue?.permissions?.can_edit;
-}
+function resizeCanvasBackingStoreIfNeeded(
+  canvas: HTMLCanvasElement,
+  backingStore: CanvasBackingStoreState,
+  cssWidth: number,
+  cssHeight: number,
+  dpr: number
+) {
+  const backingWidth = Math.round(cssWidth * dpr);
+  const backingHeight = Math.round(cssHeight * dpr);
+  if (
+    backingStore.width === backingWidth &&
+    backingStore.height === backingHeight &&
+    backingStore.dpr === dpr
+  ) {
+    return;
+  }
 
-function canDeleteIssue(issue?: Issue | null) {
-  return !!issue?.permissions?.can_delete;
-}
-
-function subtaskPermissions(issue: Issue | undefined, subtaskId: number) {
-  return findSubtaskInTree(issue?.subtasks, subtaskId)?.permissions;
+  canvas.width = backingWidth;
+  canvas.height = backingHeight;
+  canvas.style.width = `${cssWidth}px`;
+  canvas.style.height = `${cssHeight}px`;
+  backingStore.width = backingWidth;
+  backingStore.height = backingHeight;
+  backingStore.dpr = dpr;
 }
 
 function computeLayout(
@@ -1823,98 +1801,6 @@ function hitTestCell(
     }
   }
   return null;
-}
-
-function truncateTextLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number): string[] {
-  const lines: string[] = [];
-  const chars = Array.from(text);
-  let currentLine = '';
-
-  for (let i = 0; i < chars.length; i++) {
-    const char = chars[i];
-    const test = currentLine + char;
-    const w = ctx.measureText(test).width;
-
-    if (w > maxWidth) {
-      if (currentLine) lines.push(currentLine);
-      currentLine = char;
-    } else {
-      currentLine = test;
-    }
-  }
-  if (currentLine) lines.push(currentLine);
-
-  if (lines.length <= maxLines) return lines;
-
-  // Truncate
-  const result = lines.slice(0, maxLines - 1);
-  // Reconstruct last line content from lines[maxLines-1] onwards
-  // Since we don't have indexes easy, let's just use truncateText on the combined text of remaining lines? 
-  // A bit complex to get exact text.
-  // Instead, let's just take lines[maxLines-1] AND force '...' on it if there are more lines
-  // But lines[maxLines-1] might already be full width. Adding ... will overflow.
-
-  const lastLineCandidate = lines[maxLines - 1];
-  let lastLine = lastLineCandidate;
-  while (lastLine.length > 0 && ctx.measureText(lastLine + '...').width > maxWidth) {
-    lastLine = lastLine.slice(0, -1);
-  }
-  result.push(lastLine + '...');
-
-  return result;
-}
-function truncateText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
-  if (ctx.measureText(text).width <= maxWidth) return text;
-  let t = text;
-  while (t.length > 0 && ctx.measureText(t + '...').width > maxWidth) {
-    t = t.slice(0, -1);
-  }
-  return t + '...';
-}
-
-
-function pointInRect(point: { x: number; y: number }, rect: Rect) {
-  return (
-    point.x >= rect.x &&
-    point.x <= rect.x + rect.width &&
-    point.y >= rect.y &&
-    point.y <= rect.y + rect.height
-  );
-}
-
-function rectIntersects(a: Rect, b: Rect) {
-  return (
-    a.x < b.x + b.width &&
-    a.x + a.width > b.x &&
-    a.y < b.y + b.height &&
-    a.y + a.height > b.y
-  );
-}
-
-function roundedRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number
-) {
-  const r = Math.min(radius, width / 2, height / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + width - r, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
-  ctx.lineTo(x + width, y + height - r);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
-  ctx.lineTo(x + r, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
 }
 
 function getCardColor(trackerId: number, theme: CanvasTheme): string {

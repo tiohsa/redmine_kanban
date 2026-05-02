@@ -30,6 +30,22 @@ type ToolbarProps = {
   onOpenHelp: () => void;
 };
 
+const FONT_SIZE_OPTIONS = ['10', '12', '14', '16', '18', '20', '22', '24', '26', '28', '30'] as const;
+
+function buildDropdownTriggerClass(showTriggerLabel: boolean | undefined, isOpen: boolean, isActive: boolean) {
+  return `rk-dropdown-trigger ${showTriggerLabel ? 'rk-dropdown-trigger-labeled' : ''} ${isOpen ? 'rk-active' : ''} ${isActive ? 'rk-active-soft' : ''}`;
+}
+
+function getSortDirection(sortKey: SortKey, key: 'due' | 'priority' | 'updated'): 'asc' | 'desc' | null {
+  if (sortKey === `${key}_asc`) return 'asc';
+  if (sortKey === `${key}_desc`) return 'desc';
+  return null;
+}
+
+function isSortActive(sortKey: SortKey, key: 'due' | 'priority' | 'updated') {
+  return sortKey.startsWith(`${key}_`);
+}
+
 function useDropdownDismiss(open: boolean, onDismiss: () => void) {
   const triggerRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -85,12 +101,13 @@ function Dropdown<T extends string>({
   const { triggerRef, menuRef } = useDropdownDismiss(open, () => setOpen(false));
 
   const selectedName = options.find((option) => option.id === value)?.name ?? value;
+  const triggerClassName = buildDropdownTriggerClass(showTriggerLabel, open, Boolean(showDot));
 
   return (
     <div className="rk-dropdown-container">
       <div
         ref={triggerRef}
-        className={`rk-dropdown-trigger ${showTriggerLabel ? 'rk-dropdown-trigger-labeled' : ''} ${open ? 'rk-active' : ''} ${showDot ? 'rk-active-soft' : ''}`}
+        className={triggerClassName}
         onClick={() => setOpen(!open)}
         title={selectedName}
       >
@@ -180,22 +197,19 @@ function MultiSelectDropdown({
     : value.length > 0
       ? value.map((selected) => options.find((option) => option.id === selected)?.name).join(', ')
       : label;
+  const triggerClassName = buildDropdownTriggerClass(showTriggerLabel, open, Boolean(showDot));
+  const triggerLabel = selectedCount > 0 ? `${label} (${selectedCount})` : label;
 
   return (
     <div className="rk-dropdown-container">
       <div
         ref={triggerRef}
-        className={`rk-dropdown-trigger ${showTriggerLabel ? 'rk-dropdown-trigger-labeled' : ''} ${open ? 'rk-active' : ''} ${showDot ? 'rk-active-soft' : ''}`}
+        className={triggerClassName}
         onClick={() => setOpen(!open)}
         title={title}
       >
         <span className="rk-icon">{icon}</span>
-        {showTriggerLabel ? (
-          <span>
-            {label}
-            {selectedCount > 0 ? ` (${selectedCount})` : ''}
-          </span>
-        ) : null}
+        {showTriggerLabel ? <span>{triggerLabel}</span> : null}
         {showDot ? <span className="rk-indicator-dot" /> : null}
       </div>
 
@@ -268,6 +282,7 @@ function SearchDropdown({
   const [open, setOpen] = useState(false);
   const { triggerRef, menuRef } = useDropdownDismiss(open, () => setOpen(false));
   const inputRef = useRef<HTMLInputElement>(null);
+  const triggerClassName = buildDropdownTriggerClass(showTriggerLabel, open, Boolean(value));
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -292,7 +307,7 @@ function SearchDropdown({
     <div className="rk-dropdown-container">
       <div
         ref={triggerRef}
-        className={`rk-dropdown-trigger ${showTriggerLabel ? 'rk-dropdown-trigger-labeled' : ''} ${open ? 'rk-active' : ''} ${value ? 'rk-active-soft' : ''}`}
+        className={triggerClassName}
         onClick={() => setOpen(!open)}
         title={label}
       >
@@ -387,6 +402,7 @@ export function KanbanToolbar({
   const assignees = data.lists.assignees ?? [];
   const labels = data.labels;
   const projectOptions = (viewableProjectsEnabled ? data.lists.viewable_projects : data.lists.projects) ?? [];
+  const updateFilters = (patch: Partial<Filters>) => onChange({ ...filters, ...patch });
   const assigneeOptions = [
     { id: 'unassigned', name: labels.unassigned },
     ...assignees.filter((assignee) => assignee.id !== null).map((assignee) => ({ id: String(assignee.id), name: assignee.name })),
@@ -406,6 +422,30 @@ export function KanbanToolbar({
     { id: 'no_priority', name: labels.not_set },
   ];
   const priorityValue = filters.priorityFilterEnabled ? filters.priority : priorityOptions.map((option) => option.id);
+  const projectDropdownOptions = projectOptions.map((project) => ({
+    id: String(project.id),
+    name: '\xA0'.repeat(project.level * 2) + project.name,
+  }));
+  const statusDropdownOptions = data.columns.map((column) => ({ id: String(column.id), name: column.name }));
+  const projectFilterValue = filters.projectIds.map(String);
+  const statusFilterValue = filters.statusIds.map(String);
+  const showAssigneeDot = filters.assigneeIds.length > 0;
+  const showProjectDot = filters.projectIds.length > 0;
+  const showStatusDot = filters.statusIds.length > 0;
+  const showDueCustomInput = filters.due === 'custom';
+  const dueDaysValue = filters.dueDays ?? 7;
+  const dueSortDirection = getSortDirection(sortKey, 'due');
+  const prioritySortDirection = getSortDirection(sortKey, 'priority');
+  const updatedSortDirection = getSortDirection(sortKey, 'updated');
+  const dueSortNext: SortKey = sortKey === 'due_asc' ? 'due_desc' : 'due_asc';
+  const prioritySortNext: SortKey = sortKey === 'priority_desc' ? 'priority_asc' : 'priority_desc';
+  const fitModeActive = fitMode !== 'none';
+  const fitModeTitle = fitMode === 'none' ? labels.fit_none : fitMode === 'width' ? labels.fit_width : labels.fit_all;
+  const fitModeIcon = fitMode === 'none' ? 'zoom_in' : 'fit_screen';
+  const showSubtasksIcon = showSubtasks ? 'check_box' : 'check_box_outline_blank';
+  const fullWindowIcon = fullWindow ? 'fullscreen_exit' : 'fullscreen';
+  const fontSizeLabel = `${fontSize}px`;
+  const fontSizeOptions = FONT_SIZE_OPTIONS.map((value) => ({ id: value, name: `${value}px` }));
 
   return (
     <div className="rk-toolbar">
@@ -426,7 +466,7 @@ export function KanbanToolbar({
           title={labels.filter_task}
           placeholder={labels.filter_subject}
           value={filters.q}
-          onChange={(value) => onChange({ ...filters, q: value })}
+          onChange={(value) => updateFilters({ q: value })}
           showTriggerLabel
         />
       </div>
@@ -439,12 +479,12 @@ export function KanbanToolbar({
           icon="person"
           options={assigneeOptions}
           value={filters.assigneeIds}
-          onChange={(value) => onChange({ ...filters, assigneeIds: value })}
-          onReset={() => onChange({ ...filters, assigneeIds: [] })}
+          onChange={(value) => updateFilters({ assigneeIds: value })}
+          onReset={() => updateFilters({ assigneeIds: [] })}
           labels={labels}
           includeAllOption
           allLabel={labels.all}
-          showDot={filters.assigneeIds.length > 0}
+          showDot={showAssigneeDot}
           showTriggerLabel
         />
       </div>
@@ -455,17 +495,14 @@ export function KanbanToolbar({
         <MultiSelectDropdown
           label={labels.project}
           icon="folder"
-          options={projectOptions.map((project) => ({
-            id: String(project.id),
-            name: '\xA0'.repeat(project.level * 2) + project.name,
-          }))}
-          value={filters.projectIds.map(String)}
-          onChange={(value) => onChange({ ...filters, projectIds: value.map(Number) })}
+          options={projectDropdownOptions}
+          value={projectFilterValue}
+          onChange={(value) => updateFilters({ projectIds: value.map(Number) })}
           width="280px"
           labels={labels}
           includeAllOption
           allLabel={labels.all}
-          showDot={filters.projectIds.length > 0}
+          showDot={showProjectDot}
           showTriggerLabel
         />
       </div>
@@ -476,14 +513,14 @@ export function KanbanToolbar({
         <MultiSelectDropdown
           label={labels.status}
           icon="fact_check"
-          options={data.columns.map((column) => ({ id: String(column.id), name: column.name }))}
-          value={filters.statusIds.map(String)}
-          onChange={(value) => onChange({ ...filters, statusIds: value.map(Number) })}
+          options={statusDropdownOptions}
+          value={statusFilterValue}
+          onChange={(value) => updateFilters({ statusIds: value.map(Number) })}
           width="200px"
           labels={labels}
           includeAllOption
           allLabel={labels.all}
-          showDot={filters.statusIds.length > 0}
+          showDot={showStatusDot}
           showTriggerLabel
         />
       </div>
@@ -498,7 +535,7 @@ export function KanbanToolbar({
           value={priorityValue}
           onChange={(value) => {
             const enabled = value.length !== priorityOptions.length;
-            onChange({ ...filters, priority: enabled ? value : [], priorityFilterEnabled: enabled });
+            updateFilters({ priority: enabled ? value : [], priorityFilterEnabled: enabled });
           }}
           width="160px"
           labels={labels}
@@ -513,8 +550,8 @@ export function KanbanToolbar({
           icon="calendar_month"
           options={dueOptions}
           value={filters.due}
-          onChange={(value) => onChange({ ...filters, due: value as Filters['due'] })}
-          onReset={() => onChange({ ...filters, due: 'all' })}
+          onChange={(value) => updateFilters({ due: value as Filters['due'] })}
+          onReset={() => updateFilters({ due: 'all' })}
           width="180px"
           closeOnSelect={false}
           labels={labels}
@@ -522,16 +559,16 @@ export function KanbanToolbar({
           showTriggerLabel
         />
 
-        {filters.due === 'custom' ? (
+        {showDueCustomInput ? (
           <input
             type="number"
             min="1"
             className="rk-input"
             style={{ width: '60px', marginLeft: '6px', height: '32px', padding: '0 8px' }}
-            value={filters.dueDays ?? 7}
+            value={dueDaysValue}
             onChange={(event) => {
               const value = parseInt(event.target.value, 10);
-              if (!Number.isNaN(value) && value > 0) onChange({ ...filters, dueDays: value });
+              if (!Number.isNaN(value) && value > 0) updateFilters({ dueDays: value });
             }}
           />
         ) : null}
@@ -541,24 +578,24 @@ export function KanbanToolbar({
 
       <div className="rk-toolbar-group rk-sort">
         <SortButton
-          active={sortKey.startsWith('due_')}
-          direction={sortKey === 'due_asc' ? 'asc' : sortKey === 'due_desc' ? 'desc' : null}
+          active={isSortActive(sortKey, 'due')}
+          direction={dueSortDirection}
           label={labels.issue_due_date}
           icon="event"
-          onClick={() => onChangeSort(sortKey === 'due_asc' ? 'due_desc' : 'due_asc')}
+          onClick={() => onChangeSort(dueSortNext)}
           labels={labels}
         />
         <SortButton
-          active={sortKey.startsWith('priority_')}
-          direction={sortKey === 'priority_asc' ? 'asc' : sortKey === 'priority_desc' ? 'desc' : null}
+          active={isSortActive(sortKey, 'priority')}
+          direction={prioritySortDirection}
           label={labels.issue_priority}
           icon="sort"
-          onClick={() => onChangeSort(sortKey === 'priority_desc' ? 'priority_asc' : 'priority_desc')}
+          onClick={() => onChangeSort(prioritySortNext)}
           labels={labels}
         />
         <SortButton
-          active={sortKey.startsWith('updated_')}
-          direction={sortKey === 'updated_asc' ? 'asc' : sortKey === 'updated_desc' ? 'desc' : null}
+          active={isSortActive(sortKey, 'updated')}
+          direction={updatedSortDirection}
           label={labels.updated}
           icon="update"
           onClick={() => onChangeSort('updated_asc')}
@@ -601,12 +638,12 @@ export function KanbanToolbar({
 
         <button
           type="button"
-          className={`rk-btn ${fitMode !== 'none' ? 'rk-btn-toggle-active' : ''}`}
+          className={`rk-btn ${fitModeActive ? 'rk-btn-toggle-active' : ''}`}
           onClick={onToggleFitMode}
-          title={fitMode === 'none' ? labels.fit_none : fitMode === 'width' ? labels.fit_width : labels.fit_all}
+          title={fitModeTitle}
         >
-          <span className="rk-icon">{fitMode === 'none' ? 'zoom_in' : 'fit_screen'}</span>
-          {fitMode !== 'none' ? <span className="rk-indicator-dot" /> : null}
+          <span className="rk-icon">{fitModeIcon}</span>
+          {fitModeActive ? <span className="rk-indicator-dot" /> : null}
         </button>
 
         <button
@@ -615,12 +652,12 @@ export function KanbanToolbar({
           onClick={onToggleShowSubtasks}
           title={showSubtasks ? labels.hide_subtasks : labels.show_subtasks}
         >
-          <span className="rk-icon">{showSubtasks ? 'check_box' : 'check_box_outline_blank'}</span>
+          <span className="rk-icon">{showSubtasksIcon}</span>
           {showSubtasks ? <span className="rk-indicator-dot" /> : null}
         </button>
 
         <button type="button" className={`rk-btn ${fullWindow ? 'rk-btn-toggle-active' : ''}`} onClick={onToggleFullWindow} title={fullWindow ? labels.normal_view : labels.fullscreen_view}>
-          <span className="rk-icon">{fullWindow ? 'fullscreen_exit' : 'fullscreen'}</span>
+          <span className="rk-icon">{fullWindowIcon}</span>
           {fullWindow ? <span className="rk-indicator-dot" /> : null}
         </button>
 
@@ -629,9 +666,9 @@ export function KanbanToolbar({
         </button>
 
         <Dropdown
-          label={`${fontSize}px`}
+          label={fontSizeLabel}
           icon="format_size"
-          options={['10', '12', '14', '16', '18', '20', '22', '24', '26', '28', '30'].map((value) => ({ id: value, name: `${value}px` }))}
+          options={fontSizeOptions}
           value={String(fontSize)}
           onChange={(value) => onChangeFontSize(Number(value))}
           width="100px"
