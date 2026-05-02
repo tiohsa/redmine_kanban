@@ -2,17 +2,28 @@ import React, { useEffect, useMemo, useRef, useState, forwardRef, useImperativeH
 import type { BoardData, Column, Issue, Lane } from '../types';
 import type { BoardCommand } from './commands';
 import { getBoardCursor } from './cursor';
+import type { Rect } from './canvasGeometry';
+import { clamp, pointInRect, rectIntersects, roundedRect } from './canvasGeometry';
+import {
+  canDeleteIssue,
+  canEditIssue,
+  canMoveIssue,
+  getHoverSnapshot,
+  getIssueFromHover,
+  getTooltipTextFromHover,
+  type HitResult,
+  subtaskPermissions,
+} from './canvasInteraction';
 import { buildSubtaskKey, laneIdToAssignee, laneIdToPriority, parseCellKey, parseSubtaskKey, resolveBoardLaneId } from './keys';
 import { getMetrics } from './metrics';
 import type { BoardState } from './state';
 import { cellKey } from './state';
 import { findSubtaskInTree, flattenSubtasks } from '../subtasksTree';
+import { truncateText, truncateTextLines } from './canvasText';
 
 const dragThreshold = 4;
 const subtaskIndentPx = 14;
 const maxSubtaskIndentLevel = 6;
-
-type Rect = { x: number; y: number; width: number; height: number };
 
 type CanvasBackingStoreState = { width: number; height: number; dpr: number };
 
@@ -76,34 +87,6 @@ type DragState = {
   targetCellKey: string | null;
   dropTargetCellKey?: string | null;
   dropCommittedAt?: number;
-};
-
-type HitResult =
-  | { kind: 'card'; issueId: number }
-  | { kind: 'add'; statusId: number; laneId: string | number }
-  | { kind: 'delete'; issueId: number }
-
-  | { kind: 'subtask_check'; issueId: number; subtaskId: number }
-  | { kind: 'subtask_subject'; issueId: number; subtaskId: number }
-  | { kind: 'subtask_row'; issueId: number; subtaskId: number }
-  | { kind: 'subtask_edit'; issueId: number; subtaskId: number }
-  | { kind: 'subtask_delete'; issueId: number; subtaskId: number }
-  | { kind: 'subtask_area'; issueId: number }
-  | { kind: 'card_subject'; issueId: number }
-  | { kind: 'edit'; issueId: number }
-  | { kind: 'cell'; statusId: number; laneId: string | number }
-  | { kind: 'visibility'; statusId: number }
-  | { kind: 'priority'; issueId: number }
-  | { kind: 'date'; issueId: number }
-  | { kind: 'lane_header'; laneId: string | number }
-  | { kind: 'empty' };
-
-type HoverState = { kind: 'card_subject' | 'subtask_subject'; id: string } | null;
-
-type HoverSnapshot = {
-  hover: HoverState;
-  hoveredCardIssueId: number | null;
-  hoveredSubtaskKey: string | null;
 };
 
 export type CanvasBoardHandle = {
@@ -723,69 +706,6 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   );
 }
 );
-
-function canMoveIssue(issue?: Issue | null) {
-  return !!issue?.permissions?.can_move;
-}
-
-function canEditIssue(issue?: Issue | null) {
-  return !!issue?.permissions?.can_edit;
-}
-
-function canDeleteIssue(issue?: Issue | null) {
-  return !!issue?.permissions?.can_delete;
-}
-
-function getHoverSnapshot(hit: HitResult): HoverSnapshot {
-  let hoveredCardIssueId: number | null = null;
-  let hoveredSubtaskKey: string | null = null;
-  let hover: HoverState = null;
-
-  switch (hit.kind) {
-    case 'card':
-    case 'card_subject':
-    case 'edit':
-    case 'delete':
-    case 'priority':
-    case 'date':
-      hoveredCardIssueId = hit.issueId;
-      break;
-    case 'subtask_row':
-    case 'subtask_subject':
-    case 'subtask_check':
-    case 'subtask_edit':
-    case 'subtask_delete':
-      hoveredSubtaskKey = `${hit.issueId}:${hit.subtaskId}`;
-      break;
-    default:
-      break;
-  }
-
-  if (hit.kind === 'card_subject') {
-    hover = { kind: 'card_subject', id: String(hit.issueId) };
-  } else if (hit.kind === 'subtask_subject') {
-    hover = { kind: 'subtask_subject', id: `${hit.issueId}:${hit.subtaskId}` };
-  }
-
-  return { hover, hoveredCardIssueId, hoveredSubtaskKey };
-}
-
-function getIssueFromHover(cardsById: Map<number, Issue>, hover: HoverState): Issue | undefined {
-  if (!hover) return undefined;
-  const issueId = hover.kind === 'card_subject' ? Number(hover.id) : Number(hover.id.split(':')[0]);
-  return cardsById.get(issueId);
-}
-
-function getTooltipTextFromHover(issue: Issue, hover: HoverState): string | undefined {
-  if (!hover) return undefined;
-  if (hover.kind === 'card_subject') return issue.subject;
-  const subtaskId = Number(hover.id.split(':')[1]);
-  return findSubtaskInTree(issue.subtasks, subtaskId)?.subject;
-}
-
-function subtaskPermissions(issue: Issue | undefined, subtaskId: number) {
-  return findSubtaskInTree(issue?.subtasks, subtaskId)?.permissions;
-}
 
 function getCanvasDevicePixelRatio() {
   if (typeof window === 'undefined') return 1;
@@ -1881,98 +1801,6 @@ function hitTestCell(
     }
   }
   return null;
-}
-
-function truncateTextLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, maxLines: number): string[] {
-  const lines: string[] = [];
-  const chars = Array.from(text);
-  let currentLine = '';
-
-  for (let i = 0; i < chars.length; i++) {
-    const char = chars[i];
-    const test = currentLine + char;
-    const w = ctx.measureText(test).width;
-
-    if (w > maxWidth) {
-      if (currentLine) lines.push(currentLine);
-      currentLine = char;
-    } else {
-      currentLine = test;
-    }
-  }
-  if (currentLine) lines.push(currentLine);
-
-  if (lines.length <= maxLines) return lines;
-
-  // Truncate
-  const result = lines.slice(0, maxLines - 1);
-  // Reconstruct last line content from lines[maxLines-1] onwards
-  // Since we don't have indexes easy, let's just use truncateText on the combined text of remaining lines? 
-  // A bit complex to get exact text.
-  // Instead, let's just take lines[maxLines-1] AND force '...' on it if there are more lines
-  // But lines[maxLines-1] might already be full width. Adding ... will overflow.
-
-  const lastLineCandidate = lines[maxLines - 1];
-  let lastLine = lastLineCandidate;
-  while (lastLine.length > 0 && ctx.measureText(lastLine + '...').width > maxWidth) {
-    lastLine = lastLine.slice(0, -1);
-  }
-  result.push(lastLine + '...');
-
-  return result;
-}
-function truncateText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
-  if (ctx.measureText(text).width <= maxWidth) return text;
-  let t = text;
-  while (t.length > 0 && ctx.measureText(t + '...').width > maxWidth) {
-    t = t.slice(0, -1);
-  }
-  return t + '...';
-}
-
-
-function pointInRect(point: { x: number; y: number }, rect: Rect) {
-  return (
-    point.x >= rect.x &&
-    point.x <= rect.x + rect.width &&
-    point.y >= rect.y &&
-    point.y <= rect.y + rect.height
-  );
-}
-
-function rectIntersects(a: Rect, b: Rect) {
-  return (
-    a.x < b.x + b.width &&
-    a.x + a.width > b.x &&
-    a.y < b.y + b.height &&
-    a.y + a.height > b.y
-  );
-}
-
-function roundedRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number
-) {
-  const r = Math.min(radius, width / 2, height / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + width - r, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
-  ctx.lineTo(x + width, y + height - r);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
-  ctx.lineTo(x + r, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
 }
 
 function getCardColor(trackerId: number, theme: CanvasTheme): string {
