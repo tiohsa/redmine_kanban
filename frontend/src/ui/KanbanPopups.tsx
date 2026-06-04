@@ -74,8 +74,6 @@ export function DatePopup({
   onCommit: (val: string | null) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [pendingValue, setPendingValue] = useState<string | null>(value);
-  const [hasChange, setHasChange] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -117,12 +115,12 @@ export function DatePopup({
         zIndex: 2000,
       }}
       onBlur={() => {
-        if (hasChange) onCommit(pendingValue ?? null);
-        setTimeout(onClose, 0);
+        setTimeout(onClose, 100);
       }}
       onChange={(event) => {
-        setPendingValue(event.target.value || null);
-        setHasChange(true);
+        const newValue = event.target.value || null;
+        onCommit(newValue);
+        onClose();
       }}
     />
   );
