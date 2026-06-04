@@ -116,6 +116,7 @@ module RedmineKanban
       help_fullscreen: "redmine_kanban.label_help_fullscreen",
       help_scroll_top: "redmine_kanban.label_help_scroll_top",
       help_font_size: "redmine_kanban.label_help_font_size",
+      help_load_more_issues: "redmine_kanban.label_help_load_more_issues",
       within_1_day: "redmine_kanban.label_within_1_day",
       within_specified_days: "redmine_kanban.label_within_specified_days",
       sort_by: "redmine_kanban.label_sort_by",

@@ -114,6 +114,7 @@ en:
     label_help_fullscreen: "Toggle full-screen mode on/off."
     label_help_scroll_top: "Scroll to the top of the board."
     label_help_font_size: "Change the font size."
+    label_help_load_more_issues: "Load more issues."
     label_help_chapter2_title: "Chapter 2: Basic Operations"
     label_help_drag_drop_title: "Move by Drag & Drop"
     label_help_drag_drop_desc: "Easily change the status by dragging a card to another column. If priority lanes are displayed, you can change the priority by moving cards between lanes."

@@ -114,6 +114,7 @@ ja:
     label_help_fullscreen: "全画面表示のオン/オフを切り替えます。"
     label_help_scroll_top: "ボードの最上部へスクロールします。"
     label_help_font_size: "文字の大きさを変更します。"
+    label_help_load_more_issues: "さらに多くのチケットを読み込みます。"
     label_help_chapter2_title: "第2章：基本操作"
     label_help_drag_drop_title: "ドラッグ＆ドロップによる移動"
     label_help_drag_drop_desc: "カードを別の列にドラッグすることで、ステータスを簡単に変更できます。優先度レーンが表示されている場合は、レーン間を移動させることで優先度を変更可能です。"
