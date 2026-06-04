@@ -10,6 +10,7 @@ export function buildBoardQueryKey(
   projectIds: number[],
   issueStatusIds: number[],
   excludeStatusIds: Iterable<number>,
+  issueLimit?: number,
 ) {
   return [
     'kanban',
@@ -18,6 +19,7 @@ export function buildBoardQueryKey(
     serializeNumberSelection(projectIds),
     serializeNumberSelection(issueStatusIds),
     serializeNumberSelection(excludeStatusIds),
+    issueLimit ?? 'default',
   ] as const;
 }
 
@@ -26,15 +28,38 @@ export function buildBoardDataUrl(
   projectIds: number[],
   issueStatusIds: number[],
   excludeStatusIds: Iterable<number>,
+  issueLimit?: number,
 ): string {
   const params = new URLSearchParams();
 
   appendNumberParams(params, 'project_ids[]', projectIds);
   appendNumberParams(params, 'issue_status_ids[]', issueStatusIds);
   appendNumberParams(params, 'exclude_status_ids[]', excludeStatusIds);
+  if (issueLimit && Number.isFinite(issueLimit) && issueLimit > 0) {
+    params.append('issue_limit', String(issueLimit));
+  }
 
   const query = params.toString();
   return `${baseUrl}/data${query ? `?${query}` : ''}`;
+}
+
+export function buildBoardIssuesUrl(
+  baseUrl: string,
+  projectIds: number[],
+  issueStatusIds: number[],
+  excludeStatusIds: Iterable<number>,
+  issueLimit: number,
+  offset: number,
+): string {
+  const params = new URLSearchParams();
+
+  appendNumberParams(params, 'project_ids[]', projectIds);
+  appendNumberParams(params, 'issue_status_ids[]', issueStatusIds);
+  appendNumberParams(params, 'exclude_status_ids[]', excludeStatusIds);
+  params.append('issue_limit', String(issueLimit));
+  params.append('offset', String(Math.max(0, offset)));
+
+  return `${baseUrl}/issues?${params.toString()}`;
 }
 
 function appendNumberParams(params: URLSearchParams, key: string, values: Iterable<number>) {

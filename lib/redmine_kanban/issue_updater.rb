@@ -1,3 +1,5 @@
+require_relative 'subtask_loader'
+
 module RedmineKanban
   class IssueUpdater
     include ParamNormalizer
@@ -86,7 +88,7 @@ module RedmineKanban
         return error_response(reconcile_error) if reconcile_error
       end
 
-      result = { ok: true, issue: BoardIssuePresenter.new(user: @user).issue_to_h(issue) }
+      result = { ok: true, issue: issue_presenter(issue).issue_to_h(issue) }
       result[:warning] = @warning if @warning.present?
       result
     rescue ActiveRecord::StaleObjectError
@@ -119,6 +121,13 @@ module RedmineKanban
 
     def normalize_lock_version(value)
       normalize_optional_lock_version(value)
+    end
+
+    def issue_presenter(issue)
+      BoardIssuePresenter.new(
+        user: @user,
+        subtasks_by_parent_id: SubtaskLoader.new(user: @user).subtasks_by_parent_id([issue.id])
+      )
     end
 
   end

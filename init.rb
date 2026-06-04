@@ -30,6 +30,7 @@ Redmine::Plugin.register :redmine_kanban do
              'aging_warn_days' => 3,
              'aging_danger_days' => 7,
              'aging_exclude_closed' => '1',
+             'performance_logging_enabled' => '0',
              'status_auto_updates' => {}
            }
 end

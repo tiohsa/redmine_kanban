@@ -5,7 +5,7 @@ import { getJson } from './http';
 import { CanvasBoard, type CanvasBoardHandle } from './board/CanvasBoard';
 import { buildBoardState } from './board/state';
 import { applyBoardDataFilters, buildVisibleIssues } from './boardFilters';
-import { buildBoardDataUrl, buildBoardQueryKey } from './boardQuery';
+import { buildBoardDataUrl, buildBoardIssuesUrl, buildBoardQueryKey } from './boardQuery';
 import { IframeEditDialog } from './IframeEditDialog';
 import { KanbanIssueModal } from './KanbanIssueModal';
 import { KanbanPopupHost } from './KanbanPopupHost';
@@ -38,9 +38,31 @@ export function resolveDefaultCreateProjectId(
   return null;
 }
 
+export function mergeIssuePage(current: BoardData, page: Pick<BoardData, 'meta' | 'issues'>): BoardData {
+  const seenIssueIds = new Set(current.issues.map((issue) => issue.id));
+  const appendedIssues = page.issues.filter((issue) => !seenIssueIds.has(issue.id));
+  const issues = [...current.issues, ...appendedIssues];
+
+  return {
+    ...current,
+    meta: {
+      ...current.meta,
+      pagination: page.meta.pagination
+        ? {
+            ...page.meta.pagination,
+            offset: 0,
+            issue_count: issues.length,
+          }
+        : current.meta.pagination,
+    },
+    issues,
+  };
+}
+
 export function App({ dataUrl }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadingMoreIssues, setLoadingMoreIssues] = useState(false);
   const queryClient = useQueryClient();
   const boardRef = useRef<CanvasBoardHandle>(null);
 
@@ -84,6 +106,26 @@ export function App({ dataUrl }: Props) {
   const data = boardQuery.data ?? null;
   const loading = boardQuery.isLoading;
   const labels = data?.labels;
+  const pagination = data?.meta.pagination;
+  const canLoadMoreIssues = Boolean(pagination?.has_more_issues);
+  const handleLoadMoreIssues = useCallback(() => {
+    if (!pagination?.has_more_issues) return;
+
+    const nextOffset = pagination.next_offset;
+    setLoadingMoreIssues(true);
+    getJson<Pick<BoardData, 'ok' | 'meta' | 'issues'>>(
+      buildBoardIssuesUrl(baseUrl, filters.projectIds, filters.statusIds, hiddenStatusIds, pagination.issue_limit, nextOffset)
+    )
+      .then((page) => {
+        queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (current ? mergeIssuePage(current, page) : current));
+      })
+      .catch((caught) => {
+        setError(caught instanceof Error ? caught.message : data?.labels.load_more_failed ?? null);
+      })
+      .finally(() => {
+        setLoadingMoreIssues(false);
+      });
+  }, [baseUrl, boardQueryKey, data?.labels.load_more_failed, filters.projectIds, filters.statusIds, hiddenStatusIds, pagination, queryClient]);
 
   useEffect(() => {
     if (boardQuery.error) {
@@ -211,6 +253,9 @@ export function App({ dataUrl }: Props) {
           fontSize={fontSize}
           onChangeFontSize={setFontSize}
           canCreate={canCreate}
+          pagination={pagination}
+          onLoadMoreIssues={handleLoadMoreIssues}
+          loadingMoreIssues={loadingMoreIssues}
           onCreate={() => {
             if (defaultCreateProjectId === null) return;
             const defaultStatus = data.columns.find((column) => !column.is_closed)?.id ?? data.columns[0]?.id ?? 1;

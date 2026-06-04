@@ -83,6 +83,14 @@ export type Meta = {
   aging_warn_days: number;
   aging_danger_days: number;
   aging_exclude_closed: boolean;
+  pagination?: {
+    issue_limit: number;
+    offset: number;
+    issue_count: number;
+    total_issue_count: number;
+    next_offset: number;
+    has_more_issues: boolean;
+  };
 };
 
 export type BoardData = {

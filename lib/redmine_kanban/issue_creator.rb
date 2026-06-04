@@ -1,3 +1,5 @@
+require_relative 'subtask_loader'
+
 module RedmineKanban
   class IssueCreator
     include ParamNormalizer
@@ -54,7 +56,7 @@ module RedmineKanban
       issue.safe_attributes = attributes
 
       if issue.save
-        { ok: true, issue: BoardIssuePresenter.new(user: @user).issue_to_h(issue) }
+        { ok: true, issue: issue_presenter(issue).issue_to_h(issue) }
       else
         error_response(issue.errors.full_messages.join(', '), field_errors: issue.errors.to_hash(true))
       end
@@ -88,6 +90,13 @@ module RedmineKanban
 
     def normalize_date(value)
       normalize_optional_date(value)
+    end
+
+    def issue_presenter(issue)
+      BoardIssuePresenter.new(
+        user: @user,
+        subtasks_by_parent_id: SubtaskLoader.new(user: @user).subtasks_by_parent_id([issue.id])
+      )
     end
 
   end

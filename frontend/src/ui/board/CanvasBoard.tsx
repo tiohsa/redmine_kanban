@@ -47,6 +47,8 @@ type RectMap = {
   laneHeaders: Map<string | number, Rect>;
 };
 
+type CardHeightCache = Map<string, number>;
+
 type CanvasTheme = {
   bgMain: string;
   surface: string;
@@ -159,6 +161,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     dateBadges: new Map(),
     laneHeaders: new Map(),
   });
+  const cardHeightCacheRef = useRef<CardHeightCache>(new Map());
   const scrollRef = useRef({ x: 0, y: 0 });
   const boardSizeRef = useRef({ width: 0, height: 0 });
   const dragRef = useRef<DragState | null>(null);
@@ -223,7 +226,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   const metrics = useMemo(() => getMetrics(fontSize), [fontSize]);
 
   const layout = useMemo(
-    () => computeLayout(state, data, canCreate, metrics, size.width, fitMode, measureCtx, fontSize),
+    () => computeLayout(state, data, canCreate, metrics, size.width, fitMode, measureCtx, fontSize, cardHeightCacheRef.current),
     [state, data, canCreate, metrics, size.width, fitMode, measureCtx, fontSize]
   );
 
@@ -233,6 +236,10 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   useEffect(() => {
     scheduleRender();
   }, [fitMode, scheduleRender]);
+
+  useEffect(() => {
+    cardHeightCacheRef.current.clear();
+  }, [data]);
 
   useEffect(() => {
     const node = containerRef.current;
@@ -420,6 +427,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       hoveredSubtaskKeyRef.current,
       metrics,
       fontSize,
+      cardHeightCacheRef.current,
       busyIssueIds
     );
 
@@ -746,7 +754,8 @@ function computeLayout(
   containerWidth: number = 0,
   fitMode: 'none' | 'width' = 'none',
   measureCtx?: CanvasRenderingContext2D | null,
-  fontSize?: number
+  fontSize?: number,
+  cardHeightCache?: CardHeightCache
 ) {
   const columnCount = state.columnOrder.length;
   const gridStartX = data.meta.lane_type === 'none' ? 0 : metrics.laneHeaderWidth;
@@ -771,7 +780,7 @@ function computeLayout(
 
   let currentY = headerHeight;
   const laneLayouts = lanes.map((laneId) => {
-    const laneHeight = computeLaneHeight(state, data, laneId, canCreate, adjustedMetrics, measureCtx, fontSize);
+    const laneHeight = computeLaneHeight(state, data, laneId, canCreate, adjustedMetrics, measureCtx, fontSize, cardHeightCache);
     const y = currentY;
     currentY += laneHeight;
     return { laneId, y, height: laneHeight };
@@ -821,6 +830,36 @@ function measureCardHeight(
   return h;
 }
 
+export function makeSubtaskSignature(issue: Issue) {
+  const subtaskRows = flattenSubtasks(issue.subtasks);
+  const lastSubtaskId = subtaskRows[subtaskRows.length - 1]?.subtask.id ?? 0;
+  const closedCount = subtaskRows.filter(({ subtask }) => subtask.is_closed).length;
+  return `${subtaskRows.length}:${lastSubtaskId}:${closedCount}`;
+}
+
+export function makeCardHeightCacheKey(issue: Issue, fontSize: number | undefined, columnWidth: number | undefined) {
+  return [issue.id, issue.subject, makeSubtaskSignature(issue), fontSize ?? 'default', columnWidth ?? 'default'].join('|');
+}
+
+export function measureCardHeightCached(
+  issue: Issue,
+  metrics: ReturnType<typeof getMetrics>,
+  cache: CardHeightCache | undefined,
+  ctx?: CanvasRenderingContext2D | null,
+  fontSize?: number,
+  cardWidth?: number
+) {
+  if (!cache) return measureCardHeight(issue, metrics, ctx, fontSize, cardWidth);
+
+  const key = makeCardHeightCacheKey(issue, fontSize, cardWidth);
+  const cached = cache.get(key);
+  if (cached !== undefined) return cached;
+
+  const height = measureCardHeight(issue, metrics, ctx, fontSize, cardWidth);
+  cache.set(key, height);
+  return height;
+}
+
 function computeLaneHeight(
   state: BoardState,
   data: BoardData,
@@ -828,7 +867,8 @@ function computeLaneHeight(
   canCreate: boolean,
   metrics: ReturnType<typeof getMetrics>,
   measureCtx?: CanvasRenderingContext2D | null,
-  fontSize?: number
+  fontSize?: number,
+  cardHeightCache?: CardHeightCache
 ) {
   let maxCellHeight = 0;
 
@@ -841,7 +881,7 @@ function computeLaneHeight(
       for (const cardId of cardIds) {
         const issue = state.cardsById.get(cardId);
         if (issue) {
-          height += measureCardHeight(issue, metrics, measureCtx, fontSize, metrics.columnWidth);
+          height += measureCardHeightCached(issue, metrics, cardHeightCache, measureCtx, fontSize, metrics.columnWidth);
         }
       }
       height += (cardIds.length - 1) * metrics.cardGap;
@@ -1030,6 +1070,7 @@ function drawCells(
   hoveredSubtaskKey: string | null,
   metrics: ReturnType<typeof getMetrics>,
   fontSize: number,
+  cardHeightCache: CardHeightCache,
   busyIssueIds?: Set<number>
 ) {
   const columns = state.columnOrder;
@@ -1089,18 +1130,22 @@ function drawCells(
         const issue = state.cardsById.get(cardId);
         if (!issue) continue;
 
-        const cardH = measureCardHeight(issue, metrics, ctx, fontSize, layout.columnWidth);
-        const cardRect = {
-          x: cellRect.x + metrics.cellPadding,
-          y: currentY,
-          width: cellRect.width - metrics.cellPadding * 2,
-          height: cardH,
-        };
+          const cardH = measureCardHeightCached(issue, metrics, cardHeightCache, ctx, fontSize, layout.columnWidth);
+          const cardRect = {
+            x: cellRect.x + metrics.cellPadding,
+            y: currentY,
+            width: cellRect.width - metrics.cellPadding * 2,
+            height: cardH,
+          };
 
-        currentY += cardH + metrics.cardGap;
+          currentY += cardH + metrics.cardGap;
 
-        const isUpdating = busyIssueIds?.has(issue.id) ?? false;
-        rectMap.cards.set(issue.id, cardRect);
+          if (!rectIntersects(cardRect, viewRect)) {
+            continue;
+          }
+
+          const isUpdating = busyIssueIds?.has(issue.id) ?? false;
+          rectMap.cards.set(issue.id, cardRect);
         drawCard(ctx, cardRect, issue, data, theme, canMove, labels, metrics, fontSize, rectMap, hover, isUpdating, hoveredCardIssueId, hoveredSubtaskKey);
       }
     });
