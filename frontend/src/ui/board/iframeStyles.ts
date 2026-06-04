@@ -58,6 +58,14 @@ const BASE_DIALOG_STYLE_RULES = `
   body { background: #fff !important; }
   #content { margin: 0 !important; width: 100% !important; padding: 10px !important; }
   #content > h2 { display: none !important; }
+  input.calendar {
+    vertical-align: middle !important;
+  }
+  img.ui-datepicker-trigger {
+    vertical-align: middle !important;
+    position: relative !important;
+    top: 2px !important;
+  }
 `;
 
 const TIME_ENTRY_BASE_STYLE_RULES = `

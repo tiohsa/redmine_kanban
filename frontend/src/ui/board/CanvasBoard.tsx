@@ -1984,7 +1984,8 @@ function drawBadge(
   ctx.fillStyle = textColor;
   let textX = x + paddingX;
   if (icon) {
-    drawIcon(ctx, icon, x + paddingX, y + paddingY, iconSize, textColor);
+    const iconY = Math.round(y + height / 2 + 3 - iconSize / 2);
+    drawIcon(ctx, icon, x + paddingX, iconY, iconSize, textColor);
     textX += iconSize + iconGap;
   }
 
