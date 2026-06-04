@@ -1305,6 +1305,7 @@ function drawCard(
   // 6. Metadata Row 2: Due Date | Priority | Aging
   const row2Y = row1Y + metaFontSize + 7;
   currentX = contentX;
+  const limitX = issue.done_ratio !== undefined ? x + w - 32 : x + w - 12;
 
   if (issue.priority_id) {
     let bg = theme.badgeBg;
@@ -1356,13 +1357,49 @@ function drawCard(
       fg = theme.badgeHighColor;
     }
 
-    // Only draw badge if special state, otherwise standard icon
-    if (dueState !== 'normal') {
-      let text = issue.due_date;
-      if (dueState === 'overdue') {
-        text = '!' + text;
+    let text = issue.due_date;
+    if (dueState === 'overdue') {
+      text = '!' + text;
+    }
+
+    const badgeIcon = 'calendar_today';
+    const measureWidth = (t: string, iconStr?: string) => {
+      ctx.save();
+      ctx.font = `500 ${metaFontSize}px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif`;
+      const textWidth = ctx.measureText(t).width;
+      ctx.restore();
+      const paddingX = Math.max(4, Math.round(metaFontSize * 0.5));
+      const iconSize = iconStr ? metaFontSize + 2 : 0;
+      const iconGap = iconStr ? 4 : 0;
+      return paddingX * 2 + textWidth + iconSize + iconGap;
+    };
+
+    let badgeText = text;
+    let predictedWidth = measureWidth(badgeText, badgeIcon);
+
+    if (currentX + predictedWidth > limitX) {
+      // Try MM-DD format
+      const parts = issue.due_date.split('-');
+      if (parts.length === 3) {
+        let shortDate = `${parts[1]}-${parts[2]}`;
+        if (dueState === 'overdue') {
+          shortDate = '!' + shortDate;
+        }
+        const shortWidth = measureWidth(shortDate, badgeIcon);
+        if (currentX + shortWidth <= limitX) {
+          badgeText = shortDate;
+          predictedWidth = shortWidth;
+        } else {
+          // Icon only
+          const iconOnlyText = dueState === 'overdue' ? '!' : '';
+          badgeText = iconOnlyText;
+          predictedWidth = measureWidth(iconOnlyText, badgeIcon);
+        }
       }
-      const width = drawBadge(ctx, text, currentX, row2Y - 1, bg, fg, metaFontSize, 'calendar_today');
+    }
+
+    if (dueState !== 'normal') {
+      const width = drawBadge(ctx, badgeText, currentX, row2Y - 1, bg, fg, metaFontSize, badgeIcon);
 
       if (rectMap) {
         rectMap.dateBadges.set(issue.id, {
@@ -1376,7 +1413,7 @@ function drawCard(
       currentX += width + 8;
     } else {
       // Normal state: White badge with border
-      const width = drawBadge(ctx, issue.due_date, currentX, row2Y - 1, theme.surface, theme.textSecondary, metaFontSize, 'calendar_today', theme.surface);
+      const width = drawBadge(ctx, badgeText, currentX, row2Y - 1, theme.surface, theme.textSecondary, metaFontSize, badgeIcon, theme.surface);
 
       if (rectMap) {
         rectMap.dateBadges.set(issue.id, {
@@ -1393,10 +1430,19 @@ function drawCard(
 
   if (agingEnabled && agingDays > 0) {
     const ageColor = agingClass === 'danger' ? theme.danger : agingClass === 'warn' ? theme.warn : theme.textSecondary;
-    drawIcon(ctx, 'history', currentX, row2Y + 4, 14, ageColor);
-    currentX += 16;
-    ctx.fillStyle = ageColor;
-    ctx.fillText(`${agingDays}d`, currentX, row2Y + 4   );
+    ctx.save();
+    ctx.font = `400 ${metaFontSize}px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif`;
+    const ageText = `${agingDays}d`;
+    const ageTextWidth = ctx.measureText(ageText).width;
+    ctx.restore();
+
+    const requiredAgeWidth = 16 + ageTextWidth;
+    if (currentX + requiredAgeWidth <= limitX) {
+      drawIcon(ctx, 'history', currentX, row2Y + 4, 14, ageColor);
+      currentX += 16;
+      ctx.fillStyle = ageColor;
+      ctx.fillText(ageText, currentX, row2Y + 4);
+    }
   }
 
   // 7. Progress Donut (New)
@@ -1424,13 +1470,15 @@ function drawCard(
 
     // Better: Right aligned on Row 2 (Metadata).
     const donutRightX = x + w - 16; // Aligned with the center of the edit button above
-    drawProgressDonut(ctx, donutRightX, row2Y + 6, donutRadius, issue.done_ratio, theme);
+    const badgeHeight = metaFontSize + (Math.max(2, Math.round(metaFontSize * 0.2)) * 2) + 4;
+    const donutCenterY = row2Y - 1 + badgeHeight / 2;
+    drawProgressDonut(ctx, donutRightX, donutCenterY, donutRadius, issue.done_ratio, theme);
 
     if (rectMap) {
       const hitRadius = 10;
       rectMap.progressDonuts.set(issue.id, {
         x: donutRightX - hitRadius,
-        y: row2Y + 6 - hitRadius,
+        y: donutCenterY - hitRadius,
         width: hitRadius * 2,
         height: hitRadius * 2,
       });
