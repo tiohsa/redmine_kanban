@@ -110,7 +110,7 @@ type Props = {
   onSubtaskToggle?: (subtaskId: number, currentClosed: boolean) => void;
   onPriorityClick?: (issueId: number, currentPriorityId: number, x: number, y: number) => void;
   onDateClick?: (issueId: number, currentDate: string | null, x: number, y: number) => void;
-  onProgressDoubleClick?: (issueId: number, currentDoneRatio: number, x: number, y: number) => void;
+  onProgressClick?: (issueId: number, currentDoneRatio: number, x: number, y: number) => void;
 
   labels: Record<string, string>;
   busyIssueIds?: Set<number>;
@@ -134,7 +134,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   onSubtaskToggle,
   onPriorityClick,
   onDateClick,
-  onProgressDoubleClick,
+  onProgressClick,
 
   labels,
   busyIssueIds,
@@ -471,20 +471,6 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     };
   }
 
-  const handleDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
-    const point = toBoardPoint(event, scrollRef.current, canvasRef.current, scaleRef.current);
-    const hit = hitTest(point, rectMapRef.current, state, data);
-    const isBusy = (issueId: number) => busyIssueIds?.has(issueId) ?? false;
-
-    if (hit.kind === 'progress') {
-      if (isBusy(hit.issueId)) return;
-      event.preventDefault();
-      const issue = state.cardsById.get(hit.issueId);
-      if (!canEditIssue(issue) || !issue || !onProgressDoubleClick) return;
-      onProgressDoubleClick(hit.issueId, issue.done_ratio ?? 0, event.clientX, event.clientY);
-    }
-  };
-
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const point = toBoardPoint(event, scrollRef.current, canvasRef.current, scaleRef.current);
     const hit = hitTest(point, rectMapRef.current, state, data);
@@ -556,6 +542,14 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         const issue = state.cardsById.get(hit.issueId);
         if (!canEditIssue(issue) || !issue || !onDateClick) return;
         onDateClick(hit.issueId, issue.due_date ?? null, event.clientX, event.clientY);
+        return;
+      }
+      case 'progress': {
+        if (isBusy(hit.issueId)) return;
+        event.preventDefault();
+        const issue = state.cardsById.get(hit.issueId);
+        if (!canEditIssue(issue) || !issue || !onProgressClick) return;
+        onProgressClick(hit.issueId, issue.done_ratio ?? 0, event.clientX, event.clientY);
         return;
       }
       case 'card':
@@ -705,7 +699,6 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         onPointerCancel={handlePointerCancel}
         onLostPointerCapture={handleLostPointerCapture}
         onPointerLeave={handlePointerLeave}
-        onDoubleClick={handleDoubleClick}
       />
       {tooltip && (
         <div

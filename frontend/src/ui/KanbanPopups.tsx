@@ -153,6 +153,15 @@ export function ProgressPopup({
 
   const options = Array.from({ length: 11 }, (_, i) => i * 10); // 0, 10, ..., 100
 
+  // Calculate show direction based on viewport to avoid screen overflow using pure CSS transform
+  const showUpward = y > window.innerHeight / 2;
+  const showLeftward = x > window.innerWidth - 120;
+
+  const transformStyle = [
+    showLeftward ? 'translateX(-100%)' : 'translateX(0)',
+    showUpward ? 'translateY(-100%)' : 'translateY(0)',
+  ].join(' ');
+
   return (
     <div
       ref={menuRef}
@@ -160,14 +169,13 @@ export function ProgressPopup({
         position: 'fixed',
         left: x,
         top: y,
+        transform: transformStyle,
         zIndex: 1000,
         background: 'white',
         borderRadius: '6px',
         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
         border: '1px solid #e2e8f0',
         minWidth: '100px',
-        maxHeight: '240px',
-        overflowY: 'auto',
         padding: '4px 0',
       }}
     >

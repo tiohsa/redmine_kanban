@@ -307,7 +307,7 @@ export function App({ dataUrl }: Props) {
             onDateClick={(issueId, currentDate, x, y) => {
               dialogs.setDatePopup({ issueId, currentDate, x, y });
             }}
-            onProgressDoubleClick={(issueId, currentDoneRatio, x, y) => {
+            onProgressClick={(issueId, currentDoneRatio, x, y) => {
               dialogs.setProgressPopup({ issueId, currentDoneRatio, x, y });
             }}
             onSubtaskToggle={actions.toggleSubtask}
