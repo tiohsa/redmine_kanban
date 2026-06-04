@@ -17,6 +17,7 @@ export type HitResult =
   | { kind: 'visibility'; statusId: number }
   | { kind: 'priority'; issueId: number }
   | { kind: 'date'; issueId: number }
+  | { kind: 'progress'; issueId: number }
   | { kind: 'lane_header'; laneId: string | number }
   | { kind: 'empty' };
 
@@ -52,6 +53,7 @@ export function getHoverSnapshot(hit: HitResult): HoverSnapshot {
     case 'delete':
     case 'priority':
     case 'date':
+    case 'progress':
       hoveredCardIssueId = hit.issueId;
       break;
     case 'subtask_row':

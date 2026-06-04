@@ -6,6 +6,7 @@ import { resolveBoardIssue } from './kanbanShared';
 type IframeEditContext = { url: string; issueId: number; issueTitle?: string };
 type PriorityPopupState = { issueId: number; currentId: number; x: number; y: number };
 type DatePopupState = { issueId: number; currentDate: string | null; x: number; y: number };
+type ProgressPopupState = { issueId: number; currentDoneRatio: number; x: number; y: number };
 
 function buildIssueTitle(data: BoardData | null, issueId: number): string | undefined {
   if (!data) return undefined;
@@ -32,6 +33,7 @@ export function useKanbanDialogs(
   const [iframeTimeEntryUrl, setIframeTimeEntryUrl] = useState<string | null>(null);
   const [priorityPopup, setPriorityPopup] = useState<PriorityPopupState | null>(null);
   const [datePopup, setDatePopup] = useState<DatePopupState | null>(null);
+  const [progressPopup, setProgressPopup] = useState<ProgressPopupState | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
 
   const openCreate = useCallback((ctx: ModalContext) => {
@@ -84,6 +86,8 @@ export function useKanbanDialogs(
     setPriorityPopup,
     datePopup,
     setDatePopup,
+    progressPopup,
+    setProgressPopup,
     openCreate,
     openEdit,
     openView,

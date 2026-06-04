@@ -44,6 +44,7 @@ type RectMap = {
   visibilityButtons: Map<number, Rect>; // key: statusId
   priorityBadges: Map<number, Rect>;
   dateBadges: Map<number, Rect>;
+  progressDonuts: Map<number, Rect>;
   laneHeaders: Map<string | number, Rect>;
 };
 
@@ -109,6 +110,7 @@ type Props = {
   onSubtaskToggle?: (subtaskId: number, currentClosed: boolean) => void;
   onPriorityClick?: (issueId: number, currentPriorityId: number, x: number, y: number) => void;
   onDateClick?: (issueId: number, currentDate: string | null, x: number, y: number) => void;
+  onProgressDoubleClick?: (issueId: number, currentDoneRatio: number, x: number, y: number) => void;
 
   labels: Record<string, string>;
   busyIssueIds?: Set<number>;
@@ -132,6 +134,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   onSubtaskToggle,
   onPriorityClick,
   onDateClick,
+  onProgressDoubleClick,
 
   labels,
   busyIssueIds,
@@ -159,6 +162,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     visibilityButtons: new Map(),
     priorityBadges: new Map(),
     dateBadges: new Map(),
+    progressDonuts: new Map(),
     laneHeaders: new Map(),
   });
   const cardHeightCacheRef = useRef<CardHeightCache>(new Map());
@@ -403,6 +407,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       visibilityButtons: new Map(),
       priorityBadges: new Map(),
       dateBadges: new Map(),
+      progressDonuts: new Map(),
       laneHeaders: new Map(),
     };
 
@@ -449,7 +454,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   drawRef.current = draw;
 
   function toBoardPoint(
-    event: React.PointerEvent,
+    event: React.PointerEvent | React.MouseEvent,
     scroll: { x: number; y: number },
     canvas: HTMLCanvasElement | null,
     scale: number = 1
@@ -465,6 +470,20 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       y: offsetY / scale + scroll.y,
     };
   }
+
+  const handleDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const point = toBoardPoint(event, scrollRef.current, canvasRef.current, scaleRef.current);
+    const hit = hitTest(point, rectMapRef.current, state, data);
+    const isBusy = (issueId: number) => busyIssueIds?.has(issueId) ?? false;
+
+    if (hit.kind === 'progress') {
+      if (isBusy(hit.issueId)) return;
+      event.preventDefault();
+      const issue = state.cardsById.get(hit.issueId);
+      if (!canEditIssue(issue) || !issue || !onProgressDoubleClick) return;
+      onProgressDoubleClick(hit.issueId, issue.done_ratio ?? 0, event.clientX, event.clientY);
+    }
+  };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const point = toBoardPoint(event, scrollRef.current, canvasRef.current, scaleRef.current);
@@ -686,6 +705,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         onPointerCancel={handlePointerCancel}
         onLostPointerCapture={handleLostPointerCapture}
         onPointerLeave={handlePointerLeave}
+        onDoubleClick={handleDoubleClick}
       />
       {tooltip && (
         <div
@@ -1412,6 +1432,16 @@ function drawCard(
     // Better: Right aligned on Row 2 (Metadata).
     const donutRightX = x + w - 16; // Aligned with the center of the edit button above
     drawProgressDonut(ctx, donutRightX, row2Y + 6, donutRadius, issue.done_ratio, theme);
+
+    if (rectMap) {
+      const hitRadius = 10;
+      rectMap.progressDonuts.set(issue.id, {
+        x: donutRightX - hitRadius,
+        y: row2Y + 6 - hitRadius,
+        width: hitRadius * 2,
+        height: hitRadius * 2,
+      });
+    }
   }
 
   // 8. Subtasks (New)
@@ -1795,6 +1825,11 @@ function hitTest(
   for (const [issueId, rect] of rectMap.dateBadges) {
     if (pointInRect(point, rect)) {
       return { kind: 'date', issueId };
+    }
+  }
+  for (const [issueId, rect] of rectMap.progressDonuts) {
+    if (pointInRect(point, rect)) {
+      return { kind: 'progress', issueId };
     }
   }
   for (const [issueId, rect] of rectMap.cardSubjects) {

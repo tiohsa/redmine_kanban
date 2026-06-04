@@ -9,7 +9,7 @@ import { buildBoardDataUrl, buildBoardIssuesUrl, buildBoardQueryKey } from './bo
 import { IframeEditDialog } from './IframeEditDialog';
 import { KanbanIssueModal } from './KanbanIssueModal';
 import { KanbanPopupHost } from './KanbanPopupHost';
-import { DatePopup, PriorityPopup } from './KanbanPopups';
+import { DatePopup, PriorityPopup, ProgressPopup } from './KanbanPopups';
 import { KanbanToolbar } from './KanbanToolbar';
 import { HelpDialog } from './HelpDialog';
 import { buildDisplayData, payloadFieldError, payloadMessage, resolveMutationError } from './kanbanShared';
@@ -307,6 +307,9 @@ export function App({ dataUrl }: Props) {
             onDateClick={(issueId, currentDate, x, y) => {
               dialogs.setDatePopup({ issueId, currentDate, x, y });
             }}
+            onProgressDoubleClick={(issueId, currentDoneRatio, x, y) => {
+              dialogs.setProgressPopup({ issueId, currentDoneRatio, x, y });
+            }}
             onSubtaskToggle={actions.toggleSubtask}
             hiddenStatusIds={hiddenStatusIds}
             onToggleStatusVisibility={(id) => {
@@ -508,6 +511,30 @@ export function App({ dataUrl }: Props) {
               setError(caught instanceof Error ? caught.message : 'Date update failed');
             } finally {
               dialogs.setDatePopup(null);
+            }
+          }}
+        />
+      ) : null}
+
+      {dialogs.progressPopup && data ? (
+        <ProgressPopup
+          x={dialogs.progressPopup.x}
+          y={dialogs.progressPopup.y}
+          value={dialogs.progressPopup.currentDoneRatio}
+          onClose={() => dialogs.setProgressPopup(null)}
+          onChange={async (newDoneRatio) => {
+            const popup = dialogs.progressPopup;
+            dialogs.setProgressPopup(null);
+            if (!popup || newDoneRatio === popup.currentDoneRatio) return;
+
+            try {
+              await actions.updateIssueMutation.mutateAsync({
+                issueId: popup.issueId,
+                patch: { done_ratio: newDoneRatio },
+                lockVersion: data.issues.find((issue) => issue.id === popup.issueId)?.lock_version ?? null,
+              });
+            } catch (caught: unknown) {
+              setError(caught instanceof Error ? caught.message : 'Progress update failed');
             }
           }}
         />

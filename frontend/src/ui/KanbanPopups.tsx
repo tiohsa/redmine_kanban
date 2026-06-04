@@ -125,3 +125,65 @@ export function DatePopup({
     />
   );
 }
+
+export function ProgressPopup({
+  x,
+  y,
+  value,
+  onClose,
+  onChange,
+}: {
+  x: number;
+  y: number;
+  value: number;
+  onClose: () => void;
+  onChange: (val: number) => void;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClick = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [onClose]);
+
+  const options = Array.from({ length: 11 }, (_, i) => i * 10); // 0, 10, ..., 100
+
+  return (
+    <div
+      ref={menuRef}
+      style={{
+        position: 'fixed',
+        left: x,
+        top: y,
+        zIndex: 1000,
+        background: 'white',
+        borderRadius: '6px',
+        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+        border: '1px solid #e2e8f0',
+        minWidth: '100px',
+        maxHeight: '240px',
+        overflowY: 'auto',
+        padding: '4px 0',
+      }}
+    >
+      {options.map((option) => {
+        const checked = option === value;
+        return (
+          <div
+            key={option}
+            className={`rk-dropdown-item ${checked ? 'selected' : ''}`}
+            onClick={() => onChange(option)}
+          >
+            <div className="rk-dropdown-checkbox" />
+            <span>{option}%</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
