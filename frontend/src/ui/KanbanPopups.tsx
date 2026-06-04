@@ -27,6 +27,18 @@ export function PriorityPopup({
     return () => document.removeEventListener('mousedown', handleClick);
   }, [onClose]);
 
+  useEffect(() => {
+    const handleScroll = () => {
+      onClose();
+    };
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('wheel', handleScroll, true);
+    return () => {
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('wheel', handleScroll, true);
+    };
+  }, [onClose]);
+
   return (
     <div
       ref={menuRef}
@@ -149,6 +161,18 @@ export function ProgressPopup({
     };
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
+  }, [onClose]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      onClose();
+    };
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('wheel', handleScroll, true);
+    return () => {
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('wheel', handleScroll, true);
+    };
   }, [onClose]);
 
   const options = Array.from({ length: 11 }, (_, i) => i * 10); // 0, 10, ..., 100
