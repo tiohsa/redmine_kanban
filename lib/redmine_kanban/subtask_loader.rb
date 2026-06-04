@@ -15,7 +15,7 @@ module RedmineKanban
     def fetch(root_issue_ids)
       parent_ids = root_issue_ids.compact.uniq
       subtasks = []
-      visited_ids = parent_ids.to_set
+      visited_ids = Set.new
 
       until parent_ids.empty?
         children = Issue.visible(@user)
