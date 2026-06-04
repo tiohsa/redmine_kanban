@@ -1380,10 +1380,10 @@ function drawCard(
 
   if (agingEnabled && agingDays > 0) {
     const ageColor = agingClass === 'danger' ? theme.danger : agingClass === 'warn' ? theme.warn : theme.textSecondary;
-    drawIcon(ctx, 'history', currentX, row2Y, 14, ageColor);
+    drawIcon(ctx, 'history', currentX, row2Y + 4, 14, ageColor);
     currentX += 16;
     ctx.fillStyle = ageColor;
-    ctx.fillText(`${agingDays}d`, currentX, row2Y);
+    ctx.fillText(`${agingDays}d`, currentX, row2Y + 4   );
   }
 
   // 7. Progress Donut (New)
