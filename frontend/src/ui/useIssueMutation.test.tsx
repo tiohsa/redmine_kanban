@@ -131,6 +131,33 @@ describe('useIssueMutation', () => {
     expect(onSuccess).toHaveBeenCalledTimes(1);
   });
 
+  it('does not invalidate the board query after mutation by default', async () => {
+    const queryKey = ['kanban', 'board', 'no-refetch'] as const;
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const initial = makeBoardData([makeIssue(1, { subject: 'Before' })]);
+    queryClient.setQueryData(queryKey, initial);
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(
+      () =>
+        useIssueMutation({
+          queryKey,
+          mutationFn: async () => ({ issue: makeIssue(1, { subject: 'Server' }) }),
+          applyOptimistic: (data) => updateIssueInBoard(data, 1, (i) => ({ ...i, subject: 'Optimistic' })),
+          applyServer: (data, res, _payload) => replaceIssueInBoard(data, res.issue),
+        }),
+      { wrapper: createWrapper(queryClient) }
+    );
+
+    await act(async () => {
+      await result.current.mutateAsync({ issueId: 1 });
+    });
+
+    expect(invalidateQueries).not.toHaveBeenCalled();
+  });
+
   it('rolls back optimistic update on error', async () => {
     const queryKey = ['kanban', 'board', 'error'] as const;
     const queryClient = new QueryClient({

@@ -5,11 +5,11 @@ import { getJson } from './http';
 import { CanvasBoard, type CanvasBoardHandle } from './board/CanvasBoard';
 import { buildBoardState } from './board/state';
 import { applyBoardDataFilters, buildVisibleIssues } from './boardFilters';
-import { buildBoardDataUrl, buildBoardQueryKey } from './boardQuery';
+import { buildBoardDataUrl, buildBoardIssuesUrl, buildBoardQueryKey } from './boardQuery';
 import { IframeEditDialog } from './IframeEditDialog';
 import { KanbanIssueModal } from './KanbanIssueModal';
 import { KanbanPopupHost } from './KanbanPopupHost';
-import { DatePopup, PriorityPopup } from './KanbanPopups';
+import { DatePopup, PriorityPopup, ProgressPopup } from './KanbanPopups';
 import { KanbanToolbar } from './KanbanToolbar';
 import { HelpDialog } from './HelpDialog';
 import { buildDisplayData, payloadFieldError, payloadMessage, resolveMutationError } from './kanbanShared';
@@ -38,9 +38,31 @@ export function resolveDefaultCreateProjectId(
   return null;
 }
 
+export function mergeIssuePage(current: BoardData, page: Pick<BoardData, 'meta' | 'issues'>): BoardData {
+  const seenIssueIds = new Set(current.issues.map((issue) => issue.id));
+  const appendedIssues = page.issues.filter((issue) => !seenIssueIds.has(issue.id));
+  const issues = [...current.issues, ...appendedIssues];
+
+  return {
+    ...current,
+    meta: {
+      ...current.meta,
+      pagination: page.meta.pagination
+        ? {
+            ...page.meta.pagination,
+            offset: 0,
+            issue_count: issues.length,
+          }
+        : current.meta.pagination,
+    },
+    issues,
+  };
+}
+
 export function App({ dataUrl }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadingMoreIssues, setLoadingMoreIssues] = useState(false);
   const queryClient = useQueryClient();
   const boardRef = useRef<CanvasBoardHandle>(null);
 
@@ -84,6 +106,26 @@ export function App({ dataUrl }: Props) {
   const data = boardQuery.data ?? null;
   const loading = boardQuery.isLoading;
   const labels = data?.labels;
+  const pagination = data?.meta.pagination;
+  const canLoadMoreIssues = Boolean(pagination?.has_more_issues);
+  const handleLoadMoreIssues = useCallback(() => {
+    if (!pagination?.has_more_issues) return;
+
+    const nextOffset = pagination.next_offset;
+    setLoadingMoreIssues(true);
+    getJson<Pick<BoardData, 'ok' | 'meta' | 'issues'>>(
+      buildBoardIssuesUrl(baseUrl, filters.projectIds, filters.statusIds, hiddenStatusIds, pagination.issue_limit, nextOffset)
+    )
+      .then((page) => {
+        queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (current ? mergeIssuePage(current, page) : current));
+      })
+      .catch((caught) => {
+        setError(caught instanceof Error ? caught.message : data?.labels.load_more_failed ?? null);
+      })
+      .finally(() => {
+        setLoadingMoreIssues(false);
+      });
+  }, [baseUrl, boardQueryKey, data?.labels.load_more_failed, filters.projectIds, filters.statusIds, hiddenStatusIds, pagination, queryClient]);
 
   useEffect(() => {
     if (boardQuery.error) {
@@ -211,6 +253,9 @@ export function App({ dataUrl }: Props) {
           fontSize={fontSize}
           onChangeFontSize={setFontSize}
           canCreate={canCreate}
+          pagination={pagination}
+          onLoadMoreIssues={handleLoadMoreIssues}
+          loadingMoreIssues={loadingMoreIssues}
           onCreate={() => {
             if (defaultCreateProjectId === null) return;
             const defaultStatus = data.columns.find((column) => !column.is_closed)?.id ?? data.columns[0]?.id ?? 1;
@@ -261,6 +306,9 @@ export function App({ dataUrl }: Props) {
             }}
             onDateClick={(issueId, currentDate, x, y) => {
               dialogs.setDatePopup({ issueId, currentDate, x, y });
+            }}
+            onProgressClick={(issueId, currentDoneRatio, x, y) => {
+              dialogs.setProgressPopup({ issueId, currentDoneRatio, x, y });
             }}
             onSubtaskToggle={actions.toggleSubtask}
             hiddenStatusIds={hiddenStatusIds}
@@ -463,6 +511,30 @@ export function App({ dataUrl }: Props) {
               setError(caught instanceof Error ? caught.message : 'Date update failed');
             } finally {
               dialogs.setDatePopup(null);
+            }
+          }}
+        />
+      ) : null}
+
+      {dialogs.progressPopup && data ? (
+        <ProgressPopup
+          x={dialogs.progressPopup.x}
+          y={dialogs.progressPopup.y}
+          value={dialogs.progressPopup.currentDoneRatio}
+          onClose={() => dialogs.setProgressPopup(null)}
+          onChange={async (newDoneRatio) => {
+            const popup = dialogs.progressPopup;
+            dialogs.setProgressPopup(null);
+            if (!popup || newDoneRatio === popup.currentDoneRatio) return;
+
+            try {
+              await actions.updateIssueMutation.mutateAsync({
+                issueId: popup.issueId,
+                patch: { done_ratio: newDoneRatio },
+                lockVersion: data.issues.find((issue) => issue.id === popup.issueId)?.lock_version ?? null,
+              });
+            } catch (caught: unknown) {
+              setError(caught instanceof Error ? caught.message : 'Progress update failed');
             }
           }}
         />

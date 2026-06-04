@@ -4,7 +4,8 @@ import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BoardData, Issue } from '../types';
-import { CanvasBoard } from './CanvasBoard';
+import { CanvasBoard, makeSubtaskSignature, measureCardHeightCached } from './CanvasBoard';
+import { getMetrics } from './metrics';
 import { buildBoardState } from './state';
 
 function makeIssue(id: number, attrs: Partial<Issue> = {}): Issue {
@@ -442,5 +443,36 @@ describe('CanvasBoard cursor lifecycle', () => {
     });
     expect(canvas.style.width).toBe('800px');
     expect(canvas.style.height).toBe('600px');
+  });
+});
+
+describe('CanvasBoard card height cache', () => {
+  it('reuses measured card height for the same issue signature', () => {
+    const issue = makeIssue(100, {
+      subject: 'A subject that is intentionally long enough to require canvas measurement',
+      subtasks: [{ id: 101, subject: 'Child', status_id: 1, is_closed: false }],
+    });
+    const metrics = getMetrics(14);
+    const measureText = vi.fn((text: string) => ({ width: text.length * 7 }) as TextMetrics);
+    const ctx = { measureText, font: '' } as unknown as CanvasRenderingContext2D;
+    const cache = new Map<string, number>();
+
+    const first = measureCardHeightCached(issue, metrics, cache, ctx, 14, 260);
+    const callsAfterFirst = measureText.mock.calls.length;
+    const second = measureCardHeightCached(issue, metrics, cache, ctx, 14, 260);
+
+    expect(second).toBe(first);
+    expect(measureText).toHaveBeenCalledTimes(callsAfterFirst);
+  });
+
+  it('changes subtask signature when completion state changes', () => {
+    const open = makeIssue(101, {
+      subtasks: [{ id: 201, subject: 'Child', status_id: 1, is_closed: false }],
+    });
+    const closed = makeIssue(101, {
+      subtasks: [{ id: 201, subject: 'Child', status_id: 1, is_closed: true }],
+    });
+
+    expect(makeSubtaskSignature(open)).not.toBe(makeSubtaskSignature(closed));
   });
 });

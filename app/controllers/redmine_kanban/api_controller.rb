@@ -11,13 +11,30 @@ module RedmineKanban
     before_action :require_delete_permission, only: [:destroy]
 
     def index
-      render json: BoardData.new(
-        project: @project,
-        user: User.current,
-        project_ids: normalize_integer_array_param(params[:project_ids]),
-        issue_status_ids: normalize_integer_array_param(params[:issue_status_ids]),
-        exclude_status_ids: normalize_integer_array_param(params[:exclude_status_ids])
-      ).to_h
+      render json: board_payload
+    end
+
+    def bootstrap
+      payload = board_payload
+      render json: payload.except(:issues)
+    end
+
+    def issues
+      payload = board_payload
+      render json: {
+        ok: payload[:ok],
+        meta: payload[:meta],
+        issues: payload[:issues]
+      }
+    end
+
+    def counts
+      payload = board_payload
+      render json: {
+        ok: payload[:ok],
+        columns: payload[:columns],
+        lanes: payload[:lanes]
+      }
     end
 
     def move
@@ -51,6 +68,18 @@ module RedmineKanban
     end
 
     private
+
+    def board_payload
+      BoardData.new(
+        project: @project,
+        user: User.current,
+        project_ids: normalize_integer_array_param(params[:project_ids]),
+        issue_status_ids: normalize_integer_array_param(params[:issue_status_ids]),
+        exclude_status_ids: normalize_integer_array_param(params[:exclude_status_ids]),
+        issue_limit: params[:issue_limit],
+        issue_offset: params[:offset]
+      ).to_h
+    end
 
     def require_move_permission
       require_permission!(permission_policy.can_move_issue?(@issue.project))

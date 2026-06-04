@@ -1,3 +1,5 @@
+require_relative 'subtask_loader'
+
 module RedmineKanban
   class BoardData
     LABEL_TRANSLATION_KEYS = {
@@ -50,6 +52,8 @@ module RedmineKanban
       delete_failed: "redmine_kanban.label_delete_failed",
       move_failed: "redmine_kanban.label_move_failed",
       load_failed: "redmine_kanban.label_load_failed",
+      load_more_issues: "redmine_kanban.label_load_more_issues",
+      load_more_failed: "redmine_kanban.label_load_more_failed",
       no_result: "redmine_kanban.label_no_result",
       reset: "redmine_kanban.label_reset",
       undo: "redmine_kanban.label_undo",
@@ -112,6 +116,7 @@ module RedmineKanban
       help_fullscreen: "redmine_kanban.label_help_fullscreen",
       help_scroll_top: "redmine_kanban.label_help_scroll_top",
       help_font_size: "redmine_kanban.label_help_font_size",
+      help_load_more_issues: "redmine_kanban.label_help_load_more_issues",
       within_1_day: "redmine_kanban.label_within_1_day",
       within_specified_days: "redmine_kanban.label_within_specified_days",
       sort_by: "redmine_kanban.label_sort_by",
@@ -130,7 +135,7 @@ module RedmineKanban
     }.freeze
 
 
-    def initialize(project:, user:, project_ids: nil, issue_status_ids: nil, exclude_status_ids: nil)
+    def initialize(project:, user:, project_ids: nil, issue_status_ids: nil, exclude_status_ids: nil, issue_limit: nil, issue_offset: nil)
       @project = project
       @user = user
       @settings = Settings.new(Setting.plugin_redmine_kanban)
@@ -138,9 +143,51 @@ module RedmineKanban
       @project_ids = sanitize_project_ids(normalize_ids(project_ids)).presence || [@project.id]
       @issue_status_ids = normalize_ids(issue_status_ids)
       @exclude_status_ids = normalize_ids(exclude_status_ids)
+      @issue_limit = normalize_issue_limit(issue_limit)
+      @issue_offset = normalize_issue_offset(issue_offset)
     end
 
     def to_h
+      with_performance_metrics { build_payload }
+    end
+
+    private
+
+    def with_performance_metrics
+      return yield unless @settings.performance_logging_enabled?
+
+      started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      sql_count = 0
+      callback = lambda do |_name, _start, _finish, _id, payload|
+        next if payload[:cached] || payload[:name] == 'SCHEMA'
+
+        sql_count += 1
+      end
+
+      result = nil
+      ActiveSupport::Notifications.subscribed(callback, 'sql.active_record') do
+        result = yield
+      end
+
+      elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round(1)
+      Rails.logger.info(
+        '[redmine_kanban] board_data_perf ' \
+        "project_id=#{@project.id} sql_count=#{sql_count} " \
+        "issue_count=#{result[:issues].size} subtask_count=#{count_subtasks(result[:issues])} " \
+        "json_bytes=#{result.to_json.bytesize} elapsed_ms=#{elapsed_ms}"
+      )
+      result
+    end
+
+    def count_subtasks(issues)
+      issues.sum { |issue| count_subtask_nodes(issue[:subtasks]) }
+    end
+
+    def count_subtask_nodes(subtasks)
+      Array(subtasks).sum { |subtask| 1 + count_subtask_nodes(subtask[:subtasks]) }
+    end
+
+    def build_payload
       statuses = IssueStatus.sorted.to_a
       hidden_status_ids = default_hidden_status_ids(statuses) | @settings.hidden_status_ids
       columns = statuses.reject { |s| hidden_status_ids.include?(s.id) }.map do |s|
@@ -149,6 +196,9 @@ module RedmineKanban
 
       status_ids = columns.map { |c| c[:id] }
       issues = fetch_issues(status_ids)
+      total_issue_count = fetch_issues_total_count(status_ids)
+      subtasks_by_parent_id = subtask_loader.subtasks_by_parent_id(issues.map(&:id))
+      presenter = BoardIssuePresenter.new(user: @user, subtasks_by_parent_id: subtasks_by_parent_id)
       lane_assignee_ids = @settings.lane_type == 'none' ? [] : fetch_lane_assignee_ids(status_ids)
       lanes = build_lanes(lane_assignee_ids)
 
@@ -168,7 +218,15 @@ module RedmineKanban
           wip_exceed_behavior: @settings.wip_exceed_behavior,
           aging_warn_days: @settings.aging_warn_days,
           aging_danger_days: @settings.aging_danger_days,
-          aging_exclude_closed: @settings.aging_exclude_closed?
+          aging_exclude_closed: @settings.aging_exclude_closed?,
+          pagination: {
+            issue_limit: @issue_limit,
+            offset: @issue_offset,
+            issue_count: issues.size,
+            total_issue_count: total_issue_count,
+            next_offset: issues.size + @issue_offset,
+            has_more_issues: @issue_offset + issues.size < total_issue_count
+          }
         },
         columns: columns.map do |c|
           c.merge(
@@ -177,13 +235,11 @@ module RedmineKanban
           )
         end,
         lanes: lanes,
-        lists: lists_builder.build,
-        issues: issues.map { |issue| issue_presenter.issue_to_h(issue) },
-        labels: labels
+        lists: cached_lists,
+        issues: issues.map { |issue| presenter.issue_to_h(issue) },
+        labels: cached_labels
       }
     end
-
-    private
 
     def default_hidden_status_ids(statuses)
       []
@@ -197,13 +253,19 @@ module RedmineKanban
       relation = base_issue_scope(status_ids)
       relation = relation.where(status_id: filtered_status_ids(status_ids))
       relation = relation.includes(:assigned_to, :priority, :status, :project)
-      relation.order(updated_on: :desc).limit(@settings.issue_limit).to_a
+      relation.order(updated_on: :desc, id: :desc).offset(@issue_offset).limit(@issue_limit).to_a
+    end
+
+    def fetch_issues_total_count(status_ids)
+      relation = base_issue_scope(status_ids)
+      relation = relation.where(status_id: filtered_status_ids(status_ids))
+      relation.count
     end
 
     def fetch_lane_assignee_ids(status_ids)
       base_issue_scope(status_ids)
         .order(updated_on: :desc)
-        .limit(@settings.issue_limit)
+        .limit(@issue_limit)
         .pluck(:assigned_to_id)
         .compact
         .uniq
@@ -241,6 +303,15 @@ module RedmineKanban
       end.uniq
     end
 
+    def normalize_issue_limit(value)
+      id = value.to_i
+      id.positive? ? id : @settings.issue_limit
+    end
+
+    def normalize_issue_offset(value)
+      [value.to_i, 0].max
+    end
+
     def sanitize_project_ids(ids)
       allowed_ids = @project_catalog.viewable_project_ids
       ids.select { |id| allowed_ids.include?(id) }
@@ -254,12 +325,31 @@ module RedmineKanban
       ::I18n.t(key, **options)
     end
 
-    def issue_presenter
-      @issue_presenter ||= BoardIssuePresenter.new(user: @user)
-    end
-
     def lists_builder
       @lists_builder ||= BoardListsBuilder.new(project: @project, project_ids: @project_ids, user: @user)
+    end
+
+    def subtask_loader
+      @subtask_loader ||= SubtaskLoader.new(user: @user)
+    end
+
+    def cached_lists
+      Rails.cache.fetch(cache_key('lists'), expires_in: 60.seconds) { lists_builder.build }
+    end
+
+    def cached_labels
+      Rails.cache.fetch(cache_key('labels'), expires_in: 60.seconds) { labels }
+    end
+
+    def cache_key(scope)
+      [
+        'redmine_kanban',
+        scope,
+        @project.id,
+        @user.id,
+        I18n.locale,
+        @project_ids.sort.join('-')
+      ].join(':')
     end
   end
 end

@@ -44,8 +44,11 @@ type RectMap = {
   visibilityButtons: Map<number, Rect>; // key: statusId
   priorityBadges: Map<number, Rect>;
   dateBadges: Map<number, Rect>;
+  progressDonuts: Map<number, Rect>;
   laneHeaders: Map<string | number, Rect>;
 };
+
+type CardHeightCache = Map<string, number>;
 
 type CanvasTheme = {
   bgMain: string;
@@ -107,6 +110,7 @@ type Props = {
   onSubtaskToggle?: (subtaskId: number, currentClosed: boolean) => void;
   onPriorityClick?: (issueId: number, currentPriorityId: number, x: number, y: number) => void;
   onDateClick?: (issueId: number, currentDate: string | null, x: number, y: number) => void;
+  onProgressClick?: (issueId: number, currentDoneRatio: number, x: number, y: number) => void;
 
   labels: Record<string, string>;
   busyIssueIds?: Set<number>;
@@ -130,6 +134,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   onSubtaskToggle,
   onPriorityClick,
   onDateClick,
+  onProgressClick,
 
   labels,
   busyIssueIds,
@@ -157,8 +162,10 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     visibilityButtons: new Map(),
     priorityBadges: new Map(),
     dateBadges: new Map(),
+    progressDonuts: new Map(),
     laneHeaders: new Map(),
   });
+  const cardHeightCacheRef = useRef<CardHeightCache>(new Map());
   const scrollRef = useRef({ x: 0, y: 0 });
   const boardSizeRef = useRef({ width: 0, height: 0 });
   const dragRef = useRef<DragState | null>(null);
@@ -223,7 +230,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   const metrics = useMemo(() => getMetrics(fontSize), [fontSize]);
 
   const layout = useMemo(
-    () => computeLayout(state, data, canCreate, metrics, size.width, fitMode, measureCtx, fontSize),
+    () => computeLayout(state, data, canCreate, metrics, size.width, fitMode, measureCtx, fontSize, cardHeightCacheRef.current),
     [state, data, canCreate, metrics, size.width, fitMode, measureCtx, fontSize]
   );
 
@@ -233,6 +240,10 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   useEffect(() => {
     scheduleRender();
   }, [fitMode, scheduleRender]);
+
+  useEffect(() => {
+    cardHeightCacheRef.current.clear();
+  }, [data]);
 
   useEffect(() => {
     const node = containerRef.current;
@@ -396,6 +407,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       visibilityButtons: new Map(),
       priorityBadges: new Map(),
       dateBadges: new Map(),
+      progressDonuts: new Map(),
       laneHeaders: new Map(),
     };
 
@@ -420,6 +432,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       hoveredSubtaskKeyRef.current,
       metrics,
       fontSize,
+      cardHeightCacheRef.current,
       busyIssueIds
     );
 
@@ -441,7 +454,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   drawRef.current = draw;
 
   function toBoardPoint(
-    event: React.PointerEvent,
+    event: React.PointerEvent | React.MouseEvent,
     scroll: { x: number; y: number },
     canvas: HTMLCanvasElement | null,
     scale: number = 1
@@ -529,6 +542,14 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         const issue = state.cardsById.get(hit.issueId);
         if (!canEditIssue(issue) || !issue || !onDateClick) return;
         onDateClick(hit.issueId, issue.due_date ?? null, event.clientX, event.clientY);
+        return;
+      }
+      case 'progress': {
+        if (isBusy(hit.issueId)) return;
+        event.preventDefault();
+        const issue = state.cardsById.get(hit.issueId);
+        if (!canEditIssue(issue) || !issue || !onProgressClick) return;
+        onProgressClick(hit.issueId, issue.done_ratio ?? 0, event.clientX, event.clientY);
         return;
       }
       case 'card':
@@ -746,7 +767,8 @@ function computeLayout(
   containerWidth: number = 0,
   fitMode: 'none' | 'width' = 'none',
   measureCtx?: CanvasRenderingContext2D | null,
-  fontSize?: number
+  fontSize?: number,
+  cardHeightCache?: CardHeightCache
 ) {
   const columnCount = state.columnOrder.length;
   const gridStartX = data.meta.lane_type === 'none' ? 0 : metrics.laneHeaderWidth;
@@ -771,7 +793,7 @@ function computeLayout(
 
   let currentY = headerHeight;
   const laneLayouts = lanes.map((laneId) => {
-    const laneHeight = computeLaneHeight(state, data, laneId, canCreate, adjustedMetrics, measureCtx, fontSize);
+    const laneHeight = computeLaneHeight(state, data, laneId, canCreate, adjustedMetrics, measureCtx, fontSize, cardHeightCache);
     const y = currentY;
     currentY += laneHeight;
     return { laneId, y, height: laneHeight };
@@ -821,6 +843,36 @@ function measureCardHeight(
   return h;
 }
 
+export function makeSubtaskSignature(issue: Issue) {
+  const subtaskRows = flattenSubtasks(issue.subtasks);
+  const lastSubtaskId = subtaskRows[subtaskRows.length - 1]?.subtask.id ?? 0;
+  const closedCount = subtaskRows.filter(({ subtask }) => subtask.is_closed).length;
+  return `${subtaskRows.length}:${lastSubtaskId}:${closedCount}`;
+}
+
+export function makeCardHeightCacheKey(issue: Issue, fontSize: number | undefined, columnWidth: number | undefined) {
+  return [issue.id, issue.subject, makeSubtaskSignature(issue), fontSize ?? 'default', columnWidth ?? 'default'].join('|');
+}
+
+export function measureCardHeightCached(
+  issue: Issue,
+  metrics: ReturnType<typeof getMetrics>,
+  cache: CardHeightCache | undefined,
+  ctx?: CanvasRenderingContext2D | null,
+  fontSize?: number,
+  cardWidth?: number
+) {
+  if (!cache) return measureCardHeight(issue, metrics, ctx, fontSize, cardWidth);
+
+  const key = makeCardHeightCacheKey(issue, fontSize, cardWidth);
+  const cached = cache.get(key);
+  if (cached !== undefined) return cached;
+
+  const height = measureCardHeight(issue, metrics, ctx, fontSize, cardWidth);
+  cache.set(key, height);
+  return height;
+}
+
 function computeLaneHeight(
   state: BoardState,
   data: BoardData,
@@ -828,7 +880,8 @@ function computeLaneHeight(
   canCreate: boolean,
   metrics: ReturnType<typeof getMetrics>,
   measureCtx?: CanvasRenderingContext2D | null,
-  fontSize?: number
+  fontSize?: number,
+  cardHeightCache?: CardHeightCache
 ) {
   let maxCellHeight = 0;
 
@@ -841,7 +894,7 @@ function computeLaneHeight(
       for (const cardId of cardIds) {
         const issue = state.cardsById.get(cardId);
         if (issue) {
-          height += measureCardHeight(issue, metrics, measureCtx, fontSize, metrics.columnWidth);
+          height += measureCardHeightCached(issue, metrics, cardHeightCache, measureCtx, fontSize, metrics.columnWidth);
         }
       }
       height += (cardIds.length - 1) * metrics.cardGap;
@@ -1030,6 +1083,7 @@ function drawCells(
   hoveredSubtaskKey: string | null,
   metrics: ReturnType<typeof getMetrics>,
   fontSize: number,
+  cardHeightCache: CardHeightCache,
   busyIssueIds?: Set<number>
 ) {
   const columns = state.columnOrder;
@@ -1089,18 +1143,22 @@ function drawCells(
         const issue = state.cardsById.get(cardId);
         if (!issue) continue;
 
-        const cardH = measureCardHeight(issue, metrics, ctx, fontSize, layout.columnWidth);
-        const cardRect = {
-          x: cellRect.x + metrics.cellPadding,
-          y: currentY,
-          width: cellRect.width - metrics.cellPadding * 2,
-          height: cardH,
-        };
+          const cardH = measureCardHeightCached(issue, metrics, cardHeightCache, ctx, fontSize, layout.columnWidth);
+          const cardRect = {
+            x: cellRect.x + metrics.cellPadding,
+            y: currentY,
+            width: cellRect.width - metrics.cellPadding * 2,
+            height: cardH,
+          };
 
-        currentY += cardH + metrics.cardGap;
+          currentY += cardH + metrics.cardGap;
 
-        const isUpdating = busyIssueIds?.has(issue.id) ?? false;
-        rectMap.cards.set(issue.id, cardRect);
+          if (!rectIntersects(cardRect, viewRect)) {
+            continue;
+          }
+
+          const isUpdating = busyIssueIds?.has(issue.id) ?? false;
+          rectMap.cards.set(issue.id, cardRect);
         drawCard(ctx, cardRect, issue, data, theme, canMove, labels, metrics, fontSize, rectMap, hover, isUpdating, hoveredCardIssueId, hoveredSubtaskKey);
       }
     });
@@ -1247,6 +1305,7 @@ function drawCard(
   // 6. Metadata Row 2: Due Date | Priority | Aging
   const row2Y = row1Y + metaFontSize + 7;
   currentX = contentX;
+  const limitX = issue.done_ratio !== undefined ? x + w - 32 : x + w - 12;
 
   if (issue.priority_id) {
     let bg = theme.badgeBg;
@@ -1298,13 +1357,49 @@ function drawCard(
       fg = theme.badgeHighColor;
     }
 
-    // Only draw badge if special state, otherwise standard icon
-    if (dueState !== 'normal') {
-      let text = issue.due_date;
-      if (dueState === 'overdue') {
-        text = '!' + text;
+    let text = issue.due_date;
+    if (dueState === 'overdue') {
+      text = '!' + text;
+    }
+
+    const badgeIcon = 'calendar_today';
+    const measureWidth = (t: string, iconStr?: string) => {
+      ctx.save();
+      ctx.font = `500 ${metaFontSize}px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif`;
+      const textWidth = ctx.measureText(t).width;
+      ctx.restore();
+      const paddingX = Math.max(4, Math.round(metaFontSize * 0.5));
+      const iconSize = iconStr ? metaFontSize + 2 : 0;
+      const iconGap = iconStr ? 4 : 0;
+      return paddingX * 2 + textWidth + iconSize + iconGap;
+    };
+
+    let badgeText = text;
+    let predictedWidth = measureWidth(badgeText, badgeIcon);
+
+    if (currentX + predictedWidth > limitX) {
+      // Try MM-DD format
+      const parts = issue.due_date.split('-');
+      if (parts.length === 3) {
+        let shortDate = `${parts[1]}-${parts[2]}`;
+        if (dueState === 'overdue') {
+          shortDate = '!' + shortDate;
+        }
+        const shortWidth = measureWidth(shortDate, badgeIcon);
+        if (currentX + shortWidth <= limitX) {
+          badgeText = shortDate;
+          predictedWidth = shortWidth;
+        } else {
+          // Icon only
+          const iconOnlyText = dueState === 'overdue' ? '!' : '';
+          badgeText = iconOnlyText;
+          predictedWidth = measureWidth(iconOnlyText, badgeIcon);
+        }
       }
-      const width = drawBadge(ctx, text, currentX, row2Y - 1, bg, fg, metaFontSize, 'calendar_today');
+    }
+
+    if (dueState !== 'normal') {
+      const width = drawBadge(ctx, badgeText, currentX, row2Y - 1, bg, fg, metaFontSize, badgeIcon);
 
       if (rectMap) {
         rectMap.dateBadges.set(issue.id, {
@@ -1318,7 +1413,7 @@ function drawCard(
       currentX += width + 8;
     } else {
       // Normal state: White badge with border
-      const width = drawBadge(ctx, issue.due_date, currentX, row2Y - 1, theme.surface, theme.textSecondary, metaFontSize, 'calendar_today', theme.surface);
+      const width = drawBadge(ctx, badgeText, currentX, row2Y - 1, theme.surface, theme.textSecondary, metaFontSize, badgeIcon, theme.surface);
 
       if (rectMap) {
         rectMap.dateBadges.set(issue.id, {
@@ -1335,10 +1430,19 @@ function drawCard(
 
   if (agingEnabled && agingDays > 0) {
     const ageColor = agingClass === 'danger' ? theme.danger : agingClass === 'warn' ? theme.warn : theme.textSecondary;
-    drawIcon(ctx, 'history', currentX, row2Y, 14, ageColor);
-    currentX += 16;
-    ctx.fillStyle = ageColor;
-    ctx.fillText(`${agingDays}d`, currentX, row2Y);
+    ctx.save();
+    ctx.font = `400 ${metaFontSize}px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif`;
+    const ageText = `${agingDays}d`;
+    const ageTextWidth = ctx.measureText(ageText).width;
+    ctx.restore();
+
+    const requiredAgeWidth = 16 + ageTextWidth;
+    if (currentX + requiredAgeWidth <= limitX) {
+      drawIcon(ctx, 'history', currentX, row2Y + 4, 14, ageColor);
+      currentX += 16;
+      ctx.fillStyle = ageColor;
+      ctx.fillText(ageText, currentX, row2Y + 4);
+    }
   }
 
   // 7. Progress Donut (New)
@@ -1366,7 +1470,19 @@ function drawCard(
 
     // Better: Right aligned on Row 2 (Metadata).
     const donutRightX = x + w - 16; // Aligned with the center of the edit button above
-    drawProgressDonut(ctx, donutRightX, row2Y + 6, donutRadius, issue.done_ratio, theme);
+    const badgeHeight = metaFontSize + (Math.max(2, Math.round(metaFontSize * 0.2)) * 2) + 4;
+    const donutCenterY = row2Y - 1 + badgeHeight / 2;
+    drawProgressDonut(ctx, donutRightX, donutCenterY, donutRadius, issue.done_ratio, theme);
+
+    if (rectMap) {
+      const hitRadius = 10;
+      rectMap.progressDonuts.set(issue.id, {
+        x: donutRightX - hitRadius,
+        y: donutCenterY - hitRadius,
+        width: hitRadius * 2,
+        height: hitRadius * 2,
+      });
+    }
   }
 
   // 8. Subtasks (New)
@@ -1752,6 +1868,11 @@ function hitTest(
       return { kind: 'date', issueId };
     }
   }
+  for (const [issueId, rect] of rectMap.progressDonuts) {
+    if (pointInRect(point, rect)) {
+      return { kind: 'progress', issueId };
+    }
+  }
   for (const [issueId, rect] of rectMap.cardSubjects) {
     if (pointInRect(point, rect)) {
       return { kind: 'card_subject', issueId };
@@ -1939,7 +2060,8 @@ function drawBadge(
   ctx.fillStyle = textColor;
   let textX = x + paddingX;
   if (icon) {
-    drawIcon(ctx, icon, x + paddingX, y + paddingY, iconSize, textColor);
+    const iconY = Math.round(y + height / 2 + 3 - iconSize / 2);
+    drawIcon(ctx, icon, x + paddingX, iconY, iconSize, textColor);
     textX += iconSize + iconGap;
   }
 

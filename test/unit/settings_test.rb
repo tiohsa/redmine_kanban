@@ -10,6 +10,12 @@ class RedmineKanbanSettingsTest < ActiveSupport::TestCase
     assert_equal 500, s.issue_limit
     assert_equal 3, s.aging_warn_days
     assert_equal 7, s.aging_danger_days
+    assert_equal false, s.performance_logging_enabled?
+  end
+
+  def test_performance_logging_enabled
+    assert_equal true, RedmineKanban::Settings.new('performance_logging_enabled' => '1').performance_logging_enabled?
+    assert_equal false, RedmineKanban::Settings.new('performance_logging_enabled' => '0').performance_logging_enabled?
   end
 
   def test_invalid_values_fallback

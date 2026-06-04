@@ -1,7 +1,10 @@
+require 'set'
+
 module RedmineKanban
   class BoardIssuePresenter
-    def initialize(user:)
+    def initialize(user:, subtasks_by_parent_id: {})
       @user = user
+      @subtasks_by_parent_id = subtasks_by_parent_id
     end
 
     def issue_to_h(issue)
@@ -27,7 +30,7 @@ module RedmineKanban
         aging_days: aging_days(issue),
         project: { id: issue.project_id, name: issue.project.name },
         permissions: permissions_for(issue),
-        subtasks: subtask_tree(issue),
+        subtasks: subtask_tree(issue, Set[issue.id]),
         urls: {
           issue: Rails.application.routes.url_helpers.issue_path(issue),
           issue_edit: Rails.application.routes.url_helpers.edit_issue_path(issue),
@@ -43,11 +46,16 @@ module RedmineKanban
       (Date.current - issue.updated_on.to_date).to_i
     end
 
-    def subtask_tree(issue)
-      issue.children.visible.map { |child| subtask_to_h(child) }
+    def subtask_tree(issue, visited_ids)
+      children = @subtasks_by_parent_id[issue.id] || []
+      children.filter_map do |child|
+        next if visited_ids.include?(child.id)
+
+        subtask_to_h(child, visited_ids + [child.id])
+      end
     end
 
-    def subtask_to_h(issue)
+    def subtask_to_h(issue, visited_ids)
       {
         id: issue.id,
         subject: issue.subject,
@@ -55,7 +63,7 @@ module RedmineKanban
         is_closed: issue.status.is_closed?,
         lock_version: issue.lock_version,
         permissions: permissions_for(issue),
-        subtasks: subtask_tree(issue),
+        subtasks: subtask_tree(issue, visited_ids),
       }
     end
 

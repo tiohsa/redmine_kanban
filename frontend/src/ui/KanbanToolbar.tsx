@@ -21,6 +21,9 @@ type ToolbarProps = {
   canCreate: boolean;
   onCreate: () => void;
   onScrollToTop: () => void;
+  pagination?: BoardData['meta']['pagination'];
+  onLoadMoreIssues?: () => void;
+  loadingMoreIssues?: boolean;
   timeEntryOnClose: boolean;
   onToggleTimeEntryOnClose: () => void;
   priorityLaneEnabled: boolean;
@@ -391,6 +394,9 @@ export function KanbanToolbar({
   canCreate,
   onCreate,
   onScrollToTop,
+  pagination,
+  onLoadMoreIssues = () => {},
+  loadingMoreIssues,
   timeEntryOnClose,
   onToggleTimeEntryOnClose,
   priorityLaneEnabled,
@@ -660,6 +666,21 @@ export function KanbanToolbar({
           <span className="rk-icon">{fullWindowIcon}</span>
           {fullWindow ? <span className="rk-indicator-dot" /> : null}
         </button>
+
+        {pagination ? (
+          <button
+            type="button"
+            className="rk-btn rk-btn-labeled"
+            onClick={onLoadMoreIssues}
+            disabled={!pagination.has_more_issues || loadingMoreIssues}
+            title={labels.load_more_issues ?? 'Load more issues'}
+          >
+            <span className="rk-icon">playlist_add</span>
+            <span className="rk-btn-label">
+              {pagination.issue_count}/{pagination.total_issue_count}
+            </span>
+          </button>
+        ) : null}
 
         <button type="button" className="rk-btn" onClick={onScrollToTop} title={labels.scroll_top}>
           <span className="rk-icon">vertical_align_top</span>

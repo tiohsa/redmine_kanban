@@ -18,6 +18,7 @@ export type BoardCursorHitKind =
   | 'visibility'
   | 'priority'
   | 'date'
+  | 'progress'
   | 'lane_header'
   | 'empty';
 
@@ -46,6 +47,7 @@ export function getBoardCursor({ phase, hitKind = 'empty' }: CursorOptions): Boa
     case 'visibility':
     case 'priority':
     case 'date':
+    case 'progress':
       return 'pointer';
     case 'empty':
     default:

@@ -27,6 +27,18 @@ export function PriorityPopup({
     return () => document.removeEventListener('mousedown', handleClick);
   }, [onClose]);
 
+  useEffect(() => {
+    const handleScroll = () => {
+      onClose();
+    };
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('wheel', handleScroll, true);
+    return () => {
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('wheel', handleScroll, true);
+    };
+  }, [onClose]);
+
   return (
     <div
       ref={menuRef}
@@ -74,8 +86,6 @@ export function DatePopup({
   onCommit: (val: string | null) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [pendingValue, setPendingValue] = useState<string | null>(value);
-  const [hasChange, setHasChange] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -117,13 +127,95 @@ export function DatePopup({
         zIndex: 2000,
       }}
       onBlur={() => {
-        if (hasChange) onCommit(pendingValue ?? null);
-        setTimeout(onClose, 0);
+        setTimeout(onClose, 100);
       }}
       onChange={(event) => {
-        setPendingValue(event.target.value || null);
-        setHasChange(true);
+        const newValue = event.target.value || null;
+        onCommit(newValue);
+        onClose();
       }}
     />
+  );
+}
+
+export function ProgressPopup({
+  x,
+  y,
+  value,
+  onClose,
+  onChange,
+}: {
+  x: number;
+  y: number;
+  value: number;
+  onClose: () => void;
+  onChange: (val: number) => void;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClick = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [onClose]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      onClose();
+    };
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('wheel', handleScroll, true);
+    return () => {
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('wheel', handleScroll, true);
+    };
+  }, [onClose]);
+
+  const options = Array.from({ length: 11 }, (_, i) => i * 10); // 0, 10, ..., 100
+
+  // Calculate show direction based on viewport to avoid screen overflow using pure CSS transform
+  const showUpward = y > window.innerHeight / 2;
+  const showLeftward = x > window.innerWidth - 120;
+
+  const transformStyle = [
+    showLeftward ? 'translateX(-100%)' : 'translateX(0)',
+    showUpward ? 'translateY(-100%)' : 'translateY(0)',
+  ].join(' ');
+
+  return (
+    <div
+      ref={menuRef}
+      style={{
+        position: 'fixed',
+        left: x,
+        top: y,
+        transform: transformStyle,
+        zIndex: 1000,
+        background: 'white',
+        borderRadius: '6px',
+        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+        border: '1px solid #e2e8f0',
+        minWidth: '100px',
+        padding: '4px 0',
+      }}
+    >
+      {options.map((option) => {
+        const checked = option === value;
+        return (
+          <div
+            key={option}
+            className={`rk-dropdown-item ${checked ? 'selected' : ''}`}
+            onClick={() => onChange(option)}
+          >
+            <div className="rk-dropdown-checkbox" />
+            <span>{option}%</span>
+          </div>
+        );
+      })}
+    </div>
   );
 }

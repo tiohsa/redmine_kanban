@@ -62,6 +62,11 @@
     <label><%= l("redmine_kanban.label_aging_exclude_closed") %></label>
     <%= check_box_tag 'settings[aging_exclude_closed]', '1', @settings['aging_exclude_closed'].to_s == '1' %>
   </p>
+
+  <p>
+    <label><%= l("redmine_kanban.label_performance_logging_enabled") %></label>
+    <%= check_box_tag 'settings[performance_logging_enabled]', '1', @settings['performance_logging_enabled'].to_s == '1' %>
+  </p>
 </fieldset>
 
 <fieldset class='box tabular settings'>
@@ -110,4 +115,3 @@
     <% end %>
     </tbody>
   </table>
-

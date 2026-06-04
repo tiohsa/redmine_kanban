@@ -15,6 +15,7 @@ type UseIssueMutationOptions<TPayload extends IssuePayload, TResult> = {
   onSuccess?: (result: TResult) => void;
   onMutateIssue?: (issueId: number) => void;
   onSettledIssue?: (issueId: number) => void;
+  refetchOnSettled?: boolean;
 };
 
 type IssueUpdater = (issue: Issue) => Issue;
@@ -28,6 +29,7 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
   onSuccess,
   onMutateIssue,
   onSettledIssue,
+  refetchOnSettled = false,
 }: UseIssueMutationOptions<TPayload, TResult>) {
   const queryClient = useQueryClient();
 
@@ -61,11 +63,11 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
       if (payload) {
         onSettledIssue?.(payload.issueId);
       }
-      // Delay background refetch slightly to avoid visual snap-back in cases
-      // where intermediate stale responses could arrive immediately after drop.
-      window.setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey });
-      }, 400);
+      if (refetchOnSettled) {
+        window.setTimeout(() => {
+          queryClient.invalidateQueries({ queryKey });
+        }, 400);
+      }
     },
   });
 }

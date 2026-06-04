@@ -50,6 +50,10 @@ module RedmineKanban
       @raw['aging_exclude_closed'].to_s == '1'
     end
 
+    def performance_logging_enabled?
+      @raw['performance_logging_enabled'].to_s == '1'
+    end
+
     # Returns auto-update rules for status transitions
     # Format: { status_id => { 'assigned_to_id' => value, 'priority_id' => value, ... } }
     def status_auto_updates

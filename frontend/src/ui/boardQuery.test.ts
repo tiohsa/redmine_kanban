@@ -1,11 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { buildBoardDataUrl, buildBoardQueryKey } from './boardQuery';
+import { buildBoardDataUrl, buildBoardIssuesUrl, buildBoardQueryKey } from './boardQuery';
 
 describe('buildBoardQueryKey', () => {
   it('includes sorted status-based filters in the cache key', () => {
     expect(
       buildBoardQueryKey('/projects/demo/kanban', [4, 2, 4], [9, 1], new Set([7, 3, 7])),
-    ).toEqual(['kanban', 'board', '/projects/demo/kanban', '2,4', '1,9', '3,7']);
+    ).toEqual(['kanban', 'board', '/projects/demo/kanban', '2,4', '1,9', '3,7', 'default']);
+  });
+});
+
+describe('buildBoardIssuesUrl', () => {
+  it('serializes filters, limit, and offset for the issues page request', () => {
+    expect(
+      buildBoardIssuesUrl('/projects/demo/kanban', [4, 2, 4], [9, 1], new Set([7, 3, 7]), 100, 200),
+    ).toBe(
+      '/projects/demo/kanban/issues?project_ids%5B%5D=2&project_ids%5B%5D=4&issue_status_ids%5B%5D=1&issue_status_ids%5B%5D=9&exclude_status_ids%5B%5D=3&exclude_status_ids%5B%5D=7&issue_limit=100&offset=200',
+    );
   });
 });
 
