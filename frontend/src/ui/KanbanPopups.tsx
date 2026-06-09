@@ -87,6 +87,24 @@ export function DatePopup({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Get today's date in YYYY-MM-DD format
+  const getTodayStr = () => {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  // State to hold the temporary selection during calendar navigation
+  const [currentValue, setCurrentValue] = useState<string>(value || '');
+
+  // Keep track of the baseline date at mount. If none provided, use today.
+  const initialValueRef = useRef<string>(value || getTodayStr());
+
+  // Prevent multiple commits
+  const hasCommitted = useRef(false);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       inputRef.current?.focus();
@@ -109,11 +127,43 @@ export function DatePopup({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
+  const commitAndClose = (val: string | null) => {
+    if (hasCommitted.current) return;
+    hasCommitted.current = true;
+    onCommit(val);
+    onClose();
+  };
+
+  // Check if the change event corresponds to a real day selection rather than month/year navigation
+  const isRealDaySelection = (oldValStr: string, newValStr: string) => {
+    const oldParts = oldValStr.split('-');
+    const newParts = newValStr.split('-');
+    if (oldParts.length !== 3 || newParts.length !== 3) return true;
+
+    const oldDay = parseInt(oldParts[2], 10);
+
+    const newYear = parseInt(newParts[0], 10);
+    const newMonth = parseInt(newParts[1], 10);
+    const newDay = parseInt(newParts[2], 10);
+
+    // Calculate maximum days in the new month
+    const maxDayInNewMonth = new Date(newYear, newMonth, 0).getDate();
+
+    // Check if the day was auto-clipped to the end of the new month (e.g. May 31 -> June 30)
+    const isClipped = oldDay > maxDayInNewMonth && newDay === maxDayInNewMonth;
+
+    if (isClipped) {
+      return false; // Month changed, day was just clipped. Not a real day click.
+    }
+
+    return oldDay !== newDay;
+  };
+
   return (
     <input
       ref={inputRef}
       type="date"
-      defaultValue={value || ''}
+      value={currentValue}
       style={{
         position: 'fixed',
         left: x,
@@ -127,12 +177,19 @@ export function DatePopup({
         zIndex: 2000,
       }}
       onBlur={() => {
-        setTimeout(onClose, 100);
+        // Commit and close after picker UI is dismissed
+        setTimeout(() => {
+          commitAndClose(currentValue || null);
+        }, 150);
       }}
       onChange={(event) => {
-        const newValue = event.target.value || null;
-        onCommit(newValue);
-        onClose();
+        const newValue = event.target.value;
+        setCurrentValue(newValue);
+
+        if (newValue && isRealDaySelection(initialValueRef.current, newValue)) {
+          // Commit and close immediately when a new day is explicitly selected
+          commitAndClose(newValue);
+        }
       }}
     />
   );
