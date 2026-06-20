@@ -99,6 +99,9 @@ const ISSUE_COMPACT_STYLE_RULES = `
 `;
 
 const ISSUE_VIEW_STYLE_RULES = `
+  #content {
+    padding-bottom: 56px !important;
+  }
   #content > .contextual:has(+ h2.inline-block) {
     display: none !important;
   }

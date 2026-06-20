@@ -10,7 +10,10 @@ const MIN_DIALOG_HEIGHT_PX = 320;
 const DEFAULT_DIALOG_WIDTH_PX = 1600;
 const COMPACT_ICON_BUTTON_SIZE = 24;
 const COMPACT_ACTION_BUTTON_HEIGHT = 28;
-const COMPACT_ACTION_BUTTON_MIN_WIDTH = 88;
+const COMPACT_ACTION_BUTTON_MIN_WIDTH = 112;
+
+type DialogMode = 'form' | 'saving' | 'issue-show' | 'error';
+export type SaveTarget = 'issue' | 'new-issue' | 'journal' | 'time_entry' | null;
 
 type ObserverWindow = Window & {
   ResizeObserver?: typeof ResizeObserver;
@@ -36,8 +39,82 @@ export function isIssueShowUrl(currentUrl: string): boolean {
   return /\/issues\/\d+(?:\?.*)?$/.test(normalizedUrl) && !normalizedUrl.includes('/edit');
 }
 
+export function buildIssueEditUrl(currentUrl: string, fallbackIssueId: number): string {
+  const fallbackUrl = `/issues/${fallbackIssueId}/edit`;
+
+  if (!currentUrl) {
+    return fallbackUrl;
+  }
+
+  try {
+    const isAbsoluteUrl = /^[a-z][a-z\d+\-.]*:\/\//i.test(currentUrl);
+    const parsedUrl = new URL(currentUrl, 'http://redmine-kanban.local');
+    const match = parsedUrl.pathname.match(/^\/issues\/(\d+)\/?$/);
+
+    if (!match) {
+      return fallbackUrl;
+    }
+
+    parsedUrl.pathname = `/issues/${match[1]}/edit`;
+    parsedUrl.search = '';
+    parsedUrl.hash = '';
+
+    return isAbsoluteUrl ? parsedUrl.toString() : parsedUrl.pathname;
+  } catch {
+    return fallbackUrl;
+  }
+}
+
 export function shouldTreatEditLoadAsSuccess(currentUrl: string, doc: Document): boolean {
   return isIssueShowUrl(currentUrl) && !hasRedmineFormError(doc);
+}
+
+export function findJournalEditForm(doc: Document): HTMLFormElement | null {
+  return (
+    doc.querySelector<HTMLFormElement>('form[action*="/journals/"]') ||
+    doc.querySelector<HTMLFormElement>('form[id^="journal-"][id$="-form"]') ||
+    doc.querySelector<HTMLTextAreaElement>('textarea[name="journal[notes]"]')?.closest('form') ||
+    null
+  );
+}
+
+export function getActiveSaveForm(
+  doc: Document,
+  mode: Props['mode'],
+  currentUrl: string,
+): { form: HTMLFormElement; target: SaveTarget } | null {
+  if (mode === 'time_entry') {
+    const timeEntryForm = doc.querySelector<HTMLFormElement>('#new_time_entry');
+    return timeEntryForm ? { form: timeEntryForm, target: 'time_entry' } : null;
+  }
+
+  const journalForm = findJournalEditForm(doc);
+  if (journalForm) return { form: journalForm, target: 'journal' };
+
+  const issueForm = doc.querySelector<HTMLFormElement>('#issue-form');
+  if (issueForm) {
+    return {
+      form: issueForm,
+      target: mode === 'create' || currentUrl.includes('/issues/new') ? 'new-issue' : 'issue',
+    };
+  }
+
+  return null;
+}
+
+export function submitForm(form: HTMLFormElement): void {
+  const submitButton = form.querySelector<HTMLElement>('input[type="submit"], button[type="submit"]');
+  if (submitButton) {
+    submitButton.click();
+    return;
+  }
+
+  if (typeof form.requestSubmit === 'function') {
+    form.requestSubmit();
+    return;
+  }
+
+  form.submit();
 }
 
 export function resolveDialogStyleVariant(
@@ -102,7 +179,14 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
   const [dialogHeightPx, setDialogHeightPx] = useState<number | null>(null);
   const [iframeError, setIframeError] = useState<string | null>(null);
   const [isSubtasksOpen, setIsSubtasksOpen] = useState(false);
+  const [dialogMode, setDialogMode] = useState<DialogMode>('form');
+  const [displayedIssueId, setDisplayedIssueId] = useState<number | null>(null);
+  const [saveTarget, setSaveTarget] = useState<SaveTarget>(
+    mode === 'time_entry' ? 'time_entry' : mode === 'create' ? 'new-issue' : 'issue',
+  );
   const isSubmittingRef = useRef(false);
+  const saveTargetRef = useRef<SaveTarget>(null);
+  const handleSuccessRef = useRef<((targetIssueId: number) => void) | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const footerRef = useRef<HTMLDivElement>(null);
@@ -167,6 +251,15 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
     if (typeof mutationObserverCtor !== 'undefined' && doc.body) {
       const mutationObserver = new mutationObserverCtor(() => {
         measureDialogHeight();
+        if (isSubmittingRef.current && saveTargetRef.current === 'journal' && !hasRedmineFormError(doc) && !findJournalEditForm(doc)) {
+          handleSuccessRef.current?.(issueId);
+        } else if (!isSubmittingRef.current) {
+          const activeSaveForm = getActiveSaveForm(doc, mode, iframeRef.current?.contentWindow?.location.href ?? currentUrl);
+          setSaveTarget(activeSaveForm?.target ?? null);
+          if (activeSaveForm?.target === 'journal') {
+            setDialogMode('form');
+          }
+        }
       });
       mutationObserver.observe(doc.body, {
         childList: true,
@@ -180,10 +273,26 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
     iframeSizeObserverCleanupRef.current = () => {
       cleanupCallbacks.forEach((cleanup) => cleanup());
     };
-  }, [measureDialogHeight]);
+  }, [currentUrl, issueId, measureDialogHeight, mode]);
 
   const handleSuccess = useCallback(async (targetIssueId: number) => {
-    if (mode === 'time_entry') {
+    const completedSaveTarget = saveTargetRef.current;
+
+    if (completedSaveTarget === 'journal') {
+      setDisplayedIssueId(targetIssueId);
+      setSaveTarget(null);
+      saveTargetRef.current = null;
+      setDialogMode('issue-show');
+      setIsSubmitting(false);
+      onSuccess(labels.saved.replace('%{id}', String(targetIssueId)));
+      return;
+    }
+
+    if (completedSaveTarget === 'time_entry' || mode === 'time_entry') {
+      setSaveTarget(null);
+      saveTargetRef.current = null;
+      setDialogMode('form');
+      setIsSubmitting(false);
       onSuccess(labels.successful_update ?? 'Successful update');
       onClose();
       return;
@@ -220,8 +329,18 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
       );
     }
 
-    onClose();
+    setDisplayedIssueId(targetIssueId);
+    setDialogMode('issue-show');
+    setSaveTarget(null);
+    saveTargetRef.current = null;
+    setIsSubmitting(false);
   }, [bulkMutation, labels, mode, onClose, onSuccess, subtasks]);
+
+  useEffect(() => {
+    handleSuccessRef.current = (targetIssueId: number) => {
+      void handleSuccess(targetIssueId);
+    };
+  }, [handleSuccess]);
 
   const handleLoad = useCallback((e: React.SyntheticEvent<HTMLIFrameElement, Event>) => {
     const iframe = e.currentTarget;
@@ -243,9 +362,21 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
         doc.head.appendChild(style);
         applyLinkTargetBlank(doc);
 
-        const errorMessage = getRedmineFormErrorMessage(doc);
-        setIframeError(errorMessage);
-        bindIframeSizeObservers(doc);
+      const errorMessage = getRedmineFormErrorMessage(doc);
+      setIframeError(errorMessage);
+      if (!isSubmittingRef.current) {
+        const activeSaveForm = getActiveSaveForm(doc, mode, nextCurrentUrl);
+        setSaveTarget(activeSaveForm?.target ?? null);
+        if (activeSaveForm?.target === 'journal') {
+          setDialogMode('form');
+        } else if (isIssueShowUrl(nextCurrentUrl)) {
+          setDisplayedIssueId(extractIssueIdFromUrl(nextCurrentUrl));
+          setDialogMode('issue-show');
+        } else {
+          setDialogMode(errorMessage ? 'error' : 'form');
+        }
+      }
+      bindIframeSizeObservers(doc);
 
         iframeEscapeCleanupRef.current?.();
         if (iframe.contentWindow) {
@@ -262,25 +393,37 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
           };
         }
 
-        if (isSubmittingRef.current) {
-          if (mode === 'create') {
-            const newIssueId = extractIssueIdFromUrl(nextCurrentUrl);
-            if (newIssueId) {
-              void handleSuccess(newIssueId);
-              return;
-            }
-          } else if (mode === 'time_entry') {
-            if (!nextCurrentUrl.includes('/time_entries/new')) {
-              void handleSuccess(issueId);
-              return;
-            }
-          } else if (shouldTreatEditLoadAsSuccess(nextCurrentUrl, doc)) {
+      if (isSubmittingRef.current) {
+        const currentSaveTarget = saveTargetRef.current;
+        const hasError = hasRedmineFormError(doc);
+
+        if (hasError) {
+          setDialogMode('error');
+          setIsSubmitting(false);
+          setSaveTarget(null);
+          saveTargetRef.current = null;
+        } else if (currentSaveTarget === 'new-issue') {
+          const newIssueId = extractIssueIdFromUrl(nextCurrentUrl);
+          if (newIssueId) {
+            void handleSuccess(newIssueId);
+            return;
+          }
+        } else if (currentSaveTarget === 'issue' && shouldTreatEditLoadAsSuccess(nextCurrentUrl, doc)) {
+          const loadedIssueId = extractIssueIdFromUrl(nextCurrentUrl) ?? issueId;
+          void handleSuccess(loadedIssueId);
+          return;
+        } else if (currentSaveTarget === 'time_entry') {
+          if (!nextCurrentUrl.includes('/time_entries/new')) {
             void handleSuccess(issueId);
             return;
           }
-
+        } else if (currentSaveTarget === 'journal' && !findJournalEditForm(doc)) {
+          void handleSuccess(issueId);
+          return;
+        } else {
           setIsSubmitting(false);
         }
+      }
       }
     } catch (err) {
       console.warn('Cannot access iframe content:', err);
@@ -347,15 +490,18 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
   const handleSubmit = () => {
     if (!iframeRef.current?.contentDocument || !iframeRef.current.contentWindow) return;
 
-    let form: HTMLFormElement | null = null;
-    if (mode === 'time_entry') {
-      form = iframeRef.current.contentDocument.getElementById('new_time_entry') as HTMLFormElement;
-    }
-    if (!form) {
-      form = (iframeRef.current.contentDocument.getElementById('issue-form') as HTMLFormElement) || iframeRef.current.contentDocument.forms[0];
+    if (dialogMode === 'issue-show') {
+      const targetIssueId = displayedIssueId ?? issueId;
+      iframeRef.current.contentWindow.location.href = buildIssueEditUrl(currentUrl || url, targetIssueId);
+      setDialogMode('form');
+      setSaveTarget('issue');
+      return;
     }
 
-    if (!form) return;
+    const activeSaveForm = getActiveSaveForm(iframeRef.current.contentDocument, mode, currentUrl);
+    if (!activeSaveForm) return;
+
+    const { form, target } = activeSaveForm;
 
     const formData = new FormData(form);
     const getVal = (name: string) => {
@@ -374,6 +520,9 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
       assigned_to_id: getVal('issue[assigned_to_id]'),
     };
 
+    setDialogMode('saving');
+    setSaveTarget(target);
+    saveTargetRef.current = target;
     setIsSubmitting(true);
     iframeRef.current.contentWindow.onbeforeunload = null;
     try {
@@ -384,12 +533,18 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
     } catch {
       // Ignore jQuery access issues in the iframe.
     }
-    form.submit();
+    submitForm(form);
   };
 
-  const submitLabel = mode === 'create'
-    ? (isSubmitting ? labels.creating : labels.create)
-    : (isSubmitting ? labels.saving : labels.save);
+  const effectiveSaveTarget = saveTargetRef.current ?? saveTarget;
+  const submitLabel = dialogMode === 'issue-show'
+    ? (labels.edit_issue ?? 'Edit issue')
+    : effectiveSaveTarget === 'journal'
+      ? (isSubmitting ? (labels.saving_comment ?? 'Saving comment...') : (labels.save_comment ?? 'Save comment'))
+      : effectiveSaveTarget === 'new-issue' || mode === 'create'
+        ? (isSubmitting ? labels.creating : (labels.create_issue ?? labels.create))
+        : (isSubmitting ? labels.saving : labels.save);
+  const showPrimaryAction = dialogMode === 'issue-show' || saveTarget !== null || isSubmitting;
   const isViewDialog = mode !== 'create' && isIssueShowUrl(currentUrl || url);
   const resolvedIssueTitle =
     issueTitle && issueId > 0 && !issueTitle.includes(`#${issueId}`)
@@ -547,18 +702,20 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
           >
             {labels.cancel}
           </button>
-          <button
-            type="button"
-            className="rk-btn rk-btn-primary"
-            onClick={handleSubmit}
-            disabled={isSubmitting}
-            style={{
-              height: `${COMPACT_ACTION_BUTTON_HEIGHT}px`,
-              minWidth: `${COMPACT_ACTION_BUTTON_MIN_WIDTH}px`,
-            }}
-          >
-            {submitLabel}
-          </button>
+          {showPrimaryAction ? (
+            <button
+              type="button"
+              className="rk-btn rk-btn-primary"
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              style={{
+                height: `${COMPACT_ACTION_BUTTON_HEIGHT}px`,
+                minWidth: `${COMPACT_ACTION_BUTTON_MIN_WIDTH}px`,
+              }}
+            >
+              {submitLabel}
+            </button>
+          ) : null}
         </div>
       </div>
     </div>

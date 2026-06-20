@@ -54,8 +54,16 @@ describe('getCleanDialogStyles', () => {
     expect(css).toContain('#sidebar-switch-panel');
     expect(css).toContain('#sidebar-handler');
     expect(css).toContain('#sidebar-handler-container');
+    expect(css).toContain('padding-bottom: 56px !important');
     expect(css).toContain('display: none !important');
     expect(css).toContain('#content > .issue.details');
+  });
+
+  it('should not hide journal edit forms in issue dialogs', () => {
+    const css = getCleanDialogStyles({ variant: 'issue-view' });
+    expect(css).not.toContain('form[action*="/journals/"]');
+    expect(css).not.toContain('form[id^="journal-"][id$="-form"]');
+    expect(css).not.toContain('textarea[name="journal[notes]"]');
   });
 
   it('should not include sidebar hiding rules for compact edit/create dialogs', () => {

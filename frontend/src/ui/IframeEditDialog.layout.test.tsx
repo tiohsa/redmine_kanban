@@ -57,6 +57,10 @@ const labels: Record<string, string> = {
   saving: '保存中',
   create: '作成',
   creating: '作成中',
+  create_issue: 'チケットを作成',
+  edit_issue: 'チケットを編集',
+  save_comment: 'コメントを保存',
+  saving_comment: 'コメントを保存中...',
   created: '作成済み %{id}',
   saved: '保存済み %{id}',
   created_with_subtasks: '作成 %{id} %{count}',
@@ -120,9 +124,144 @@ describe('IframeEditDialog layout variants', () => {
     expect(footerButtons[0].textContent).toContain('キャンセル');
     expect(footerButtons[1].textContent).toContain('保存');
     expect(footerButtons[0].style.height).toBe('28px');
-    expect(footerButtons[0].style.minWidth).toBe('88px');
+    expect(footerButtons[0].style.minWidth).toBe('112px');
     expect(footerButtons[1].style.height).toBe('28px');
-    expect(footerButtons[1].style.minWidth).toBe('88px');
+    expect(footerButtons[1].style.minWidth).toBe('112px');
+  });
+
+  it('keeps the dialog open and switches to edit action after issue save success', async () => {
+    const onClose = vi.fn();
+    const onSuccess = vi.fn();
+    const { container } = render(
+      <IframeEditDialog
+        url="/issues/1/edit"
+        issueId={1}
+        issueTitle="Feature request"
+        labels={labels}
+        baseUrl=""
+        queryKey={['kanban', 'board']}
+        onClose={onClose}
+        onSuccess={onSuccess}
+      />,
+    );
+
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    const doc = document.implementation.createHTMLDocument('iframe');
+    doc.body.innerHTML = '<div id="content"><form id="issue-form"><button type="submit">Save</button></form></div>';
+    const iframeWindow = {
+      location: { href: 'http://example.com/issues/1/edit' },
+      document: doc,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      $: vi.fn(() => ({ off: vi.fn() })),
+    };
+    Object.defineProperty(iframe, 'contentWindow', {
+      value: iframeWindow,
+      configurable: true,
+    });
+    Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+    const nativeSubmit = doc.querySelector('button') as HTMLButtonElement;
+    const nativeClick = vi.spyOn(nativeSubmit, 'click').mockImplementation(() => undefined);
+
+    fireEvent.load(iframe);
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    expect(nativeClick).toHaveBeenCalledOnce();
+
+    iframeWindow.location.href = 'http://example.com/issues/1';
+    doc.body.innerHTML = '<div id="content"><div class="issue details">Saved issue</div></div>';
+    fireEvent.load(iframe);
+
+    await waitFor(() => {
+      expect(onClose).not.toHaveBeenCalled();
+      expect(onSuccess).toHaveBeenCalledWith('保存済み 1');
+      expect(screen.queryByRole('button', { name: '保存' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'チケットを編集' })).toBeTruthy();
+    });
+  });
+
+  it('shows comment save action when a journal edit form is active', async () => {
+    const { container } = render(
+      <IframeEditDialog
+        url="/issues/1"
+        issueId={1}
+        issueTitle="Feature request"
+        labels={labels}
+        baseUrl=""
+        queryKey={['kanban', 'board']}
+        onClose={() => {}}
+        onSuccess={() => {}}
+      />,
+    );
+
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    const doc = document.implementation.createHTMLDocument('iframe');
+    doc.body.innerHTML = '<div id="content"><form id="journal-42-form"><textarea name="journal[notes]"></textarea></form></div>';
+    Object.defineProperty(iframe, 'contentWindow', {
+      value: {
+        location: { href: 'http://example.com/issues/1' },
+        document: doc,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      },
+      configurable: true,
+    });
+    Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+    fireEvent.load(iframe);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'コメントを保存' })).toBeTruthy();
+    });
+  });
+
+  it('keeps the dialog open after journal save success', async () => {
+    const onClose = vi.fn();
+    const onSuccess = vi.fn();
+    const { container } = render(
+      <IframeEditDialog
+        url="/issues/1"
+        issueId={1}
+        issueTitle="Feature request"
+        labels={labels}
+        baseUrl=""
+        queryKey={['kanban', 'board']}
+        onClose={onClose}
+        onSuccess={onSuccess}
+      />,
+    );
+
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    const doc = document.implementation.createHTMLDocument('iframe');
+    doc.body.innerHTML = '<div id="content"><form id="journal-42-form"><button type="submit">Save</button><textarea name="journal[notes]"></textarea></form></div>';
+    const iframeWindow = {
+      location: { href: 'http://example.com/issues/1' },
+      document: doc,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    Object.defineProperty(iframe, 'contentWindow', {
+      value: iframeWindow,
+      configurable: true,
+    });
+    Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+    const nativeSubmit = doc.querySelector('button') as HTMLButtonElement;
+    const nativeClick = vi.spyOn(nativeSubmit, 'click').mockImplementation(() => undefined);
+
+    fireEvent.load(iframe);
+    await screen.findByRole('button', { name: 'コメントを保存' });
+    fireEvent.click(screen.getByRole('button', { name: 'コメントを保存' }));
+
+    expect(nativeClick).toHaveBeenCalledOnce();
+
+    doc.body.innerHTML = '<div id="content"><div class="issue details">Saved comment</div></div>';
+    fireEvent.load(iframe);
+
+    await waitFor(() => {
+      expect(onClose).not.toHaveBeenCalled();
+      expect(onSuccess).toHaveBeenCalledWith('保存済み 1');
+      expect(screen.getByRole('button', { name: 'チケットを編集' })).toBeTruthy();
+    });
   });
 
   it('uses the same compact chrome for time entry dialogs', () => {
