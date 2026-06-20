@@ -384,7 +384,16 @@ export function App({ dataUrl }: Props) {
                 setNotice(labels?.created ?? null);
               }
 
-              dialogs.setModal(null);
+              if (createdIssue?.id) {
+                dialogs.setModal(null);
+                dialogs.setIframeEditContext({
+                  url: `/issues/${createdIssue.id}`,
+                  issueId: createdIssue.id,
+                  issueTitle: `#${createdIssue.id} ${createdIssue.subject ?? ''}`.trim(),
+                });
+              } else {
+                dialogs.setModal(null);
+              }
             } catch (caught: unknown) {
               throw new Error(payloadMessage(caught) || payloadFieldError(caught) || data.labels.create_failed);
             }
@@ -409,7 +418,6 @@ export function App({ dataUrl }: Props) {
           }}
           onSuccess={(message) => {
             setNotice(message);
-            dialogs.setIframeEditContext(null);
             void refresh();
           }}
         />
@@ -429,7 +437,6 @@ export function App({ dataUrl }: Props) {
           }}
           onSuccess={(message) => {
             setNotice(message);
-            dialogs.setIframeCreateUrl(null);
             void refresh();
           }}
         />
