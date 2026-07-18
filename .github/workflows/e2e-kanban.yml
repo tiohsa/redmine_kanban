@@ -140,6 +140,11 @@ jobs:
       - name: Start Redmine test stack
         run: docker compose -f .github/e2e/docker-compose.yml up -d --wait --wait-timeout 600
 
+      - name: Install Redmine test dependencies
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+            sh -lc 'bundle config set --local without development && bundle install'
+
       - name: Configure Redmine database.yml for production
         run: |
           docker compose -f .github/e2e/docker-compose.yml exec -T redmine sh -lc \
