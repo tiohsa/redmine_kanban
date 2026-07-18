@@ -3,7 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import type { QueryKey } from '@tanstack/react-query';
 import type { BoardData, Issue } from './types';
 import { isHttpError, postJson } from './http';
-import { replaceIssueInBoard, updateIssueInBoard, useIssueMutation } from './useIssueMutation';
+import { applyAncestorIssueUpdates, updateIssueInBoard, useIssueMutation } from './useIssueMutation';
 import { findSubtask, resolveAssigneeName, resolveMutationError, resolvePriorityName, resolveSubtaskStatus, type IssueMutationResult, type MovePayload, type UpdatePayload } from './kanbanShared';
 
 type Args = {
@@ -34,20 +34,14 @@ export function useKanbanActions({
 
   const setIssueBusy = useCallback((issueId: number, busy: boolean) => {
     const nextRef = new Set(busyIssueIdsRef.current);
-    if (busy) {
-      nextRef.add(issueId);
-    } else {
-      nextRef.delete(issueId);
-    }
+    if (busy) nextRef.add(issueId);
+    else nextRef.delete(issueId);
     busyIssueIdsRef.current = nextRef;
 
     setBusyIssueIds((prev) => {
       const next = new Set(prev);
-      if (busy) {
-        next.add(issueId);
-      } else {
-        next.delete(issueId);
-      }
+      if (busy) next.add(issueId);
+      else next.delete(issueId);
       return next;
     });
   }, []);
@@ -64,12 +58,11 @@ export function useKanbanActions({
       if (payload.assignedToId !== undefined) issuePayload.assigned_to_id = payload.assignedToId;
       if (payload.priorityId !== undefined) issuePayload.priority_id = payload.priorityId;
 
-      const response = await postJson<{ ok: boolean; issue: Issue; warning?: string }>(
+      return postJson<IssueMutationResult>(
         `${baseUrl}/issues/${payload.issueId}/move`,
         { issue: issuePayload },
         'PATCH',
       );
-      return { issue: response.issue, warning: response.warning };
     },
     applyOptimistic: (prev, payload) =>
       updateIssueInBoard(prev, payload.issueId, (issue) => {
@@ -86,8 +79,8 @@ export function useKanbanActions({
         }
         return next;
       }),
-    applyServer: (prev, result, payload) =>
-      updateIssueInBoard(prev, payload.issueId, (issue) => {
+    applyServer: (prev, result, payload) => {
+      const updated = updateIssueInBoard(prev, payload.issueId, (issue) => {
         const nextAssignedToId = payload.assignedToId === undefined ? issue.assigned_to_id : payload.assignedToId;
         return {
           ...result.issue,
@@ -100,7 +93,9 @@ export function useKanbanActions({
               ? issue.priority_name ?? null
               : resolvePriorityName(prev, payload.priorityId ?? null),
         };
-      }),
+      });
+      return applyAncestorIssueUpdates(updated, result.ancestor_updates);
+    },
     onError: (error) => {
       setError(resolveMutationError(error, data?.labels, data?.labels.move_failed));
     },
@@ -120,38 +115,30 @@ export function useKanbanActions({
 
   const updateIssueMutation = useIssueMutation<UpdatePayload, IssueMutationResult>({
     queryKey: boardQueryKey,
-    mutationFn: async (payload) => {
-      const response = await postJson<{ ok: boolean; issue: Issue; warning?: string }>(
+    mutationFn: async (payload) =>
+      postJson<IssueMutationResult>(
         `${baseUrl}/issues/${payload.issueId}`,
         { issue: { ...payload.patch, lock_version: payload.lockVersion } },
         'PATCH',
-      );
-      return { issue: response.issue, warning: response.warning };
-    },
+      ),
     applyOptimistic: (prev, payload) =>
       updateIssueInBoard(prev, payload.issueId, (issue) => {
         const patch = payload.patch as Partial<Issue>;
         const next = { ...issue, ...patch };
-        if ('assigned_to_id' in patch) {
-          next.assigned_to_name = resolveAssigneeName(prev, patch.assigned_to_id ?? null);
-        }
-        if ('priority_id' in patch) {
-          next.priority_name = resolvePriorityName(prev, patch.priority_id ?? null);
-        }
+        if ('assigned_to_id' in patch) next.assigned_to_name = resolveAssigneeName(prev, patch.assigned_to_id ?? null);
+        if ('priority_id' in patch) next.priority_name = resolvePriorityName(prev, patch.priority_id ?? null);
         return next;
       }),
-    applyServer: (prev, result, payload) =>
-      updateIssueInBoard(prev, payload.issueId, (issue) => {
+    applyServer: (prev, result, payload) => {
+      const updated = updateIssueInBoard(prev, payload.issueId, (issue) => {
         const patch = payload.patch as Partial<Issue>;
         const next = { ...result.issue, ...patch };
-        if ('assigned_to_id' in patch) {
-          next.assigned_to_name = resolveAssigneeName(prev, patch.assigned_to_id ?? null);
-        }
-        if ('priority_id' in patch) {
-          next.priority_name = resolvePriorityName(prev, patch.priority_id ?? null);
-        }
+        if ('assigned_to_id' in patch) next.assigned_to_name = resolveAssigneeName(prev, patch.assigned_to_id ?? null);
+        if ('priority_id' in patch) next.priority_name = resolvePriorityName(prev, patch.priority_id ?? null);
         return next;
-      }),
+      });
+      return applyAncestorIssueUpdates(updated, result.ancestor_updates);
+    },
     onSuccess: (result) => {
       if (result.warning) setNotice(result.warning);
     },
@@ -160,12 +147,9 @@ export function useKanbanActions({
   });
 
   const createIssueMutation = useMutation({
-    mutationFn: async (payload: Record<string, unknown>) => {
-      return postJson<{ ok: boolean; issue?: Issue }>(`${baseUrl}/issues`, { issue: payload }, 'POST');
-    },
-    onSettled: () => {
-      void refresh();
-    },
+    mutationFn: async (payload: Record<string, unknown>) =>
+      postJson<{ ok: boolean; issue?: Issue }>(`${baseUrl}/issues`, { issue: payload }, 'POST'),
+    onSettled: () => { void refresh(); },
   });
 
   const deleteIssue = useCallback(async (issueId: number) => {
@@ -181,8 +165,7 @@ export function useKanbanActions({
   }, [baseUrl, data, refresh, setError]);
 
   const moveIssue = useCallback((issueId: number, statusId: number, assignedToId?: number | null, priorityId?: number | null) => {
-    if (!data) return;
-    if (isIssueBusy(issueId)) return;
+    if (!data || isIssueBusy(issueId)) return;
     const issue = data.issues.find((it) => it.id === issueId);
     if (!issue) return;
     if (issue.lock_version === undefined || issue.lock_version === null) {
@@ -192,18 +175,11 @@ export function useKanbanActions({
 
     setNotice(null);
     setIssueBusy(issueId, true);
-    moveIssueMutation.mutate({
-      issueId,
-      statusId,
-      assignedToId,
-      priorityId,
-      lockVersion: issue.lock_version,
-    });
+    moveIssueMutation.mutate({ issueId, statusId, assignedToId, priorityId, lockVersion: issue.lock_version });
   }, [data, isIssueBusy, moveIssueMutation, setError, setIssueBusy, setNotice]);
 
   const toggleSubtask = useCallback((subtaskId: number, currentClosed: boolean) => {
-    if (!data) return;
-    if (isIssueBusy(subtaskId)) return;
+    if (!data || isIssueBusy(subtaskId)) return;
     const subtaskInfo = findSubtask(data, subtaskId);
     if (!subtaskInfo) return;
     const targetStatusId = resolveSubtaskStatus(data, currentClosed);
@@ -225,12 +201,7 @@ export function useKanbanActions({
   const requestDelete = useCallback((issueId: number, source: 'card' | 'subtask' = 'card') => {
     const issue = data?.issues.find((it) => it.id === issueId);
     if (!issue) return;
-
-    if (source === 'card') {
-      setPendingDeleteIssue(issue);
-    } else {
-      setPendingDeleteIssue(null);
-    }
+    setPendingDeleteIssue(source === 'card' ? issue : null);
     setNotice(null);
     void deleteIssue(issueId);
   }, [data, deleteIssue, setNotice]);
