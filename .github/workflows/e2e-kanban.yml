@@ -143,7 +143,7 @@ jobs:
       - name: Install Redmine test dependencies
         run: |
           docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
-            sh -lc 'bundle config set --local without development && bundle install'
+            sh -lc 'apt-get update && apt-get install -y --no-install-recommends build-essential && bundle config set --local without development && bundle install'
 
       - name: Configure Redmine database.yml for production
         run: |
