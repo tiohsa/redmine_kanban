@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { BoardData, Issue } from './types';
-import { replaceIssueInBoard, updateIssueInBoard, useIssueMutation } from './useIssueMutation';
+import { applyAncestorIssueUpdates, replaceIssueInBoard, updateIssueInBoard, useIssueMutation } from './useIssueMutation';
 
 function makeIssue(id: number, attrs: Partial<Issue> = {}): Issue {
   return {
@@ -85,6 +85,44 @@ describe('updateIssueInBoard', () => {
   });
 });
 
+describe('applyAncestorIssueUpdates', () => {
+  it('updates progress metadata for loaded parent and ancestor cards', () => {
+    const board = makeBoardData([
+      makeIssue(10, { done_ratio: 0, lock_version: 1, updated_on: '2026-07-17T00:00:00Z' }),
+      makeIssue(20, { done_ratio: 50, lock_version: 2 }),
+      makeIssue(30, { parent_id: 20 }),
+    ]);
+
+    const next = applyAncestorIssueUpdates(board, [
+      { id: 10, done_ratio: 25, lock_version: 3, updated_on: '2026-07-18T00:00:00Z' },
+      { id: 20, done_ratio: 100, lock_version: 4, updated_on: '2026-07-18T00:01:00Z' },
+    ]);
+
+    expect(next.issues.find((issue) => issue.id === 10)).toMatchObject({
+      done_ratio: 25,
+      lock_version: 3,
+      updated_on: '2026-07-18T00:00:00Z',
+    });
+    expect(next.issues.find((issue) => issue.id === 20)).toMatchObject({
+      done_ratio: 100,
+      lock_version: 4,
+      updated_on: '2026-07-18T00:01:00Z',
+    });
+    expect(next.issues).toHaveLength(3);
+  });
+
+  it('ignores ancestors that are not loaded without replacing paginated board data', () => {
+    const board = makeBoardData([makeIssue(20, { done_ratio: 50 }), makeIssue(30)]);
+
+    const next = applyAncestorIssueUpdates(board, [
+      { id: 10, done_ratio: 100, lock_version: 2, updated_on: null },
+    ]);
+
+    expect(next).toBe(board);
+    expect(next.issues.map((issue) => issue.id)).toEqual([20, 30]);
+  });
+});
+
 describe('replaceIssueInBoard', () => {
   it('replaces an issue by id', () => {
     const board = makeBoardData([makeIssue(1, { subject: 'Before' })]);
@@ -112,7 +150,7 @@ describe('useIssueMutation', () => {
           queryKey,
           mutationFn: async () => ({ issue: makeIssue(1, { subject: 'Server' }) }),
           applyOptimistic: (data) => updateIssueInBoard(data, 1, (i) => ({ ...i, subject: 'Optimistic' })),
-          applyServer: (data, res, _payload) => replaceIssueInBoard(data, res.issue),
+          applyServer: (data, res) => replaceIssueInBoard(data, res.issue),
           onMutateIssue,
           onSettledIssue,
           onSuccess,
@@ -146,7 +184,7 @@ describe('useIssueMutation', () => {
           queryKey,
           mutationFn: async () => ({ issue: makeIssue(1, { subject: 'Server' }) }),
           applyOptimistic: (data) => updateIssueInBoard(data, 1, (i) => ({ ...i, subject: 'Optimistic' })),
-          applyServer: (data, res, _payload) => replaceIssueInBoard(data, res.issue),
+          applyServer: (data, res) => replaceIssueInBoard(data, res.issue),
         }),
       { wrapper: createWrapper(queryClient) }
     );
@@ -175,7 +213,7 @@ describe('useIssueMutation', () => {
             throw new Error('failed');
           },
           applyOptimistic: (data) => updateIssueInBoard(data, 1, (i) => ({ ...i, subject: 'Optimistic' })),
-          applyServer: (data, _res, _payload) => data,
+          applyServer: (data) => data,
           onError,
         }),
       { wrapper: createWrapper(queryClient) }
