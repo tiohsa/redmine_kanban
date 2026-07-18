@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query';
-import type { BoardData, Issue } from './types';
+import type { BoardData, Issue, Subtask } from './types';
 import type { AncestorIssueUpdate } from './kanbanShared';
 import { updateSubtasksTree } from './subtasksTree';
 
@@ -100,6 +100,23 @@ export function updateIssueInBoard(
     issues,
     columns: rebuildColumnCounts({ ...data, issues }),
   };
+}
+
+export function updateSubtaskInBoard(
+  data: BoardData,
+  subtaskId: number,
+  patch: Partial<Pick<Subtask, 'status_id' | 'is_closed' | 'lock_version'>>,
+): BoardData {
+  let changed = false;
+  const issues = data.issues.map((issue) => {
+    const subtasks = updateSubtasksTree(issue.subtasks, subtaskId, patch);
+    if (subtasks === issue.subtasks) return issue;
+
+    changed = true;
+    return { ...issue, subtasks };
+  });
+
+  return changed ? { ...data, issues } : data;
 }
 
 export function applyAncestorIssueUpdates(

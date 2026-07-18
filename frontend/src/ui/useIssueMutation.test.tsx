@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { BoardData, Issue } from './types';
-import { applyAncestorIssueUpdates, replaceIssueInBoard, updateIssueInBoard, useIssueMutation } from './useIssueMutation';
+import { applyAncestorIssueUpdates, replaceIssueInBoard, updateIssueInBoard, updateSubtaskInBoard, useIssueMutation } from './useIssueMutation';
 
 function makeIssue(id: number, attrs: Partial<Issue> = {}): Issue {
   return {
@@ -82,6 +82,69 @@ describe('updateIssueInBoard', () => {
     const parent = next.issues.find((issue) => issue.id === 10);
     expect(parent?.subtasks?.[0].status_id).toBe(2);
     expect(parent?.subtasks?.[0].is_closed).toBe(true);
+  });
+});
+
+describe('updateSubtaskInBoard', () => {
+  it('updates only the matching nested subtask when it is not loaded as a board issue', () => {
+    const board = makeBoardData([
+      makeIssue(10, {
+        subtasks: [
+          { id: 20, subject: 'First child', status_id: 1, is_closed: false, lock_version: 3 },
+          {
+            id: 30,
+            subject: 'Second child',
+            status_id: 1,
+            is_closed: false,
+            lock_version: 7,
+            subtasks: [
+              { id: 40, subject: 'Nested child', status_id: 1, is_closed: false, lock_version: 11 },
+            ],
+          },
+        ],
+      }),
+    ]);
+
+    const next = updateSubtaskInBoard(board, 20, {
+      status_id: 2,
+      is_closed: true,
+      lock_version: 4,
+    });
+
+    expect(next.issues[0].subtasks?.[0]).toMatchObject({
+      id: 20,
+      status_id: 2,
+      is_closed: true,
+      lock_version: 4,
+    });
+    expect(next.issues[0].subtasks?.[1]).toBe(board.issues[0].subtasks?.[1]);
+  });
+
+  it('keeps the latest lock version available for a consecutive toggle', () => {
+    const board = makeBoardData([
+      makeIssue(10, {
+        subtasks: [{ id: 20, subject: 'Child', status_id: 1, is_closed: false, lock_version: 3 }],
+      }),
+    ]);
+
+    const afterClose = updateSubtaskInBoard(board, 20, {
+      status_id: 2,
+      is_closed: true,
+      lock_version: 4,
+    });
+    const lockVersionForReopen = afterClose.issues[0].subtasks?.[0].lock_version;
+    const afterReopen = updateSubtaskInBoard(afterClose, 20, {
+      status_id: 1,
+      is_closed: false,
+      lock_version: 5,
+    });
+
+    expect(lockVersionForReopen).toBe(4);
+    expect(afterReopen.issues[0].subtasks?.[0]).toMatchObject({
+      status_id: 1,
+      is_closed: false,
+      lock_version: 5,
+    });
   });
 });
 

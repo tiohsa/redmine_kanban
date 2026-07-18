@@ -3,7 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import type { QueryKey } from '@tanstack/react-query';
 import type { BoardData, Issue } from './types';
 import { isHttpError, postJson } from './http';
-import { applyAncestorIssueUpdates, updateIssueInBoard, useIssueMutation } from './useIssueMutation';
+import { applyAncestorIssueUpdates, updateIssueInBoard, updateSubtaskInBoard, useIssueMutation } from './useIssueMutation';
 import { findSubtask, resolveAssigneeName, resolveMutationError, resolvePriorityName, resolveSubtaskStatus, type IssueMutationResult, type MovePayload, type UpdatePayload } from './kanbanShared';
 
 type Args = {
@@ -64,8 +64,8 @@ export function useKanbanActions({
         'PATCH',
       );
     },
-    applyOptimistic: (prev, payload) =>
-      updateIssueInBoard(prev, payload.issueId, (issue) => {
+    applyOptimistic: (prev, payload) => {
+      const updated = updateIssueInBoard(prev, payload.issueId, (issue) => {
         const nextAssignedToId = payload.assignedToId === undefined ? issue.assigned_to_id : payload.assignedToId;
         const next: Issue = {
           ...issue,
@@ -78,7 +78,13 @@ export function useKanbanActions({
           next.priority_name = resolvePriorityName(prev, payload.priorityId ?? null);
         }
         return next;
-      }),
+      });
+      const isClosed = prev.columns.find((column) => column.id === payload.statusId)?.is_closed ?? false;
+      return updateSubtaskInBoard(updated, payload.issueId, {
+        status_id: payload.statusId,
+        is_closed: isClosed,
+      });
+    },
     applyServer: (prev, result, payload) => {
       const updated = updateIssueInBoard(prev, payload.issueId, (issue) => {
         const nextAssignedToId = payload.assignedToId === undefined ? issue.assigned_to_id : payload.assignedToId;
@@ -94,7 +100,16 @@ export function useKanbanActions({
               : resolvePriorityName(prev, payload.priorityId ?? null),
         };
       });
-      return applyAncestorIssueUpdates(updated, result.ancestor_updates);
+      const isClosed = prev.columns.find((column) => column.id === payload.statusId)?.is_closed ?? false;
+      const subtaskPatch = {
+        status_id: payload.statusId,
+        is_closed: isClosed,
+        ...(typeof result.issue.lock_version === 'number' ? { lock_version: result.issue.lock_version } : {}),
+      };
+      return applyAncestorIssueUpdates(
+        updateSubtaskInBoard(updated, payload.issueId, subtaskPatch),
+        result.ancestor_updates,
+      );
     },
     onError: (error) => {
       setError(resolveMutationError(error, data?.labels, data?.labels.move_failed));
