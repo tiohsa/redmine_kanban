@@ -26,11 +26,11 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
       allowed
     end
 
-    def can_update_issue?(_project)
+    def can_update_issue?(_issue_project, _board_project = _issue_project)
       allowed
     end
 
-    def can_delete_issue?(_project)
+    def can_delete_issue?(_issue_project, _board_project = _issue_project)
       allowed
     end
   end
@@ -74,11 +74,17 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
     calls = []
     policy = Object.new
     policy.define_singleton_method(:can_move_issue?) do |actual_issue_project, actual_board_project|
-      calls << [actual_issue_project, actual_board_project]
+      calls << [:move, actual_issue_project, actual_board_project]
       true
     end
-    policy.define_singleton_method(:can_update_issue?) { |_project| true }
-    policy.define_singleton_method(:can_delete_issue?) { |_project| true }
+    policy.define_singleton_method(:can_update_issue?) do |actual_issue_project, actual_board_project|
+      calls << [:update, actual_issue_project, actual_board_project]
+      true
+    end
+    policy.define_singleton_method(:can_delete_issue?) do |actual_issue_project, actual_board_project|
+      calls << [:delete, actual_issue_project, actual_board_project]
+      true
+    end
     presenter = RedmineKanban::BoardIssuePresenter.new(
       user: Object.new,
       subtasks_by_parent_id: { 1 => [child] },
@@ -89,7 +95,14 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
     presenter.send(:permissions_for, parent)
     presenter.send(:subtask_tree, parent, Set[parent.id])
 
-    assert_equal [[issue_project, board_project], [issue_project, board_project]], calls
+    assert_equal [
+      [:move, issue_project, board_project],
+      [:move, issue_project, board_project],
+      [:update, issue_project, board_project],
+      [:delete, issue_project, board_project],
+      [:update, issue_project, board_project],
+      [:delete, issue_project, board_project]
+    ], calls
   end
 
   private

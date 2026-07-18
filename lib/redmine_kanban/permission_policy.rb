@@ -16,12 +16,12 @@ module RedmineKanban
       allowed_to?(:manage_redmine_kanban, project) && allowed_to?(:add_issues, project)
     end
 
-    def can_update_issue?(project)
-      allowed_to?(:view_redmine_kanban, project) && allowed_to?(:edit_issues, project)
+    def can_update_issue?(issue_project, board_project = issue_project)
+      allowed_to?(:view_redmine_kanban, board_project) && allowed_to?(:edit_issues, issue_project)
     end
 
-    def can_delete_issue?(project)
-      allowed_to?(:view_redmine_kanban, project) && allowed_to?(:delete_issues, project)
+    def can_delete_issue?(issue_project, board_project = issue_project)
+      allowed_to?(:view_redmine_kanban, board_project) && allowed_to?(:delete_issues, issue_project)
     end
 
     def can_log_time?(project)

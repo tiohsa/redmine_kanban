@@ -95,11 +95,11 @@ module RedmineKanban
     end
 
     def require_update_permission
-      require_permission!(permission_policy.can_update_issue?(@issue.project))
+      require_permission!(permission_policy.can_update_issue?(@issue.project, @project))
     end
 
     def require_delete_permission
-      require_permission!(permission_policy.can_delete_issue?(@issue.project))
+      require_permission!(permission_policy.can_delete_issue?(@issue.project, @project))
     end
 
     def find_issue

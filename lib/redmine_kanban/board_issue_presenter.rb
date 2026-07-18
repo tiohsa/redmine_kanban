@@ -72,8 +72,8 @@ module RedmineKanban
       project = issue.project
       {
         can_move: permission_policy.can_move_issue?(project, @board_project || project),
-        can_edit: permission_policy.can_update_issue?(project),
-        can_delete: permission_policy.can_delete_issue?(project),
+        can_edit: permission_policy.can_update_issue?(project, @board_project || project),
+        can_delete: permission_policy.can_delete_issue?(project, @board_project || project),
       }
     end
 
