@@ -47,9 +47,12 @@ describe('getCleanDialogStyles', () => {
     expect(css).not.toContain('#sidebar');
   });
 
-  it('should include sidebar hiding rules for issue view dialogs', () => {
+  it('should hide built-in edit links while preserving other contextual actions in issue view dialogs', () => {
     const css = getCleanDialogStyles({ variant: 'issue-view' });
-    expect(css).toContain('#content > .contextual:has(+ h2.inline-block)');
+    expect(css).toContain('#content > .contextual a.icon-edit');
+    expect(css).toContain('#content > .contextual a[href*="/issues/"][href$="/edit"]');
+    expect(css).toContain('#content > .contextual a[href*="/issues/"][href*="/edit?"]');
+    expect(css).not.toContain('#content > .contextual:has(+ h2.inline-block)');
     expect(css).toContain('#sidebar');
     expect(css).toContain('#sidebar-switch-panel');
     expect(css).toContain('#sidebar-handler');
@@ -66,10 +69,12 @@ describe('getCleanDialogStyles', () => {
     expect(css).not.toContain('textarea[name="journal[notes]"]');
   });
 
-  it('should not include sidebar hiding rules for compact edit/create dialogs', () => {
+  it('should not include issue-view edit link or sidebar rules for compact edit/create dialogs', () => {
     const css = getCleanDialogStyles({ variant: 'issue-compact' });
     expect(css).not.toContain('#sidebar-handler-container');
-    expect(css).not.toContain('#content > .contextual:has(+ h2.inline-block)');
+    expect(css).not.toContain('#content > .contextual a.icon-edit');
+    expect(css).not.toContain('a[href*="/issues/"][href$="/edit"]');
+    expect(css).not.toContain('a[href*="/issues/"][href*="/edit?"]');
   });
 });
 
