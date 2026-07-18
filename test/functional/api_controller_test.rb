@@ -103,6 +103,98 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_equal 'Updated subject', json.dig('issue', 'subject')
   end
 
+  def test_move_child_status_returns_recalculated_parent_progress
+    open_status = IssueStatus.where(is_closed: false).first || IssueStatus.first
+    closed_status = IssueStatus.where(is_closed: true).first || IssueStatus.first
+    parent = build_issue(subject: 'Progress parent', status: open_status)
+    child = build_issue(subject: 'Progress child', parent_issue_id: parent.id, status: open_status)
+    parent.reload
+
+    patch(
+      :move,
+      params: {
+        project_id: @project.identifier,
+        id: child.id,
+        issue: { status_id: closed_status.id, lock_version: child.lock_version }
+      }
+    )
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    parent.reload
+    update = json['ancestor_updates'].find { |item| item['id'] == parent.id }
+    assert_not_nil update
+    assert_equal parent.done_ratio, update['done_ratio']
+    assert_equal parent.lock_version, update['lock_version']
+    assert_equal parent.updated_on.iso8601, update['updated_on']
+    assert_equal (Date.current - parent.updated_on.to_date).to_i, update['aging_days']
+  end
+
+  def test_move_child_status_back_to_open_lowers_parent_progress
+    open_status = IssueStatus.where(is_closed: false).first || IssueStatus.first
+    closed_status = IssueStatus.where(is_closed: true).first || IssueStatus.first
+    parent = build_issue(subject: 'Reopen parent', status: open_status)
+    child = build_issue(subject: 'Reopen child', parent_issue_id: parent.id, status: closed_status)
+    child.reload
+    parent.reload
+    closed_ratio = parent.done_ratio
+
+    patch(
+      :move,
+      params: {
+        project_id: @project.identifier,
+        id: child.id,
+        issue: { status_id: open_status.id, lock_version: child.lock_version }
+      }
+    )
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    parent.reload
+    assert_operator parent.done_ratio, :<, closed_ratio
+    update = json['ancestor_updates'].find { |item| item['id'] == parent.id }
+    assert_equal parent.done_ratio, update['done_ratio']
+  end
+
+  def test_nested_child_update_returns_all_visible_ancestors
+    open_status = IssueStatus.where(is_closed: false).first || IssueStatus.first
+    closed_status = IssueStatus.where(is_closed: true).first || IssueStatus.first
+    grandparent = build_issue(subject: 'Grandparent', status: open_status)
+    parent = build_issue(subject: 'Parent', parent_issue_id: grandparent.id, status: open_status)
+    child = build_issue(subject: 'Nested child', parent_issue_id: parent.id, status: open_status)
+
+    patch(
+      :move,
+      params: {
+        project_id: @project.identifier,
+        id: child.id,
+        issue: { status_id: closed_status.id, lock_version: child.lock_version }
+      }
+    )
+
+    assert_response :success
+    ids = JSON.parse(@response.body).fetch('ancestor_updates').map { |item| item['id'] }
+    assert_includes ids, parent.id
+    assert_includes ids, grandparent.id
+  end
+
+  def test_subject_update_does_not_return_unnecessary_ancestor_updates
+    parent = build_issue(subject: 'No propagation parent')
+    child = build_issue(subject: 'No propagation child', parent_issue_id: parent.id)
+
+    patch(
+      :update,
+      params: {
+        project_id: @project.identifier,
+        id: child.id,
+        issue: { subject: 'Changed subject', lock_version: child.lock_version }
+      }
+    )
+
+    assert_response :success
+    refute JSON.parse(@response.body).key?('ancestor_updates')
+  end
+
   def test_move_updates_children_priority_when_parent_has_subtasks
     parent = build_issue(subject: 'Parent issue')
     child1 = build_issue(subject: 'Child 1', parent_issue_id: parent.id)

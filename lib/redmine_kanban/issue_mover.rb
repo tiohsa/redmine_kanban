@@ -95,14 +95,16 @@ module RedmineKanban
 
       return error_result if error_result
 
+      ancestor_updates_required = @issue.saved_change_to_status_id? || @issue.saved_change_to_done_ratio?
+
       if priority_id.is_a?(Integer)
         reconcile_error = reconcile_priorities_after_commit!(@issue, priority_id)
         return error_response(reconcile_error) if reconcile_error
       end
 
       result = { ok: true, issue: issue_presenter(@issue).issue_to_h(@issue) }
-      ancestor_updates = ancestor_updates_for(@issue)
-      result[:ancestor_updates] = ancestor_updates if ancestor_updates.any?
+      ancestor_updates = ancestor_updates_for(@issue) if ancestor_updates_required
+      result[:ancestor_updates] = ancestor_updates if ancestor_updates&.any?
       result[:warning] = warning if warning.present?
       result
     rescue ActiveRecord::StaleObjectError

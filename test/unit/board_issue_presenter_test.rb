@@ -47,6 +47,13 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
     assert_equal [3], tree.first[:subtasks].map { |node| node[:id] }
   end
 
+  def test_aging_days_for_returns_days_since_update
+    issue = fake_issue(id: 1, subject: 'Aged')
+    issue.define_singleton_method(:updated_on) { Time.zone.now - 2.days }
+
+    assert_equal 2, RedmineKanban::BoardIssuePresenter.aging_days_for(issue)
+  end
+
   def test_subtask_tree_skips_visited_issues
     parent = fake_issue(id: 1, subject: 'Parent')
     child = fake_issue(id: 2, parent_id: 1, subject: 'Child')

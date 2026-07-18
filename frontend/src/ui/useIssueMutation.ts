@@ -113,11 +113,32 @@ export function applyAncestorIssueUpdates(
   const issues = data.issues.map((issue) => {
     const update = updatesById.get(issue.id);
     if (!update) return issue;
+
+    if (isOlderAncestorUpdate(issue, update)) return issue;
+
     changed = true;
     return { ...issue, ...update };
   });
 
   return changed ? { ...data, issues } : data;
+}
+
+function isOlderAncestorUpdate(issue: Issue, update: AncestorIssueUpdate): boolean {
+  const currentVersion = issue.lock_version;
+  if (typeof currentVersion === 'number') {
+    if (update.lock_version < currentVersion) return true;
+    if (update.lock_version > currentVersion) return false;
+  }
+
+  const currentUpdatedOn = parseDate(issue.updated_on);
+  const incomingUpdatedOn = parseDate(update.updated_on);
+  return currentUpdatedOn !== null && incomingUpdatedOn !== null && incomingUpdatedOn < currentUpdatedOn;
+}
+
+function parseDate(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? null : timestamp;
 }
 
 export function replaceIssueInBoard(data: BoardData, nextIssue: Issue): BoardData {

@@ -88,25 +88,27 @@ describe('updateIssueInBoard', () => {
 describe('applyAncestorIssueUpdates', () => {
   it('updates progress metadata for loaded parent and ancestor cards', () => {
     const board = makeBoardData([
-      makeIssue(10, { done_ratio: 0, lock_version: 1, updated_on: '2026-07-17T00:00:00Z' }),
+      makeIssue(10, { done_ratio: 0, lock_version: 1, updated_on: '2026-07-17T00:00:00Z', aging_days: 1 }),
       makeIssue(20, { done_ratio: 50, lock_version: 2 }),
       makeIssue(30, { parent_id: 20 }),
     ]);
 
     const next = applyAncestorIssueUpdates(board, [
-      { id: 10, done_ratio: 25, lock_version: 3, updated_on: '2026-07-18T00:00:00Z' },
-      { id: 20, done_ratio: 100, lock_version: 4, updated_on: '2026-07-18T00:01:00Z' },
+      { id: 10, done_ratio: 25, lock_version: 3, updated_on: '2026-07-18T00:00:00Z', aging_days: 0 },
+      { id: 20, done_ratio: 100, lock_version: 4, updated_on: '2026-07-18T00:01:00Z', aging_days: 0 },
     ]);
 
     expect(next.issues.find((issue) => issue.id === 10)).toMatchObject({
       done_ratio: 25,
       lock_version: 3,
       updated_on: '2026-07-18T00:00:00Z',
+      aging_days: 0,
     });
     expect(next.issues.find((issue) => issue.id === 20)).toMatchObject({
       done_ratio: 100,
       lock_version: 4,
       updated_on: '2026-07-18T00:01:00Z',
+      aging_days: 0,
     });
     expect(next.issues).toHaveLength(3);
   });
@@ -115,11 +117,58 @@ describe('applyAncestorIssueUpdates', () => {
     const board = makeBoardData([makeIssue(20, { done_ratio: 50 }), makeIssue(30)]);
 
     const next = applyAncestorIssueUpdates(board, [
-      { id: 10, done_ratio: 100, lock_version: 2, updated_on: null },
+      { id: 10, done_ratio: 100, lock_version: 2, updated_on: null, aging_days: 0 },
     ]);
 
     expect(next).toBe(board);
     expect(next.issues.map((issue) => issue.id)).toEqual([20, 30]);
+  });
+
+  it('rejects an older lock version even when it arrives later', () => {
+    const board = makeBoardData([
+      makeIssue(10, { done_ratio: 75, lock_version: 5, updated_on: '2026-07-18T00:05:00Z', aging_days: 0 }),
+    ]);
+
+    const next = applyAncestorIssueUpdates(board, [
+      { id: 10, done_ratio: 25, lock_version: 4, updated_on: '2026-07-18T00:04:00Z', aging_days: 1 },
+    ]);
+
+    expect(next).toBe(board);
+  });
+
+  it('uses updated_on as a tie breaker for the same lock version', () => {
+    const board = makeBoardData([
+      makeIssue(10, { done_ratio: 75, lock_version: 5, updated_on: '2026-07-18T00:05:00Z', aging_days: 0 }),
+    ]);
+
+    const next = applyAncestorIssueUpdates(board, [
+      { id: 10, done_ratio: 50, lock_version: 5, updated_on: '2026-07-18T00:04:00Z', aging_days: 1 },
+    ]);
+
+    expect(next).toBe(board);
+  });
+
+  it('keeps the newest update when responses arrive out of order', () => {
+    const board = makeBoardData([makeIssue(10, { done_ratio: 0, lock_version: 1, updated_on: '2026-07-18T00:00:00Z', aging_days: 0 })]);
+
+    const afterNew = applyAncestorIssueUpdates(board, [
+      { id: 10, done_ratio: 75, lock_version: 3, updated_on: '2026-07-18T00:03:00Z', aging_days: 0 },
+    ]);
+    const afterLateOld = applyAncestorIssueUpdates(afterNew, [
+      { id: 10, done_ratio: 25, lock_version: 2, updated_on: '2026-07-18T00:02:00Z', aging_days: 0 },
+    ]);
+
+    expect(afterLateOld.issues[0]).toMatchObject({ done_ratio: 75, lock_version: 3, aging_days: 0 });
+  });
+
+  it('does not throw or reject an update because of an invalid date', () => {
+    const board = makeBoardData([makeIssue(10, { done_ratio: 0, lock_version: 1, updated_on: 'not-a-date' })]);
+
+    const next = applyAncestorIssueUpdates(board, [
+      { id: 10, done_ratio: 25, lock_version: 2, updated_on: 'also-not-a-date', aging_days: 0 },
+    ]);
+
+    expect(next.issues[0].done_ratio).toBe(25);
   });
 });
 

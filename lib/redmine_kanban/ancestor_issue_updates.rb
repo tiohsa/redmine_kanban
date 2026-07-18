@@ -11,7 +11,8 @@ module RedmineKanban
           id: ancestor.id,
           done_ratio: ancestor.done_ratio,
           lock_version: ancestor.lock_version,
-          updated_on: ancestor.updated_on&.iso8601
+          updated_on: ancestor.updated_on&.iso8601,
+          aging_days: BoardIssuePresenter.aging_days_for(ancestor)
         }
       end
     end

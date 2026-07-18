@@ -5,7 +5,13 @@ import { isHttpError } from './http';
 
 export type FitMode = 'none' | 'width';
 
-export type AncestorIssueUpdate = Pick<Issue, 'id' | 'done_ratio' | 'lock_version' | 'updated_on'>;
+export type AncestorIssueUpdate = {
+  id: number;
+  done_ratio: number;
+  lock_version: number;
+  updated_on: string | null;
+  aging_days: number;
+};
 
 export type IssueMutationResult = {
   issue: Issue;

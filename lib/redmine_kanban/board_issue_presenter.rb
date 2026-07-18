@@ -27,7 +27,7 @@ module RedmineKanban
         priority_name: issue.priority&.name,
         done_ratio: issue.done_ratio,
         updated_on: issue.updated_on&.iso8601,
-        aging_days: aging_days(issue),
+        aging_days: self.class.aging_days_for(issue),
         project: { id: issue.project_id, name: issue.project.name },
         permissions: permissions_for(issue),
         subtasks: subtask_tree(issue, Set[issue.id]),
@@ -38,13 +38,13 @@ module RedmineKanban
       }
     end
 
-    private
-
-    def aging_days(issue)
+    def self.aging_days_for(issue)
       return 0 unless issue.updated_on
 
       (Date.current - issue.updated_on.to_date).to_i
     end
+
+    private
 
     def subtask_tree(issue, visited_ids)
       children = @subtasks_by_parent_id[issue.id] || []

@@ -126,6 +126,71 @@ jobs:
       - name: Run frontend unit tests
         run: npm --prefix frontend run test -- --run
 
+  ruby-test:
+    name: Ruby unit and API tests
+    needs: init
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      REDMINE_IMAGE: redmine:6.1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start Redmine test stack
+        run: docker compose -f .github/e2e/docker-compose.yml up -d --wait --wait-timeout 600
+
+      - name: Configure Redmine database.yml for production
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T redmine sh -lc \
+            "printf '%s\n' \
+            'production:' \
+            '  adapter: mysql2' \
+            '  database: redmine' \
+            '  host: db' \
+            '  username: redmine' \
+            '  password: password' \
+            '  encoding: utf8mb4' \
+            'test:' \
+            '  adapter: mysql2' \
+            '  database: redmine' \
+            '  host: db' \
+            '  username: redmine' \
+            '  password: password' \
+            '  encoding: utf8mb4' \
+            > /usr/src/redmine/config/database.yml"
+
+      - name: Migrate Redmine and plugin
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+            env RAILS_ENV=production bundle exec rake db:migrate redmine:plugins:migrate
+
+      - name: Load default data
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+            env REDMINE_LANG=en RAILS_ENV=production bundle exec rake redmine:load_default_data
+
+      - name: Prepare test database
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+            env RAILS_ENV=test bundle exec rake db:migrate redmine:plugins:migrate
+
+      - name: Run Ruby unit and API tests
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+            env RAILS_ENV=test bundle exec rails test \
+            plugins/redmine_kanban/test/unit/ancestor_issue_updates_test.rb \
+            plugins/redmine_kanban/test/unit/board_issue_presenter_test.rb \
+            plugins/redmine_kanban/test/functional/api_controller_test.rb
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose -f .github/e2e/docker-compose.yml logs --no-color
+
+      - name: Stop Redmine test stack
+        if: always()
+        run: docker compose -f .github/e2e/docker-compose.yml down -v
+
   e2e-redmine-61:
     name: Redmine 6.1 Full E2E
     needs:

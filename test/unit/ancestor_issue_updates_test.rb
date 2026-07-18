@@ -1,6 +1,7 @@
 require File.expand_path('../../../../test/test_helper', File.expand_path(__dir__))
 
 require_relative '../../lib/redmine_kanban/ancestor_issue_updates'
+require_relative '../../lib/redmine_kanban/board_issue_presenter'
 
 class RedmineKanbanAncestorIssueUpdatesTest < ActiveSupport::TestCase
   FakeAncestor = Struct.new(
@@ -8,6 +9,7 @@ class RedmineKanbanAncestorIssueUpdatesTest < ActiveSupport::TestCase
     :done_ratio,
     :lock_version,
     :updated_on,
+    :aging_days,
     :visible,
     :reload_count,
     keyword_init: true
@@ -42,6 +44,7 @@ class RedmineKanbanAncestorIssueUpdatesTest < ActiveSupport::TestCase
       done_ratio: 75,
       lock_version: 4,
       updated_on: Time.utc(2026, 7, 18, 1, 2, 3),
+      aging_days: 0,
       visible: true
     )
     hidden = FakeAncestor.new(
@@ -59,6 +62,7 @@ class RedmineKanbanAncestorIssueUpdatesTest < ActiveSupport::TestCase
     assert_equal 75, result.first[:done_ratio]
     assert_equal 4, result.first[:lock_version]
     assert_equal '2026-07-18T01:02:03Z', result.first[:updated_on]
+    assert_equal 0, result.first[:aging_days]
     assert_equal 1, visible.reload_count
     assert_nil hidden.reload_count
   end
