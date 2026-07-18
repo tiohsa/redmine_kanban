@@ -37,6 +37,12 @@ const TIME_ENTRY_DIALOG_HIDE_SELECTORS = [
   '#new_time_entry a[href*="javascript:history"]',
 ];
 
+const ISSUE_VIEW_BUILTIN_EDIT_LINK_SELECTORS = [
+  '#content > .contextual a.icon-edit',
+  '#content > .contextual a[href*="/issues/"][href$="/edit"]',
+  '#content > .contextual a[href*="/issues/"][href*="/edit?"]',
+];
+
 export type CleanDialogStyleVariant = 'default' | 'issue-compact' | 'issue-view' | 'time-entry-compact';
 
 type GetCleanDialogStylesOptions = {
@@ -102,7 +108,7 @@ const ISSUE_VIEW_STYLE_RULES = `
   #content {
     padding-bottom: 56px !important;
   }
-  #content > .contextual:has(+ h2.inline-block) {
+  ${ISSUE_VIEW_BUILTIN_EDIT_LINK_SELECTORS.join(', ')} {
     display: none !important;
   }
   #sidebar,
