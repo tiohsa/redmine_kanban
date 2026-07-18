@@ -147,7 +147,8 @@ module RedmineKanban
     def issue_presenter(issue)
       BoardIssuePresenter.new(
         user: @user,
-        subtasks_by_parent_id: SubtaskLoader.new(user: @user).subtasks_by_parent_id([issue.id])
+        subtasks_by_parent_id: SubtaskLoader.new(user: @user).subtasks_by_parent_id([issue.id]),
+        board_project: @project
       )
     end
 

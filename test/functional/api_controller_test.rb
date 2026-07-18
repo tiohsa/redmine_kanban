@@ -510,11 +510,20 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_equal [other_issue.id], json['issues'].map { |issue| issue['id'] }
   end
 
-  def test_move_allows_issue_from_non_descendant_project
-    other_project = build_project(name: 'Move Target', identifier: "move-target-#{Time.now.to_i}")
+  def test_move_allows_issue_from_non_descendant_project_with_kanban_disabled
+    other_project = build_project(
+      name: 'Move Target',
+      identifier: "move-target-#{Time.now.to_i}",
+      kanban_enabled: false
+    )
     issue = build_issue(subject: 'Cross project move', project: other_project)
     closed_status = IssueStatus.where.not(id: issue.status_id).where(is_closed: true).first || IssueStatus.where.not(id: issue.status_id).first
     assert_not_nil closed_status
+
+    board_json = index_response(project_ids: [other_project.id])
+    card = board_json['issues'].find { |item| item['id'] == issue.id }
+    assert_not_nil card
+    assert_equal true, card.dig('permissions', 'can_move')
 
     patch(
       :move,
@@ -529,8 +538,54 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     )
 
     assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal true, json.dig('issue', 'permissions', 'can_move')
     issue.reload
     assert_equal closed_status.id, issue.status_id
+  end
+
+  def test_move_rejects_cross_project_issue_without_edit_permission
+    other_project = build_project(
+      name: 'No Edit Target',
+      identifier: "no-edit-target-#{Time.now.to_i}",
+      kanban_enabled: false
+    )
+    issue = build_issue(subject: 'Cannot edit target', project: other_project)
+    @role.remove_permission!(:edit_issues)
+
+    patch(
+      :move,
+      params: {
+        project_id: @project.identifier,
+        id: issue.id,
+        issue: { status_id: issue.status_id, lock_version: issue.lock_version }
+      }
+    )
+
+    assert_response :forbidden
+    assert_equal false, JSON.parse(@response.body)['ok']
+  end
+
+  def test_move_rejects_cross_project_issue_without_board_manage_permission
+    other_project = build_project(
+      name: 'No Board Manage Target',
+      identifier: "no-board-manage-target-#{Time.now.to_i}",
+      kanban_enabled: false
+    )
+    issue = build_issue(subject: 'Cannot manage board', project: other_project)
+    @role.remove_permission!(:manage_redmine_kanban)
+
+    patch(
+      :move,
+      params: {
+        project_id: @project.identifier,
+        id: issue.id,
+        issue: { status_id: issue.status_id, lock_version: issue.lock_version }
+      }
+    )
+
+    assert_response :forbidden
+    assert_equal false, JSON.parse(@response.body)['ok']
   end
 
   def test_update_allows_issue_from_non_descendant_project
@@ -616,11 +671,11 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     issue
   end
 
-  def build_project(name:, identifier:)
+  def build_project(name:, identifier:, kanban_enabled: true)
     project = Project.new(name: name, identifier: identifier)
     project.save!
     EnabledModule.find_or_create_by!(project_id: project.id, name: 'issue_tracking')
-    EnabledModule.find_or_create_by!(project_id: project.id, name: 'redmine_kanban')
+    EnabledModule.find_or_create_by!(project_id: project.id, name: 'redmine_kanban') if kanban_enabled
     tracker = @project.trackers.first || Tracker.first
     project.trackers << tracker unless project.trackers.include?(tracker)
     ensure_member!(@user, project)

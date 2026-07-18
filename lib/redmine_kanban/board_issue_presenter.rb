@@ -2,9 +2,10 @@ require 'set'
 
 module RedmineKanban
   class BoardIssuePresenter
-    def initialize(user:, subtasks_by_parent_id: {})
+    def initialize(user:, subtasks_by_parent_id: {}, board_project: nil)
       @user = user
       @subtasks_by_parent_id = subtasks_by_parent_id
+      @board_project = board_project
     end
 
     def issue_to_h(issue)
@@ -70,7 +71,7 @@ module RedmineKanban
     def permissions_for(issue)
       project = issue.project
       {
-        can_move: permission_policy.can_move_issue?(project),
+        can_move: permission_policy.can_move_issue?(project, @board_project || project),
         can_edit: permission_policy.can_update_issue?(project),
         can_delete: permission_policy.can_delete_issue?(project),
       }

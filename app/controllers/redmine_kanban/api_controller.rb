@@ -82,7 +82,9 @@ module RedmineKanban
     end
 
     def require_move_permission
-      require_permission!(permission_policy.can_move_issue?(@issue.project))
+      return unless require_permission!(permission_policy.can_view_board?(@project))
+
+      require_permission!(permission_policy.can_move_issue?(@issue.project, @project))
     end
 
     def require_create_permission
@@ -102,7 +104,6 @@ module RedmineKanban
 
     def find_issue
       @issue = Issue.visible.find(params[:id])
-      render_404 unless permission_policy.can_view_board?(@issue.project)
     rescue ActiveRecord::RecordNotFound
       render_404
     end

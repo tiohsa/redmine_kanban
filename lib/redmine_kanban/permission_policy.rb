@@ -8,8 +8,8 @@ module RedmineKanban
       allowed_to?(:view_redmine_kanban, project)
     end
 
-    def can_move_issue?(project)
-      allowed_to?(:manage_redmine_kanban, project) && allowed_to?(:edit_issues, project)
+    def can_move_issue?(issue_project, board_project = issue_project)
+      allowed_to?(:manage_redmine_kanban, board_project) && allowed_to?(:edit_issues, issue_project)
     end
 
     def can_create_issue?(project)

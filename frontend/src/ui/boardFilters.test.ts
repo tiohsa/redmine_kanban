@@ -64,6 +64,7 @@ function makeFilters(overrides: Partial<Filters> = {}): Filters {
     priorityFilterEnabled: false,
     projectIds: [],
     statusIds: [],
+    trackerIds: [],
     ...overrides,
   };
 }
@@ -149,6 +150,29 @@ describe('buildVisibleIssues', () => {
     ]);
 
     const issues = buildVisibleIssues(data, makeFilters({ assigneeIds: [] }), new Set(), null);
+
+    expect(issues.map((issue) => issue.id)).toEqual([1, 2]);
+  });
+
+  it('filters issues by multiple selected trackers using OR semantics', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Bug', { tracker_id: 1 }),
+      makeIssue(2, 1, 'Feature', { tracker_id: 2 }),
+      makeIssue(3, 1, 'Task', { tracker_id: 3 }),
+    ]);
+
+    const issues = buildVisibleIssues(data, makeFilters({ trackerIds: [1, 3] }), new Set(), null);
+
+    expect(issues.map((issue) => issue.id)).toEqual([1, 3]);
+  });
+
+  it('treats an empty tracker selection as all issues visible', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Bug', { tracker_id: 1 }),
+      makeIssue(2, 1, 'Feature', { tracker_id: 2 }),
+    ]);
+
+    const issues = buildVisibleIssues(data, makeFilters({ trackerIds: [] }), new Set(), null);
 
     expect(issues.map((issue) => issue.id)).toEqual([1, 2]);
   });

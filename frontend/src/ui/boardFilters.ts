@@ -9,6 +9,7 @@ export type Filters = {
   priorityFilterEnabled: boolean;
   projectIds: number[];
   statusIds: number[];
+  trackerIds: number[];
 };
 
 export function applyBoardDataFilters(
@@ -93,6 +94,8 @@ function filterIssues(issues: Issue[], data: BoardData | null, filters: Filters)
         return false;
       }
     }
+
+    if (filters.trackerIds.length > 0 && !filters.trackerIds.includes(issue.tracker_id)) return false;
 
     if (filters.priorityFilterEnabled) {
       if (filters.priority.length === 0) return false;

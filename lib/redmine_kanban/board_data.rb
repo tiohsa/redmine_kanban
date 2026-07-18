@@ -202,7 +202,11 @@ module RedmineKanban
       issues = fetch_issues(status_ids)
       total_issue_count = fetch_issues_total_count(status_ids)
       subtasks_by_parent_id = subtask_loader.subtasks_by_parent_id(issues.map(&:id))
-      presenter = BoardIssuePresenter.new(user: @user, subtasks_by_parent_id: subtasks_by_parent_id)
+      presenter = BoardIssuePresenter.new(
+        user: @user,
+        subtasks_by_parent_id: subtasks_by_parent_id,
+        board_project: @project
+      )
       lane_assignee_ids = @settings.lane_type == 'none' ? [] : fetch_lane_assignee_ids(status_ids)
       lanes = build_lanes(lane_assignee_ids)
 

@@ -27,6 +27,10 @@ export function normalizeAssigneeIds(assigneeIds: string[], allowedAssigneeIds: 
   return assigneeIds.filter((assigneeId) => assigneeId === 'unassigned' || allowedAssigneeIds.has(assigneeId));
 }
 
+export function normalizeTrackerIds(trackerIds: number[], allowedTrackerIds: Set<number>): number[] {
+  return trackerIds.filter((trackerId) => allowedTrackerIds.has(trackerId));
+}
+
 export function resolveDefaultCreateProjectId(
   selectedProjectIds: number[],
   creatableProjectIds: Set<number>,
@@ -151,6 +155,10 @@ export function App({ dataUrl }: Props) {
     () => new Set((data?.lists.assignees ?? []).filter((assignee) => assignee.id !== null).map((assignee) => String(assignee.id))),
     [data],
   );
+  const allowedTrackerIds = useMemo(
+    () => new Set((data?.lists.trackers ?? []).map((tracker) => tracker.id)),
+    [data],
+  );
   const creatableProjectIds = useMemo(
     () => new Set((data?.lists.creatable_projects ?? []).map((project) => project.id)),
     [data],
@@ -169,6 +177,13 @@ export function App({ dataUrl }: Props) {
     if (normalizedAssigneeIds.length === filters.assigneeIds.length) return;
     setFilters((previous) => ({ ...previous, assigneeIds: normalizedAssigneeIds }));
   }, [allowedAssigneeIds, data, filters.assigneeIds, setFilters]);
+
+  useEffect(() => {
+    if (!data) return;
+    const normalizedTrackerIds = normalizeTrackerIds(filters.trackerIds, allowedTrackerIds);
+    if (normalizedTrackerIds.length === filters.trackerIds.length) return;
+    setFilters((previous) => ({ ...previous, trackerIds: normalizedTrackerIds }));
+  }, [allowedTrackerIds, data, filters.trackerIds, setFilters]);
 
   const effectiveLaneType = displayData?.meta.lane_type;
   const dialogs = useKanbanDialogs(baseUrl, data, effectiveLaneType);

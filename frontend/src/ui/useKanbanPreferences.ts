@@ -12,6 +12,7 @@ const DEFAULT_FILTERS: Filters = {
   priorityFilterEnabled: false,
   projectIds: [],
   statusIds: [],
+  trackerIds: [],
 };
 
 function readStorageValue(key: string): string | null {
@@ -47,6 +48,7 @@ function readFilters(storageKey: string): Filters {
             : Array.isArray(parsed.priority) && parsed.priority.length > 0,
         projectIds: Array.isArray(parsed.projectIds) ? parsed.projectIds.map(Number) : [],
         statusIds: Array.isArray(parsed.statusIds) ? parsed.statusIds.map(Number) : [],
+        trackerIds: Array.isArray(parsed.trackerIds) ? parsed.trackerIds.map(Number) : [],
       };
     }
   } catch {
