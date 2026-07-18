@@ -120,6 +120,14 @@ describe('KanbanToolbar', () => {
     expect(screen.getByTitle('Unassigned, Alice').textContent).toContain('Assignee (2)');
   });
 
+  it('shows the text filter trigger as an icon only', () => {
+    const { container, unmount } = renderToolbar(makeFilters());
+
+    const trigger = container.querySelector('[title="Filter"]');
+    expect(trigger?.textContent).toBe('filter_list');
+    unmount();
+  });
+
   it('updates assigneeIds when an assignee is selected', () => {
     const { onChange } = renderToolbar(makeFilters());
 

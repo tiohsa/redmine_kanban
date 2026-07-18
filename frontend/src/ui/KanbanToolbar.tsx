@@ -476,7 +476,6 @@ export function KanbanToolbar({
           placeholder={labels.filter_subject}
           value={filters.q}
           onChange={(value) => updateFilters({ q: value })}
-          showTriggerLabel
         />
       </div>
 
