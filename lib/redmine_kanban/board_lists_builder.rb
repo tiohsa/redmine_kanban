@@ -38,7 +38,8 @@ module RedmineKanban
     end
 
     def trackers_list
-      trackers = Project.where(id: @project_ids).includes(:trackers).flat_map(&:trackers).uniq.sort_by(&:position)
+      project_ids = @project_ids | project_catalog.subtree_projects(root: @project).map { |project| project[:id] }
+      trackers = Project.where(id: project_ids).includes(:trackers).flat_map(&:trackers).uniq.sort_by(&:position)
       trackers.map { |tracker| { id: tracker.id, name: tracker.name } }
     end
 

@@ -501,13 +501,31 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
 
   def test_index_returns_viewable_projects_and_allows_non_descendant_filter_selection
     other_project = build_project(name: 'Other Kanban', identifier: "other-kanban-#{Time.now.to_i}")
+    other_tracker = Tracker.create!(name: "Other project tracker #{Time.now.to_i}")
+    other_project.trackers << other_tracker
     other_issue = build_issue(subject: 'Other project issue', project: other_project)
 
     json = index_response(project_ids: [other_project.id])
 
     assert_includes json.dig('lists', 'viewable_projects').map { |project| project['id'] }, other_project.id
     assert_includes json.dig('lists', 'creatable_projects').map { |project| project['id'] }, other_project.id
+    assert_includes json.dig('lists', 'trackers').map { |tracker| tracker['id'] }, other_tracker.id
     assert_equal [other_issue.id], json['issues'].map { |issue| issue['id'] }
+  end
+
+  def test_index_includes_trackers_from_active_visible_descendant_projects
+    child_project = build_project(
+      name: 'Kanban Child',
+      identifier: "kanban-child-#{Time.now.to_i}",
+      parent: @project
+    )
+    child_tracker = Tracker.create!(name: "Child-only tracker #{Time.now.to_i}")
+    child_project.trackers << child_tracker
+    @project.reload
+
+    json = index_response
+
+    assert_includes json.dig('lists', 'trackers').map { |tracker| tracker['id'] }, child_tracker.id
   end
 
   def test_move_allows_issue_from_non_descendant_project_with_kanban_disabled
@@ -671,8 +689,8 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     issue
   end
 
-  def build_project(name:, identifier:, kanban_enabled: true)
-    project = Project.new(name: name, identifier: identifier)
+  def build_project(name:, identifier:, kanban_enabled: true, parent: nil)
+    project = Project.new(name: name, identifier: identifier, parent: parent)
     project.save!
     EnabledModule.find_or_create_by!(project_id: project.id, name: 'issue_tracking')
     EnabledModule.find_or_create_by!(project_id: project.id, name: 'redmine_kanban') if kanban_enabled
