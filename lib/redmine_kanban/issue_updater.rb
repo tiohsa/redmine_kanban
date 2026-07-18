@@ -1,4 +1,5 @@
 require_relative 'subtask_loader'
+require_relative 'ancestor_issue_updates'
 
 module RedmineKanban
   class IssueUpdater
@@ -6,6 +7,7 @@ module RedmineKanban
     include PriorityPropagation
     include IssueWorkflow
     include ServiceResponse
+    include AncestorIssueUpdates
 
     def initialize(project:, user:)
       @project = project
@@ -58,9 +60,6 @@ module RedmineKanban
         end
       end
 
-      # Remove empty/nil values to avoid overwriting with defaults if not intended (though here we intend to update)
-      # Actually safe_attributes handles this, but for some normalization we did above.
-
       error_result = nil
       priority_updated = priority_id != :no_change
 
@@ -89,6 +88,8 @@ module RedmineKanban
       end
 
       result = { ok: true, issue: issue_presenter(issue).issue_to_h(issue) }
+      ancestor_updates = ancestor_updates_for(issue)
+      result[:ancestor_updates] = ancestor_updates if ancestor_updates.any?
       result[:warning] = @warning if @warning.present?
       result
     rescue ActiveRecord::StaleObjectError
