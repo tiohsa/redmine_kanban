@@ -7,11 +7,16 @@ import { IframeEditDialog } from './IframeEditDialog';
 import { getCleanDialogStyles } from './board/iframeStyles';
 
 const mutateAsyncMock = vi.hoisted(() => vi.fn());
+const getJsonMock = vi.hoisted(() => vi.fn());
 
 vi.mock('./hooks/useBulkSubtaskMutation', () => ({
   useBulkSubtaskMutation: () => ({
     mutateAsync: mutateAsyncMock,
   }),
+}));
+
+vi.mock('./http', () => ({
+  getJson: getJsonMock,
 }));
 
 class ResizeObserverMock {
@@ -79,6 +84,8 @@ const labels: Record<string, string> = {
 describe('IframeEditDialog layout variants', () => {
   beforeEach(() => {
     window.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
+    mutateAsyncMock.mockReset();
+    getJsonMock.mockResolvedValue({ trackers: [{ id: 3, name: 'Feature' }] });
   });
 
   afterEach(() => {
@@ -177,6 +184,120 @@ describe('IframeEditDialog layout variants', () => {
       expect(onSuccess).toHaveBeenCalledWith('保存済み 1');
       expect(screen.queryByRole('button', { name: '保存' })).toBeNull();
       expect(screen.getByRole('button', { name: 'チケットを編集' })).toBeTruthy();
+    });
+  });
+
+  it('shows edit action initially and save action when an issue-show dialog has subtask input', async () => {
+    const { container } = render(
+      <IframeEditDialog
+        url="/issues/1"
+        issueId={1}
+        issueTitle="Feature request"
+        labels={labels}
+        baseUrl=""
+        queryKey={['kanban', 'board']}
+        onClose={() => {}}
+        onSuccess={() => {}}
+      />,
+    );
+
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    const doc = document.implementation.createHTMLDocument('iframe');
+    doc.body.innerHTML = '<div id="content"><div class="issue details">Issue</div></div>';
+    Object.defineProperty(iframe, 'contentWindow', {
+      value: { location: { href: 'http://example.com/issues/1' }, document: doc, addEventListener: vi.fn(), removeEventListener: vi.fn() },
+      configurable: true,
+    });
+    Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+    fireEvent.load(iframe);
+    await waitFor(() => expect(getJsonMock).toHaveBeenCalledWith('/trackers'));
+    await screen.findByRole('button', { name: 'チケットを編集' });
+    expect(screen.queryByRole('button', { name: '保存' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /子チケット一括登録/ }));
+    fireEvent.change(screen.getByRole('textbox', { name: '子チケット一括登録 (1行に1件名)' }), { target: { value: '子チケット 1' } });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '保存' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'チケットを編集' })).toBeNull();
+    });
+
+    fireEvent.change(screen.getByRole('textbox', { name: '子チケット一括登録 (1行に1件名)' }), { target: { value: '' } });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'チケットを編集' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: '保存' })).toBeNull();
+    });
+
+    fireEvent.change(screen.getByRole('textbox', { name: '子チケット一括登録 (1行に1件名)' }), { target: { value: '  \n\t' } });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'チケットを編集' })).toBeTruthy();
+      expect(mutateAsyncMock).not.toHaveBeenCalled();
+    });
+  });
+
+  it('keeps subtask input through issue-show to edit and creates subtasks after saving the issue', async () => {
+    mutateAsyncMock.mockResolvedValue([]);
+    const onSuccess = vi.fn();
+    const { container } = render(
+      <IframeEditDialog
+        url="/issues/1"
+        issueId={1}
+        issueTitle="Feature request"
+        projectId={3}
+        labels={labels}
+        baseUrl="/projects/demo/kanban"
+        queryKey={['kanban', 'board']}
+        onClose={() => {}}
+        onSuccess={onSuccess}
+      />,
+    );
+
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    const doc = document.implementation.createHTMLDocument('iframe');
+    doc.body.innerHTML = '<div id="content"><div class="issue details">Issue</div></div>';
+    const iframeWindow = {
+      location: { href: 'http://example.com/issues/1' },
+      document: doc,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      $: vi.fn(() => ({ off: vi.fn() })),
+    };
+    Object.defineProperty(iframe, 'contentWindow', { value: iframeWindow, configurable: true });
+    Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+    fireEvent.load(iframe);
+    await waitFor(() => expect(getJsonMock).toHaveBeenCalledWith('/projects/demo/kanban/trackers?target_project_id=3'));
+    fireEvent.click(screen.getByRole('button', { name: /子チケット一括登録/ }));
+    fireEvent.change(screen.getByRole('textbox', { name: '子チケット一括登録 (1行に1件名)' }), { target: { value: '子チケット 1\n子チケット 2' } });
+    await screen.findByRole('button', { name: '保存' });
+
+    const issueEditForm = document.implementation.createHTMLDocument('edit iframe');
+    issueEditForm.body.innerHTML = `
+      <div id="content"><form id="issue-form">
+        <input name="issue[priority_id]" value="4" />
+        <input name="issue[status_id]" value="2" />
+        <input name="issue[assigned_to_id]" value="8" />
+        <button type="submit">Save</button>
+      </form></div>`;
+    iframeWindow.location.href = 'http://example.com/issues/1/edit';
+    Object.defineProperty(iframe, 'contentDocument', { value: issueEditForm, configurable: true });
+    const nativeSubmit = issueEditForm.querySelector('button') as HTMLButtonElement;
+    const nativeClick = vi.spyOn(nativeSubmit, 'click').mockImplementation(() => undefined);
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    fireEvent.load(iframe);
+
+    expect(nativeClick).toHaveBeenCalledOnce();
+
+    iframeWindow.location.href = 'http://example.com/issues/1';
+    issueEditForm.body.innerHTML = '<div id="content"><div class="issue details">Saved issue</div></div>';
+    fireEvent.load(iframe);
+
+    await waitFor(() => {
+      expect(mutateAsyncMock).toHaveBeenCalledWith([
+        expect.objectContaining({ subject: '子チケット 1', project_id: 3, tracker_id: 3 }),
+        expect.objectContaining({ subject: '子チケット 2', project_id: 3, tracker_id: 3 }),
+      ]);
     });
   });
 

@@ -48,6 +48,7 @@ export type ResolvedBoardIssue = {
   kind: 'issue' | 'subtask';
   trackerId?: number;
   parentIssueId?: number;
+  projectId?: number;
 };
 
 type FieldErrors = {
@@ -157,6 +158,7 @@ export function resolveBoardIssue(data: BoardData, issueId: number): ResolvedBoa
       kind: 'issue',
       trackerId: issue.tracker_id,
       parentIssueId: issue.parent_id ?? undefined,
+      projectId: issue.project?.id,
     };
   }
 
@@ -172,6 +174,7 @@ export function resolveBoardIssue(data: BoardData, issueId: number): ResolvedBoa
       ...buildIssueUrls(subtask.id),
       kind: 'subtask',
       parentIssueId: parent.id,
+      projectId: subtask.project?.id ?? parent.project?.id,
     };
   }
 

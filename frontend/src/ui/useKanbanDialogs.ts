@@ -3,7 +3,7 @@ import type { BoardData } from './types';
 import { buildDefaultIssueCreateUrl, type ModalContext } from './issueDialog';
 import { resolveBoardIssue } from './kanbanShared';
 
-type IframeEditContext = { url: string; issueId: number; issueTitle?: string };
+type IframeEditContext = { url: string; issueId: number; issueTitle?: string; projectId?: number };
 type PriorityPopupState = { issueId: number; currentId: number; x: number; y: number };
 type DatePopupState = { issueId: number; currentDate: string | null; x: number; y: number };
 type ProgressPopupState = { issueId: number; currentDoneRatio: number; x: number; y: number };
@@ -48,6 +48,7 @@ export function useKanbanDialogs(
       url: issue.issueEditUrl,
       issueId,
       issueTitle: buildIssueTitle(data, issueId),
+      projectId: issue.projectId,
     });
   }, [data]);
 
@@ -59,6 +60,7 @@ export function useKanbanDialogs(
       url: issue.issueUrl,
       issueId,
       issueTitle: buildIssueTitle(data, issueId),
+      projectId: issue.projectId,
     });
   }, [data]);
 
@@ -70,6 +72,7 @@ export function useKanbanDialogs(
       url: urlPath,
       issueId,
       issueTitle: buildIssueTitle(data, issueId),
+      projectId: data ? resolveBoardIssue(data, issueId)?.projectId : undefined,
     });
   }, [data]);
 

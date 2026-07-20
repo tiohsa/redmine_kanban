@@ -37,6 +37,17 @@ module RedmineKanban
       }
     end
 
+    def trackers
+      target_project_id = params[:target_project_id].to_i
+      target_project = target_project_id.positive? ? Project.visible(User.current).find_by(id: target_project_id) : @project
+      unless target_project && permission_policy.can_view_board?(@project)
+        render json: { ok: false, message: '権限がありません' }, status: :forbidden
+        return
+      end
+
+      render json: { ok: true, trackers: target_project.trackers.sorted.map { |tracker| { id: tracker.id, name: tracker.name } } }
+    end
+
     def move
       payload = params[:issue] || params
       render_service_result(IssueMover.new(project: @project, issue: @issue, user: User.current).move(
@@ -91,7 +102,9 @@ module RedmineKanban
       target_project = target_project_for_create
       return unless require_permission!(target_project.present?)
 
-      require_permission!(permission_policy.can_create_issue?(target_project))
+      return unless require_permission!(permission_policy.can_view_board?(@project))
+
+      require_permission!(permission_policy.can_create_issue?(target_project, @project))
     end
 
     def require_update_permission
@@ -113,7 +126,7 @@ module RedmineKanban
       target_project_id = issue_params[:project_id].to_i
       if target_project_id.positive?
         project = Project.visible(User.current).find_by(id: target_project_id)
-        return project if permission_policy.can_view_board?(project)
+        return project if project
 
         return nil
       end

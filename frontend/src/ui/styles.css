@@ -1237,6 +1237,70 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   resize: vertical;
 }
 
+.rk-bulk-subtask-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.rk-bulk-subtask-heading {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.rk-bulk-subtask-count,
+.rk-bulk-subtask-notice {
+  color: var(--rk-text-secondary);
+  font-size: 0.8rem;
+}
+
+.rk-bulk-subtask-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.rk-bulk-subtask-table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+}
+
+.rk-bulk-subtask-table th,
+.rk-bulk-subtask-table td {
+  padding: 6px;
+  border-bottom: 1px solid var(--rk-border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.rk-bulk-subtask-table input,
+.rk-bulk-subtask-table select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 34px;
+}
+
+.rk-bulk-subtask-table th:first-child,
+.rk-bulk-subtask-table td:first-child,
+.rk-bulk-subtask-table th:last-child,
+.rk-bulk-subtask-table td:last-child {
+  width: 42px;
+  white-space: nowrap;
+}
+
+.rk-bulk-subtask-apply {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.rk-bulk-subtask-apply select {
+  min-height: 34px;
+  flex: 1;
+}
+
 /* Help Dialog */
 .rk-help-backdrop {
   z-index: 10001;

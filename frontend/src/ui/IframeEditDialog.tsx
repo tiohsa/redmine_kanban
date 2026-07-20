@@ -2,7 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { applyLinkTargetBlank, getCleanDialogStyles, type CleanDialogStyleVariant } from './board/iframeStyles';
 import { IssueDialogHeader } from './IssueDialogHeader';
 import { extractIssueIdFromUrl } from './utils/url';
-import { useBulkSubtaskMutation } from './hooks/useBulkSubtaskMutation';
+import { BulkSubtaskError, useBulkSubtaskMutation } from './hooks/useBulkSubtaskMutation';
+import { BulkSubtaskEditor } from './BulkSubtaskEditor';
+import type { SubtaskCreateInput } from './bulkSubtasks';
+import { getJson } from './http';
 
 const REDMINE_ERROR_SELECTORS = ['#errorExplanation', '.flash.error', '.flash-error', '#flash_error', '.conflict'] as const;
 const MAX_DIALOG_VIEWPORT_HEIGHT_RATIO = 0.9;
@@ -142,6 +145,21 @@ export function getDocumentScrollHeight(element: HTMLElement): number {
   );
 }
 
+export function formatBulkSubtaskError(error: unknown, fallback: string): string {
+  if (!(error instanceof BulkSubtaskError)) return fallback;
+
+  const { rowIndex, subject, status, message, fieldErrors } = error.details;
+  const fields = Object.values(fieldErrors).flat().filter(Boolean);
+  const reason = [message, ...fields].filter((value, index, values) => values.indexOf(value) === index).join(' / ');
+  const statusText = status ? `HTTP ${status}` : null;
+  return [
+    fallback,
+    `${rowIndex + 1}行目「${subject}」`,
+    statusText,
+    reason,
+  ].filter(Boolean).join('：');
+}
+
 export function getDialogContentHeight(doc: Document): number {
   const candidates = [
     doc.querySelector<HTMLElement>('#content'),
@@ -163,6 +181,7 @@ type Props = {
   url: string;
   issueId: number;
   issueTitle?: string;
+  projectId?: number;
   mode?: 'create' | 'edit' | 'time_entry';
   labels: Record<string, string>;
   baseUrl: string;
@@ -171,8 +190,10 @@ type Props = {
   onSuccess: (message: string) => void;
 };
 
-export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labels, baseUrl, queryKey, onClose, onSuccess }: Props) {
-  const [subtasks, setSubtasks] = useState('');
+export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = 'edit', labels, baseUrl, queryKey, onClose, onSuccess }: Props) {
+  const [subtasks, setSubtasks] = useState<SubtaskCreateInput[]>([]);
+  const [subtaskValidationError, setSubtaskValidationError] = useState<string | null>(null);
+  const [trackerOptions, setTrackerOptions] = useState<Array<{ id: number; name: string }>>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [currentUrl, setCurrentUrl] = useState(url);
@@ -186,6 +207,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
   );
   const isSubmittingRef = useRef(false);
   const saveTargetRef = useRef<SaveTarget>(null);
+  const submitSubtasksAfterEditLoadRef = useRef(false);
   const handleSuccessRef = useRef<((targetIssueId: number) => void) | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -198,6 +220,26 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
   const parentAttributesRef = useRef<Record<string, number | undefined>>({});
 
   const bulkMutation = useBulkSubtaskMutation(baseUrl, queryKey);
+  const hasSubtaskInput = useMemo(
+    () => subtasks.some((subtask) => subtask.subject.trim().length > 0),
+    [subtasks],
+  );
+
+  useEffect(() => {
+    if (mode === 'time_entry') return;
+
+    let active = true;
+    const query = projectId ? `?target_project_id=${encodeURIComponent(projectId)}` : '';
+    void getJson<{ trackers: Array<{ id: number; name: string }> }>(`${baseUrl}/trackers${query}`)
+      .then((result) => {
+        if (active) setTrackerOptions(result.trackers);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      active = false;
+    };
+  }, [baseUrl, mode, projectId]);
 
   useEffect(() => {
     isSubmittingRef.current = isSubmitting;
@@ -298,15 +340,15 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
       return;
     }
 
-    const lines = subtasks.split('\n').map((s) => s.trim()).filter((s) => s.length > 0);
+    const lines = subtasks;
 
     if (lines.length > 0) {
       try {
-        await bulkMutation.mutateAsync(lines.map((subject) => ({
+        await bulkMutation.mutateAsync(lines.map((subtask) => ({
           parent_issue_id: targetIssueId,
-          subject,
+          subject: subtask.subject,
           project_id: parentAttributesRef.current.project_id,
-          tracker_id: parentAttributesRef.current.tracker_id,
+          tracker_id: subtask.trackerId,
           priority_id: parentAttributesRef.current.priority_id,
           status_id: parentAttributesRef.current.status_id,
           assigned_to_id: parentAttributesRef.current.assigned_to_id,
@@ -316,11 +358,12 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
             .replace('%{id}', String(targetIssueId))
             .replace('%{count}', String(lines.length))
         );
-      } catch {
-        onSuccess(
-          (mode === 'create' ? labels.created_subtask_failed : labels.updated_subtask_failed)
-            .replace('%{id}', String(targetIssueId))
-        );
+      } catch (error) {
+        const failureMessage = (mode === 'create' ? labels.created_subtask_failed : labels.updated_subtask_failed)
+          .replace('%{id}', String(targetIssueId));
+        const detailedMessage = formatBulkSubtaskError(error, failureMessage);
+        setIframeError(detailedMessage);
+        onSuccess(detailedMessage);
       }
     } else {
       onSuccess(
@@ -335,6 +378,42 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
     saveTargetRef.current = null;
     setIsSubmitting(false);
   }, [bulkMutation, labels, mode, onClose, onSuccess, subtasks]);
+
+  const submitIssueForm = useCallback((form: HTMLFormElement, target: SaveTarget) => {
+    const formData = new FormData(form);
+    const getVal = (name: string) => {
+      const value = formData.get(name);
+      if (typeof value === 'string' && value.trim()) return Number(value);
+      const field = form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement | null;
+      if (field && field.value.trim()) return Number(field.value);
+      return undefined;
+    };
+
+    parentAttributesRef.current = {
+      project_id: getVal('issue[project_id]') ?? getVal('project_id') ?? projectId,
+      tracker_id: getVal('issue[tracker_id]'),
+      priority_id: getVal('issue[priority_id]'),
+      status_id: getVal('issue[status_id]'),
+      assigned_to_id: getVal('issue[assigned_to_id]'),
+    };
+
+    setDialogMode('saving');
+    setSaveTarget(target);
+    saveTargetRef.current = target;
+    setIsSubmitting(true);
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.onbeforeunload = null;
+      try {
+        const win = iframeRef.current.contentWindow as typeof iframeRef.current.contentWindow & { $?: (arg: Window) => { off: (name: string) => void }; jQuery?: (arg: Window) => { off: (name: string) => void } };
+        if (win.$ || win.jQuery) {
+          (win.$ || win.jQuery)?.(win)?.off('beforeunload');
+        }
+      } catch {
+        // Ignore jQuery access issues in the iframe.
+      }
+    }
+    submitForm(form);
+  }, [projectId]);
 
   useEffect(() => {
     handleSuccessRef.current = (targetIssueId: number) => {
@@ -354,6 +433,10 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
       }
 
       if (doc) {
+        const trackerSelect = doc.querySelector<HTMLSelectElement>('select[name="issue[tracker_id]"], select#issue_tracker_id');
+        if (trackerSelect) {
+          setTrackerOptions(Array.from(trackerSelect.options).map((option) => ({ id: Number(option.value), name: option.textContent?.trim() ?? option.value })).filter((option) => option.id > 0));
+        }
         const style = doc.createElement('style');
         const styleVariant = resolveDialogStyleVariant(mode, nextCurrentUrl, url);
         style.textContent = getCleanDialogStyles({
@@ -367,7 +450,10 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
       if (!isSubmittingRef.current) {
         const activeSaveForm = getActiveSaveForm(doc, mode, nextCurrentUrl);
         setSaveTarget(activeSaveForm?.target ?? null);
-        if (activeSaveForm?.target === 'journal') {
+        if (activeSaveForm?.target === 'issue' && submitSubtasksAfterEditLoadRef.current) {
+          submitSubtasksAfterEditLoadRef.current = false;
+          submitIssueForm(activeSaveForm.form, activeSaveForm.target);
+        } else if (activeSaveForm?.target === 'journal') {
           setDialogMode('form');
         } else if (isIssueShowUrl(nextCurrentUrl)) {
           setDisplayedIssueId(extractIssueIdFromUrl(nextCurrentUrl));
@@ -437,7 +523,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
         measureDialogHeight();
       });
     }
-  }, [bindIframeSizeObservers, handleSuccess, issueId, measureDialogHeight, mode, onClose, url]);
+  }, [bindIframeSizeObservers, handleSuccess, issueId, measureDialogHeight, mode, onClose, submitIssueForm, url]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -489,9 +575,11 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
 
   const handleSubmit = () => {
     if (!iframeRef.current?.contentDocument || !iframeRef.current.contentWindow) return;
+    if (subtaskValidationError) return;
 
     if (dialogMode === 'issue-show') {
       const targetIssueId = displayedIssueId ?? issueId;
+      submitSubtasksAfterEditLoadRef.current = hasSubtaskInput;
       iframeRef.current.contentWindow.location.href = buildIssueEditUrl(currentUrl || url, targetIssueId);
       setDialogMode('form');
       setSaveTarget('issue');
@@ -503,42 +591,12 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
 
     const { form, target } = activeSaveForm;
 
-    const formData = new FormData(form);
-    const getVal = (name: string) => {
-      const v = formData.get(name);
-      if (typeof v === 'string' && v.trim()) return Number(v);
-      const field = form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement | null;
-      if (field && field.value.trim()) return Number(field.value);
-      return undefined;
-    };
-
-    parentAttributesRef.current = {
-      project_id: getVal('issue[project_id]') ?? getVal('project_id'),
-      tracker_id: getVal('issue[tracker_id]'),
-      priority_id: getVal('issue[priority_id]'),
-      status_id: getVal('issue[status_id]'),
-      assigned_to_id: getVal('issue[assigned_to_id]'),
-    };
-
-    setDialogMode('saving');
-    setSaveTarget(target);
-    saveTargetRef.current = target;
-    setIsSubmitting(true);
-    iframeRef.current.contentWindow.onbeforeunload = null;
-    try {
-      const win = iframeRef.current.contentWindow as typeof iframeRef.current.contentWindow & { $?: (arg: Window) => { off: (name: string) => void }; jQuery?: (arg: Window) => { off: (name: string) => void } };
-      if (win.$ || win.jQuery) {
-        (win.$ || win.jQuery)?.(win)?.off('beforeunload');
-      }
-    } catch {
-      // Ignore jQuery access issues in the iframe.
-    }
-    submitForm(form);
+    submitIssueForm(form, target);
   };
 
   const effectiveSaveTarget = saveTargetRef.current ?? saveTarget;
   const submitLabel = dialogMode === 'issue-show'
-    ? (labels.edit_issue ?? 'Edit issue')
+    ? (hasSubtaskInput ? labels.save : (labels.edit_issue ?? 'Edit issue'))
     : effectiveSaveTarget === 'journal'
       ? (isSubmitting ? (labels.saving_comment ?? 'Saving comment...') : (labels.save_comment ?? 'Save comment'))
       : effectiveSaveTarget === 'new-issue' || mode === 'create'
@@ -661,13 +719,12 @@ export function IframeEditDialog({ url, issueId, issueTitle, mode = 'edit', labe
                 <label className="rk-label rk-subtask-toggle-label">{labels.bulk_subtask_title}</label>
               </button>
               {isSubtasksOpen ? (
-                <textarea
-                  rows={3}
-                  value={subtasks}
-                  onChange={(e) => setSubtasks(e.target.value)}
-                  placeholder={labels.bulk_subtask_placeholder}
+                <BulkSubtaskEditor
+                  labels={labels}
+                  trackers={trackerOptions}
                   disabled={isSubmitting}
-                  className="rk-subtask-textarea"
+                  onChange={setSubtasks}
+                  onValidationChange={setSubtaskValidationError}
                 />
               ) : null}
             </div>

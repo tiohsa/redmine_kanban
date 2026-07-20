@@ -16,26 +16,47 @@ module RedmineKanban
       subject = params[:subject].to_s.strip
       return error_response(nil, field_errors: { subject: ['件名を入力してください'] }) if subject.empty?
 
-      issue = Issue.new
       target_project_id = params[:project_id].to_i
       target_project = if target_project_id > 0
                          Project.visible(@user).find_by(id: target_project_id)
                        else
                          @project
                        end
-      issue.project = target_project || @project
-      issue.author = @user
-      issue.init_journal(@user)
+      unless target_project
+        return error_response('指定されたプロジェクトが見つからないか、表示する権限がありません', field_errors: { project_id: ['指定されたプロジェクトを利用できません'] })
+      end
+
+      unless @user.allowed_to?(:view_redmine_kanban, @project)
+        return error_response('指定されたプロジェクトでチケットを作成する権限がありません', status: :forbidden)
+      end
+
       parent_issue = find_visible_parent_issue(params[:parent_issue_id])
+      if params[:parent_issue_id].present? && !parent_issue
+        return error_response('親チケットが見つからないか、表示する権限がありません', field_errors: { parent_issue_id: ['親チケットを利用できません'] }, status: :not_found)
+      end
+
+      if parent_issue && parent_issue.project_id != target_project.id
+        return error_response('親チケットと作成先プロジェクトが一致しません', field_errors: { project_id: ['親チケットと同じプロジェクトを指定してください'] })
+      end
 
       tracker_id = params[:tracker_id].to_s.strip
       if tracker_id.empty?
         tracker_id = if !param_key_provided?(params, 'tracker_id') && parent_issue&.tracker_id.present?
                        parent_issue.tracker_id.to_s
                      else
-                       default_tracker_id(issue.project).to_s
+                       default_tracker_id(target_project).to_s
                      end
       end
+
+      tracker = target_project.trackers.find_by(id: tracker_id.to_i)
+      unless tracker
+        return error_response('指定されたtrackerは作成先プロジェクトで利用できません', field_errors: { tracker_id: ['作成先プロジェクトで利用可能なtrackerを指定してください'] })
+      end
+
+      issue = Issue.new
+      issue.project = target_project
+      issue.author = @user
+      issue.init_journal(@user)
 
       attributes = {
         'subject' => subject,

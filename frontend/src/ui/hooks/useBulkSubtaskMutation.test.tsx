@@ -6,10 +6,12 @@ import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Issue } from '../types';
 import { useBulkSubtaskMutation } from './useBulkSubtaskMutation';
+import { HttpError } from '../http';
 
 const postJsonMock = vi.hoisted(() => vi.fn());
 
-vi.mock('../http', () => ({
+vi.mock('../http', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../http')>()),
   postJson: postJsonMock,
 }));
 
@@ -48,8 +50,8 @@ describe('useBulkSubtaskMutation', () => {
     );
 
     const payloads = [
-      { parent_issue_id: 1, subject: 'A' },
-      { parent_issue_id: 1, subject: 'B', assigned_to_id: 10 },
+      { parent_issue_id: 1, subject: 'A', tracker_id: 2 },
+      { parent_issue_id: 1, subject: 'B', tracker_id: 3, assigned_to_id: 10 },
     ];
 
     await act(async () => {
@@ -70,5 +72,33 @@ describe('useBulkSubtaskMutation', () => {
       'POST'
     );
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['kanban', 'board'] });
+  });
+
+  it('reports the failed row and API validation details', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    postJsonMock.mockRejectedValueOnce(new HttpError(422, {
+      message: 'tracker is not available',
+      field_errors: { tracker_id: ['Select a tracker available in the project'] },
+    }));
+
+    const { result } = renderHook(
+      () => useBulkSubtaskMutation('/projects/demo/kanban', ['kanban'] as const),
+      { wrapper: createWrapper(queryClient) }
+    );
+
+    await expect(act(async () => result.current.mutateAsync([
+      { parent_issue_id: 10, subject: 'Invalid child', tracker_id: 99 },
+    ]))).rejects.toMatchObject({
+      name: 'BulkSubtaskError',
+      details: {
+        rowIndex: 0,
+        subject: 'Invalid child',
+        status: 422,
+        message: 'tracker is not available',
+        fieldErrors: { tracker_id: ['Select a tracker available in the project'] },
+      },
+    });
   });
 });

@@ -8,7 +8,7 @@ Redmine::Plugin.register :redmine_kanban do
   url 'https://github.com/tiohsa/redmine_kanban'
   author_url 'https://github.com/tiohsa'
   project_module :redmine_kanban do
-    permission :view_redmine_kanban, { 'redmine_kanban/kanban': [:show], 'redmine_kanban/api': [:index], 'redmine_kanban/ai_analysis': [:analyze] }, read: true, label: "redmine_kanban.permission_view"
+    permission :view_redmine_kanban, { 'redmine_kanban/kanban': [:show], 'redmine_kanban/api': [:index, :trackers], 'redmine_kanban/ai_analysis': [:analyze] }, read: true, label: "redmine_kanban.permission_view"
     permission :manage_redmine_kanban, { 'redmine_kanban/api': [:move, :create] }, label: "redmine_kanban.permission_manage"
   end
 

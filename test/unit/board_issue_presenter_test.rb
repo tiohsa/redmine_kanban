@@ -4,6 +4,7 @@ require 'set'
 require_relative '../../lib/redmine_kanban/board_issue_presenter'
 
 class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
+  FakeProject = Struct.new(:id, :name)
   FakeStatus = Struct.new(:is_closed) do
     def is_closed?
       is_closed
@@ -44,6 +45,7 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
     tree = presenter.send(:subtask_tree, parent, Set[parent.id])
 
     assert_equal [2], tree.map { |node| node[:id] }
+    assert_equal({ id: 1, name: 'Project' }, tree.first[:project])
     assert_equal [3], tree.first[:subtasks].map { |node| node[:id] }
   end
 
@@ -68,7 +70,7 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
 
   def test_permissions_use_board_project_for_cards_and_subtasks
     board_project = Object.new
-    issue_project = Object.new
+    issue_project = FakeProject.new(2, 'Issue project')
     parent = fake_issue(id: 1, subject: 'Parent', project: issue_project)
     child = fake_issue(id: 2, parent_id: 1, subject: 'Child', project: issue_project)
     calls = []
@@ -107,7 +109,7 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
 
   private
 
-  def fake_issue(id:, subject:, parent_id: nil, project: Object.new)
+  def fake_issue(id:, subject:, parent_id: nil, project: FakeProject.new(1, 'Project'))
     FakeIssue.new(
       id: id,
       parent_id: parent_id,

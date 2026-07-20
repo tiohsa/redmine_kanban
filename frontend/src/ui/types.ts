@@ -20,6 +20,7 @@ export type Subtask = {
   is_closed: boolean;
   lock_version?: number;
   permissions?: IssuePermissions;
+  project?: { id: number; name: string };
   subtasks?: Subtask[];
 };
 

@@ -3,6 +3,9 @@ import type { BoardData } from './types';
 import { IssueDialogHeader } from './IssueDialogHeader';
 import { buildDefaultIssueCreateUrl, type ModalContext } from './issueDialog';
 import { linkifyText } from './kanbanShared';
+import { BulkSubtaskEditor } from './BulkSubtaskEditor';
+import type { SubtaskCreateInput } from './bulkSubtasks';
+import { getJson } from './http';
 
 type Props = {
   data: BoardData;
@@ -38,14 +41,29 @@ export function KanbanIssueModal({ data, baseUrl, ctx, onClose, onSaved, onDelet
       : String(ctx.projectId ?? data.meta.project_id),
   );
   const [trackerId, setTrackerId] = useState(issue?.tracker_id ? String(issue.tracker_id) : String(defaultTracker));
+  const [availableTrackers, setAvailableTrackers] = useState(data.lists.trackers);
   const [assigneeId, setAssigneeId] = useState(issue?.assigned_to_id ? String(issue.assigned_to_id) : defaultAssignee);
   const [dueDate, setDueDate] = useState(issue?.due_date ?? '');
   const [startDate, setStartDate] = useState(issue?.start_date ?? '');
   const [priorityId, setPriorityId] = useState(issue?.priority_id ? String(issue.priority_id) : '');
   const [doneRatio, setDoneRatio] = useState(issue?.done_ratio ?? 0);
   const [description, setDescription] = useState(issue?.description ?? '');
-  const [subtasksSubjects, setSubtasksSubjects] = useState('');
+  const [subtasks, setSubtasks] = useState<SubtaskCreateInput[]>([]);
+  const [subtaskError, setSubtaskError] = useState<string | null>(null);
   const hasDescriptionPreview = description.trim().length > 0 && /https?:\/\//.test(description);
+
+  useEffect(() => {
+    if (isEdit) return;
+    let active = true;
+    void getJson<{ trackers: { id: number; name: string }[] }>(`${baseUrl}/trackers?target_project_id=${encodeURIComponent(projectId)}`)
+      .then((result) => {
+        if (!active) return;
+        setAvailableTrackers(result.trackers);
+        if (!result.trackers.some((tracker) => tracker.id === Number(trackerId))) setTrackerId('');
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [baseUrl, isEdit, projectId]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -74,6 +92,10 @@ export function KanbanIssueModal({ data, baseUrl, ctx, onClose, onSaved, onDelet
       setError(labels.invalid_priority);
       return;
     }
+    if (subtaskError) {
+      setError(subtaskError);
+      return;
+    }
 
     setSaving(true);
     try {
@@ -90,10 +112,7 @@ export function KanbanIssueModal({ data, baseUrl, ctx, onClose, onSaved, onDelet
         project_id: projectId,
       };
 
-      if (!isEdit && subtasksSubjects.trim().length > 0) {
-        const lines = subtasksSubjects.split('\n').map((line) => line.trim()).filter((line) => line.length > 0);
-        if (lines.length > 0) payload.subtasks_subjects = lines;
-      }
+      if (!isEdit && subtasks.length > 0) payload.subtasks = subtasks;
 
       await onSaved(payload, isEdit);
     } catch (caught: unknown) {
@@ -133,7 +152,7 @@ export function KanbanIssueModal({ data, baseUrl, ctx, onClose, onSaved, onDelet
             <label className="rk-field">
               <span className="rk-label">{labels.issue_tracker}</span>
               <select value={trackerId} onChange={(event) => setTrackerId(event.target.value)}>
-                {data.lists.trackers.map((tracker) => (
+                {availableTrackers.map((tracker) => (
                   <option key={tracker.id} value={tracker.id}>{tracker.name}</option>
                 ))}
               </select>
@@ -196,16 +215,12 @@ export function KanbanIssueModal({ data, baseUrl, ctx, onClose, onSaved, onDelet
           ) : null}
 
           {!isEdit ? (
-            <label className="rk-field" style={{ marginTop: '16px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
-              <span className="rk-label">{labels.bulk_subtask_title}</span>
-              <textarea
-                className="rk-textarea"
-                rows={3}
-                value={subtasksSubjects}
-                onChange={(event) => setSubtasksSubjects(event.target.value)}
-                placeholder={labels.bulk_subtask_help}
-              />
-            </label>
+            <BulkSubtaskEditor
+              labels={labels}
+              trackers={availableTrackers}
+              onChange={setSubtasks}
+              onValidationChange={setSubtaskError}
+            />
           ) : null}
 
           {error ? <div className="rk-error">{error}</div> : null}

@@ -34,6 +34,15 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_equal @project.id, json.dig('meta', 'project_id')
   end
 
+  def test_trackers_is_available_with_view_permission
+    get :trackers, params: { project_id: @project.identifier }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal true, json['ok']
+    assert_equal @project.trackers.sorted.map(&:id), json['trackers'].map { |tracker| tracker['id'] }
+  end
+
   def test_index_filters_issues_by_issue_status_ids_without_changing_columns_or_counts
     status_a, status_b = distinct_open_statuses
     issue_a = build_issue(subject: 'Status filter keep', status: status_a)
@@ -485,6 +494,61 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     child = Issue.find(json.dig('issue', 'id'))
     assert_equal other_priority.id, child.priority_id
     assert_nil child.assigned_to_id
+  end
+
+  def test_create_subtask_rejects_parent_from_another_project
+    other_project = build_project(name: 'Subtask target', identifier: "subtask-target-#{Time.now.to_i}")
+    parent = build_issue(subject: 'Parent issue')
+
+    assert_no_difference('Issue.count') do
+      post(
+        :create,
+        params: {
+          project_id: @project.identifier,
+          issue: {
+            subject: 'Cross-project child',
+            project_id: other_project.id,
+            parent_issue_id: parent.id,
+            tracker_id: other_project.trackers.first.id
+          }
+        }
+      )
+    end
+
+    assert_response :unprocessable_entity
+    json = JSON.parse(@response.body)
+    assert_equal false, json['ok']
+    assert_includes json['message'], '一致しません'
+    assert_includes json.dig('field_errors', 'project_id'), '親チケットと同じプロジェクトを指定してください'
+  end
+
+  def test_create_subtask_rejects_tracker_not_enabled_for_target_project
+    unavailable_tracker = Tracker.where.not(id: @project.trackers.select(:id)).first || Tracker.create!(name: "Unavailable #{Time.now.to_i}")
+
+    assert_no_difference('Issue.count') do
+      post(
+        :create,
+        params: {
+          project_id: @project.identifier,
+          issue: { subject: 'Invalid tracker child', tracker_id: unavailable_tracker.id }
+        }
+      )
+    end
+
+    assert_response :unprocessable_entity
+    json = JSON.parse(@response.body)
+    assert_equal false, json['ok']
+    assert_includes json.dig('field_errors', 'tracker_id'), '作成先プロジェクトで利用可能なtrackerを指定してください'
+  end
+
+  def test_create_rejects_blank_subject_with_field_error
+    assert_no_difference('Issue.count') do
+      post :create, params: { project_id: @project.identifier, issue: { subject: ' ' } }
+    end
+
+    assert_response :unprocessable_entity
+    json = JSON.parse(@response.body)
+    assert_equal ['件名を入力してください'], json.dig('field_errors', 'subject')
   end
 
   def test_destroy_works_without_plugin_authorize_mapping

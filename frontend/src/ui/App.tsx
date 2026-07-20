@@ -373,19 +373,20 @@ export function App({ dataUrl }: Props) {
             }
 
             try {
-              const subtasks = payload.subtasks_subjects as string[] | undefined;
+              const subtasks = payload.subtasks as Array<{ clientId: string; subject: string; trackerId: number }> | undefined;
               const parentPayload = { ...payload };
-              delete parentPayload.subtasks_subjects;
+              delete parentPayload.subtasks;
 
               const result = await actions.createIssueMutation.mutateAsync(parentPayload);
               const createdIssue = result.issue;
 
               if (createdIssue && subtasks && subtasks.length > 0) {
                 const createdProjectId = createdIssue.project?.id;
-                for (const subject of subtasks) {
+                for (const subtask of subtasks) {
                   await actions.createIssueMutation.mutateAsync({
                     ...parentPayload,
-                    subject,
+                    subject: subtask.subject,
+                    tracker_id: subtask.trackerId,
                     parent_issue_id: createdIssue.id,
                     project_id: createdProjectId ?? parentPayload.project_id,
                   });
@@ -405,6 +406,7 @@ export function App({ dataUrl }: Props) {
                   url: `/issues/${createdIssue.id}`,
                   issueId: createdIssue.id,
                   issueTitle: `#${createdIssue.id} ${createdIssue.subject ?? ''}`.trim(),
+                  projectId: createdIssue.project?.id,
                 });
               } else {
                 dialogs.setModal(null);
@@ -424,6 +426,7 @@ export function App({ dataUrl }: Props) {
           url={dialogs.iframeEditContext.url}
           issueId={dialogs.iframeEditContext.issueId}
           issueTitle={dialogs.iframeEditContext.issueTitle}
+          projectId={dialogs.iframeEditContext.projectId}
           labels={data.labels}
           baseUrl={baseUrl}
           queryKey={boardQueryKey}

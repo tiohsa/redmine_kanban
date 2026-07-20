@@ -63,6 +63,7 @@ module RedmineKanban
         status_id: issue.status_id,
         is_closed: issue.status.is_closed?,
         lock_version: issue.lock_version,
+        project: { id: issue.project.id, name: issue.project.name },
         permissions: permissions_for(issue),
         subtasks: subtask_tree(issue, visited_ids),
       }
