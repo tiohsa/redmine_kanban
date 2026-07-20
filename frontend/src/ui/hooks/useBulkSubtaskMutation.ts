@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useRef } from 'react';
 import { isHttpError, postJson } from '../http';
 import { Issue } from '../types';
 
@@ -11,6 +12,11 @@ export type SubtaskPayload = {
   assigned_to_id?: number | null;
   due_date?: string | null;
   status_id?: number;
+};
+
+export type BulkCreatePayload = {
+  parent: Record<string, unknown>;
+  subtasks: SubtaskPayload[];
 };
 
 export type BulkSubtaskErrorDetails = {
@@ -50,36 +56,33 @@ function errorDetails(error: unknown, payload: SubtaskPayload, rowIndex: number)
 
 export function useBulkSubtaskMutation(baseUrl: string, queryKey: readonly unknown[]) {
   const queryClient = useQueryClient();
+  const idempotencyKeys = useRef(new Map<string, string>());
 
   return useMutation({
-    mutationFn: async (payloads: SubtaskPayload[]) => {
-      const results: Issue[] = [];
-      for (const [rowIndex, payload] of payloads.entries()) {
-        // Redmine API expects { issue: { ... } }
-        // Note: The URL might need to be without .json depending on how postJson handles it,
-        // but typically /issues.json is correct for Redmine API.
-        // However, existing code uses `${baseUrl}/issues` (no .json) for creation in App.tsx.
-        // Let's stick to existing pattern if possible or verifying.
-        // Checking App.tsx, createIssueMutation uses `${baseUrl}/issues`.
-        // So we will use that.
-        try {
-          const res = await postJson<{ issue?: Issue }>(`${baseUrl}/issues`, { issue: payload }, 'POST');
-          if (!res.issue) {
-            throw new BulkSubtaskError({
-              rowIndex,
-              subject: payload.subject,
-              status: null,
-              message: 'APIレスポンスに作成されたチケットがありません',
-              fieldErrors: {},
-            });
+    mutationFn: async (payload: BulkCreatePayload | SubtaskPayload[]) => {
+      if (Array.isArray(payload)) {
+        const results: Issue[] = [];
+        for (const [rowIndex, row] of payload.entries()) {
+          try {
+            const res = await postJson<{ issue?: Issue }>(`${baseUrl}/issues`, { issue: row }, 'POST');
+            if (!res.issue) throw new Error('APIレスポンスに作成されたチケットがありません');
+            results.push(res.issue);
+          } catch (error) {
+            throw error instanceof BulkSubtaskError ? error : new BulkSubtaskError(errorDetails(error, row, rowIndex));
           }
-          results.push(res.issue);
-        } catch (error) {
-          if (error instanceof BulkSubtaskError) throw error;
-          throw new BulkSubtaskError(errorDetails(error, payload, rowIndex));
         }
+        return results;
       }
-      return results;
+      const signature = JSON.stringify(payload);
+      const idempotencyKey = idempotencyKeys.current.get(signature) ?? (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`);
+      idempotencyKeys.current.set(signature, idempotencyKey);
+      const res = await postJson<{ issue?: Issue; subtasks?: Issue[] }>(
+        `${baseUrl}/issues/bulk`,
+        payload,
+        'POST',
+        { 'Idempotency-Key': idempotencyKey },
+      );
+      return [res.issue, ...(res.subtasks ?? [])].filter((issue): issue is Issue => Boolean(issue));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey });

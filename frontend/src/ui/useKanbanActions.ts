@@ -4,7 +4,7 @@ import type { QueryKey } from '@tanstack/react-query';
 import type { BoardData, Issue } from './types';
 import { isHttpError, postJson } from './http';
 import { applyAncestorIssueUpdates, updateIssueInBoard, updateSubtaskInBoard, useIssueMutation } from './useIssueMutation';
-import { findSubtask, resolveAssigneeName, resolveMutationError, resolvePriorityName, resolveSubtaskStatus, type IssueMutationResult, type MovePayload, type UpdatePayload } from './kanbanShared';
+import { findSubtask, resolveAssigneeName, resolveMutationError, resolvePriorityName, resolveSubtaskStatus, resolveBoardIssue, type IssueMutationResult, type MovePayload, type UpdatePayload } from './kanbanShared';
 
 type Args = {
   baseUrl: string;
@@ -162,14 +162,34 @@ export function useKanbanActions({
   });
 
   const createIssueMutation = useMutation({
-    mutationFn: async (payload: Record<string, unknown>) =>
-      postJson<{ ok: boolean; issue?: Issue }>(`${baseUrl}/issues`, { issue: payload }, 'POST'),
+    mutationFn: async (payload: Record<string, unknown>) => {
+      const subtasks = payload.subtasks;
+      if (Array.isArray(subtasks)) {
+        const { subtasks: _subtasks, ...parent } = payload;
+        return postJson<{ ok: boolean; issue?: Issue; subtasks?: Issue[] }>(
+          `${baseUrl}/issues/bulk`,
+          { parent, subtasks: subtasks.map((subtask) => ({
+            subject: (subtask as { subject: string }).subject,
+            tracker_id: (subtask as { trackerId: number }).trackerId,
+            project_id: parent.project_id,
+            priority_id: parent.priority_id,
+            status_id: parent.status_id,
+            assigned_to_id: parent.assigned_to_id,
+          })) },
+          'POST',
+          { 'Idempotency-Key': crypto.randomUUID() },
+        );
+      }
+      return postJson<{ ok: boolean; issue?: Issue }>(`${baseUrl}/issues`, { issue: payload }, 'POST');
+    },
     onSettled: () => { void refresh(); },
   });
 
   const deleteIssue = useCallback(async (issueId: number) => {
     try {
-      await postJson(`${baseUrl}/issues/${issueId}`, {}, 'DELETE');
+      const resolved = data ? resolveBoardIssue(data, issueId) : null;
+      if (resolved?.lockVersion === null || resolved?.lockVersion === undefined) throw new Error('lock_version is required');
+      await postJson(`${baseUrl}/issues/${issueId}`, { issue: { lock_version: resolved.lockVersion } }, 'DELETE');
       await refresh();
     } catch (error: unknown) {
       const payload = isHttpError<{ message?: string }>(error) ? error.payload : null;

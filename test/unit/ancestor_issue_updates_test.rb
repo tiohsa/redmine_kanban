@@ -2,6 +2,7 @@ require File.expand_path('../../../../test/test_helper', File.expand_path(__dir_
 
 require_relative '../../lib/redmine_kanban/ancestor_issue_updates'
 require_relative '../../lib/redmine_kanban/board_issue_presenter'
+include ActiveSupport::Testing::TimeHelpers
 
 class RedmineKanbanAncestorIssueUpdatesTest < ActiveSupport::TestCase
   FakeAncestor = Struct.new(
@@ -55,7 +56,9 @@ class RedmineKanbanAncestorIssueUpdatesTest < ActiveSupport::TestCase
       visible: false
     )
 
-    result = Harness.new(Object.new).call(FakeIssue.new([visible, hidden]))
+    result = travel_to(Time.utc(2026, 7, 18, 12, 0, 0)) do
+      Harness.new(Object.new).call(FakeIssue.new([visible, hidden]))
+    end
 
     assert_equal 1, result.length
     assert_equal 10, result.first[:id]

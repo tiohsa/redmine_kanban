@@ -18,7 +18,7 @@ module RedmineKanban
     def update(issue_id:, params:)
       issue = Issue.visible(@user).find_by(id: issue_id)
       return error_response('タスクが見つかりません', status: :not_found) unless issue
-      return error_response('権限がありません', status: :forbidden) unless issue.editable?
+      return error_response('権限がありません', status: :forbidden) unless PermissionPolicy.new(user: @user).can_update_issue?(issue, @project)
 
       issue.init_journal(@user)
 

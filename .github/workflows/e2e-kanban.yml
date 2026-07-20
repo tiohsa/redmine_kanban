@@ -184,9 +184,7 @@ jobs:
         run: |
           docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
             env RAILS_ENV=test bundle exec rails test \
-            plugins/redmine_kanban/test/unit/ancestor_issue_updates_test.rb \
-            plugins/redmine_kanban/test/unit/board_issue_presenter_test.rb \
-            plugins/redmine_kanban/test/functional/api_controller_test.rb
+            plugins/redmine_kanban/test
 
       - name: Show container logs on failure
         if: failure()

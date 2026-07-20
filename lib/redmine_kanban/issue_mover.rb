@@ -17,7 +17,7 @@ module RedmineKanban
     end
 
     def move(status_id:, assigned_to_id: nil, priority_id: nil, assigned_to_provided: false, priority_provided: false, lock_version: nil)
-      return error_response('権限がありません') unless @issue.editable?
+      return error_response('権限がありません') unless PermissionPolicy.new(user: @user).can_update_issue?(@issue, @project)
 
       status_id = status_id.to_i
       assigned_to_id = normalize_assigned_to_id(assigned_to_id, assigned_to_provided)

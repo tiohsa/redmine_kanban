@@ -12,5 +12,6 @@ Rails.application.routes.draw do
     patch 'issues/:id', to: 'api#update', as: 'redmine_kanban_update_issue'
     delete 'issues/:id', to: 'api#destroy', as: 'redmine_kanban_delete_issue'
     post 'issues', to: 'api#create', as: 'redmine_kanban_create_issue'
+    post 'issues/bulk', to: 'api#bulk_create', as: 'redmine_kanban_bulk_create_issues'
   end
 end

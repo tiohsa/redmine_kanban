@@ -12,6 +12,8 @@ module RedmineKanban
     end
 
     def issue_limit
+      return 500 if @raw['issue_limit'].nil? || @raw['issue_limit'].to_s.strip.empty?
+
       [@raw['issue_limit'].to_i, 1].max
     end
 
@@ -39,10 +41,14 @@ module RedmineKanban
     end
 
     def aging_warn_days
+      return 3 if @raw['aging_warn_days'].nil? || @raw['aging_warn_days'].to_s.strip.empty?
+
       [@raw['aging_warn_days'].to_i, 0].max
     end
 
     def aging_danger_days
+      return 7 if @raw['aging_danger_days'].nil? || @raw['aging_danger_days'].to_s.strip.empty?
+
       [@raw['aging_danger_days'].to_i, aging_warn_days].max
     end
 

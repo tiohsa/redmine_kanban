@@ -2,11 +2,13 @@ module RedmineKanban
   class ApiController < ApplicationController
     include ArrayParamNormalizer
 
-    skip_before_action :authorize, only: [:move, :create, :update, :destroy]
+    skip_before_action :authorize, only: [:move, :create, :update, :destroy, :bulk_create]
 
     before_action :find_issue, only: [:move, :update, :destroy]
+    before_action :require_view_permission, only: [:index, :bootstrap, :issues, :counts, :trackers]
     before_action :require_move_permission, only: [:move]
     before_action :require_create_permission, only: [:create]
+    before_action :require_create_permission, only: [:bulk_create]
     before_action :require_update_permission, only: [:update]
     before_action :require_delete_permission, only: [:destroy]
 
@@ -65,17 +67,40 @@ module RedmineKanban
       render_service_result(IssueCreator.new(project: @project, user: User.current).create(params: issue_params))
     end
 
+    def bulk_create
+      payload = params[:bulk] || params
+      result = IssueCreator.new(project: @project, user: User.current).create_with_subtasks(
+        parent_params: payload[:parent] || {},
+        subtasks: payload[:subtasks] || [],
+        idempotency_key: request.headers['Idempotency-Key']
+      )
+      render_service_result(result)
+    end
+
     def update
       payload = params[:issue] || params
       render_service_result(IssueUpdater.new(project: @project, user: User.current).update(issue_id: @issue.id, params: payload))
     end
 
     def destroy
+      lock_version = params.dig(:issue, :lock_version) || params[:lock_version]
+      if lock_version.blank?
+        render json: { ok: false, message: 'lock_versionが必要です' }, status: :unprocessable_entity
+        return
+      end
+
+      unless @issue.lock_version.to_i == lock_version.to_i
+        render json: { ok: false, message: '他ユーザにより更新されました' }, status: :conflict
+        return
+      end
+
       if @issue.destroy
         render json: { ok: true }
       else
         render json: { ok: false, message: '削除に失敗しました' }, status: :unprocessable_entity
       end
+    rescue ActiveRecord::StaleObjectError
+      render json: { ok: false, message: '他ユーザにより更新されました' }, status: :conflict
     end
 
     private
@@ -95,7 +120,11 @@ module RedmineKanban
     def require_move_permission
       return unless require_permission!(permission_policy.can_view_board?(@project))
 
-      require_permission!(permission_policy.can_move_issue?(@issue.project, @project))
+      require_permission!(permission_policy.can_move_issue?(@issue, @project))
+    end
+
+    def require_view_permission
+      require_permission!(permission_policy.can_view_board?(@project))
     end
 
     def require_create_permission
@@ -108,11 +137,11 @@ module RedmineKanban
     end
 
     def require_update_permission
-      require_permission!(permission_policy.can_update_issue?(@issue.project, @project))
+      require_permission!(permission_policy.can_update_issue?(@issue, @project))
     end
 
     def require_delete_permission
-      require_permission!(permission_policy.can_delete_issue?(@issue.project, @project))
+      require_permission!(permission_policy.can_delete_issue?(@issue, @project))
     end
 
     def find_issue
@@ -122,7 +151,7 @@ module RedmineKanban
     end
 
     def target_project_for_create
-      issue_params = params[:issue] || {}
+      issue_params = params[:issue] || params.dig(:bulk, :parent) || {}
       target_project_id = issue_params[:project_id].to_i
       if target_project_id.positive?
         project = Project.visible(User.current).find_by(id: target_project_id)

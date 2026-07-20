@@ -2,6 +2,9 @@ require_relative 'subtask_loader'
 
 module RedmineKanban
   class IssueCreator
+    @bulk_idempotency_mutex = Mutex.new
+    @bulk_idempotency_results = {}
+
     include ParamNormalizer
     include IssueParentAttributes
     include ServiceResponse
@@ -83,7 +86,58 @@ module RedmineKanban
       end
     end
 
+    def create_with_subtasks(parent_params:, subtasks:, idempotency_key:)
+      return error_response('Idempotency-Keyが必要です', status: :unprocessable_entity) if idempotency_key.blank?
+
+      cache_key = "redmine_kanban:bulk_create:#{@user.id}:#{idempotency_key}"
+      cached = Rails.cache.read(cache_key) || self.class.bulk_idempotency_results[cache_key]
+      return cached if cached
+
+      result = nil
+      Issue.transaction do
+        parent_result = create(params: parent_params)
+        unless parent_result[:ok]
+          result = parent_result
+          raise ActiveRecord::Rollback
+        end
+
+        parent_id = parent_result.dig(:issue, :id) || parent_result.dig('issue', 'id')
+        created = []
+        subtask_collection(subtasks).each_with_index do |subtask_params, index|
+          child_result = create(params: subtask_params.merge(parent_issue_id: parent_id))
+          unless child_result[:ok]
+            result = child_result.merge(row_index: index)
+            raise ActiveRecord::Rollback
+          end
+          created << child_result[:issue]
+        end
+        result = { ok: true, issue: parent_result[:issue], subtasks: created }
+      end
+
+      if result && result[:ok]
+        Rails.cache.write(cache_key, result, expires_in: 24.hours)
+        self.class.bulk_idempotency_mutex.synchronize { self.class.bulk_idempotency_results[cache_key] = result }
+      end
+      result || error_response('一括作成に失敗しました')
+    rescue ActiveRecord::RecordNotUnique
+      Rails.cache.read(cache_key) || self.class.bulk_idempotency_results[cache_key] || error_response('同じ一括作成リクエストが処理中です', status: :conflict)
+    end
+
+    def self.bulk_idempotency_results
+      @bulk_idempotency_results
+    end
+
+    def self.bulk_idempotency_mutex
+      @bulk_idempotency_mutex
+    end
+
     private
+
+    def subtask_collection(subtasks)
+      return subtasks.to_h.values if subtasks.respond_to?(:to_h) && !subtasks.is_a?(Array)
+
+      Array(subtasks)
+    end
 
     def default_tracker_id(project)
       project.trackers.sorted.first&.id

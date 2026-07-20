@@ -3,7 +3,7 @@ import type { BoardData, Issue, Subtask } from './types';
 import type { AncestorIssueUpdate } from './kanbanShared';
 import { updateSubtasksTree } from './subtasksTree';
 
-type MutationContext = { prev?: BoardData };
+type MutationContext = { prev?: BoardData; issueId: number };
 
 type IssuePayload = { issueId: number };
 
@@ -46,11 +46,16 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
       }
 
       onMutateIssue?.(payload.issueId);
-      return { prev };
+      return { prev, issueId: payload.issueId };
     },
     onError: (_err, _payload, ctx) => {
       if (ctx?.prev) {
-        queryClient.setQueryData(queryKey, ctx.prev);
+        queryClient.setQueryData<BoardData>(queryKey, (current) => {
+          if (!current) return current;
+          const previousIssue = findIssueInBoard(ctx.prev!, ctx.issueId);
+          if (!previousIssue) return current;
+          return replaceIssueInBoard(current, previousIssue);
+        });
       }
       onError?.(_err);
     },
@@ -71,6 +76,25 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
       }
     },
   });
+}
+
+function findIssueInBoard(data: BoardData, issueId: number): Issue | null {
+  const direct = data.issues.find((issue) => issue.id === issueId);
+  if (direct) return direct;
+  for (const issue of data.issues) {
+    const nested = findSubtask(issue.subtasks, issueId);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+function findSubtask(subtasks: Subtask[] | undefined, issueId: number): Issue | null {
+  for (const subtask of subtasks ?? []) {
+    if (subtask.id === issueId) return subtask as unknown as Issue;
+    const nested = findSubtask(subtask.subtasks, issueId);
+    if (nested) return nested;
+  }
+  return null;
 }
 
 export function updateIssueInBoard(
@@ -159,7 +183,33 @@ function parseDate(value: string | null | undefined): number | null {
 }
 
 export function replaceIssueInBoard(data: BoardData, nextIssue: Issue): BoardData {
-  return updateIssueInBoard(data, nextIssue.id, () => nextIssue);
+  const direct = data.issues.some((issue) => issue.id === nextIssue.id);
+  if (direct) return updateIssueInBoard(data, nextIssue.id, () => nextIssue);
+
+  let changed = false;
+  const issues = data.issues.map((issue) => {
+    const subtasks = replaceSubtask(issue.subtasks, nextIssue);
+    if (subtasks === issue.subtasks) return issue;
+    changed = true;
+    return { ...issue, subtasks };
+  });
+  return changed ? { ...data, issues } : data;
+}
+
+function replaceSubtask(subtasks: Subtask[] | undefined, nextIssue: Issue): Subtask[] | undefined {
+  if (!subtasks) return subtasks;
+  let changed = false;
+  const next = subtasks.map((subtask) => {
+    if (subtask.id === nextIssue.id) {
+      changed = true;
+      return nextIssue as unknown as Subtask;
+    }
+    const nested = replaceSubtask(subtask.subtasks, nextIssue);
+    if (nested === subtask.subtasks) return subtask;
+    changed = true;
+    return { ...subtask, subtasks: nested };
+  });
+  return changed ? next : subtasks;
 }
 
 function rebuildColumnCounts(data: BoardData): BoardData['columns'] {

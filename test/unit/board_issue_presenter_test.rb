@@ -2,6 +2,7 @@ require File.expand_path('../../../../test/test_helper', File.expand_path(__dir_
 require 'set'
 
 require_relative '../../lib/redmine_kanban/board_issue_presenter'
+include ActiveSupport::Testing::TimeHelpers
 
 class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
   FakeProject = Struct.new(:id, :name)
@@ -16,6 +17,7 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
     :parent_id,
     :subject,
     :status_id,
+    :tracker_id,
     :status,
     :lock_version,
     :project,
@@ -51,9 +53,9 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
 
   def test_aging_days_for_returns_days_since_update
     issue = fake_issue(id: 1, subject: 'Aged')
-    issue.define_singleton_method(:updated_on) { Time.zone.now - 2.days }
+    issue.define_singleton_method(:updated_on) { Time.utc(2026, 7, 19) }
 
-    assert_equal 2, RedmineKanban::BoardIssuePresenter.aging_days_for(issue)
+    assert_equal 2, travel_to(Time.utc(2026, 7, 21)) { RedmineKanban::BoardIssuePresenter.aging_days_for(issue) }
   end
 
   def test_subtask_tree_skips_visited_issues
@@ -98,12 +100,12 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
     presenter.send(:subtask_tree, parent, Set[parent.id])
 
     assert_equal [
-      [:move, issue_project, board_project],
-      [:move, issue_project, board_project],
-      [:update, issue_project, board_project],
-      [:delete, issue_project, board_project],
-      [:update, issue_project, board_project],
-      [:delete, issue_project, board_project]
+      [:move, parent, board_project],
+      [:update, parent, board_project],
+      [:delete, parent, board_project],
+      [:move, child, board_project],
+      [:update, child, board_project],
+      [:delete, child, board_project]
     ], calls
   end
 
@@ -115,6 +117,7 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
       parent_id: parent_id,
       subject: subject,
       status_id: 1,
+      tracker_id: 1,
       status: FakeStatus.new(false),
       lock_version: 1,
       project: project

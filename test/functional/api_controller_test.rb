@@ -9,7 +9,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
   def setup
     @project = projects(:projects_001)
     @user = users(:users_002)
-    @role = roles(:roles_001)
+    @role = Role.find_by(name: 'Manager') || Role.givable.first || Role.first
 
     enable_kanban_module!
     grant_permissions!
@@ -32,6 +32,29 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_kind_of Array, json['lanes']
     assert_kind_of Hash, json['labels']
     assert_equal @project.id, json.dig('meta', 'project_id')
+  end
+
+  def test_read_api_endpoints_require_view_permission
+    @role.remove_permission!(:view_redmine_kanban)
+
+    %i[bootstrap issues counts].each do |action|
+      get action, params: { project_id: @project.identifier, issue_limit: 1 }
+      assert_response :forbidden, "#{action} should require view_redmine_kanban"
+    end
+  end
+
+  def test_read_api_endpoints_allow_paged_reads_with_view_permission
+    2.times { |index| build_issue(subject: "Paged issue #{index}") }
+
+    get :bootstrap, params: { project_id: @project.identifier }
+    assert_response :success
+
+    get :issues, params: { project_id: @project.identifier, issue_limit: 1, offset: 1 }
+    assert_response :success
+    assert_equal 1, JSON.parse(@response.body).fetch('issues').size
+
+    get :counts, params: { project_id: @project.identifier }
+    assert_response :success
   end
 
   def test_trackers_is_available_with_view_permission
@@ -208,6 +231,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     parent = build_issue(subject: 'Parent issue')
     child1 = build_issue(subject: 'Child 1', parent_issue_id: parent.id)
     child2 = build_issue(subject: 'Child 2', parent_issue_id: parent.id)
+    parent.reload
     target_priority = (IssuePriority.active.where.not(id: parent.priority_id).first || IssuePriority.active.first)
     assert_not_nil target_priority
 
@@ -242,6 +266,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     target_priority = (IssuePriority.active.where.not(id: parent.priority_id).first || IssuePriority.active.first)
     assert_not_nil target_priority
 
+    parent.reload
     patch(
       :update,
       params: {
@@ -272,8 +297,10 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
 
     parent = build_issue(subject: 'Parent issue')
     child = build_issue(subject: 'Child issue', parent_issue_id: parent.id)
+    parent.reload
     parent.update!(priority: high_priority)
     child.update!(priority: high_priority)
+    parent.reload
 
     patch(
       :move,
@@ -311,9 +338,11 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     child1 = build_issue(subject: 'Child 1', parent_issue_id: parent.id)
     child2 = build_issue(subject: 'Child 2', parent_issue_id: parent.id)
 
+    parent.reload
     parent.update!(status: open_status, priority: default_priority)
     child1.update!(status: closed_status, priority: default_priority)
     child2.update!(status: closed_status, priority: default_priority)
+    parent.reload
 
     patch(
       :move,
@@ -380,9 +409,11 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     child1 = build_issue(subject: 'Child 1', parent_issue_id: parent.id)
     child2 = build_issue(subject: 'Child 2', parent_issue_id: parent.id)
 
+    parent.reload
     parent.update!(status: open_status, priority: default_priority)
     child1.update!(status: closed_status, priority: default_priority)
     child2.update!(status: closed_status, priority: default_priority)
+    parent.reload
 
     patch(
       :update,
@@ -523,7 +554,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
   end
 
   def test_create_subtask_rejects_tracker_not_enabled_for_target_project
-    unavailable_tracker = Tracker.where.not(id: @project.trackers.select(:id)).first || Tracker.create!(name: "Unavailable #{Time.now.to_i}")
+    unavailable_tracker = Tracker.where.not(id: @project.trackers.select(:id)).first || Tracker.create!(name: "Unavailable #{Time.now.to_i}", default_status_id: IssueStatus.first.id)
 
     assert_no_difference('Issue.count') do
       post(
@@ -555,7 +586,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     issue = build_issue
 
     assert_difference('Issue.count', -1) do
-      delete :destroy, params: { project_id: @project.identifier, id: issue.id }
+      delete :destroy, params: { project_id: @project.identifier, id: issue.id, issue: { lock_version: issue.lock_version } }
     end
 
     assert_response :success
@@ -563,9 +594,61 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_equal true, json['ok']
   end
 
+  def test_destroy_requires_current_lock_version
+    issue = build_issue
+
+    delete :destroy, params: { project_id: @project.identifier, id: issue.id }
+
+    assert_response :unprocessable_entity
+    assert Issue.exists?(issue.id)
+  end
+
+  def test_destroy_rejects_stale_lock_version_without_deleting
+    issue = build_issue
+    issue.update!(subject: 'Changed elsewhere')
+
+    delete :destroy, params: { project_id: @project.identifier, id: issue.id, issue: { lock_version: issue.lock_version - 1 } }
+
+    assert_response :conflict
+    assert Issue.exists?(issue.id)
+  end
+
+  def test_bulk_create_is_atomic_and_idempotent
+    tracker = @project.trackers.first
+    key = 'bulk-test-key'
+    @request.headers['Idempotency-Key'] = key
+    params = {
+      project_id: @project.identifier,
+      bulk: {
+        parent: { subject: 'Bulk parent', tracker_id: tracker.id },
+        subtasks: [
+          { subject: 'Bulk child 1', tracker_id: tracker.id },
+          { subject: '', tracker_id: tracker.id }
+        ]
+      }
+    }
+
+    assert_no_difference('Issue.count') do
+      post :bulk_create, params: params
+    end
+    assert_response :unprocessable_entity
+
+    params[:bulk][:subtasks][1][:subject] = 'Bulk child 2'
+    post :bulk_create, params: params
+    assert_response :success
+    first_result = JSON.parse(@response.body)
+    assert_equal 2, first_result.fetch('subtasks').size
+
+    assert_no_difference('Issue.count') do
+      post :bulk_create, params: params
+    end
+    assert_response :success
+    assert_equal first_result, JSON.parse(@response.body)
+  end
+
   def test_index_returns_viewable_projects_and_allows_non_descendant_filter_selection
     other_project = build_project(name: 'Other Kanban', identifier: "other-kanban-#{Time.now.to_i}")
-    other_tracker = Tracker.create!(name: "Other project tracker #{Time.now.to_i}")
+    other_tracker = Tracker.create!(name: "Other tracker #{Time.now.to_i}", default_status_id: IssueStatus.first.id)
     other_project.trackers << other_tracker
     other_issue = build_issue(subject: 'Other project issue', project: other_project)
 
@@ -583,7 +666,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
       identifier: "kanban-child-#{Time.now.to_i}",
       parent: @project
     )
-    child_tracker = Tracker.create!(name: "Child-only tracker #{Time.now.to_i}")
+    child_tracker = Tracker.create!(name: "Child tracker #{Time.now.to_i}", default_status_id: IssueStatus.first.id)
     child_project.trackers << child_tracker
     @project.reload
 
@@ -728,16 +811,15 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
   end
 
   def ensure_member!(user = @user, project = @project)
-    member = Member.find_by(project_id: project.id, user_id: user.id) || Member.create!(project: project, user: user)
+    member = Member.find_by(project_id: project.id, user_id: user.id) || Member.create!(project: project, user: user, role_ids: [@role.id])
     return if member.roles.include?(@role)
 
-    member.roles << @role
-    member.save!
+    MemberRole.create!(member_id: member.id, role_id: @role.id)
   end
 
   def build_issue(subject: 'Test issue', parent_issue_id: nil, status: nil, assigned_to: nil, priority: nil, project: @project)
     tracker = project.trackers.first || Tracker.first
-    status ||= IssueStatus.default || IssueStatus.first
+    status ||= IssueStatus.first
     priority ||= IssuePriority.active.first
     issue = Issue.new(
       project: project,
@@ -750,6 +832,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
       assigned_to: assigned_to
     )
     issue.save!
+    issue.reload
     issue
   end
 

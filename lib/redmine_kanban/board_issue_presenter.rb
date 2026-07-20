@@ -61,6 +61,7 @@ module RedmineKanban
         id: issue.id,
         subject: issue.subject,
         status_id: issue.status_id,
+        tracker_id: issue.tracker_id,
         is_closed: issue.status.is_closed?,
         lock_version: issue.lock_version,
         project: { id: issue.project.id, name: issue.project.name },
@@ -72,9 +73,9 @@ module RedmineKanban
     def permissions_for(issue)
       project = issue.project
       {
-        can_move: permission_policy.can_move_issue?(project, @board_project || project),
-        can_edit: permission_policy.can_update_issue?(project, @board_project || project),
-        can_delete: permission_policy.can_delete_issue?(project, @board_project || project),
+        can_move: permission_policy.can_move_issue?(issue, @board_project || project),
+        can_edit: permission_policy.can_update_issue?(issue, @board_project || project),
+        can_delete: permission_policy.can_delete_issue?(issue, @board_project || project),
       }
     end
 
