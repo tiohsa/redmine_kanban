@@ -6,8 +6,9 @@ module RedmineKanban
     class << self
       def with_request(user_id:, project_id:, idempotency_key:)
         cache_key = key(user_id: user_id, project_id: project_id, idempotency_key: idempotency_key)
+        acquired = false
 
-        acquired = mutex_for(cache_key).synchronize do
+        claim_mutex.synchronize do
           return processing_response if in_process?(cache_key)
           existing = Rails.cache.read(cache_key)
           return completed_result(existing) if completed?(existing)
@@ -33,16 +34,23 @@ module RedmineKanban
 
         result = yield
         if result[:ok]
-          Rails.cache.write(
-            cache_key,
-            { 'status' => 'completed', 'response' => result },
-            expires_in: COMPLETED_TTL
-          )
+          begin
+            persisted = Rails.cache.write(
+              cache_key,
+              { 'status' => 'completed', 'response' => result },
+              expires_in: COMPLETED_TTL
+            )
+            unless persisted
+              Rails.logger.warn('[RedmineKanban] failed to persist bulk idempotency result: cache write returned false')
+            end
+          rescue StandardError => error
+            Rails.logger.warn("[RedmineKanban] failed to persist bulk idempotency result: #{error.class}: #{error.message}")
+          end
         else
           Rails.cache.delete(cache_key)
         end
         result
-      rescue Exception
+      rescue StandardError
         Rails.cache.delete(cache_key) if acquired
         raise
       ensure
@@ -71,16 +79,8 @@ module RedmineKanban
         { ok: false, message: '同じ一括作成リクエストが処理中です', field_errors: {}, http_status: :conflict }
       end
 
-      def mutex_for(cache_key)
-        mutexes_guard.synchronize { mutexes[cache_key] ||= Mutex.new }
-      end
-
-      def mutexes
-        @mutexes ||= {}
-      end
-
-      def mutexes_guard
-        @mutexes_guard ||= Mutex.new
+      def claim_mutex
+        @claim_mutex ||= Mutex.new
       end
 
       def in_process
@@ -88,15 +88,15 @@ module RedmineKanban
       end
 
       def in_process?(cache_key)
-        mutexes_guard.synchronize { in_process.key?(cache_key) }
+        in_process.key?(cache_key)
       end
 
       def mark_in_process(cache_key)
-        mutexes_guard.synchronize { in_process[cache_key] = true }
+        in_process[cache_key] = true
       end
 
       def unmark_in_process(cache_key)
-        mutexes_guard.synchronize { in_process.delete(cache_key) }
+        claim_mutex.synchronize { in_process.delete(cache_key) }
       end
     end
   end
