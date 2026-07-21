@@ -7,6 +7,10 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
            :projects_trackers, :enumerations
 
   def setup
+    @previous_cache_store = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    Rails.cache.clear
+
     @project = projects(:projects_001)
     @user = users(:users_002)
     @role = Role.find_by(name: 'Manager') || Role.givable.first || Role.first
@@ -16,6 +20,11 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     ensure_member!
 
     @request.session[:user_id] = @user.id
+  end
+
+  def teardown
+    Rails.cache = @previous_cache_store
+    super
   end
 
   def test_index_without_filter_params_keeps_response_shape
@@ -675,6 +684,45 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_equal 2, parent.reload.children.count
   end
 
+  def test_bulk_create_returns_conflict_for_processing_cache_entry
+    key = 'processing-cache-test'
+    Rails.cache.write(
+      bulk_cache_key(key),
+      { 'status' => 'processing' },
+      expires_in: RedmineKanban::BulkIdempotency::PROCESSING_TTL
+    )
+
+    assert_no_difference('Issue.count') do
+      @request.headers['Idempotency-Key'] = key
+      post :bulk_create, params: { project_id: @project.identifier, bulk: { parent: {}, subtasks: [] } }
+    end
+
+    assert_response :conflict
+    assert_equal '同じ一括作成リクエストが処理中です', JSON.parse(@response.body)['message']
+  ensure
+    Rails.cache.delete(bulk_cache_key(key))
+  end
+
+  def test_bulk_create_returns_completed_cache_result_without_creating_again
+    key = 'completed-cache-test'
+    response = { 'ok' => true, 'issue' => { 'id' => 999 }, 'subtasks' => [] }
+    Rails.cache.write(
+      bulk_cache_key(key),
+      { 'status' => 'completed', 'response' => response },
+      expires_in: RedmineKanban::BulkIdempotency::COMPLETED_TTL
+    )
+
+    assert_no_difference('Issue.count') do
+      @request.headers['Idempotency-Key'] = key
+      post :bulk_create, params: { project_id: @project.identifier, bulk: { parent: {}, subtasks: [] } }
+    end
+
+    assert_response :success
+    assert_equal response, JSON.parse(@response.body)
+  ensure
+    Rails.cache.delete(bulk_cache_key(key))
+  end
+
   def test_index_returns_viewable_projects_and_allows_non_descendant_filter_selection
     other_project = build_project(name: 'Other Kanban', identifier: "other-kanban-#{Time.now.to_i}")
     other_tracker = Tracker.create!(name: "Other tracker #{Time.now.to_i}", default_status_id: IssueStatus.first.id)
@@ -894,5 +942,9 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
 
   def column_counts_by_status(json)
     json['columns'].to_h { |column| [column['id'], column['count']] }
+  end
+
+  def bulk_cache_key(key)
+    ['redmine_kanban', 'bulk_create', @user.id, @project.id, key].join(':')
   end
 end

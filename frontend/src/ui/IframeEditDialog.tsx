@@ -406,6 +406,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
     setDialogMode('saving');
     setSaveTarget(target);
     saveTargetRef.current = target;
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
     if (iframeRef.current?.contentWindow) {
       iframeRef.current.contentWindow.onbeforeunload = null;
@@ -580,6 +581,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
   }, []);
 
   const handleSubmit = () => {
+    if (isSubmittingRef.current) return;
     if (!iframeRef.current?.contentDocument || !iframeRef.current.contentWindow) return;
     if (subtaskValidationError) return;
 

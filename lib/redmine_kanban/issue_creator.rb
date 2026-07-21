@@ -26,7 +26,7 @@ module RedmineKanban
         return error_response('指定されたプロジェクトが見つからないか、表示する権限がありません', field_errors: { project_id: ['指定されたプロジェクトを利用できません'] })
       end
 
-      unless @user.allowed_to?(:view_redmine_kanban, @project)
+      unless PermissionPolicy.new(user: @user).can_create_issue?(target_project, @project)
         return error_response('指定されたプロジェクトでチケットを作成する権限がありません', status: :forbidden)
       end
 
@@ -86,11 +86,12 @@ module RedmineKanban
     def create_with_subtasks(parent_params:, subtasks:, idempotency_key:)
       return error_response('Idempotency-Keyが必要です', status: :unprocessable_entity) if idempotency_key.blank?
 
-      record = acquire_idempotency_record(idempotency_key)
-      return record if record.is_a?(Hash)
-
-      result = nil
-      begin
+      RedmineKanban::BulkIdempotency.with_request(
+        user_id: @user.id,
+        project_id: @project.id,
+        idempotency_key: idempotency_key
+      ) do
+        result = nil
         Issue.transaction do
           parent_issue_id = parent_params[:parent_issue_id] || parent_params['parent_issue_id']
           parent_result = if parent_issue_id.present?
@@ -119,44 +120,11 @@ module RedmineKanban
           end
           result = { ok: true, issue: parent_result[:issue], subtasks: created }
         end
-
-        if result && result[:ok]
-          record.update!(status: 'completed', response_json: JSON.generate(result), completed_at: Time.current)
-        else
-          record.destroy!
-        end
         result || error_response('一括作成に失敗しました')
-      rescue StandardError
-        record.destroy! if record.persisted? && record.status == 'processing'
-        raise
       end
-    rescue ActiveRecord::RecordNotUnique
-      existing = RedmineKanban::IdempotencyRecord.find_by(
-        user_id: @user.id, operation: 'bulk_create', project_id: @project.id, idempotency_key: idempotency_key.to_s
-      )
-      return JSON.parse(existing.response_json, symbolize_names: true) if existing&.status == 'completed'
-
-      error_response('同じ一括作成リクエストが処理中です', status: :conflict)
     end
 
     private
-
-    def acquire_idempotency_record(idempotency_key)
-      RedmineKanban::IdempotencyRecord.create!(
-        user_id: @user.id,
-        operation: 'bulk_create',
-        project_id: @project.id,
-        idempotency_key: idempotency_key.to_s,
-        status: 'processing'
-      )
-    rescue ActiveRecord::RecordNotUnique
-      existing = RedmineKanban::IdempotencyRecord.find_by!(
-        user_id: @user.id, operation: 'bulk_create', project_id: @project.id, idempotency_key: idempotency_key.to_s
-      )
-      return JSON.parse(existing.response_json, symbolize_names: true) if existing.status == 'completed'
-
-      error_response('同じ一括作成リクエストが処理中です', status: :conflict)
-    end
 
     def existing_parent_result(parent_issue_id)
       parent = find_visible_parent_issue(parent_issue_id)

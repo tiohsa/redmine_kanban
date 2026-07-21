@@ -5,6 +5,7 @@ import type { BoardData, Issue } from './types';
 import { isHttpError, postJson } from './http';
 import { applyAncestorIssueUpdates, updateIssueInBoard, updateSubtaskInBoard, useIssueMutation } from './useIssueMutation';
 import { findSubtask, resolveAssigneeName, resolveMutationError, resolvePriorityName, resolveSubtaskStatus, resolveBoardIssue, type IssueMutationResult, type MovePayload, type UpdatePayload } from './kanbanShared';
+import { discardBulkIdempotencyKey, getOrCreateBulkIdempotencyKey, stableSerialize, storageKeyForBulkSignature } from './bulkIdempotency';
 
 type Args = {
   baseUrl: string;
@@ -31,18 +32,7 @@ export function useKanbanActions({
   const [pendingDeleteIssue, setPendingDeleteIssue] = useState<Issue | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
   const busyIssueIdsRef = useRef<Set<number>>(new Set());
-  const bulkIdempotencyKeysRef = useRef(new Map<string, string>());
-
-  const bulkIdempotencyKey = useCallback((payload: Record<string, unknown>) => {
-    const signature = JSON.stringify(payload);
-    const storageKey = `redmine_kanban:bulk:${signature}`;
-    let key = bulkIdempotencyKeysRef.current.get(storageKey);
-    try { key = key ?? sessionStorage.getItem(storageKey) ?? undefined; } catch { /* best effort */ }
-    key = key ?? (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`);
-    bulkIdempotencyKeysRef.current.set(storageKey, key);
-    try { sessionStorage.setItem(storageKey, key); } catch { /* best effort */ }
-    return { key, storageKey };
-  }, []);
+  const bulkInFlightRef = useRef(new Map<string, Promise<{ ok: boolean; issue?: Issue; subtasks?: Issue[] }>>());
 
   const setIssueBusy = useCallback((issueId: number, busy: boolean) => {
     const nextRef = new Set(busyIssueIdsRef.current);
@@ -177,29 +167,43 @@ export function useKanbanActions({
     mutationFn: async (payload: Record<string, unknown>) => {
       const subtasks = payload.subtasks;
       if (Array.isArray(subtasks)) {
-        const { key } = bulkIdempotencyKey(payload);
         const { subtasks: _subtasks, ...parent } = payload;
-        return postJson<{ ok: boolean; issue?: Issue; subtasks?: Issue[] }>(
-          `${baseUrl}/issues/bulk`,
-          { parent, subtasks: subtasks.map((subtask) => ({
+        const requestPayload = { parent, subtasks: subtasks.map((subtask) => ({
             subject: (subtask as { subject: string }).subject,
             tracker_id: (subtask as { trackerId: number }).trackerId,
             project_id: parent.project_id,
             priority_id: parent.priority_id,
             status_id: parent.status_id,
             assigned_to_id: parent.assigned_to_id,
-          })) },
-          'POST',
-          { 'Idempotency-Key': key },
-        );
+          })) };
+        const signature = stableSerialize(requestPayload);
+        const running = bulkInFlightRef.current.get(signature);
+        if (running) return running;
+        const request = (async () => {
+          const { key } = getOrCreateBulkIdempotencyKey(signature);
+          return postJson<{ ok: boolean; issue?: Issue; subtasks?: Issue[] }>(
+            `${baseUrl}/issues/bulk`, requestPayload, 'POST', { 'Idempotency-Key': key },
+          );
+        })();
+        bulkInFlightRef.current.set(signature, request);
+        try { return await request; } finally {
+          if (bulkInFlightRef.current.get(signature) === request) bulkInFlightRef.current.delete(signature);
+        }
       }
       return postJson<{ ok: boolean; issue?: Issue }>(`${baseUrl}/issues`, { issue: payload }, 'POST');
     },
     onSuccess: (_result, payload) => {
       if (Array.isArray(payload.subtasks)) {
-        const storageKey = `redmine_kanban:bulk:${JSON.stringify(payload)}`;
-        bulkIdempotencyKeysRef.current.delete(storageKey);
-        try { sessionStorage.removeItem(storageKey); } catch { /* best effort */ }
+        const { subtasks: _subtasks, ...parent } = payload;
+        const requestPayload = { parent, subtasks: (payload.subtasks as Array<Record<string, unknown>>).map((subtask) => ({
+          subject: subtask.subject,
+          tracker_id: subtask.trackerId,
+          project_id: parent.project_id,
+          priority_id: parent.priority_id,
+          status_id: parent.status_id,
+          assigned_to_id: parent.assigned_to_id,
+        })) };
+        discardBulkIdempotencyKey(storageKeyForBulkSignature(stableSerialize(requestPayload)));
       }
     },
     onSettled: () => { void refresh(); },

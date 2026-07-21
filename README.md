@@ -176,7 +176,9 @@ Board data notes:
 - `issues[].subtasks` is a recursive tree (`subtasks[].subtasks...`) for nested subtasks.
 - Subtask rows shown in the canvas are flattened on the frontend for rendering/hit-testing, but the API preserves hierarchy.
 
-Run `redmine:plugins:migrate` when installing or upgrading the plugin. Before uninstalling, preserve any required idempotency audit data and follow Redmine's plugin removal procedure.
+Bulk creation uses `Rails.cache` for short-lived idempotency. It prevents UI double submission, browser-session retries, and duplicate processing within one Redmine process; a shared atomic cache can also coordinate multiple processes. This is intentionally not an exactly-once persistent guarantee: MemoryStore across separate processes, cache loss, and server restarts are outside the guarantee.
+
+The plugin does not add database migrations or plugin-owned tables. Run Redmine's standard migrations when installing or upgrading the Redmine instance.
 
 ## CI
 
