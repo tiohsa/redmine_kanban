@@ -294,10 +294,13 @@ describe('IframeEditDialog layout variants', () => {
     fireEvent.load(iframe);
 
     await waitFor(() => {
-      expect(mutateAsyncMock).toHaveBeenCalledWith([
-        expect.objectContaining({ subject: '子チケット 1', project_id: 3, tracker_id: 3 }),
-        expect.objectContaining({ subject: '子チケット 2', project_id: 3, tracker_id: 3 }),
-      ]);
+      expect(mutateAsyncMock).toHaveBeenCalledWith({
+        parent: { parent_issue_id: 1, project_id: 3 },
+        subtasks: [
+          expect.objectContaining({ subject: '子チケット 1', project_id: 3, tracker_id: 3 }),
+          expect.objectContaining({ subject: '子チケット 2', project_id: 3, tracker_id: 3 }),
+        ],
+      });
     });
   });
 

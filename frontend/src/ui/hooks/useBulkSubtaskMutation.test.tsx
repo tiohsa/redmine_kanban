@@ -40,9 +40,7 @@ describe('useBulkSubtaskMutation', () => {
     });
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
-    postJsonMock
-      .mockResolvedValueOnce({ issue: makeIssue(101) })
-      .mockResolvedValueOnce({ issue: makeIssue(102) });
+    postJsonMock.mockResolvedValueOnce({ subtasks: [makeIssue(101), makeIssue(102)] });
 
     const { result } = renderHook(
       () => useBulkSubtaskMutation('/projects/demo/kanban', ['kanban', 'board'] as const),
@@ -59,17 +57,11 @@ describe('useBulkSubtaskMutation', () => {
       expect(issues.map((issue) => issue.id)).toEqual([101, 102]);
     });
 
-    expect(postJsonMock).toHaveBeenNthCalledWith(
-      1,
-      '/projects/demo/kanban/issues',
-      { issue: payloads[0] },
-      'POST'
-    );
-    expect(postJsonMock).toHaveBeenNthCalledWith(
-      2,
-      '/projects/demo/kanban/issues',
-      { issue: payloads[1] },
-      'POST'
+    expect(postJsonMock).toHaveBeenCalledWith(
+      '/projects/demo/kanban/issues/bulk',
+      { parent: { parent_issue_id: 1, project_id: undefined }, subtasks: payloads },
+      'POST',
+      expect.objectContaining({ 'Idempotency-Key': expect.any(String) }),
     );
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['kanban', 'board'] });
   });

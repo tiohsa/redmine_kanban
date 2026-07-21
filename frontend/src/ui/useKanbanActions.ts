@@ -31,6 +31,18 @@ export function useKanbanActions({
   const [pendingDeleteIssue, setPendingDeleteIssue] = useState<Issue | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
   const busyIssueIdsRef = useRef<Set<number>>(new Set());
+  const bulkIdempotencyKeysRef = useRef(new Map<string, string>());
+
+  const bulkIdempotencyKey = useCallback((payload: Record<string, unknown>) => {
+    const signature = JSON.stringify(payload);
+    const storageKey = `redmine_kanban:bulk:${signature}`;
+    let key = bulkIdempotencyKeysRef.current.get(storageKey);
+    try { key = key ?? sessionStorage.getItem(storageKey) ?? undefined; } catch { /* best effort */ }
+    key = key ?? (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`);
+    bulkIdempotencyKeysRef.current.set(storageKey, key);
+    try { sessionStorage.setItem(storageKey, key); } catch { /* best effort */ }
+    return { key, storageKey };
+  }, []);
 
   const setIssueBusy = useCallback((issueId: number, busy: boolean) => {
     const nextRef = new Set(busyIssueIdsRef.current);
@@ -165,6 +177,7 @@ export function useKanbanActions({
     mutationFn: async (payload: Record<string, unknown>) => {
       const subtasks = payload.subtasks;
       if (Array.isArray(subtasks)) {
+        const { key } = bulkIdempotencyKey(payload);
         const { subtasks: _subtasks, ...parent } = payload;
         return postJson<{ ok: boolean; issue?: Issue; subtasks?: Issue[] }>(
           `${baseUrl}/issues/bulk`,
@@ -177,10 +190,17 @@ export function useKanbanActions({
             assigned_to_id: parent.assigned_to_id,
           })) },
           'POST',
-          { 'Idempotency-Key': crypto.randomUUID() },
+          { 'Idempotency-Key': key },
         );
       }
       return postJson<{ ok: boolean; issue?: Issue }>(`${baseUrl}/issues`, { issue: payload }, 'POST');
+    },
+    onSuccess: (_result, payload) => {
+      if (Array.isArray(payload.subtasks)) {
+        const storageKey = `redmine_kanban:bulk:${JSON.stringify(payload)}`;
+        bulkIdempotencyKeysRef.current.delete(storageKey);
+        try { sessionStorage.removeItem(storageKey); } catch { /* best effort */ }
+      }
     },
     onSettled: () => { void refresh(); },
   });

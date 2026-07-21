@@ -3,7 +3,7 @@ import type { BoardData, Issue, Subtask } from './types';
 import type { AncestorIssueUpdate } from './kanbanShared';
 import { updateSubtasksTree } from './subtasksTree';
 
-type MutationContext = { prev?: BoardData; issueId: number };
+type MutationContext = { prev?: BoardData; issueId: number; optimisticIssue?: Issue | null };
 
 type IssuePayload = { issueId: number };
 
@@ -41,21 +41,28 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
       await queryClient.cancelQueries({ queryKey });
 
       const prev = queryClient.getQueryData<BoardData>(queryKey);
+      const optimistic = prev ? applyOptimistic(prev, payload) : undefined;
       if (prev) {
-        queryClient.setQueryData(queryKey, applyOptimistic(prev, payload));
+        queryClient.setQueryData(queryKey, optimistic);
       }
 
       onMutateIssue?.(payload.issueId);
-      return { prev, issueId: payload.issueId };
+      return { prev, issueId: payload.issueId, optimisticIssue: optimistic ? findIssueInBoard(optimistic, payload.issueId) : null };
     },
     onError: (_err, _payload, ctx) => {
-      if (ctx?.prev) {
+      const current = queryClient.getQueryData<BoardData>(queryKey);
+      const currentIssue = current && ctx ? findIssueInBoard(current, ctx.issueId) : null;
+      if (ctx?.prev && currentIssue && issuesMatch(currentIssue, ctx.optimisticIssue)) {
         queryClient.setQueryData<BoardData>(queryKey, (current) => {
           if (!current) return current;
           const previousIssue = findIssueInBoard(ctx.prev!, ctx.issueId);
           if (!previousIssue) return current;
           return replaceIssueInBoard(current, previousIssue);
         });
+      } else if (ctx?.prev) {
+        // Another mutation may have advanced this issue or an ancestor while this request was pending.
+        // Reconcile with the server instead of applying a stale snapshot.
+        void queryClient.invalidateQueries({ queryKey });
       }
       onError?.(_err);
     },
@@ -76,6 +83,10 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
       }
     },
   });
+}
+
+function issuesMatch(current: Issue, optimistic: Issue | null | undefined): boolean {
+  return Boolean(optimistic) && JSON.stringify(current) === JSON.stringify(optimistic);
 }
 
 function findIssueInBoard(data: BoardData, issueId: number): Issue | null {

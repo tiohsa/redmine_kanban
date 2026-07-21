@@ -89,16 +89,23 @@ module RedmineKanban
         return
       end
 
-      unless @issue.lock_version.to_i == lock_version.to_i
-        render json: { ok: false, message: '他ユーザにより更新されました' }, status: :conflict
-        return
-      end
+      result = nil
+      Issue.transaction do
+        locked_issue = Issue.lock.find_by(id: @issue.id)
+        unless locked_issue && locked_issue.lock_version.to_i == lock_version.to_i
+          result = { ok: false, message: '他ユーザにより更新されました' }
+          raise ActiveRecord::Rollback
+        end
 
-      if @issue.destroy
-        render json: { ok: true }
-      else
-        render json: { ok: false, message: '削除に失敗しました' }, status: :unprocessable_entity
+        unless permission_policy.can_delete_issue?(locked_issue, @project)
+          result = { ok: false, message: '権限がありません' }
+          raise ActiveRecord::Rollback
+        end
+
+        result = locked_issue.destroy ? { ok: true } : { ok: false, message: '削除に失敗しました' }
+        raise ActiveRecord::Rollback unless result[:ok]
       end
+      render json: result, status: result[:ok] ? :ok : (result[:message].include?('権限') ? :forbidden : :conflict)
     rescue ActiveRecord::StaleObjectError
       render json: { ok: false, message: '他ユーザにより更新されました' }, status: :conflict
     end
@@ -152,6 +159,11 @@ module RedmineKanban
 
     def target_project_for_create
       issue_params = params[:issue] || params.dig(:bulk, :parent) || {}
+      parent_issue_id = issue_params[:parent_issue_id] || issue_params['parent_issue_id']
+      if parent_issue_id.present?
+        parent = Issue.visible(User.current).find_by(id: parent_issue_id)
+        return parent&.project
+      end
       target_project_id = issue_params[:project_id].to_i
       if target_project_id.positive?
         project = Project.visible(User.current).find_by(id: target_project_id)

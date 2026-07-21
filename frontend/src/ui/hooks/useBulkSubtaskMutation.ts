@@ -58,33 +58,60 @@ export function useBulkSubtaskMutation(baseUrl: string, queryKey: readonly unkno
   const queryClient = useQueryClient();
   const idempotencyKeys = useRef(new Map<string, string>());
 
+  const keyFor = (signature: string) => `redmine_kanban:bulk:${signature}`;
+  const getOrCreateKey = (signature: string) => {
+    const storageKey = keyFor(signature);
+    let key = idempotencyKeys.current.get(storageKey);
+    try {
+      key = key ?? sessionStorage.getItem(storageKey) ?? undefined;
+    } catch {
+      // sessionStorage may be unavailable in privacy-restricted browsers.
+    }
+    key = key ?? (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`);
+    idempotencyKeys.current.set(storageKey, key);
+    try { sessionStorage.setItem(storageKey, key); } catch { /* best effort */ }
+    return { key, storageKey };
+  };
+
   return useMutation({
     mutationFn: async (payload: BulkCreatePayload | SubtaskPayload[]) => {
-      if (Array.isArray(payload)) {
-        const results: Issue[] = [];
-        for (const [rowIndex, row] of payload.entries()) {
-          try {
-            const res = await postJson<{ issue?: Issue }>(`${baseUrl}/issues`, { issue: row }, 'POST');
-            if (!res.issue) throw new Error('APIレスポンスに作成されたチケットがありません');
-            results.push(res.issue);
-          } catch (error) {
-            throw error instanceof BulkSubtaskError ? error : new BulkSubtaskError(errorDetails(error, row, rowIndex));
+      const normalized = Array.isArray(payload)
+        ? {
+            parent: {
+              parent_issue_id: payload[0]?.parent_issue_id,
+              project_id: payload[0]?.project_id,
+            },
+            subtasks: payload,
           }
-        }
-        return results;
+        : payload;
+      const signature = JSON.stringify(normalized);
+      const { key: idempotencyKey } = getOrCreateKey(signature);
+      try {
+        const res = await postJson<{ issue?: Issue; subtasks?: Issue[] }>(
+          `${baseUrl}/issues/bulk`,
+          normalized,
+          'POST',
+          { 'Idempotency-Key': idempotencyKey },
+        );
+        return [res.issue, ...(res.subtasks ?? [])].filter((issue): issue is Issue => Boolean(issue));
+      } catch (error) {
+        const response = isHttpError<ErrorPayload & { row_index?: number; row_number?: number; subject?: string }>(error)
+          ? error.payload
+          : null;
+        const rowIndex = response?.row_index ?? ((response?.row_number ?? 1) - 1);
+        const row = normalized.subtasks[Math.max(0, rowIndex)] ?? normalized.subtasks[0];
+        throw error instanceof BulkSubtaskError
+          ? error
+          : new BulkSubtaskError(errorDetails(error, { ...row, subject: response?.subject ?? row?.subject ?? '' }, rowIndex));
       }
-      const signature = JSON.stringify(payload);
-      const idempotencyKey = idempotencyKeys.current.get(signature) ?? (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`);
-      idempotencyKeys.current.set(signature, idempotencyKey);
-      const res = await postJson<{ issue?: Issue; subtasks?: Issue[] }>(
-        `${baseUrl}/issues/bulk`,
-        payload,
-        'POST',
-        { 'Idempotency-Key': idempotencyKey },
-      );
-      return [res.issue, ...(res.subtasks ?? [])].filter((issue): issue is Issue => Boolean(issue));
     },
-    onSuccess: () => {
+    onSuccess: (_result, payload) => {
+      const normalized = Array.isArray(payload)
+        ? { parent: { parent_issue_id: payload[0]?.parent_issue_id, project_id: payload[0]?.project_id }, subtasks: payload }
+        : payload;
+      const storageKey = keyFor(JSON.stringify(normalized));
+      idempotencyKeys.current.delete(storageKey);
+      try { sessionStorage.removeItem(storageKey); } catch { /* best effort */ }
       queryClient.invalidateQueries({ queryKey });
     },
   });

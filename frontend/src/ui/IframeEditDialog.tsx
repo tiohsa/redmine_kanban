@@ -344,15 +344,21 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
 
     if (lines.length > 0) {
       try {
-        await bulkMutation.mutateAsync(lines.map((subtask) => ({
-          parent_issue_id: targetIssueId,
-          subject: subtask.subject,
-          project_id: parentAttributesRef.current.project_id,
-          tracker_id: subtask.trackerId,
-          priority_id: parentAttributesRef.current.priority_id,
-          status_id: parentAttributesRef.current.status_id,
-          assigned_to_id: parentAttributesRef.current.assigned_to_id,
-        })));
+        await bulkMutation.mutateAsync({
+          parent: {
+            parent_issue_id: targetIssueId,
+            project_id: parentAttributesRef.current.project_id,
+          },
+          subtasks: lines.map((subtask) => ({
+            parent_issue_id: targetIssueId,
+            subject: subtask.subject,
+            project_id: parentAttributesRef.current.project_id,
+            tracker_id: subtask.trackerId,
+            priority_id: parentAttributesRef.current.priority_id,
+            status_id: parentAttributesRef.current.status_id,
+            assigned_to_id: parentAttributesRef.current.assigned_to_id,
+          })),
+        });
         onSuccess(
           (mode === 'create' ? labels.created_with_subtasks : labels.updated_with_subtasks)
             .replace('%{id}', String(targetIssueId))

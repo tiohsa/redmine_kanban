@@ -2,9 +2,6 @@ require_relative 'subtask_loader'
 
 module RedmineKanban
   class IssueCreator
-    @bulk_idempotency_mutex = Mutex.new
-    @bulk_idempotency_results = {}
-
     include ParamNormalizer
     include IssueParentAttributes
     include ServiceResponse
@@ -89,49 +86,85 @@ module RedmineKanban
     def create_with_subtasks(parent_params:, subtasks:, idempotency_key:)
       return error_response('Idempotency-Keyが必要です', status: :unprocessable_entity) if idempotency_key.blank?
 
-      cache_key = "redmine_kanban:bulk_create:#{@user.id}:#{idempotency_key}"
-      cached = Rails.cache.read(cache_key) || self.class.bulk_idempotency_results[cache_key]
-      return cached if cached
+      record = acquire_idempotency_record(idempotency_key)
+      return record if record.is_a?(Hash)
 
       result = nil
-      Issue.transaction do
-        parent_result = create(params: parent_params)
-        unless parent_result[:ok]
-          result = parent_result
-          raise ActiveRecord::Rollback
-        end
-
-        parent_id = parent_result.dig(:issue, :id) || parent_result.dig('issue', 'id')
-        created = []
-        subtask_collection(subtasks).each_with_index do |subtask_params, index|
-          child_result = create(params: subtask_params.merge(parent_issue_id: parent_id))
-          unless child_result[:ok]
-            result = child_result.merge(row_index: index)
+      begin
+        Issue.transaction do
+          parent_issue_id = parent_params[:parent_issue_id] || parent_params['parent_issue_id']
+          parent_result = if parent_issue_id.present?
+                            existing_parent_result(parent_issue_id)
+                          else
+                            create(params: parent_params)
+                          end
+          unless parent_result[:ok]
+            result = parent_result
             raise ActiveRecord::Rollback
           end
-          created << child_result[:issue]
+
+          parent_id = parent_result.dig(:issue, :id) || parent_result.dig('issue', 'id')
+          created = []
+          subtask_collection(subtasks).each_with_index do |subtask_params, index|
+            child_result = create(params: subtask_params.merge(parent_issue_id: parent_id))
+            unless child_result[:ok]
+              result = child_result.merge(
+                row_index: index,
+                row_number: index + 1,
+                subject: subtask_params[:subject] || subtask_params['subject']
+              )
+              raise ActiveRecord::Rollback
+            end
+            created << child_result[:issue]
+          end
+          result = { ok: true, issue: parent_result[:issue], subtasks: created }
         end
-        result = { ok: true, issue: parent_result[:issue], subtasks: created }
-      end
 
-      if result && result[:ok]
-        Rails.cache.write(cache_key, result, expires_in: 24.hours)
-        self.class.bulk_idempotency_mutex.synchronize { self.class.bulk_idempotency_results[cache_key] = result }
+        if result && result[:ok]
+          record.update!(status: 'completed', response_json: JSON.generate(result), completed_at: Time.current)
+        else
+          record.destroy!
+        end
+        result || error_response('一括作成に失敗しました')
+      rescue StandardError
+        record.destroy! if record.persisted? && record.status == 'processing'
+        raise
       end
-      result || error_response('一括作成に失敗しました')
     rescue ActiveRecord::RecordNotUnique
-      Rails.cache.read(cache_key) || self.class.bulk_idempotency_results[cache_key] || error_response('同じ一括作成リクエストが処理中です', status: :conflict)
-    end
+      existing = RedmineKanban::IdempotencyRecord.find_by(
+        user_id: @user.id, operation: 'bulk_create', project_id: @project.id, idempotency_key: idempotency_key.to_s
+      )
+      return JSON.parse(existing.response_json, symbolize_names: true) if existing&.status == 'completed'
 
-    def self.bulk_idempotency_results
-      @bulk_idempotency_results
-    end
-
-    def self.bulk_idempotency_mutex
-      @bulk_idempotency_mutex
+      error_response('同じ一括作成リクエストが処理中です', status: :conflict)
     end
 
     private
+
+    def acquire_idempotency_record(idempotency_key)
+      RedmineKanban::IdempotencyRecord.create!(
+        user_id: @user.id,
+        operation: 'bulk_create',
+        project_id: @project.id,
+        idempotency_key: idempotency_key.to_s,
+        status: 'processing'
+      )
+    rescue ActiveRecord::RecordNotUnique
+      existing = RedmineKanban::IdempotencyRecord.find_by!(
+        user_id: @user.id, operation: 'bulk_create', project_id: @project.id, idempotency_key: idempotency_key.to_s
+      )
+      return JSON.parse(existing.response_json, symbolize_names: true) if existing.status == 'completed'
+
+      error_response('同じ一括作成リクエストが処理中です', status: :conflict)
+    end
+
+    def existing_parent_result(parent_issue_id)
+      parent = find_visible_parent_issue(parent_issue_id)
+      return error_response('親チケットが見つからないか、表示する権限がありません', status: :not_found) unless parent
+      return error_response('親チケットに子チケットを追加する権限がありません', status: :forbidden) unless PermissionPolicy.new(user: @user).can_create_issue?(parent.project, @project)
+
+      { ok: true, issue: issue_presenter(parent).issue_to_h(parent) }
+    end
 
     def subtask_collection(subtasks)
       return subtasks.to_h.values if subtasks.respond_to?(:to_h) && !subtasks.is_a?(Array)

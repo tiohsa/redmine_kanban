@@ -168,6 +168,7 @@ REDMINE_BASE_URL=http://127.0.0.1:3002 \
 | GET | `/projects/:project_id/kanban/data` | ボードデータ取得 |
 | PATCH | `/projects/:project_id/kanban/issues/:id/move` | カード移動 |
 | POST | `/projects/:project_id/kanban/issues` | チケット作成 |
+| POST | `/projects/:project_id/kanban/issues/bulk` | 親チケットと子チケット、または既存親への子チケット一括作成 |
 | PATCH | `/projects/:project_id/kanban/issues/:id` | チケット更新 |
 | DELETE | `/projects/:project_id/kanban/issues/:id` | チケット削除 |
 
@@ -175,6 +176,8 @@ REDMINE_BASE_URL=http://127.0.0.1:3002 \
 
 - `issues[].subtasks` は再帰ツリー構造です（`subtasks[].subtasks...`）。
 - Canvas 上の子チケット行はフロントで描画/ヒット判定用にフラット化していますが、API は階層を保持します。
+
+プラグイン更新時は `redmine:plugins:migrate` を実行してください。冪等性レコードを含むプラグインのテーブルを削除してアンインストールする場合は、先に必要な監査情報を退避したうえで、Redmine のプラグイン削除手順に従ってください。
 
 
 ## CI

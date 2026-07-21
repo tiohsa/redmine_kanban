@@ -646,6 +646,35 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_equal first_result, JSON.parse(@response.body)
   end
 
+  def test_bulk_create_adds_children_to_existing_parent_atomically
+    parent = build_issue(subject: 'Existing parent')
+    tracker = @project.trackers.first
+    @request.headers['Idempotency-Key'] = 'existing-parent-bulk-test'
+    params = {
+      project_id: @project.identifier,
+      bulk: {
+        parent: { parent_issue_id: parent.id, project_id: @project.id },
+        subtasks: [
+          { subject: 'Child to rollback', tracker_id: tracker.id },
+          { subject: '', tracker_id: tracker.id }
+        ]
+      }
+    }
+
+    assert_no_difference('Issue.count') do
+      post :bulk_create, params: params
+    end
+    assert_response :unprocessable_entity
+    assert_equal 0, parent.reload.children.count
+
+    params[:bulk][:subtasks][1][:subject] = 'Child that persists'
+    assert_difference('Issue.count', 2) do
+      post :bulk_create, params: params.merge(bulk: params[:bulk].merge(parent: { parent_issue_id: parent.id }))
+    end
+    assert_response :success
+    assert_equal 2, parent.reload.children.count
+  end
+
   def test_index_returns_viewable_projects_and_allows_non_descendant_filter_selection
     other_project = build_project(name: 'Other Kanban', identifier: "other-kanban-#{Time.now.to_i}")
     other_tracker = Tracker.create!(name: "Other tracker #{Time.now.to_i}", default_status_id: IssueStatus.first.id)

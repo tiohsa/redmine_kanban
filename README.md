@@ -167,6 +167,7 @@ REDMINE_BASE_URL=http://127.0.0.1:3002 \
 | GET | `/projects/:project_id/kanban/data` | Get board data |
 | PATCH | `/projects/:project_id/kanban/issues/:id/move` | Move card |
 | POST | `/projects/:project_id/kanban/issues` | Create ticket |
+| POST | `/projects/:project_id/kanban/issues/bulk` | Create a parent with subtasks or subtasks for an existing parent |
 | PATCH | `/projects/:project_id/kanban/issues/:id` | Update ticket |
 | DELETE | `/projects/:project_id/kanban/issues/:id` | Delete ticket |
 
@@ -174,6 +175,8 @@ Board data notes:
 
 - `issues[].subtasks` is a recursive tree (`subtasks[].subtasks...`) for nested subtasks.
 - Subtask rows shown in the canvas are flattened on the frontend for rendering/hit-testing, but the API preserves hierarchy.
+
+Run `redmine:plugins:migrate` when installing or upgrading the plugin. Before uninstalling, preserve any required idempotency audit data and follow Redmine's plugin removal procedure.
 
 ## CI
 
