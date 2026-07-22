@@ -177,7 +177,9 @@ REDMINE_BASE_URL=http://127.0.0.1:3002 \
 - `issues[].subtasks` は再帰ツリー構造です（`subtasks[].subtasks...`）。
 - Canvas 上の子チケット行はフロントで描画/ヒット判定用にフラット化していますが、API は階層を保持します。
 
-一括作成の冪等性は `Rails.cache` で管理します。キャッシュキーはユーザー・プロジェクト・操作・`Idempotency-Key` でスコープし、processing/completed状態で共有CacheStore上の重複送信を抑止します。クライアントはブラウザセッション中の再試行で同じキーを再利用し、入力検証失敗時はclaimを削除して再試行できます。
+一括作成の冪等性は `Rails.cache` で管理します。キャッシュキーはユーザー・プロジェクト・操作・`Idempotency-Key` でスコープし、atomicなclaimに成功した処理だけが作成処理を実行します。processingの場合は409、completedの場合は以前のレスポンスを返します。クライアントは同一ブラウザセッション中の同一論理操作で同じキーを再利用し、入力検証失敗または例外時はclaimを削除して再試行できます。
+
+保証範囲は、同一ブラウザの二重送信、ブラウザセッション中の同一論理操作の再試行、同一Redmineプロセス内の重複claim、およびatomicな共有 `CacheStore` の `unless_exist` 書き込みを使う複数プロセス間の重複claim防止です。プロセス分離されたMemoryStore、キャッシュ消失、サーバー再起動をまたぐ永続的なexactly-onceは保証しません。
 
 このプラグインは特徴としてデータベースマイグレーションや独自テーブルを追加しません。キャッシュ消失、サーバー再起動、プロセスごとのMemoryStoreなど共有されないStoreでは、永続的なexactly-once保証はできません。より強い保証が必要な環境では、共有atomic/persistent CacheStoreまたは外部Idempotencyサービスを提供してください。
 

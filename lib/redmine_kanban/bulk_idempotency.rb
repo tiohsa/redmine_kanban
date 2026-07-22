@@ -7,21 +7,31 @@ module RedmineKanban
       def with_request(user_id:, project_id:, idempotency_key:)
         cache_key = key(user_id: user_id, project_id: project_id, idempotency_key: idempotency_key)
 
-        claim_mutex.synchronize do
+        claimed = claim_mutex.synchronize do
           existing = Rails.cache.read(cache_key)
-          return completed_result(existing) if completed?(existing)
-          return processing_response if processing?(existing)
+          if completed?(existing)
+            completed_result(existing)
+          elsif processing?(existing)
+            processing_response
+          else
+            Rails.cache.write(
+              cache_key,
+              { 'status' => 'processing' },
+              expires_in: PROCESSING_TTL,
+              unless_exist: true
+            )
+          end
+        end
 
-          claimed = Rails.cache.write(
-            cache_key,
-            { 'status' => 'processing' },
-            expires_in: PROCESSING_TTL,
-            unless_exist: true
-          )
-          next true if claimed
+        return claimed if claimed.is_a?(Hash)
 
-          existing = Rails.cache.read(cache_key)
-          completed?(existing) ? completed_result(existing) : processing_response
+        unless claimed
+          claim_mutex.synchronize do
+            existing = Rails.cache.read(cache_key)
+            return completed_result(existing) if completed?(existing)
+            return processing_response if processing?(existing)
+            processing_response
+          end
         end
 
         result = yield

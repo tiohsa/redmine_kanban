@@ -176,7 +176,9 @@ Board data notes:
 - `issues[].subtasks` is a recursive tree (`subtasks[].subtasks...`) for nested subtasks.
 - Subtask rows shown in the canvas are flattened on the frontend for rendering/hit-testing, but the API preserves hierarchy.
 
-Bulk creation uses `Rails.cache` for idempotency. The cache key is scoped by user, project, operation, and `Idempotency-Key`; processing and completed entries prevent duplicate requests within a shared cache, and the client reuses the key for browser-session retries. Failed validation removes the claim so the same operation can be retried.
+Bulk creation uses `Rails.cache` for idempotency. The cache key is scoped by user, project, operation, and `Idempotency-Key`; an atomic claim means only the claimant runs creation, while processing and completed entries reject duplicates or return the previous response. The client reuses the key for the same logical operation during a browser session. Failed validation or exceptions remove the claim so the same operation can be retried.
+
+The guarantee covers duplicate submissions from one browser, retries of the same logical operation during that browser session, duplicate claims within one Redmine process, and duplicate claims across processes when the cache store provides an atomic shared `unless_exist` write. It does not provide persistent exactly-once behavior across MemoryStore process boundaries, cache loss, or server restarts.
 
 This plugin intentionally has no database migrations or plugin-owned tables. Exactly-once persistence cannot be guaranteed when the cache is lost, the server restarts, or separate processes use non-shared stores such as per-process MemoryStore. Deployments requiring that stronger guarantee must provide a shared atomic/persistent CacheStore or an external idempotency service.
 

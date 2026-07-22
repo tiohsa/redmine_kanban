@@ -4,7 +4,13 @@ import type { BoardData, Issue, Subtask } from './types';
 import type { AncestorIssueUpdate } from './kanbanShared';
 import { updateSubtasksTree } from './subtasksTree';
 
-type MutationContext = { prev?: BoardData; issueId: number; optimisticIssue?: Issue | null; revision: number };
+type MutationContext = {
+  prev?: BoardData;
+  issueId: number;
+  optimisticIssue?: Issue | null;
+  revision: number;
+  overlapped: boolean;
+};
 
 type IssuePayload = { issueId: number };
 
@@ -48,15 +54,22 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
         queryClient.setQueryData(queryKey, optimistic);
       }
 
-      const revision = (mutationRevisions.current.get(payload.issueId) ?? 0) + 1;
+      const previousRevision = mutationRevisions.current.get(payload.issueId) ?? 0;
+      const revision = previousRevision + 1;
       mutationRevisions.current.set(payload.issueId, revision);
       onMutateIssue?.(payload.issueId);
-      return { prev, issueId: payload.issueId, revision, optimisticIssue: optimistic ? findIssueInBoard(optimistic, payload.issueId) : null };
+      return {
+        prev,
+        issueId: payload.issueId,
+        revision,
+        overlapped: previousRevision > 0,
+        optimisticIssue: optimistic ? findIssueInBoard(optimistic, payload.issueId) : null,
+      };
     },
     onError: (_err, _payload, ctx) => {
       const current = queryClient.getQueryData<BoardData>(queryKey);
       const currentIssue = current && ctx ? findIssueInBoard(current, ctx.issueId) : null;
-      if (ctx?.prev && currentIssue && mutationRevisions.current.get(ctx.issueId) === ctx.revision && issuesMatch(currentIssue, ctx.optimisticIssue)) {
+      if (ctx?.prev && !ctx.overlapped && currentIssue && mutationRevisions.current.get(ctx.issueId) === ctx.revision && issuesMatch(currentIssue, ctx.optimisticIssue)) {
         queryClient.setQueryData<BoardData>(queryKey, (current) => {
           if (!current) return current;
           const previousIssue = findIssueInBoard(ctx.prev!, ctx.issueId);
@@ -77,11 +90,12 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
       onSuccess?.(result);
     },
     onSettled: (_result, _error, payload, context) => {
-      if (payload) {
+      const isLatestMutation = Boolean(
+        payload && context && mutationRevisions.current.get(payload.issueId) === context.revision,
+      );
+      if (payload && isLatestMutation) {
         onSettledIssue?.(payload.issueId);
-        if (context && mutationRevisions.current.get(payload.issueId) === context.revision) {
-          mutationRevisions.current.delete(payload.issueId);
-        }
+        mutationRevisions.current.delete(payload.issueId);
       }
       if (refetchOnSettled) {
         window.setTimeout(() => {

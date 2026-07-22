@@ -1,5 +1,21 @@
 require File.expand_path('../../../../test/test_helper', File.expand_path(__dir__))
 
+class AtomicClaimFailureCache < ActiveSupport::Cache::MemoryStore
+  def initialize(entry)
+    super()
+    @entry = entry
+  end
+
+  def write(name, value, options = nil)
+    if options && options[:unless_exist]
+      super(name, @entry)
+      return false
+    end
+
+    super
+  end
+end
+
 class BulkIdempotencyTest < ActiveSupport::TestCase
   def setup
     @previous_cache_store = Rails.cache
@@ -50,6 +66,45 @@ class BulkIdempotencyTest < ActiveSupport::TestCase
 
     assert_equal 1, results.count { |result| result[:ok] }
     assert_equal 1, results.count { |result| result[:http_status] == :conflict }
+  end
+
+  def test_atomic_claim_failure_with_processing_entry_does_not_run_block
+    Rails.cache = AtomicClaimFailureCache.new({ 'status' => 'processing' })
+    called = false
+
+    result = bulk_idempotency.with_request(user_id: 1, project_id: 2, idempotency_key: 'atomic-processing') do
+      called = true
+      { ok: true }
+    end
+
+    assert_equal :conflict, result[:http_status]
+    refute called
+  end
+
+  def test_atomic_claim_failure_with_completed_entry_returns_previous_result
+    previous = { ok: true, issue: { id: 42 } }
+    Rails.cache = AtomicClaimFailureCache.new({ 'status' => 'completed', 'response' => previous })
+    called = false
+
+    result = bulk_idempotency.with_request(user_id: 1, project_id: 2, idempotency_key: 'atomic-completed') do
+      called = true
+      { ok: true, issue: { id: 99 } }
+    end
+
+    assert_equal previous, result
+    refute called
+  end
+
+  def test_validation_failure_releases_claim_for_retry
+    first = bulk_idempotency.with_request(user_id: 1, project_id: 2, idempotency_key: 'validation-retry') do
+      { ok: false, message: 'invalid' }
+    end
+    second = bulk_idempotency.with_request(user_id: 1, project_id: 2, idempotency_key: 'validation-retry') do
+      { ok: true, value: 2 }
+    end
+
+    assert_equal false, first[:ok]
+    assert_equal({ ok: true, value: 2 }, second)
   end
 
   def test_different_keys_can_run_without_waiting_for_each_other

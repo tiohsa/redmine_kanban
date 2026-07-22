@@ -384,4 +384,107 @@ describe('useIssueMutation', () => {
     });
     expect(onError).toHaveBeenCalledTimes(1);
   });
+
+  it('does not roll back a successful overlapping mutation when a later mutation fails', async () => {
+    const queryKey = ['kanban', 'board', 'overlap'] as const;
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    queryClient.setQueryData(queryKey, makeBoardData([
+      makeIssue(1, { subject: 'V10', lock_version: 10, updated_on: '2026-07-22T00:10:00Z' }),
+    ]));
+
+    let resolveA!: (value: { issue: Issue }) => void;
+    let rejectB!: (error: Error) => void;
+    let callCount = 0;
+    const mutationA = new Promise<{ issue: Issue }>((resolve) => { resolveA = resolve; });
+    const mutationB = new Promise<{ issue: Issue }>((_resolve, reject) => { rejectB = reject; });
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(
+      () => useIssueMutation<{ issueId: number; name: string }, { issue: Issue }>({
+        queryKey,
+        mutationFn: () => {
+          callCount += 1;
+          return callCount === 1 ? mutationA : mutationB;
+        },
+        applyOptimistic: (data, payload) => updateIssueInBoard(data, payload.issueId, (issue) => ({
+          ...issue,
+          subject: payload.name,
+        })),
+        applyServer: (data, response) => replaceIssueInBoard(data, response.issue),
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    let first!: Promise<unknown>;
+    let second!: Promise<unknown>;
+    await act(async () => {
+      first = result.current.mutateAsync({ issueId: 1, name: 'A' });
+      second = result.current.mutateAsync({ issueId: 1, name: 'B' });
+      await waitFor(() => expect(callCount).toBe(2));
+    });
+
+    await act(async () => {
+      resolveA({ issue: makeIssue(1, { subject: 'A', lock_version: 11, updated_on: '2026-07-22T00:11:00Z' }) });
+      await first;
+    });
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0].subject).toBe('B');
+
+    await act(async () => {
+      rejectB(new Error('B failed'));
+      await expect(second).rejects.toThrow('B failed');
+    });
+
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey });
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0].subject).not.toBe('V10');
+  });
+
+  it('keeps an issue busy until the latest overlapping mutation settles', async () => {
+    const queryKey = ['kanban', 'board', 'busy'] as const;
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    queryClient.setQueryData(queryKey, makeBoardData([makeIssue(1)]));
+
+    let resolveA!: (value: { issue: Issue }) => void;
+    let resolveB!: (value: { issue: Issue }) => void;
+    let callCount = 0;
+    const mutationA = new Promise<{ issue: Issue }>((resolve) => { resolveA = resolve; });
+    const mutationB = new Promise<{ issue: Issue }>((resolve) => { resolveB = resolve; });
+    const onSettledIssue = vi.fn();
+
+    const { result } = renderHook(
+      () => useIssueMutation<{ issueId: number; name: string }, { issue: Issue }>({
+        queryKey,
+        mutationFn: () => {
+          callCount += 1;
+          return callCount === 1 ? mutationA : mutationB;
+        },
+        applyOptimistic: (data) => data,
+        applyServer: (data) => data,
+        onSettledIssue,
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    let first!: Promise<unknown>;
+    let second!: Promise<unknown>;
+    await act(async () => {
+      first = result.current.mutateAsync({ issueId: 1, name: 'A' });
+      second = result.current.mutateAsync({ issueId: 1, name: 'B' });
+      await waitFor(() => expect(callCount).toBe(2));
+    });
+
+    await act(async () => {
+      resolveA({ issue: makeIssue(1, { lock_version: 2 }) });
+      await first;
+    });
+    expect(onSettledIssue).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveB({ issue: makeIssue(1, { lock_version: 3 }) });
+      await second;
+    });
+    expect(onSettledIssue).toHaveBeenCalledTimes(1);
+    expect(onSettledIssue).toHaveBeenCalledWith(1);
+  });
 });
