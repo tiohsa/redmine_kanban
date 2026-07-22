@@ -947,4 +947,5 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
   def bulk_cache_key(key)
     ['redmine_kanban', 'bulk_create', @user.id, @project.id, key].join(':')
   end
+
 end

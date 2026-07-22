@@ -1,15 +1,13 @@
 module RedmineKanban
   module BulkIdempotency
     PROCESSING_TTL = 10.minutes
-    COMPLETED_TTL = 10.minutes
+    COMPLETED_TTL = 24.hours
 
     class << self
       def with_request(user_id:, project_id:, idempotency_key:)
         cache_key = key(user_id: user_id, project_id: project_id, idempotency_key: idempotency_key)
-        acquired = false
 
         claim_mutex.synchronize do
-          return processing_response if in_process?(cache_key)
           existing = Rails.cache.read(cache_key)
           return completed_result(existing) if completed?(existing)
           return processing_response if processing?(existing)
@@ -20,41 +18,27 @@ module RedmineKanban
             expires_in: PROCESSING_TTL,
             unless_exist: true
           )
+          next true if claimed
 
-          unless claimed
-            existing = Rails.cache.read(cache_key)
-            return completed_result(existing) if completed?(existing)
-
-            return processing_response
-          end
-
-          mark_in_process(cache_key)
-          true
+          existing = Rails.cache.read(cache_key)
+          completed?(existing) ? completed_result(existing) : processing_response
         end
 
         result = yield
         if result[:ok]
-          begin
-            persisted = Rails.cache.write(
-              cache_key,
-              { 'status' => 'completed', 'response' => result },
-              expires_in: COMPLETED_TTL
-            )
-            unless persisted
-              Rails.logger.warn('[RedmineKanban] failed to persist bulk idempotency result: cache write returned false')
-            end
-          rescue StandardError => error
-            Rails.logger.warn("[RedmineKanban] failed to persist bulk idempotency result: #{error.class}: #{error.message}")
-          end
+          Rails.cache.write(
+            cache_key,
+            { 'status' => 'completed', 'response' => result },
+            expires_in: COMPLETED_TTL
+          )
         else
+          # Validation failures are retryable with the same client key.
           Rails.cache.delete(cache_key)
         end
         result
       rescue StandardError
-        Rails.cache.delete(cache_key) if acquired
+        Rails.cache.delete(cache_key)
         raise
-      ensure
-        unmark_in_process(cache_key) if acquired
       end
 
       private
@@ -81,22 +65,6 @@ module RedmineKanban
 
       def claim_mutex
         @claim_mutex ||= Mutex.new
-      end
-
-      def in_process
-        @in_process ||= {}
-      end
-
-      def in_process?(cache_key)
-        in_process.key?(cache_key)
-      end
-
-      def mark_in_process(cache_key)
-        in_process[cache_key] = true
-      end
-
-      def unmark_in_process(cache_key)
-        claim_mutex.synchronize { in_process.delete(cache_key) }
       end
     end
   end

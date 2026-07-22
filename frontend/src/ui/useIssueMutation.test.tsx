@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { BoardData, Issue } from './types';
-import { applyAncestorIssueUpdates, replaceIssueInBoard, updateIssueInBoard, updateSubtaskInBoard, useIssueMutation } from './useIssueMutation';
+import { applyAncestorIssueUpdates, isIssueFresh, replaceIssueInBoard, updateIssueInBoard, updateSubtaskInBoard, useIssueMutation } from './useIssueMutation';
 
 function makeIssue(id: number, attrs: Partial<Issue> = {}): Issue {
   return {
@@ -243,7 +243,50 @@ describe('replaceIssueInBoard', () => {
   });
 });
 
+describe('isIssueFresh', () => {
+  it('rejects an older normal success response by lock version', () => {
+    expect(isIssueFresh(
+      makeIssue(1, { lock_version: 12, done_ratio: 80 }),
+      makeIssue(1, { lock_version: 11, done_ratio: 20 }),
+    )).toBe(false);
+  });
+
+  it('rejects an older response with the same lock version by updated_on', () => {
+    expect(isIssueFresh(
+      makeIssue(1, { lock_version: 12, updated_on: '2026-07-22T00:02:00Z' }),
+      makeIssue(1, { lock_version: 12, updated_on: '2026-07-22T00:01:00Z' }),
+    )).toBe(false);
+  });
+});
+
 describe('useIssueMutation', () => {
+  it('does not replace a newer cached issue with a late normal success response', async () => {
+    const queryKey = ['kanban', 'board', 'freshness'] as const;
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    queryClient.setQueryData(queryKey, makeBoardData([
+      makeIssue(1, { lock_version: 12, done_ratio: 80, status_id: 2, updated_on: '2026-07-22T00:02:00Z' }),
+    ]));
+
+    const { result } = renderHook(
+      () => useIssueMutation({
+        queryKey,
+        mutationFn: async () => ({ issue: makeIssue(1, { lock_version: 11, done_ratio: 20, status_id: 1, updated_on: '2026-07-22T00:01:00Z' }) }),
+        applyOptimistic: (data) => data,
+        applyServer: (data, response: { issue: Issue }, _payload, options = { applyTarget: true }) =>
+          options.applyTarget ? replaceIssueInBoard(data, response.issue) : data,
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await act(async () => { await result.current.mutateAsync({ issueId: 1 }); });
+
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0]).toMatchObject({
+      lock_version: 12,
+      done_ratio: 80,
+      status_id: 2,
+    });
+  });
+
   it('applies optimistic update, then applies server response and settles callbacks', async () => {
     const queryKey = ['kanban', 'board'] as const;
     const queryClient = new QueryClient({

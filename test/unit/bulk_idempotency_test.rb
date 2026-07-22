@@ -6,12 +6,10 @@ class BulkIdempotencyTest < ActiveSupport::TestCase
     Rails.cache = ActiveSupport::Cache::MemoryStore.new
     Rails.cache.clear
     bulk_idempotency.instance_variable_set(:@claim_mutex, nil)
-    bulk_idempotency.instance_variable_set(:@in_process, {})
   end
 
   def teardown
     Rails.cache = @previous_cache_store
-    bulk_idempotency.instance_variable_set(:@in_process, {})
     super
   end
 
@@ -24,7 +22,7 @@ class BulkIdempotencyTest < ActiveSupport::TestCase
 
     assert_nil bulk_idempotency.instance_variable_get(:@mutexes)
     assert_nil bulk_idempotency.private_methods(false).find { |method| method == :mutex_for }
-    assert_empty bulk_idempotency.instance_variable_get(:@in_process)
+    assert_instance_of Mutex, bulk_idempotency.instance_variable_get(:@claim_mutex)
   end
 
   def test_same_key_is_processed_only_once_when_called_concurrently
@@ -52,7 +50,6 @@ class BulkIdempotencyTest < ActiveSupport::TestCase
 
     assert_equal 1, results.count { |result| result[:ok] }
     assert_equal 1, results.count { |result| result[:http_status] == :conflict }
-    assert_empty bulk_idempotency.instance_variable_get(:@in_process)
   end
 
   def test_different_keys_can_run_without_waiting_for_each_other
@@ -85,7 +82,6 @@ class BulkIdempotencyTest < ActiveSupport::TestCase
       bulk_idempotency.with_request(user_id: 1, project_id: 2, idempotency_key: 'retry') { raise 'boom' }
     end
 
-    assert_empty bulk_idempotency.instance_variable_get(:@in_process)
     assert_nil Rails.cache.read(bulk_cache_key('retry'))
     result = bulk_idempotency.with_request(user_id: 1, project_id: 2, idempotency_key: 'retry') { { ok: true } }
     assert_equal true, result[:ok]
@@ -103,37 +99,6 @@ class BulkIdempotencyTest < ActiveSupport::TestCase
 
     assert_equal result, actual
     refute called
-  end
-
-  def test_completed_cache_write_failure_returns_created_result
-    delegate = Rails.cache
-    failing_cache = Class.new do
-      def initialize(delegate)
-        @delegate = delegate
-      end
-
-      def read(key)
-        @delegate.read(key)
-      end
-
-      def write(key, value, **options)
-        raise IOError, 'cache unavailable' if value['status'] == 'completed'
-
-        @delegate.write(key, value, **options)
-      end
-
-      def delete(key)
-        @delegate.delete(key)
-      end
-    end.new(delegate)
-    Rails.cache = failing_cache
-
-    result = bulk_idempotency.with_request(user_id: 1, project_id: 2, idempotency_key: 'cache-failure') do
-      { ok: true, issue: { id: 7 } }
-    end
-
-    assert_equal({ ok: true, issue: { id: 7 } }, result)
-    assert_empty bulk_idempotency.instance_variable_get(:@in_process)
   end
 
   private

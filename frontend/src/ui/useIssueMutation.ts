@@ -1,9 +1,10 @@
 import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query';
+import { useRef } from 'react';
 import type { BoardData, Issue, Subtask } from './types';
 import type { AncestorIssueUpdate } from './kanbanShared';
 import { updateSubtasksTree } from './subtasksTree';
 
-type MutationContext = { prev?: BoardData; issueId: number; optimisticIssue?: Issue | null };
+type MutationContext = { prev?: BoardData; issueId: number; optimisticIssue?: Issue | null; revision: number };
 
 type IssuePayload = { issueId: number };
 
@@ -11,7 +12,7 @@ type UseIssueMutationOptions<TPayload extends IssuePayload, TResult> = {
   queryKey: QueryKey;
   mutationFn: (payload: TPayload) => Promise<TResult>;
   applyOptimistic: (data: BoardData, payload: TPayload) => BoardData;
-  applyServer: (data: BoardData, result: TResult, payload: TPayload) => BoardData;
+  applyServer: (data: BoardData, result: TResult, payload: TPayload, options?: { applyTarget: boolean }) => BoardData;
   onError?: (error: unknown) => void;
   onSuccess?: (result: TResult) => void;
   onMutateIssue?: (issueId: number) => void;
@@ -33,6 +34,7 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
   refetchOnSettled = false,
 }: UseIssueMutationOptions<TPayload, TResult>) {
   const queryClient = useQueryClient();
+  const mutationRevisions = useRef(new Map<number, number>());
 
   // Optimistic UI + server normalization keeps Kanban behavior aligned with Gantt/list/detail.
   return useMutation<TResult, unknown, TPayload, MutationContext>({
@@ -46,13 +48,15 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
         queryClient.setQueryData(queryKey, optimistic);
       }
 
+      const revision = (mutationRevisions.current.get(payload.issueId) ?? 0) + 1;
+      mutationRevisions.current.set(payload.issueId, revision);
       onMutateIssue?.(payload.issueId);
-      return { prev, issueId: payload.issueId, optimisticIssue: optimistic ? findIssueInBoard(optimistic, payload.issueId) : null };
+      return { prev, issueId: payload.issueId, revision, optimisticIssue: optimistic ? findIssueInBoard(optimistic, payload.issueId) : null };
     },
     onError: (_err, _payload, ctx) => {
       const current = queryClient.getQueryData<BoardData>(queryKey);
       const currentIssue = current && ctx ? findIssueInBoard(current, ctx.issueId) : null;
-      if (ctx?.prev && currentIssue && issuesMatch(currentIssue, ctx.optimisticIssue)) {
+      if (ctx?.prev && currentIssue && mutationRevisions.current.get(ctx.issueId) === ctx.revision && issuesMatch(currentIssue, ctx.optimisticIssue)) {
         queryClient.setQueryData<BoardData>(queryKey, (current) => {
           if (!current) return current;
           const previousIssue = findIssueInBoard(ctx.prev!, ctx.issueId);
@@ -66,15 +70,18 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
       }
       onError?.(_err);
     },
-    onSuccess: (result, payload) => {
+    onSuccess: (result, payload, context) => {
       queryClient.setQueryData<BoardData>(queryKey, (current) =>
-        current ? applyServer(current, result, payload) : current
+        current ? applyFreshServerResult(current, result, payload, context, mutationRevisions.current, applyServer) : current
       );
       onSuccess?.(result);
     },
-    onSettled: (_result, _error, payload) => {
+    onSettled: (_result, _error, payload, context) => {
       if (payload) {
         onSettledIssue?.(payload.issueId);
+        if (context && mutationRevisions.current.get(payload.issueId) === context.revision) {
+          mutationRevisions.current.delete(payload.issueId);
+        }
       }
       if (refetchOnSettled) {
         window.setTimeout(() => {
@@ -83,6 +90,46 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
       }
     },
   });
+}
+
+function applyFreshServerResult<TPayload extends IssuePayload, TResult>(
+  data: BoardData,
+  result: TResult,
+  payload: TPayload,
+  context: MutationContext | undefined,
+  revisions: Map<number, number>,
+  applyServer: (data: BoardData, result: TResult, payload: TPayload, options?: { applyTarget: boolean }) => BoardData,
+): BoardData {
+  const currentIssue = findIssueInBoard(data, payload.issueId);
+  const incomingIssue = issueFromResult(result);
+  const hasNewerMutation = context ? (revisions.get(payload.issueId) ?? 0) > context.revision : false;
+  if (!currentIssue || !incomingIssue || (!hasNewerMutation && isIssueFresh(currentIssue, incomingIssue))) {
+    return applyServer(data, result, payload, { applyTarget: true });
+  }
+
+  // Keep ancestor updates from this response, but prevent its target issue
+  // from replacing a newer optimistic/server state.
+  const preservedResult = { ...(result as object), issue: currentIssue } as TResult;
+  return applyServer(data, preservedResult, payload, { applyTarget: false });
+}
+
+function issueFromResult<TResult>(result: TResult): Issue | null {
+  if (!result || typeof result !== 'object' || !('issue' in result)) return null;
+  const issue = (result as { issue?: unknown }).issue;
+  return issue && typeof issue === 'object' && 'id' in issue ? issue as Issue : null;
+}
+
+export function isIssueFresh(current: Issue, incoming: Issue): boolean {
+  if (typeof current.lock_version === 'number' && typeof incoming.lock_version === 'number') {
+    if (incoming.lock_version < current.lock_version) return false;
+    if (incoming.lock_version > current.lock_version) return true;
+  }
+
+  const currentUpdatedOn = parseDate(current.updated_on);
+  const incomingUpdatedOn = parseDate(incoming.updated_on);
+  if (currentUpdatedOn !== null && incomingUpdatedOn !== null) return incomingUpdatedOn >= currentUpdatedOn;
+  if (currentUpdatedOn !== null && incomingUpdatedOn === null) return false;
+  return true;
 }
 
 function issuesMatch(current: Issue, optimistic: Issue | null | undefined): boolean {
@@ -166,25 +213,13 @@ export function applyAncestorIssueUpdates(
     const update = updatesById.get(issue.id);
     if (!update) return issue;
 
-    if (isOlderAncestorUpdate(issue, update)) return issue;
+    if (!isIssueFresh(issue, { ...issue, ...update })) return issue;
 
     changed = true;
     return { ...issue, ...update };
   });
 
   return changed ? { ...data, issues } : data;
-}
-
-function isOlderAncestorUpdate(issue: Issue, update: AncestorIssueUpdate): boolean {
-  const currentVersion = issue.lock_version;
-  if (typeof currentVersion === 'number') {
-    if (update.lock_version < currentVersion) return true;
-    if (update.lock_version > currentVersion) return false;
-  }
-
-  const currentUpdatedOn = parseDate(issue.updated_on);
-  const incomingUpdatedOn = parseDate(update.updated_on);
-  return currentUpdatedOn !== null && incomingUpdatedOn !== null && incomingUpdatedOn < currentUpdatedOn;
 }
 
 function parseDate(value: string | null | undefined): number | null {

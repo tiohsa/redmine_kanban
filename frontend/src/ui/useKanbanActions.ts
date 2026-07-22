@@ -87,7 +87,8 @@ export function useKanbanActions({
         is_closed: isClosed,
       });
     },
-    applyServer: (prev, result, payload) => {
+    applyServer: (prev, result, payload, options = { applyTarget: true }) => {
+      if (!options.applyTarget) return applyAncestorIssueUpdates(prev, result.ancestor_updates);
       const updated = updateIssueInBoard(prev, payload.issueId, (issue) => {
         const nextAssignedToId = payload.assignedToId === undefined ? issue.assigned_to_id : payload.assignedToId;
         return {
@@ -146,7 +147,8 @@ export function useKanbanActions({
         if ('priority_id' in patch) next.priority_name = resolvePriorityName(prev, patch.priority_id ?? null);
         return next;
       }),
-    applyServer: (prev, result, payload) => {
+    applyServer: (prev, result, payload, options = { applyTarget: true }) => {
+      if (!options.applyTarget) return applyAncestorIssueUpdates(prev, result.ancestor_updates);
       const updated = updateIssueInBoard(prev, payload.issueId, (issue) => {
         const patch = payload.patch as Partial<Issue>;
         const next = { ...result.issue, ...patch };
