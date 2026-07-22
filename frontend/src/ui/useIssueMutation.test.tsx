@@ -487,4 +487,53 @@ describe('useIssueMutation', () => {
     expect(onSettledIssue).toHaveBeenCalledTimes(1);
     expect(onSettledIssue).toHaveBeenCalledWith(1);
   });
+
+  it('reports every overlapping mutation settlement for counter-based busy state', async () => {
+    const queryKey = ['kanban', 'board', 'busy-counter'] as const;
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    queryClient.setQueryData(queryKey, makeBoardData([makeIssue(1)]));
+
+    let resolveA!: (value: { issue: Issue }) => void;
+    let resolveB!: (value: { issue: Issue }) => void;
+    let callCount = 0;
+    const mutationA = new Promise<{ issue: Issue }>((resolve) => { resolveA = resolve; });
+    const mutationB = new Promise<{ issue: Issue }>((resolve) => { resolveB = resolve; });
+    const onSettledMutation = vi.fn();
+
+    const { result } = renderHook(
+      () => useIssueMutation<{ issueId: number; name: string }, { issue: Issue }>({
+        queryKey,
+        mutationFn: () => {
+          callCount += 1;
+          return callCount === 1 ? mutationA : mutationB;
+        },
+        applyOptimistic: (data) => data,
+        applyServer: (data) => data,
+        onSettledMutation,
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    let first!: Promise<unknown>;
+    let second!: Promise<unknown>;
+    await act(async () => {
+      first = result.current.mutateAsync({ issueId: 1, name: 'A' });
+      second = result.current.mutateAsync({ issueId: 1, name: 'B' });
+      await waitFor(() => expect(callCount).toBe(2));
+    });
+
+    await act(async () => {
+      resolveB({ issue: makeIssue(1, { lock_version: 3 }) });
+      await second;
+    });
+    expect(onSettledMutation).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveA({ issue: makeIssue(1, { lock_version: 2 }) });
+      await first;
+    });
+    expect(onSettledMutation).toHaveBeenCalledTimes(2);
+    expect(onSettledMutation).toHaveBeenNthCalledWith(1, 1);
+    expect(onSettledMutation).toHaveBeenNthCalledWith(2, 1);
+  });
 });

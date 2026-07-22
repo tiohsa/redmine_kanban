@@ -95,6 +95,19 @@ class BulkIdempotencyTest < ActiveSupport::TestCase
     refute called
   end
 
+  def test_atomic_claim_failure_with_missing_entry_does_not_run_block
+    Rails.cache = AtomicClaimFailureCache.new(nil)
+    called = false
+
+    result = bulk_idempotency.with_request(user_id: 1, project_id: 2, idempotency_key: 'atomic-missing') do
+      called = true
+      { ok: true }
+    end
+
+    assert_equal :conflict, result[:http_status]
+    refute called
+  end
+
   def test_validation_failure_releases_claim_for_retry
     first = bulk_idempotency.with_request(user_id: 1, project_id: 2, idempotency_key: 'validation-retry') do
       { ok: false, message: 'invalid' }

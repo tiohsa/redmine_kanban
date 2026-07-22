@@ -26,7 +26,7 @@ module RedmineKanban
         return claimed if claimed.is_a?(Hash)
 
         unless claimed
-          claim_mutex.synchronize do
+          return claim_mutex.synchronize do
             existing = Rails.cache.read(cache_key)
             return completed_result(existing) if completed?(existing)
             return processing_response if processing?(existing)

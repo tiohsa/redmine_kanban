@@ -32,6 +32,7 @@ export function useKanbanActions({
   const [pendingDeleteIssue, setPendingDeleteIssue] = useState<Issue | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
   const busyIssueIdsRef = useRef<Set<number>>(new Set());
+  const busyMutationCountsRef = useRef(new Map<number, number>());
   const bulkInFlightRef = useRef(new Map<string, Promise<{ ok: boolean; issue?: Issue; subtasks?: Issue[] }>>());
 
   const setIssueBusy = useCallback((issueId: number, busy: boolean) => {
@@ -49,6 +50,21 @@ export function useKanbanActions({
   }, []);
 
   const isIssueBusy = useCallback((issueId: number) => busyIssueIdsRef.current.has(issueId), []);
+
+  const beginIssueMutation = useCallback((issueId: number) => {
+    busyMutationCountsRef.current.set(issueId, (busyMutationCountsRef.current.get(issueId) ?? 0) + 1);
+    setIssueBusy(issueId, true);
+  }, [setIssueBusy]);
+
+  const endIssueMutation = useCallback((issueId: number) => {
+    const nextCount = (busyMutationCountsRef.current.get(issueId) ?? 1) - 1;
+    if (nextCount > 0) {
+      busyMutationCountsRef.current.set(issueId, nextCount);
+      return;
+    }
+    busyMutationCountsRef.current.delete(issueId);
+    setIssueBusy(issueId, false);
+  }, [setIssueBusy]);
 
   const moveIssueMutation = useIssueMutation<MovePayload, IssueMutationResult>({
     queryKey: boardQueryKey,
@@ -127,8 +143,8 @@ export function useKanbanActions({
         }
       }
     },
-    onMutateIssue: (issueId) => setIssueBusy(issueId, true),
-    onSettledIssue: (issueId) => setIssueBusy(issueId, false),
+    onMutateIssue: beginIssueMutation,
+    onSettledMutation: endIssueMutation,
   });
 
   const updateIssueMutation = useIssueMutation<UpdatePayload, IssueMutationResult>({
@@ -161,8 +177,8 @@ export function useKanbanActions({
     onSuccess: (result) => {
       if (result.warning) setNotice(result.warning);
     },
-    onMutateIssue: (issueId) => setIssueBusy(issueId, true),
-    onSettledIssue: (issueId) => setIssueBusy(issueId, false),
+    onMutateIssue: beginIssueMutation,
+    onSettledMutation: endIssueMutation,
   });
 
   const createIssueMutation = useMutation({

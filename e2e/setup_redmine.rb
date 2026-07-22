@@ -39,6 +39,8 @@ status = IssueStatus.first
 raise 'tracker not found' unless tracker
 raise 'issue status not found' unless status
 
+project.trackers << tracker unless project.trackers.exists?(tracker.id)
+
 Issue.find_or_create_by!(
   project: project,
   subject: 'Kanban E2E seed issue'

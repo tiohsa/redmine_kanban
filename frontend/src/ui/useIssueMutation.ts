@@ -23,6 +23,7 @@ type UseIssueMutationOptions<TPayload extends IssuePayload, TResult> = {
   onSuccess?: (result: TResult) => void;
   onMutateIssue?: (issueId: number) => void;
   onSettledIssue?: (issueId: number) => void;
+  onSettledMutation?: (issueId: number) => void;
   refetchOnSettled?: boolean;
 };
 
@@ -37,6 +38,7 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
   onSuccess,
   onMutateIssue,
   onSettledIssue,
+  onSettledMutation,
   refetchOnSettled = false,
 }: UseIssueMutationOptions<TPayload, TResult>) {
   const queryClient = useQueryClient();
@@ -97,6 +99,7 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
         onSettledIssue?.(payload.issueId);
         mutationRevisions.current.delete(payload.issueId);
       }
+      if (payload) onSettledMutation?.(payload.issueId);
       if (refetchOnSettled) {
         window.setTimeout(() => {
           queryClient.invalidateQueries({ queryKey });
