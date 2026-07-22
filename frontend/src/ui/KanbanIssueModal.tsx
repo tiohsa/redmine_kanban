@@ -59,7 +59,11 @@ export function KanbanIssueModal({ data, baseUrl, ctx, onClose, onSaved, onDelet
       .then((result) => {
         if (!active) return;
         setAvailableTrackers(result.trackers);
-        if (!result.trackers.some((tracker) => tracker.id === Number(trackerId))) setTrackerId('');
+        setTrackerId((currentTrackerId) => (
+          result.trackers.some((tracker) => tracker.id === Number(currentTrackerId))
+            ? currentTrackerId
+            : ''
+        ));
       })
       .catch(() => undefined);
     return () => { active = false; };
