@@ -195,17 +195,21 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
   const [subtaskValidationError, setSubtaskValidationError] = useState<string | null>(null);
   const [trackerOptions, setTrackerOptions] = useState<Array<{ id: number; name: string }>>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSaveTransitioning, setIsSaveTransitioning] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [currentUrl, setCurrentUrl] = useState(url);
   const [dialogHeightPx, setDialogHeightPx] = useState<number | null>(null);
   const [iframeError, setIframeError] = useState<string | null>(null);
   const [isSubtasksOpen, setIsSubtasksOpen] = useState(false);
+  const [subtaskRegistrationConsumed, setSubtaskRegistrationConsumed] = useState(false);
   const [dialogMode, setDialogMode] = useState<DialogMode>('form');
   const [displayedIssueId, setDisplayedIssueId] = useState<number | null>(null);
   const [saveTarget, setSaveTarget] = useState<SaveTarget>(
     mode === 'time_entry' ? 'time_entry' : mode === 'create' ? 'new-issue' : 'issue',
   );
   const isSubmittingRef = useRef(false);
+  const saveTransitionRef = useRef(false);
+  const successHandlingRef = useRef(false);
   const saveTargetRef = useRef<SaveTarget>(null);
   const submitSubtasksAfterEditLoadRef = useRef(false);
   const handleSuccessRef = useRef<((targetIssueId: number) => void) | null>(null);
@@ -318,6 +322,10 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
   }, [currentUrl, issueId, measureDialogHeight, mode]);
 
   const handleSuccess = useCallback(async (targetIssueId: number) => {
+    if (successHandlingRef.current) return;
+    successHandlingRef.current = true;
+    saveTransitionRef.current = false;
+    setIsSaveTransitioning(false);
     const completedSaveTarget = saveTargetRef.current;
 
     if (completedSaveTarget === 'journal') {
@@ -359,6 +367,10 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
             assigned_to_id: parentAttributesRef.current.assigned_to_id,
           })),
         });
+        setSubtaskRegistrationConsumed(true);
+        setSubtasks([]);
+        setSubtaskValidationError(null);
+        setIsSubtasksOpen(false);
         onSuccess(
           (mode === 'create' ? labels.created_with_subtasks : labels.updated_with_subtasks)
             .replace('%{id}', String(targetIssueId))
@@ -404,6 +416,9 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
     };
 
     setDialogMode('saving');
+    successHandlingRef.current = false;
+    saveTransitionRef.current = false;
+    setIsSaveTransitioning(false);
     setSaveTarget(target);
     saveTargetRef.current = target;
     isSubmittingRef.current = true;
@@ -466,6 +481,8 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
           setDisplayedIssueId(extractIssueIdFromUrl(nextCurrentUrl));
           setDialogMode('issue-show');
         } else {
+          saveTransitionRef.current = false;
+          setIsSaveTransitioning(false);
           setDialogMode(errorMessage ? 'error' : 'form');
         }
       }
@@ -513,6 +530,13 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
         } else if (currentSaveTarget === 'journal' && !findJournalEditForm(doc)) {
           void handleSuccess(issueId);
           return;
+        } else if (
+          currentSaveTarget === 'issue' &&
+          getActiveSaveForm(doc, mode, nextCurrentUrl)?.target === 'issue'
+        ) {
+          // Keep the submit lock while the iframe is still showing the form
+          // that initiated this save. Redmine can reload that form before
+          // navigating to the saved issue, and another click must not submit it again.
         } else {
           setIsSubmitting(false);
         }
@@ -581,13 +605,23 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
   }, []);
 
   const handleSubmit = () => {
-    if (isSubmittingRef.current) return;
+    if (isSubmittingRef.current || saveTransitionRef.current) return;
     if (!iframeRef.current?.contentDocument || !iframeRef.current.contentWindow) return;
     if (subtaskValidationError) return;
 
     if (dialogMode === 'issue-show') {
       const targetIssueId = displayedIssueId ?? issueId;
+      successHandlingRef.current = false;
+      if (!hasSubtaskInput) {
+        setSubtaskRegistrationConsumed(false);
+        setSubtasks([]);
+        setSubtaskValidationError(null);
+      }
       submitSubtasksAfterEditLoadRef.current = hasSubtaskInput;
+      if (hasSubtaskInput) {
+        saveTransitionRef.current = true;
+        setIsSaveTransitioning(true);
+      }
       iframeRef.current.contentWindow.location.href = buildIssueEditUrl(currentUrl || url, targetIssueId);
       setDialogMode('form');
       setSaveTarget('issue');
@@ -704,7 +738,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
         {mode !== 'time_entry' ? (
           <div
             ref={subtaskSectionRef}
-            className="rk-create-footer rk-create-footer-compact"
+            className="rk-create-footer rk-create-footer-compact rk-subtask-footer"
             style={{
               flex: '0 0 auto',
               padding: '8px 12px 0 12px',
@@ -717,6 +751,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
                 type="button"
                 className="rk-subtask-toggle"
                 onClick={() => setIsSubtasksOpen(!isSubtasksOpen)}
+                disabled={subtaskRegistrationConsumed || isSubmitting || isSaveTransitioning}
               >
                 <span
                   className="rk-subtask-toggle-icon"
@@ -724,13 +759,14 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
                 >
                   ▶
                 </span>
-                <label className="rk-label rk-subtask-toggle-label">{labels.bulk_subtask_title}</label>
+                <span className="rk-label rk-subtask-toggle-label">{labels.bulk_subtask_title}</span>
               </button>
               {isSubtasksOpen ? (
                 <BulkSubtaskEditor
                   labels={labels}
                   trackers={trackerOptions}
-                  disabled={isSubmitting}
+                  showRowTrackerButton={false}
+                  disabled={isSubmitting || isSaveTransitioning}
                   onChange={setSubtasks}
                   onValidationChange={setSubtaskValidationError}
                 />
@@ -772,7 +808,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
               type="button"
               className="rk-btn rk-btn-primary"
               onClick={handleSubmit}
-              disabled={isSubmitting}
+              disabled={isSubmitting || isSaveTransitioning}
               style={{
                 height: `${COMPACT_ACTION_BUTTON_HEIGHT}px`,
                 minWidth: `${COMPACT_ACTION_BUTTON_MIN_WIDTH}px`,

@@ -1193,7 +1193,7 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   overflow: hidden;
   position: relative;
   background: #fff;
-  min-height: 0;
+  min-height: 220px;
 }
 
 .rk-create-footer {
@@ -1214,7 +1214,7 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 .rk-subtask-toggle {
   background: none;
   border: none;
-  padding: 0;
+  padding: 7px 4px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1222,6 +1222,35 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   color: inherit;
   font: inherit;
   text-align: left;
+  width: 100%;
+  border-radius: 6px;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.rk-subtask-toggle,
+.rk-subtask-toggle * {
+  cursor: pointer;
+}
+
+.rk-subtask-toggle:hover {
+  background: var(--rk-bg-secondary);
+  color: var(--rk-text-primary);
+}
+
+.rk-subtask-toggle:focus-visible {
+  outline: 2px solid var(--rk-primary);
+  outline-offset: 2px;
+}
+
+.rk-subtask-toggle-label {
+  cursor: pointer;
+  user-select: none;
+}
+
+.rk-subtask-footer {
+  flex: 0 1 auto !important;
+  max-height: 40vh;
+  overflow-y: auto;
 }
 
 .rk-subtask-textarea {
@@ -1242,12 +1271,85 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   flex-direction: column;
   gap: 8px;
   margin-top: 4px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--rk-border);
+}
+
+.rk-bulk-subtask-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 36px;
+}
+
+.rk-bulk-subtask-editor > .rk-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rk-bulk-subtask-editor > .rk-field .rk-label {
+  line-height: 1.4;
+}
+
+.rk-bulk-subtask-editor > .rk-field select {
+  flex: 0 1 220px;
+  width: 220px;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .rk-bulk-subtask-heading {
   margin: 0;
   font-size: 0.9rem;
   font-weight: 600;
+  line-height: 1.35;
+  min-width: 0;
+}
+
+.rk-bulk-subtask-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--rk-border);
+  border-radius: 10px;
+  background: var(--rk-bg-secondary);
+  flex-shrink: 0;
+}
+
+.rk-bulk-subtask-mode {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--rk-text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rk-bulk-subtask-mode:hover {
+  color: var(--rk-text-primary);
+}
+
+.rk-bulk-subtask-mode.is-active {
+  border-color: var(--rk-border);
+  background: #fff;
+  color: var(--rk-text-primary);
+  box-shadow: var(--rk-shadow-sm);
+}
+
+.rk-bulk-subtask-mode .rk-icon {
+  font-size: 16px;
 }
 
 .rk-bulk-subtask-count,
@@ -1263,8 +1365,9 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 
 .rk-bulk-subtask-table {
   width: 100%;
-  min-width: 520px;
+  min-width: 560px;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .rk-bulk-subtask-table th,
@@ -1290,15 +1393,26 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   white-space: nowrap;
 }
 
-.rk-bulk-subtask-apply {
-  display: flex;
-  gap: 8px;
-  align-items: center;
+.rk-bulk-subtask-table th:nth-child(3),
+.rk-bulk-subtask-table td:nth-child(3) {
+  width: 180px;
 }
 
-.rk-bulk-subtask-apply select {
-  min-height: 34px;
-  flex: 1;
+.rk-bulk-subtask-table th:last-child,
+.rk-bulk-subtask-table td:last-child {
+  width: 64px;
+  text-align: center;
+}
+
+.rk-bulk-subtask-table th {
+  background: var(--rk-bg-secondary);
+  color: var(--rk-text-primary);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.rk-bulk-subtask-table tbody tr:last-child td {
+  border-bottom: 0;
 }
 
 /* Help Dialog */

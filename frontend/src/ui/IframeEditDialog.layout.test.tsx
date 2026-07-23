@@ -57,6 +57,12 @@ const setElementHeight = (element: HTMLElement, height: number) => {
 const labels: Record<string, string> = {
   bulk_subtask_title: '子チケット一括登録 (1行に1件名)',
   bulk_subtask_placeholder: '1行に1件名',
+  bulk_subtask_mode: '入力方式',
+  bulk_subtask_table_mode: '表形式入力',
+  bulk_subtask_text_mode: '一括テキスト入力',
+  bulk_subtask_default_tracker: '標準トラッカー',
+  issue_tracker: 'トラッカー',
+  select_tracker: 'トラッカーを選択',
   cancel: 'キャンセル',
   save: '保存',
   saving: '保存中',
@@ -187,6 +193,55 @@ describe('IframeEditDialog layout variants', () => {
     });
   });
 
+  it('keeps the initial edit save locked when the iframe reloads the edit form', async () => {
+    mutateAsyncMock.mockResolvedValue([]);
+    const { container } = render(
+      <IframeEditDialog
+        url="/issues/1/edit"
+        issueId={1}
+        issueTitle="Feature request"
+        projectId={3}
+        labels={labels}
+        baseUrl="/projects/demo/kanban"
+        queryKey={['kanban', 'board']}
+        onClose={() => {}}
+        onSuccess={() => {}}
+      />,
+    );
+
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    const doc = document.implementation.createHTMLDocument('edit iframe');
+    doc.body.innerHTML = `
+      <div id="content"><form id="issue-form">
+        <input name="issue[project_id]" value="3" />
+        <input name="issue[priority_id]" value="4" />
+        <input name="issue[status_id]" value="2" />
+        <button type="submit">Save</button>
+      </form></div>`;
+    const iframeWindow = {
+      location: { href: 'http://example.com/issues/1/edit' },
+      document: doc,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    Object.defineProperty(iframe, 'contentWindow', { value: iframeWindow, configurable: true });
+    Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+    fireEvent.load(iframe);
+    await waitFor(() => expect(getJsonMock).toHaveBeenCalledWith('/projects/demo/kanban/trackers?target_project_id=3'));
+    fireEvent.click(screen.getByRole('button', { name: /子チケット一括登録/ }));
+    fireEvent.change(screen.getByRole('textbox', { name: '子チケット一括登録 (1行に1件名)' }), { target: { value: '子チケット 1' } });
+
+    const nativeSubmit = doc.querySelector('button[type="submit"]') as HTMLButtonElement;
+    const nativeClick = vi.spyOn(nativeSubmit, 'click').mockImplementation(() => undefined);
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    fireEvent.load(iframe);
+    await waitFor(() => expect(screen.getByRole('button', { name: '保存中' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: '保存中' }));
+    expect(nativeClick).toHaveBeenCalledOnce();
+  });
+
   it('shows edit action initially and save action when an issue-show dialog has subtask input', async () => {
     const { container } = render(
       <IframeEditDialog
@@ -216,6 +271,13 @@ describe('IframeEditDialog layout variants', () => {
     expect(screen.queryByRole('button', { name: '保存' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: /子チケット一括登録/ }));
+    expect(screen.getByRole('textbox', { name: '子チケット一括登録 (1行に1件名)' })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: '標準トラッカー' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Set tracker per row' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '表形式入力' }));
+    expect(screen.queryByRole('combobox', { name: '標準トラッカー' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '一括テキスト入力' }));
+    expect(screen.getByRole('combobox', { name: '標準トラッカー' })).toBeTruthy();
     fireEvent.change(screen.getByRole('textbox', { name: '子チケット一括登録 (1行に1件名)' }), { target: { value: '子チケット 1' } });
 
     await waitFor(() => {
@@ -236,8 +298,41 @@ describe('IframeEditDialog layout variants', () => {
     });
   });
 
+  it('keeps edit issue action usable when bulk subtask registration is open', async () => {
+    const { container } = render(
+      <IframeEditDialog
+        url="/issues/1"
+        issueId={1}
+        issueTitle="Feature request"
+        labels={labels}
+        baseUrl=""
+        queryKey={['kanban', 'board']}
+        onClose={() => {}}
+        onSuccess={() => {}}
+      />,
+    );
+
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    const doc = document.implementation.createHTMLDocument('iframe');
+    doc.body.innerHTML = '<div id="content"><div class="issue details">Issue</div></div>';
+    const iframeWindow = { location: { href: 'http://example.com/issues/1' }, document: doc, addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    Object.defineProperty(iframe, 'contentWindow', { value: iframeWindow, configurable: true });
+    Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+    fireEvent.load(iframe);
+    await screen.findByRole('button', { name: 'チケットを編集' });
+    fireEvent.click(screen.getByRole('button', { name: /子チケット一括登録/ }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'チケットを編集' }));
+
+    expect(iframeWindow.location.href).toBe('http://example.com/issues/1/edit');
+  });
+
   it('keeps subtask input through issue-show to edit and creates subtasks after saving the issue', async () => {
-    mutateAsyncMock.mockResolvedValue([]);
+    let resolveBulkMutation: ((value: never[]) => void) | undefined;
+    mutateAsyncMock.mockReturnValue(new Promise<never[]>((resolve) => {
+      resolveBulkMutation = resolve;
+    }));
     const onSuccess = vi.fn();
     const { container } = render(
       <IframeEditDialog
@@ -285,6 +380,7 @@ describe('IframeEditDialog layout variants', () => {
     const nativeSubmit = issueEditForm.querySelector('button') as HTMLButtonElement;
     const nativeClick = vi.spyOn(nativeSubmit, 'click').mockImplementation(() => undefined);
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
     fireEvent.load(iframe);
 
     expect(nativeClick).toHaveBeenCalledOnce();
@@ -292,8 +388,10 @@ describe('IframeEditDialog layout variants', () => {
     iframeWindow.location.href = 'http://example.com/issues/1';
     issueEditForm.body.innerHTML = '<div id="content"><div class="issue details">Saved issue</div></div>';
     fireEvent.load(iframe);
+    fireEvent.load(iframe);
 
     await waitFor(() => {
+      expect(mutateAsyncMock).toHaveBeenCalledTimes(1);
       expect(mutateAsyncMock).toHaveBeenCalledWith({
         parent: { parent_issue_id: 1, project_id: 3 },
         subtasks: [
@@ -302,6 +400,32 @@ describe('IframeEditDialog layout variants', () => {
         ],
       });
     });
+    resolveBulkMutation?.([]);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'チケットを編集' })).toBeTruthy();
+      expect((screen.getByRole('button', { name: /子チケット一括登録/ }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'チケットを編集' }));
+    expect((screen.getByRole('button', { name: /子チケット一括登録/ }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /子チケット一括登録/ }));
+    expect((screen.getByRole('textbox', { name: '子チケット一括登録 (1行に1件名)' }) as HTMLTextAreaElement).value).toBe('');
+    iframeWindow.location.href = 'http://example.com/issues/1/edit';
+    issueEditForm.body.innerHTML = `
+      <div id="content"><form id="issue-form">
+        <input name="issue[priority_id]" value="4" />
+        <input name="issue[status_id]" value="2" />
+        <button type="submit">Save</button>
+      </form></div>`;
+    fireEvent.load(iframe);
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    iframeWindow.location.href = 'http://example.com/issues/1';
+    issueEditForm.body.innerHTML = '<div id="content"><div class="issue details">Saved again</div></div>';
+    fireEvent.load(iframe);
+    fireEvent.load(iframe);
+
+    await waitFor(() => expect(mutateAsyncMock).toHaveBeenCalledTimes(1));
   });
 
   it('shows comment save action when a journal edit form is active', async () => {
