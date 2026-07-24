@@ -199,4 +199,13 @@ describe('KanbanToolbar', () => {
     expect(screen.getByRole('switch', { name: 'Show subtasks' })).toBeTruthy();
     expect(container.querySelectorAll('.rk-settings-select-row')).toHaveLength(2);
   });
+
+  it('places the viewable-project switch in the project filter popup', () => {
+    const { container } = renderToolbar(makeFilters());
+    const projectTriggers = container.querySelectorAll('.rk-dropdown-trigger[title="Project"]');
+    fireEvent.click(projectTriggers[projectTriggers.length - 1]);
+
+    expect(container.querySelector('.rk-dropdown-extra [role="switch"]')).toBeTruthy();
+    expect(container.querySelector('.rk-settings-menu')?.textContent ?? '').not.toContain('Show viewable projects');
+  });
 });

@@ -163,6 +163,7 @@ function MultiSelectDropdown({
   allLabel,
   showDot,
   showTriggerLabel,
+  extraContent,
 }: {
   label: string;
   icon: string;
@@ -176,6 +177,7 @@ function MultiSelectDropdown({
   allLabel?: string;
   showDot?: boolean;
   showTriggerLabel?: boolean;
+  extraContent?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const { triggerRef, menuRef } = useDropdownDismiss(open, () => setOpen(false));
@@ -209,6 +211,7 @@ function MultiSelectDropdown({
       {open ? (
         <div ref={menuRef} className="rk-dropdown-menu" style={{ width }}>
           <div className="rk-dropdown-title">{label}</div>
+          {extraContent ? <div className="rk-dropdown-extra">{extraContent}</div> : null}
           <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
             {includeAllOption ? (
               <div
@@ -371,15 +374,13 @@ function SettingsPopover({
   onToggleShowSubtasks,
   priorityLaneEnabled,
   onTogglePriorityLane,
-  viewableProjectsEnabled,
-  onToggleViewableProjects,
   timeEntryOnClose,
   onToggleTimeEntryOnClose,
   fitMode,
   onToggleFitMode,
   fontSize,
   onChangeFontSize,
-}: Pick<ToolbarProps, 'showSubtasks' | 'onToggleShowSubtasks' | 'priorityLaneEnabled' | 'onTogglePriorityLane' | 'viewableProjectsEnabled' | 'onToggleViewableProjects' | 'timeEntryOnClose' | 'onToggleTimeEntryOnClose' | 'fitMode' | 'onToggleFitMode' | 'fontSize' | 'onChangeFontSize'> & { labels: Record<string, string> }) {
+}: Pick<ToolbarProps, 'showSubtasks' | 'onToggleShowSubtasks' | 'priorityLaneEnabled' | 'onTogglePriorityLane' | 'timeEntryOnClose' | 'onToggleTimeEntryOnClose' | 'fitMode' | 'onToggleFitMode' | 'fontSize' | 'onChangeFontSize'> & { labels: Record<string, string> }) {
   const [open, setOpen] = useState(false);
   const { triggerRef, menuRef } = useDropdownDismiss(open, () => setOpen(false));
   const title = labels.display_settings ?? 'Display settings';
@@ -400,7 +401,6 @@ function SettingsPopover({
           <div className="rk-settings-title">{title}</div>
           <SettingsToggle label={labels.show_subtasks_short ?? labels.show_subtasks ?? 'Show subtasks'} checked={showSubtasks} onChange={onToggleShowSubtasks} />
           <SettingsToggle label={labels.priority_lane_short ?? labels.show_priority_lanes ?? 'Priority lanes'} checked={priorityLaneEnabled} onChange={onTogglePriorityLane} />
-          <SettingsToggle label={labels.viewable_projects_short ?? labels.show_viewable_projects ?? 'Show viewable projects'} checked={viewableProjectsEnabled} onChange={onToggleViewableProjects} />
           <SettingsToggle label={labels.time_entry_short ?? 'Time entry on close'} checked={timeEntryOnClose} onChange={onToggleTimeEntryOnClose} />
           <SettingsSelect label={labels.display_width ?? 'Display width'} value={fitMode} options={widthOptions} onChange={(value) => { if (value !== fitMode) onToggleFitMode(); }} />
           <SettingsSelect label={labels.font_size ?? 'Font size'} value={String(fontSize)} options={fontSizeOptions} onChange={(value) => onChangeFontSize(Number(value))} />
@@ -570,6 +570,13 @@ export function KanbanToolbar({
           allLabel={labels.all}
           showDot={showProjectDot}
           showTriggerLabel
+          extraContent={(
+            <SettingsToggle
+              label={labels.viewable_projects_short ?? labels.show_viewable_projects ?? 'Show viewable projects'}
+              checked={viewableProjectsEnabled}
+              onChange={onToggleViewableProjects}
+            />
+          )}
         />
       </div>
 
@@ -672,8 +679,6 @@ export function KanbanToolbar({
           onToggleShowSubtasks={onToggleShowSubtasks}
           priorityLaneEnabled={priorityLaneEnabled}
           onTogglePriorityLane={onTogglePriorityLane}
-          viewableProjectsEnabled={viewableProjectsEnabled}
-          onToggleViewableProjects={onToggleViewableProjects}
           timeEntryOnClose={timeEntryOnClose}
           onToggleTimeEntryOnClose={onToggleTimeEntryOnClose}
           fitMode={fitMode}

@@ -354,6 +354,17 @@
   margin-bottom: 4px;
 }
 
+.rk-dropdown-extra {
+  padding: 0 4px 4px;
+  border-bottom: 1px solid var(--rk-border-light);
+}
+
+.rk-dropdown-extra .rk-settings-row {
+  min-height: 42px;
+  padding: 8px;
+  font-size: 13px;
+}
+
 .rk-dropdown-item {
   display: flex;
   align-items: center;
