@@ -167,8 +167,7 @@ export function BulkSubtaskEditor({ labels, trackers, disabled = false, showRowT
               </tr>)}
             </tbody></table>
           </div>
-          <button type="button" className="rk-btn rk-btn-dashed" onClick={addRow}>{labels.bulk_subtask_add_row ?? '+ Add row'}</button>
-          <button type="button" className="rk-btn rk-btn-sm" onClick={leaveTable}>{labels.bulk_subtask_back_to_text ?? 'Back to multiline input (keep settings)'}</button>
+          <button type="button" className="button rk-bulk-subtask-add-row" onClick={addRow}>{labels.bulk_subtask_add_row ?? '+ Add row'}</button>
         </>
       )}
       {notice && mode === 'table' ? <div className="rk-bulk-subtask-notice">{notice}</div> : null}

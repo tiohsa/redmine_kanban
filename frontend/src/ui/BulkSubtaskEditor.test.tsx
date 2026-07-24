@@ -11,7 +11,6 @@ const labels = {
   bulk_subtask_text_mode: 'Text',
   bulk_subtask_default_tracker: 'Default tracker',
   bulk_subtask_edit_rows: 'Edit rows',
-  bulk_subtask_back_to_text: 'Back to text',
   bulk_subtask_add_row: 'Add row',
   issue_subject: 'Subject',
   issue_tracker: 'Tracker',
@@ -32,7 +31,7 @@ describe('BulkSubtaskEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Edit rows' }));
     const rowTrackers = screen.getAllByRole('combobox');
     fireEvent.change(rowTrackers[1], { target: { value: '1' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Back to text' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Text' }));
     const textAreaAfterBack = screen.getByRole('textbox', { name: 'Bulk subtasks' });
     fireEvent.change(textAreaAfterBack, { target: { value: 'A' } });
     await waitFor(() => expect(screen.getByText('1 items detected')).toBeTruthy());
