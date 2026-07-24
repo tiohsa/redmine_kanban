@@ -22,7 +22,6 @@ en:
     label_bulk_subtask_count: "items detected"
     label_bulk_subtask_edit_rows: "Set tracker per row"
     label_bulk_subtask_add_row: "+ Add row"
-    label_bulk_subtask_back_to_text: "Back to multiline input (keep settings)"
     label_bulk_subtask_preserved: "Individual tracker settings are being preserved."
     label_bulk_subtask_restored: "%{count} individual tracker settings restored."
     label_bulk_subtask_empty_subject: "Enter a subject or remove this row."
