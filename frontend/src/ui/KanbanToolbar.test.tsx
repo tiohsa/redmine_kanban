@@ -188,6 +188,7 @@ describe('KanbanToolbar', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Priority' }));
 
     expect(onChangeSort).toHaveBeenCalledWith('priority_asc');
+    expect(screen.getByRole('menu', { name: 'Sort' })).toBeTruthy();
   });
 
   it('groups display switches and selects in the display settings menu', () => {
