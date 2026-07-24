@@ -354,6 +354,17 @@
   margin-bottom: 4px;
 }
 
+.rk-dropdown-extra {
+  padding: 0 4px 4px;
+  border-bottom: 1px solid var(--rk-border-light);
+}
+
+.rk-dropdown-extra .rk-settings-row {
+  min-height: 42px;
+  padding: 8px;
+  font-size: 13px;
+}
+
 .rk-dropdown-item {
   display: flex;
   align-items: center;
@@ -838,6 +849,132 @@
 .rk-toolbar-spacer {
   flex: 1;
   min-width: 8px;
+}
+
+.rk-sort-menu,
+.rk-settings-menu {
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  z-index: 200;
+  width: 288px;
+  padding: 10px 8px;
+  background: #fff;
+  border: 1px solid var(--rk-border);
+  border-radius: 14px;
+  box-shadow: 0 16px 34px rgb(15 23 42 / 14%), 0 3px 8px rgb(15 23 42 / 8%);
+  animation: rk-fade-in 0.15s ease-out;
+}
+
+.rk-sort-menu {
+  width: 272px;
+}
+
+.rk-settings-title {
+  padding: 8px 8px 10px;
+  color: var(--rk-text-dark);
+  font-size: 16px;
+  font-weight: 700;
+  border-bottom: 1px solid var(--rk-border-light);
+}
+
+.rk-sort-row,
+.rk-settings-row,
+.rk-settings-select-row {
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px;
+  border: 0;
+  border-bottom: 1px solid var(--rk-border-light);
+  background: transparent;
+  color: var(--rk-text-primary);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+}
+
+.rk-sort-row,
+.rk-settings-row {
+  cursor: pointer;
+}
+
+.rk-sort-row:last-child,
+.rk-settings-row:last-of-type {
+  border-bottom: 0;
+}
+
+.rk-sort-row:hover,
+.rk-sort-row-selected {
+  background: #eff6ff;
+  border-radius: 8px;
+}
+
+.rk-sort-direction {
+  color: var(--rk-brand-blue);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.rk-settings-row {
+  min-height: 46px;
+}
+
+.rk-switch {
+  width: 44px;
+  height: 24px;
+  flex: 0 0 auto;
+  padding: 3px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: #d1d5db;
+  transition: background 0.15s ease;
+}
+
+.rk-switch-on {
+  background: var(--rk-primary);
+}
+
+.rk-switch-thumb {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 18%);
+  transition: transform 0.15s ease;
+}
+
+.rk-switch-on .rk-switch-thumb {
+  transform: translateX(20px);
+}
+
+.rk-settings-select-row {
+  min-height: 52px;
+  border-bottom: 0;
+}
+
+.rk-settings-select-row select {
+  width: 196px;
+  height: 40px;
+  padding: 0 34px 0 12px;
+  border: 1px solid var(--rk-border-strong);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--rk-text-primary);
+  font: inherit;
+  font-size: 14px;
+}
+
+.rk-settings-select-row select:focus,
+.rk-settings-row:focus-visible,
+.rk-sort-row:focus-visible {
+  outline: 2px solid var(--rk-primary);
+  outline-offset: 1px;
 }
 
 .rk-root-fullwindow {
