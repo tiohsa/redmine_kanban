@@ -84,13 +84,14 @@ function makeFilters(overrides: Partial<Filters> = {}): Filters {
 
 describe('KanbanToolbar', () => {
   function renderToolbar(filters: Filters, onChange = vi.fn()) {
+    const onChangeSort = vi.fn();
     const rendered = render(
       <KanbanToolbar
         data={makeData()}
         filters={filters}
         onChange={onChange}
         sortKey="updated_desc"
-        onChangeSort={vi.fn()}
+        onChangeSort={onChangeSort}
         fullWindow={false}
         onToggleFullWindow={vi.fn()}
         fitMode="none"
@@ -111,7 +112,7 @@ describe('KanbanToolbar', () => {
         onOpenHelp={vi.fn()}
       />,
     );
-    return { onChange, ...rendered };
+    return { onChange, onChangeSort, ...rendered };
   }
 
   it('shows selection count for multi-assignee filters', () => {
@@ -176,5 +177,26 @@ describe('KanbanToolbar', () => {
     fireEvent.click(priorityTrigger);
 
     expect(screen.getByText('Not set')).toBeTruthy();
+  });
+
+  it('opens a single sort menu and changes the selected direction', () => {
+    const { onChangeSort } = renderToolbar(makeFilters());
+
+    const sortTriggers = screen.getAllByTitle('Sort');
+    fireEvent.click(sortTriggers[sortTriggers.length - 1]);
+    expect(screen.getByRole('menu', { name: 'Sort' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Priority' }));
+
+    expect(onChangeSort).toHaveBeenCalledWith('priority_asc');
+  });
+
+  it('groups display switches and selects in the display settings menu', () => {
+    const { container } = renderToolbar(makeFilters());
+
+    const settingsTriggers = screen.getAllByTitle('Display settings');
+    fireEvent.click(settingsTriggers[settingsTriggers.length - 1]);
+    expect(screen.getByRole('dialog', { name: 'Display settings' })).toBeTruthy();
+    expect(screen.getByRole('switch', { name: 'Show subtasks' })).toBeTruthy();
+    expect(container.querySelectorAll('.rk-settings-select-row')).toHaveLength(2);
   });
 });

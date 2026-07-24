@@ -39,16 +39,6 @@ function buildDropdownTriggerClass(showTriggerLabel: boolean | undefined, isOpen
   return `rk-dropdown-trigger ${showTriggerLabel ? 'rk-dropdown-trigger-labeled' : ''} ${isOpen ? 'rk-active' : ''} ${isActive ? 'rk-active-soft' : ''}`;
 }
 
-function getSortDirection(sortKey: SortKey, key: 'due' | 'priority' | 'updated'): 'asc' | 'desc' | null {
-  if (sortKey === `${key}_asc`) return 'asc';
-  if (sortKey === `${key}_desc`) return 'desc';
-  return null;
-}
-
-function isSortActive(sortKey: SortKey, key: 'due' | 'priority' | 'updated') {
-  return sortKey.startsWith(`${key}_`);
-}
-
 function useDropdownDismiss(open: boolean, onDismiss: () => void) {
   const triggerRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -353,27 +343,106 @@ function SearchDropdown({
   );
 }
 
-function SortButton({
-  active,
-  direction,
-  label,
-  icon,
-  onClick,
-  labels,
-}: {
-  active: boolean;
-  direction: 'asc' | 'desc' | null;
-  label: string;
-  icon: string;
-  onClick: () => void;
-  labels: Record<string, string>;
-}) {
+function SettingsToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
   return (
-    <button type="button" className={`rk-btn rk-btn-labeled ${active ? 'rk-btn-toggle-active' : ''}`} onClick={onClick} title={(labels?.sort_by || '') + label}>
-      <span className="rk-icon" style={{ fontSize: '18px' }}>{icon}</span>
-      <span className="rk-btn-label">{label}</span>
-      {active ? <span className="rk-indicator-dot" /> : null}
+    <button type="button" className="rk-settings-row" onClick={onChange} role="switch" aria-checked={checked}>
+      <span>{label}</span>
+      <span className={`rk-switch ${checked ? 'rk-switch-on' : ''}`} aria-hidden="true">
+        <span className="rk-switch-thumb" />
+      </span>
     </button>
+  );
+}
+
+function SettingsSelect({ label, value, options, onChange }: { label: string; value: string; options: { id: string; name: string }[]; onChange: (value: string) => void }) {
+  return (
+    <label className="rk-settings-select-row">
+      <span>{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        {options.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function SettingsPopover({
+  labels,
+  showSubtasks,
+  onToggleShowSubtasks,
+  priorityLaneEnabled,
+  onTogglePriorityLane,
+  viewableProjectsEnabled,
+  onToggleViewableProjects,
+  timeEntryOnClose,
+  onToggleTimeEntryOnClose,
+  fitMode,
+  onToggleFitMode,
+  fontSize,
+  onChangeFontSize,
+}: Pick<ToolbarProps, 'showSubtasks' | 'onToggleShowSubtasks' | 'priorityLaneEnabled' | 'onTogglePriorityLane' | 'viewableProjectsEnabled' | 'onToggleViewableProjects' | 'timeEntryOnClose' | 'onToggleTimeEntryOnClose' | 'fitMode' | 'onToggleFitMode' | 'fontSize' | 'onChangeFontSize'> & { labels: Record<string, string> }) {
+  const [open, setOpen] = useState(false);
+  const { triggerRef, menuRef } = useDropdownDismiss(open, () => setOpen(false));
+  const title = labels.display_settings ?? 'Display settings';
+  const widthOptions = [
+    { id: 'none', name: labels.fit_none ?? 'Original size' },
+    { id: 'width', name: labels.fit_width ?? 'Fit to width' },
+  ];
+  const fontSizeOptions = FONT_SIZE_OPTIONS.map((value) => ({ id: value, name: `${value}px` }));
+
+  return (
+    <div className="rk-dropdown-container">
+      <div ref={triggerRef} className={`rk-btn rk-btn-labeled ${open ? 'rk-btn-toggle-active' : ''}`} onClick={() => setOpen(!open)} title={title} aria-expanded={open} role="button" tabIndex={0}>
+        <span className="rk-icon">tune</span>
+        <span className="rk-btn-label">{title}</span>
+      </div>
+      {open ? (
+        <div ref={menuRef} className="rk-settings-menu" role="dialog" aria-label={title}>
+          <div className="rk-settings-title">{title}</div>
+          <SettingsToggle label={labels.show_subtasks_short ?? labels.show_subtasks ?? 'Show subtasks'} checked={showSubtasks} onChange={onToggleShowSubtasks} />
+          <SettingsToggle label={labels.priority_lane_short ?? labels.show_priority_lanes ?? 'Priority lanes'} checked={priorityLaneEnabled} onChange={onTogglePriorityLane} />
+          <SettingsToggle label={labels.viewable_projects_short ?? labels.show_viewable_projects ?? 'Show viewable projects'} checked={viewableProjectsEnabled} onChange={onToggleViewableProjects} />
+          <SettingsToggle label={labels.time_entry_short ?? 'Time entry on close'} checked={timeEntryOnClose} onChange={onToggleTimeEntryOnClose} />
+          <SettingsSelect label={labels.display_width ?? 'Display width'} value={fitMode} options={widthOptions} onChange={(value) => { if (value !== fitMode) onToggleFitMode(); }} />
+          <SettingsSelect label={labels.font_size ?? 'Font size'} value={String(fontSize)} options={fontSizeOptions} onChange={(value) => onChangeFontSize(Number(value))} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SortPopover({ sortKey, onChangeSort, labels }: { sortKey: SortKey; onChangeSort: (key: SortKey) => void; labels: Record<string, string> }) {
+  const [open, setOpen] = useState(false);
+  const { triggerRef, menuRef } = useDropdownDismiss(open, () => setOpen(false));
+  const options: { key: 'due' | 'priority' | 'updated'; label: string; asc: SortKey; desc: SortKey }[] = [
+    { key: 'due', label: labels.issue_due_date ?? 'Due date', asc: 'due_asc', desc: 'due_desc' },
+    { key: 'priority', label: labels.issue_priority ?? 'Priority', asc: 'priority_asc', desc: 'priority_desc' },
+    { key: 'updated', label: labels.updated ?? 'Updated', asc: 'updated_asc', desc: 'updated_desc' },
+  ];
+  const active = options.find((option) => sortKey === option.asc || sortKey === option.desc);
+  const title = labels.sort ?? labels.sort_by ?? 'Sort';
+
+  return (
+    <div className="rk-dropdown-container">
+      <div ref={triggerRef} className={`rk-btn rk-btn-labeled ${open || active ? 'rk-btn-toggle-active' : ''}`} onClick={() => setOpen(!open)} title={title} aria-expanded={open} role="button" tabIndex={0}>
+        <span className="rk-icon">sort</span>
+        <span className="rk-btn-label">{title}</span>
+      </div>
+      {open ? (
+        <div ref={menuRef} className="rk-sort-menu" role="menu" aria-label={title}>
+          <div className="rk-settings-title">{title}</div>
+          {options.map((option) => {
+            const selected = active?.key === option.key;
+            const next = selected && sortKey === option.asc ? option.desc : option.asc;
+            return (
+              <button key={option.key} type="button" className={`rk-sort-row ${selected ? 'rk-sort-row-selected' : ''}`} onClick={() => { onChangeSort(next); setOpen(false); }} role="menuitem">
+                <span>{option.label}</span>
+                {selected ? <span className="rk-sort-direction">{sortKey === option.asc ? '↑' : '↓'}</span> : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -443,18 +512,7 @@ export function KanbanToolbar({
   const showTrackerDot = filters.trackerIds.length > 0;
   const showDueCustomInput = filters.due === 'custom';
   const dueDaysValue = filters.dueDays ?? 7;
-  const dueSortDirection = getSortDirection(sortKey, 'due');
-  const prioritySortDirection = getSortDirection(sortKey, 'priority');
-  const updatedSortDirection = getSortDirection(sortKey, 'updated');
-  const dueSortNext: SortKey = sortKey === 'due_asc' ? 'due_desc' : 'due_asc';
-  const prioritySortNext: SortKey = sortKey === 'priority_desc' ? 'priority_asc' : 'priority_desc';
-  const fitModeActive = fitMode !== 'none';
-  const fitModeTitle = fitMode === 'none' ? labels.fit_none : fitMode === 'width' ? labels.fit_width : labels.fit_all;
-  const fitModeIcon = fitMode === 'none' ? 'zoom_in' : 'fit_screen';
-  const showSubtasksIcon = showSubtasks ? 'check_box' : 'check_box_outline_blank';
   const fullWindowIcon = fullWindow ? 'fullscreen_exit' : 'fullscreen';
-  const fontSizeLabel = `${fontSize}px`;
-  const fontSizeOptions = FONT_SIZE_OPTIONS.map((value) => ({ id: value, name: `${value}px` }));
 
   return (
     <div className="rk-toolbar">
@@ -586,6 +644,8 @@ export function KanbanToolbar({
           showTriggerLabel
         />
 
+        <SortPopover sortKey={sortKey} onChangeSort={onChangeSort} labels={labels} />
+
         {showDueCustomInput ? (
           <input
             type="number"
@@ -603,85 +663,24 @@ export function KanbanToolbar({
 
       <div className="rk-toolbar-separator" />
 
-      <div className="rk-toolbar-group rk-sort">
-        <SortButton
-          active={isSortActive(sortKey, 'due')}
-          direction={dueSortDirection}
-          label={labels.issue_due_date}
-          icon="event"
-          onClick={() => onChangeSort(dueSortNext)}
-          labels={labels}
-        />
-        <SortButton
-          active={isSortActive(sortKey, 'priority')}
-          direction={prioritySortDirection}
-          label={labels.issue_priority}
-          icon="sort"
-          onClick={() => onChangeSort(prioritySortNext)}
-          labels={labels}
-        />
-        <SortButton
-          active={isSortActive(sortKey, 'updated')}
-          direction={updatedSortDirection}
-          label={labels.updated}
-          icon="update"
-          onClick={() => onChangeSort('updated_asc')}
-          labels={labels}
-        />
-      </div>
-
       <div className="rk-toolbar-spacer" />
 
       <div className="rk-toolbar-group">
-        <button
-          type="button"
-          className={`rk-btn ${priorityLaneEnabled ? 'rk-btn-toggle-active' : ''}`}
-          onClick={onTogglePriorityLane}
-          title={priorityLaneEnabled ? labels.hide_priority_lanes : labels.show_priority_lanes}
-        >
-          <span className="rk-icon">view_stream</span>
-          {priorityLaneEnabled ? <span className="rk-indicator-dot" /> : null}
-        </button>
-
-        <button
-          type="button"
-          className={`rk-btn ${timeEntryOnClose ? 'rk-btn-toggle-active' : ''}`}
-          onClick={onToggleTimeEntryOnClose}
-          title={timeEntryOnClose ? labels.disable_time_entry_on_close : labels.enable_time_entry_on_close}
-        >
-          <span className="rk-icon">schedule</span>
-          {timeEntryOnClose ? <span className="rk-indicator-dot" /> : null}
-        </button>
-
-        <button
-          type="button"
-          className={`rk-btn ${viewableProjectsEnabled ? 'rk-btn-toggle-active' : ''}`}
-          onClick={onToggleViewableProjects}
-          title={viewableProjectsEnabled ? labels.hide_viewable_projects : labels.show_viewable_projects}
-        >
-          <span className="rk-icon">folder_shared</span>
-          {viewableProjectsEnabled ? <span className="rk-indicator-dot" /> : null}
-        </button>
-
-        <button
-          type="button"
-          className={`rk-btn ${fitModeActive ? 'rk-btn-toggle-active' : ''}`}
-          onClick={onToggleFitMode}
-          title={fitModeTitle}
-        >
-          <span className="rk-icon">{fitModeIcon}</span>
-          {fitModeActive ? <span className="rk-indicator-dot" /> : null}
-        </button>
-
-        <button
-          type="button"
-          className={`rk-btn ${showSubtasks ? 'rk-btn-toggle-active' : ''}`}
-          onClick={onToggleShowSubtasks}
-          title={showSubtasks ? labels.hide_subtasks : labels.show_subtasks}
-        >
-          <span className="rk-icon">{showSubtasksIcon}</span>
-          {showSubtasks ? <span className="rk-indicator-dot" /> : null}
-        </button>
+        <SettingsPopover
+          labels={labels}
+          showSubtasks={showSubtasks}
+          onToggleShowSubtasks={onToggleShowSubtasks}
+          priorityLaneEnabled={priorityLaneEnabled}
+          onTogglePriorityLane={onTogglePriorityLane}
+          viewableProjectsEnabled={viewableProjectsEnabled}
+          onToggleViewableProjects={onToggleViewableProjects}
+          timeEntryOnClose={timeEntryOnClose}
+          onToggleTimeEntryOnClose={onToggleTimeEntryOnClose}
+          fitMode={fitMode}
+          onToggleFitMode={onToggleFitMode}
+          fontSize={fontSize}
+          onChangeFontSize={onChangeFontSize}
+        />
 
         <button type="button" className={`rk-btn ${fullWindow ? 'rk-btn-toggle-active' : ''}`} onClick={onToggleFullWindow} title={fullWindow ? labels.normal_view : labels.fullscreen_view}>
           <span className="rk-icon">{fullWindowIcon}</span>
@@ -706,17 +705,6 @@ export function KanbanToolbar({
         <button type="button" className="rk-btn" onClick={onScrollToTop} title={labels.scroll_top}>
           <span className="rk-icon">vertical_align_top</span>
         </button>
-
-        <Dropdown
-          label={fontSizeLabel}
-          icon="format_size"
-          options={fontSizeOptions}
-          value={String(fontSize)}
-          onChange={(value) => onChangeFontSize(Number(value))}
-          width="100px"
-          closeOnSelect={false}
-          labels={labels}
-        />
 
         <button type="button" className="rk-btn" onClick={onOpenHelp} title={labels.help}>
           <span className="rk-icon">help_outline</span>
