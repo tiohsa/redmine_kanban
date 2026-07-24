@@ -168,6 +168,7 @@ REDMINE_BASE_URL=http://127.0.0.1:3002 \
 | GET | `/projects/:project_id/kanban/data` | ボードデータ取得 |
 | PATCH | `/projects/:project_id/kanban/issues/:id/move` | カード移動 |
 | POST | `/projects/:project_id/kanban/issues` | チケット作成 |
+| POST | `/projects/:project_id/kanban/issues/bulk` | 親チケットと子チケット、または既存親への子チケット一括作成 |
 | PATCH | `/projects/:project_id/kanban/issues/:id` | チケット更新 |
 | DELETE | `/projects/:project_id/kanban/issues/:id` | チケット削除 |
 
@@ -175,6 +176,12 @@ REDMINE_BASE_URL=http://127.0.0.1:3002 \
 
 - `issues[].subtasks` は再帰ツリー構造です（`subtasks[].subtasks...`）。
 - Canvas 上の子チケット行はフロントで描画/ヒット判定用にフラット化していますが、API は階層を保持します。
+
+一括作成の冪等性は `Rails.cache` で管理します。キャッシュキーはユーザー・プロジェクト・操作・`Idempotency-Key` でスコープし、atomicなclaimに成功した処理だけが作成処理を実行します。processingの場合は409、completedの場合は以前のレスポンスを返します。クライアントは同一ブラウザセッション中の同一論理操作で同じキーを再利用し、入力検証失敗または例外時はclaimを削除して再試行できます。
+
+保証範囲は、同一ブラウザの二重送信、ブラウザセッション中の同一論理操作の再試行、同一Redmineプロセス内の重複claim、およびatomicな共有 `CacheStore` の `unless_exist` 書き込みを使う複数プロセス間の重複claim防止です。プロセス分離されたMemoryStore、キャッシュ消失、サーバー再起動をまたぐ永続的なexactly-onceは保証しません。
+
+このプラグインは特徴としてデータベースマイグレーションや独自テーブルを追加しません。キャッシュ消失、サーバー再起動、プロセスごとのMemoryStoreなど共有されないStoreでは、永続的なexactly-once保証はできません。より強い保証が必要な環境では、共有atomic/persistent CacheStoreまたは外部Idempotencyサービスを提供してください。
 
 
 ## CI

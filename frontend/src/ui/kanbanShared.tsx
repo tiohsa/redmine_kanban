@@ -5,7 +5,19 @@ import { isHttpError } from './http';
 
 export type FitMode = 'none' | 'width';
 
-export type IssueMutationResult = { issue: Issue; warning?: string };
+export type AncestorIssueUpdate = {
+  id: number;
+  done_ratio: number;
+  lock_version: number;
+  updated_on: string | null;
+  aging_days: number;
+};
+
+export type IssueMutationResult = {
+  issue: Issue;
+  warning?: string;
+  ancestor_updates?: AncestorIssueUpdate[];
+};
 
 export type MovePayload = {
   issueId: number;
@@ -36,6 +48,7 @@ export type ResolvedBoardIssue = {
   kind: 'issue' | 'subtask';
   trackerId?: number;
   parentIssueId?: number;
+  projectId?: number;
 };
 
 type FieldErrors = {
@@ -145,6 +158,7 @@ export function resolveBoardIssue(data: BoardData, issueId: number): ResolvedBoa
       kind: 'issue',
       trackerId: issue.tracker_id,
       parentIssueId: issue.parent_id ?? undefined,
+      projectId: issue.project?.id,
     };
   }
 
@@ -160,6 +174,7 @@ export function resolveBoardIssue(data: BoardData, issueId: number): ResolvedBoa
       ...buildIssueUrls(subtask.id),
       kind: 'subtask',
       parentIssueId: parent.id,
+      projectId: subtask.project?.id ?? parent.project?.id,
     };
   }
 

@@ -1,8 +1,16 @@
 import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query';
-import type { BoardData, Issue } from './types';
+import { useRef } from 'react';
+import type { BoardData, Issue, Subtask } from './types';
+import type { AncestorIssueUpdate } from './kanbanShared';
 import { updateSubtasksTree } from './subtasksTree';
 
-type MutationContext = { prev?: BoardData };
+type MutationContext = {
+  prev?: BoardData;
+  issueId: number;
+  optimisticIssue?: Issue | null;
+  revision: number;
+  overlapped: boolean;
+};
 
 type IssuePayload = { issueId: number };
 
@@ -10,11 +18,12 @@ type UseIssueMutationOptions<TPayload extends IssuePayload, TResult> = {
   queryKey: QueryKey;
   mutationFn: (payload: TPayload) => Promise<TResult>;
   applyOptimistic: (data: BoardData, payload: TPayload) => BoardData;
-  applyServer: (data: BoardData, result: TResult, payload: TPayload) => BoardData;
+  applyServer: (data: BoardData, result: TResult, payload: TPayload, options?: { applyTarget: boolean }) => BoardData;
   onError?: (error: unknown) => void;
   onSuccess?: (result: TResult) => void;
   onMutateIssue?: (issueId: number) => void;
   onSettledIssue?: (issueId: number) => void;
+  onSettledMutation?: (issueId: number) => void;
   refetchOnSettled?: boolean;
 };
 
@@ -29,9 +38,11 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
   onSuccess,
   onMutateIssue,
   onSettledIssue,
+  onSettledMutation,
   refetchOnSettled = false,
 }: UseIssueMutationOptions<TPayload, TResult>) {
   const queryClient = useQueryClient();
+  const mutationRevisions = useRef(new Map<number, number>());
 
   // Optimistic UI + server normalization keeps Kanban behavior aligned with Gantt/list/detail.
   return useMutation<TResult, unknown, TPayload, MutationContext>({
@@ -40,29 +51,55 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
       await queryClient.cancelQueries({ queryKey });
 
       const prev = queryClient.getQueryData<BoardData>(queryKey);
+      const optimistic = prev ? applyOptimistic(prev, payload) : undefined;
       if (prev) {
-        queryClient.setQueryData(queryKey, applyOptimistic(prev, payload));
+        queryClient.setQueryData(queryKey, optimistic);
       }
 
+      const previousRevision = mutationRevisions.current.get(payload.issueId) ?? 0;
+      const revision = previousRevision + 1;
+      mutationRevisions.current.set(payload.issueId, revision);
       onMutateIssue?.(payload.issueId);
-      return { prev };
+      return {
+        prev,
+        issueId: payload.issueId,
+        revision,
+        overlapped: previousRevision > 0,
+        optimisticIssue: optimistic ? findIssueInBoard(optimistic, payload.issueId) : null,
+      };
     },
     onError: (_err, _payload, ctx) => {
-      if (ctx?.prev) {
-        queryClient.setQueryData(queryKey, ctx.prev);
+      const current = queryClient.getQueryData<BoardData>(queryKey);
+      const currentIssue = current && ctx ? findIssueInBoard(current, ctx.issueId) : null;
+      if (ctx?.prev && !ctx.overlapped && currentIssue && mutationRevisions.current.get(ctx.issueId) === ctx.revision && issuesMatch(currentIssue, ctx.optimisticIssue)) {
+        queryClient.setQueryData<BoardData>(queryKey, (current) => {
+          if (!current) return current;
+          const previousIssue = findIssueInBoard(ctx.prev!, ctx.issueId);
+          if (!previousIssue) return current;
+          return replaceIssueInBoard(current, previousIssue);
+        });
+      } else if (ctx?.prev) {
+        // Another mutation may have advanced this issue or an ancestor while this request was pending.
+        // Reconcile with the server instead of applying a stale snapshot.
+        void queryClient.invalidateQueries({ queryKey });
       }
       onError?.(_err);
     },
-    onSuccess: (result, payload) => {
+    onSuccess: (result, payload, context) => {
       queryClient.setQueryData<BoardData>(queryKey, (current) =>
-        current ? applyServer(current, result, payload) : current
+        current ? applyFreshServerResult(current, result, payload, context, mutationRevisions.current, applyServer) : current
       );
       onSuccess?.(result);
     },
-    onSettled: (_result, _error, payload) => {
-      if (payload) {
+    onSettled: (_result, _error, payload, context) => {
+      const isLatestMutation = Boolean(
+        payload && context && mutationRevisions.current.get(payload.issueId) === context.revision,
+      );
+      if (payload && isLatestMutation) {
         onSettledIssue?.(payload.issueId);
+        mutationRevisions.current.delete(payload.issueId);
       }
+      if (payload) onSettledMutation?.(payload.issueId);
       if (refetchOnSettled) {
         window.setTimeout(() => {
           queryClient.invalidateQueries({ queryKey });
@@ -70,6 +107,69 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
       }
     },
   });
+}
+
+function applyFreshServerResult<TPayload extends IssuePayload, TResult>(
+  data: BoardData,
+  result: TResult,
+  payload: TPayload,
+  context: MutationContext | undefined,
+  revisions: Map<number, number>,
+  applyServer: (data: BoardData, result: TResult, payload: TPayload, options?: { applyTarget: boolean }) => BoardData,
+): BoardData {
+  const currentIssue = findIssueInBoard(data, payload.issueId);
+  const incomingIssue = issueFromResult(result);
+  const hasNewerMutation = context ? (revisions.get(payload.issueId) ?? 0) > context.revision : false;
+  if (!currentIssue || !incomingIssue || (!hasNewerMutation && isIssueFresh(currentIssue, incomingIssue))) {
+    return applyServer(data, result, payload, { applyTarget: true });
+  }
+
+  // Keep ancestor updates from this response, but prevent its target issue
+  // from replacing a newer optimistic/server state.
+  const preservedResult = { ...(result as object), issue: currentIssue } as TResult;
+  return applyServer(data, preservedResult, payload, { applyTarget: false });
+}
+
+function issueFromResult<TResult>(result: TResult): Issue | null {
+  if (!result || typeof result !== 'object' || !('issue' in result)) return null;
+  const issue = (result as { issue?: unknown }).issue;
+  return issue && typeof issue === 'object' && 'id' in issue ? issue as Issue : null;
+}
+
+export function isIssueFresh(current: Issue, incoming: Issue): boolean {
+  if (typeof current.lock_version === 'number' && typeof incoming.lock_version === 'number') {
+    if (incoming.lock_version < current.lock_version) return false;
+    if (incoming.lock_version > current.lock_version) return true;
+  }
+
+  const currentUpdatedOn = parseDate(current.updated_on);
+  const incomingUpdatedOn = parseDate(incoming.updated_on);
+  if (currentUpdatedOn !== null && incomingUpdatedOn !== null) return incomingUpdatedOn >= currentUpdatedOn;
+  if (currentUpdatedOn !== null && incomingUpdatedOn === null) return false;
+  return true;
+}
+
+function issuesMatch(current: Issue, optimistic: Issue | null | undefined): boolean {
+  return Boolean(optimistic) && JSON.stringify(current) === JSON.stringify(optimistic);
+}
+
+function findIssueInBoard(data: BoardData, issueId: number): Issue | null {
+  const direct = data.issues.find((issue) => issue.id === issueId);
+  if (direct) return direct;
+  for (const issue of data.issues) {
+    const nested = findSubtask(issue.subtasks, issueId);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+function findSubtask(subtasks: Subtask[] | undefined, issueId: number): Issue | null {
+  for (const subtask of subtasks ?? []) {
+    if (subtask.id === issueId) return subtask as unknown as Issue;
+    const nested = findSubtask(subtask.subtasks, issueId);
+    if (nested) return nested;
+  }
+  return null;
 }
 
 export function updateIssueInBoard(
@@ -101,8 +201,78 @@ export function updateIssueInBoard(
   };
 }
 
+export function updateSubtaskInBoard(
+  data: BoardData,
+  subtaskId: number,
+  patch: Partial<Pick<Subtask, 'status_id' | 'is_closed' | 'lock_version'>>,
+): BoardData {
+  let changed = false;
+  const issues = data.issues.map((issue) => {
+    const subtasks = updateSubtasksTree(issue.subtasks, subtaskId, patch);
+    if (subtasks === issue.subtasks) return issue;
+
+    changed = true;
+    return { ...issue, subtasks };
+  });
+
+  return changed ? { ...data, issues } : data;
+}
+
+export function applyAncestorIssueUpdates(
+  data: BoardData,
+  updates: AncestorIssueUpdate[] | undefined,
+): BoardData {
+  if (!updates?.length) return data;
+
+  const updatesById = new Map(updates.map((update) => [update.id, update]));
+  let changed = false;
+  const issues = data.issues.map((issue) => {
+    const update = updatesById.get(issue.id);
+    if (!update) return issue;
+
+    if (!isIssueFresh(issue, { ...issue, ...update })) return issue;
+
+    changed = true;
+    return { ...issue, ...update };
+  });
+
+  return changed ? { ...data, issues } : data;
+}
+
+function parseDate(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? null : timestamp;
+}
+
 export function replaceIssueInBoard(data: BoardData, nextIssue: Issue): BoardData {
-  return updateIssueInBoard(data, nextIssue.id, () => nextIssue);
+  const direct = data.issues.some((issue) => issue.id === nextIssue.id);
+  if (direct) return updateIssueInBoard(data, nextIssue.id, () => nextIssue);
+
+  let changed = false;
+  const issues = data.issues.map((issue) => {
+    const subtasks = replaceSubtask(issue.subtasks, nextIssue);
+    if (subtasks === issue.subtasks) return issue;
+    changed = true;
+    return { ...issue, subtasks };
+  });
+  return changed ? { ...data, issues } : data;
+}
+
+function replaceSubtask(subtasks: Subtask[] | undefined, nextIssue: Issue): Subtask[] | undefined {
+  if (!subtasks) return subtasks;
+  let changed = false;
+  const next = subtasks.map((subtask) => {
+    if (subtask.id === nextIssue.id) {
+      changed = true;
+      return nextIssue as unknown as Subtask;
+    }
+    const nested = replaceSubtask(subtask.subtasks, nextIssue);
+    if (nested === subtask.subtasks) return subtask;
+    changed = true;
+    return { ...subtask, subtasks: nested };
+  });
+  return changed ? next : subtasks;
 }
 
 function rebuildColumnCounts(data: BoardData): BoardData['columns'] {

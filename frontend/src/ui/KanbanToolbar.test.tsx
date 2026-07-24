@@ -56,6 +56,7 @@ function makeData(): BoardData {
       reset: 'Reset',
       show_subtasks: 'Show subtasks',
       status: 'Status',
+      issue_tracker: 'Tracker',
       this_week: 'This week',
       unassigned: 'Unassigned',
       within_1_day: 'Within 1 day',
@@ -76,6 +77,7 @@ function makeFilters(overrides: Partial<Filters> = {}): Filters {
     priorityFilterEnabled: false,
     projectIds: [],
     statusIds: [],
+    trackerIds: [],
     ...overrides,
   };
 }
@@ -118,6 +120,14 @@ describe('KanbanToolbar', () => {
     expect(screen.getByTitle('Unassigned, Alice').textContent).toContain('Assignee (2)');
   });
 
+  it('shows the text filter trigger as an icon only', () => {
+    const { container, unmount } = renderToolbar(makeFilters());
+
+    const trigger = container.querySelector('[title="Filter"]');
+    expect(trigger?.textContent).toBe('filter_list');
+    unmount();
+  });
+
   it('updates assigneeIds when an assignee is selected', () => {
     const { onChange } = renderToolbar(makeFilters());
 
@@ -125,6 +135,25 @@ describe('KanbanToolbar', () => {
     fireEvent.click(screen.getByText('Alice'));
 
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ assigneeIds: ['7'] }));
+  });
+
+  it('updates trackerIds when a tracker is selected', () => {
+    const { onChange, container } = renderToolbar(makeFilters());
+
+    const trigger = container.querySelector('[title="Tracker"]');
+    if (!(trigger instanceof HTMLElement)) throw new Error('Tracker trigger not found');
+    fireEvent.click(trigger);
+    const option = Array.from(container.querySelectorAll('.rk-dropdown-item')).find((item) => item.textContent === 'Bug');
+    if (!(option instanceof HTMLElement)) throw new Error('Tracker option not found');
+    fireEvent.click(option);
+
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ trackerIds: [1] }));
+  });
+
+  it('shows selection count for tracker filters', () => {
+    const { container } = renderToolbar(makeFilters({ trackerIds: [1] }));
+
+    expect(Array.from(container.querySelectorAll('.rk-dropdown-trigger')).find((item) => item.textContent?.includes('Tracker'))?.textContent).toContain('Tracker (1)');
   });
 
   it('resets assigneeIds to an empty selection', () => {

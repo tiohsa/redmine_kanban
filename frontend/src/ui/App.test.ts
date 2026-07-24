@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergeIssuePage, normalizeAssigneeIds, normalizeProjectIds, resolveDefaultCreateProjectId } from './App';
+import { mergeIssuePage, normalizeAssigneeIds, normalizeProjectIds, normalizeTrackerIds, resolveDefaultCreateProjectId } from './App';
 import type { BoardData, Issue } from './types';
 import { buildDefaultIssueCreateUrl } from './issueDialog';
 
@@ -43,6 +43,10 @@ describe('project filter helpers', () => {
 
   it('drops stale assignee ids that are no longer selectable', () => {
     expect(normalizeAssigneeIds(['9'], new Set(['7', '8']))).toEqual([]);
+  });
+
+  it('prunes tracker ids to the allowed option set', () => {
+    expect(normalizeTrackerIds([1, 4, 2], new Set([2, 3]))).toEqual([2]);
   });
 
   it('prefers selected creatable project for default create target', () => {

@@ -56,7 +56,7 @@ function makeBoardData(issues: Issue[]): BoardData {
 
 describe('useKanbanDialogs issue resolution', () => {
   it('opens top-level issues with tracker-based title', () => {
-    const data = makeBoardData([makeIssue(10, { subject: 'Parent issue' })]);
+    const data = makeBoardData([makeIssue(10, { subject: 'Parent issue', project: { id: 3, name: 'Subproject' } })]);
     const { result } = renderHook(() => useKanbanDialogs('/projects/test/kanban', data, 'assignee'));
 
     act(() => {
@@ -67,6 +67,7 @@ describe('useKanbanDialogs issue resolution', () => {
       url: '/issues/10',
       issueId: 10,
       issueTitle: 'Bug #10 Parent issue',
+      projectId: 3,
     });
   });
 
@@ -74,6 +75,7 @@ describe('useKanbanDialogs issue resolution', () => {
     const data = makeBoardData([
       makeIssue(10, {
         subject: 'Parent issue',
+        project: { id: 3, name: 'Subproject' },
         subtasks: [
           {
             id: 20,
@@ -95,6 +97,7 @@ describe('useKanbanDialogs issue resolution', () => {
       url: '/issues/20',
       issueId: 20,
       issueTitle: '#20 Closed child',
+      projectId: 3,
     });
 
     act(() => {
@@ -105,6 +108,7 @@ describe('useKanbanDialogs issue resolution', () => {
       url: '/issues/20/edit',
       issueId: 20,
       issueTitle: '#20 Closed child',
+      projectId: 3,
     });
   });
 });

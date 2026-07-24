@@ -25,13 +25,14 @@ export async function getJson<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function postJson<T>(url: string, body: Record<string, unknown>, method: 'POST' | 'PATCH' | 'PUT' | 'DELETE' = 'POST'): Promise<T> {
+export async function postJson<T>(url: string, body: Record<string, unknown>, method: 'POST' | 'PATCH' | 'PUT' | 'DELETE' = 'POST', extraHeaders: Record<string, string> = {}): Promise<T> {
   const token = csrfToken();
   const res = await fetch(url, {
     method,
     credentials: 'same-origin',
     headers: {
       'Content-Type': 'application/json',
+      ...extraHeaders,
       ...(token ? { 'X-CSRF-Token': token } : {}),
     },
     body: JSON.stringify(body),

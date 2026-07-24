@@ -2,11 +2,13 @@ module RedmineKanban
   class ApiController < ApplicationController
     include ArrayParamNormalizer
 
-    skip_before_action :authorize, only: [:move, :create, :update, :destroy]
+    skip_before_action :authorize, only: [:move, :create, :update, :destroy, :bulk_create]
 
     before_action :find_issue, only: [:move, :update, :destroy]
+    before_action :require_view_permission, only: [:index, :bootstrap, :issues, :counts, :trackers]
     before_action :require_move_permission, only: [:move]
     before_action :require_create_permission, only: [:create]
+    before_action :require_create_permission, only: [:bulk_create]
     before_action :require_update_permission, only: [:update]
     before_action :require_delete_permission, only: [:destroy]
 
@@ -37,6 +39,17 @@ module RedmineKanban
       }
     end
 
+    def trackers
+      target_project_id = params[:target_project_id].to_i
+      target_project = target_project_id.positive? ? Project.visible(User.current).find_by(id: target_project_id) : @project
+      unless target_project && permission_policy.can_view_board?(@project)
+        render json: { ok: false, message: '権限がありません' }, status: :forbidden
+        return
+      end
+
+      render json: { ok: true, trackers: target_project.trackers.sorted.map { |tracker| { id: tracker.id, name: tracker.name } } }
+    end
+
     def move
       payload = params[:issue] || params
       render_service_result(IssueMover.new(project: @project, issue: @issue, user: User.current).move(
@@ -54,17 +67,47 @@ module RedmineKanban
       render_service_result(IssueCreator.new(project: @project, user: User.current).create(params: issue_params))
     end
 
+    def bulk_create
+      payload = params[:bulk] || params
+      result = IssueCreator.new(project: @project, user: User.current).create_with_subtasks(
+        parent_params: payload[:parent] || {},
+        subtasks: payload[:subtasks] || [],
+        idempotency_key: request.headers['Idempotency-Key']
+      )
+      render_service_result(result)
+    end
+
     def update
       payload = params[:issue] || params
       render_service_result(IssueUpdater.new(project: @project, user: User.current).update(issue_id: @issue.id, params: payload))
     end
 
     def destroy
-      if @issue.destroy
-        render json: { ok: true }
-      else
-        render json: { ok: false, message: '削除に失敗しました' }, status: :unprocessable_entity
+      lock_version = params.dig(:issue, :lock_version) || params[:lock_version]
+      if lock_version.blank?
+        render json: { ok: false, message: 'lock_versionが必要です' }, status: :unprocessable_entity
+        return
       end
+
+      result = nil
+      Issue.transaction do
+        locked_issue = Issue.lock.find_by(id: @issue.id)
+        unless locked_issue && locked_issue.lock_version.to_i == lock_version.to_i
+          result = { ok: false, message: '他ユーザにより更新されました' }
+          raise ActiveRecord::Rollback
+        end
+
+        unless permission_policy.can_delete_issue?(locked_issue, @project)
+          result = { ok: false, message: '権限がありません' }
+          raise ActiveRecord::Rollback
+        end
+
+        result = locked_issue.destroy ? { ok: true } : { ok: false, message: '削除に失敗しました' }
+        raise ActiveRecord::Rollback unless result[:ok]
+      end
+      render json: result, status: result[:ok] ? :ok : (result[:message].include?('権限') ? :forbidden : :conflict)
+    rescue ActiveRecord::StaleObjectError
+      render json: { ok: false, message: '他ユーザにより更新されました' }, status: :conflict
     end
 
     private
@@ -82,37 +125,49 @@ module RedmineKanban
     end
 
     def require_move_permission
-      require_permission!(permission_policy.can_move_issue?(@issue.project))
+      return unless require_permission!(permission_policy.can_view_board?(@project))
+
+      require_permission!(permission_policy.can_move_issue?(@issue, @project))
+    end
+
+    def require_view_permission
+      require_permission!(permission_policy.can_view_board?(@project))
     end
 
     def require_create_permission
       target_project = target_project_for_create
       return unless require_permission!(target_project.present?)
 
-      require_permission!(permission_policy.can_create_issue?(target_project))
+      return unless require_permission!(permission_policy.can_view_board?(@project))
+
+      require_permission!(permission_policy.can_create_issue?(target_project, @project))
     end
 
     def require_update_permission
-      require_permission!(permission_policy.can_update_issue?(@issue.project))
+      require_permission!(permission_policy.can_update_issue?(@issue, @project))
     end
 
     def require_delete_permission
-      require_permission!(permission_policy.can_delete_issue?(@issue.project))
+      require_permission!(permission_policy.can_delete_issue?(@issue, @project))
     end
 
     def find_issue
       @issue = Issue.visible.find(params[:id])
-      render_404 unless permission_policy.can_view_board?(@issue.project)
     rescue ActiveRecord::RecordNotFound
       render_404
     end
 
     def target_project_for_create
-      issue_params = params[:issue] || {}
+      issue_params = params[:issue] || params.dig(:bulk, :parent) || {}
+      parent_issue_id = issue_params[:parent_issue_id] || issue_params['parent_issue_id']
+      if parent_issue_id.present?
+        parent = Issue.visible(User.current).find_by(id: parent_issue_id)
+        return parent&.project
+      end
       target_project_id = issue_params[:project_id].to_i
       if target_project_id.positive?
         project = Project.visible(User.current).find_by(id: target_project_id)
-        return project if permission_policy.can_view_board?(project)
+        return project if project
 
         return nil
       end

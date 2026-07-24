@@ -64,6 +64,7 @@ function makeFilters(overrides: Partial<Filters> = {}): Filters {
     priorityFilterEnabled: false,
     projectIds: [],
     statusIds: [],
+    trackerIds: [],
     ...overrides,
   };
 }
@@ -151,6 +152,49 @@ describe('buildVisibleIssues', () => {
     const issues = buildVisibleIssues(data, makeFilters({ assigneeIds: [] }), new Set(), null);
 
     expect(issues.map((issue) => issue.id)).toEqual([1, 2]);
+  });
+
+  it('filters issues by multiple selected trackers using OR semantics', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Bug', { tracker_id: 1 }),
+      makeIssue(2, 1, 'Feature', { tracker_id: 2 }),
+      makeIssue(3, 1, 'Task', { tracker_id: 3 }),
+    ]);
+
+    const issues = buildVisibleIssues(data, makeFilters({ trackerIds: [1, 3] }), new Set(), null);
+
+    expect(issues.map((issue) => issue.id)).toEqual([1, 3]);
+  });
+
+  it('treats an empty tracker selection as all issues visible', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Bug', { tracker_id: 1 }),
+      makeIssue(2, 1, 'Feature', { tracker_id: 2 }),
+    ]);
+
+    const issues = buildVisibleIssues(data, makeFilters({ trackerIds: [] }), new Set(), null);
+
+    expect(issues.map((issue) => issue.id)).toEqual([1, 2]);
+  });
+
+  it('keeps matching descendant context and removes nonmatching siblings', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Epic', {
+        tracker_id: 1,
+        subtasks: [
+          { id: 2, subject: 'Matching task', status_id: 1, tracker_id: 3, is_closed: false, subtasks: [
+            { id: 4, subject: 'Matching grandchild', status_id: 1, tracker_id: 3, is_closed: false },
+          ] },
+          { id: 3, subject: 'Sibling task', status_id: 1, tracker_id: 2, is_closed: false },
+        ],
+      }),
+    ]);
+
+    const issues = buildVisibleIssues(data, makeFilters({ trackerIds: [3] }), new Set(), null);
+
+    expect(issues.map((issue) => issue.id)).toEqual([1]);
+    expect(issues[0].subtasks?.map((issue) => issue.id)).toEqual([2]);
+    expect(issues[0].subtasks?.[0].subtasks?.map((issue) => issue.id)).toEqual([4]);
   });
 
   it('includes no-priority issues when no_priority is selected', () => {

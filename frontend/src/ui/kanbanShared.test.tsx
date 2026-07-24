@@ -55,7 +55,7 @@ function makeBoardData(issues: Issue[]): BoardData {
 
 describe('resolveBoardIssue', () => {
   it('resolves top-level issues with existing urls', () => {
-    const data = makeBoardData([makeIssue(10, { subject: 'Top level' })]);
+    const data = makeBoardData([makeIssue(10, { subject: 'Top level', project: { id: 3, name: 'Subproject' } })]);
 
     expect(resolveBoardIssue(data, 10)).toEqual({
       id: 10,
@@ -67,12 +67,14 @@ describe('resolveBoardIssue', () => {
       kind: 'issue',
       trackerId: 1,
       parentIssueId: undefined,
+      projectId: 3,
     });
   });
 
   it('resolves nested subtasks and builds urls from the id', () => {
     const data = makeBoardData([
       makeIssue(10, {
+        project: { id: 3, name: 'Subproject' },
         subtasks: [
           {
             id: 20,
@@ -103,6 +105,7 @@ describe('resolveBoardIssue', () => {
       issueEditUrl: '/issues/30/edit',
       kind: 'subtask',
       parentIssueId: 10,
+      projectId: 3,
     });
   });
 

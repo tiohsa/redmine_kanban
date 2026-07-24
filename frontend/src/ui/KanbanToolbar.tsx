@@ -433,11 +433,14 @@ export function KanbanToolbar({
     name: '\xA0'.repeat(project.level * 2) + project.name,
   }));
   const statusDropdownOptions = data.columns.map((column) => ({ id: String(column.id), name: column.name }));
+  const trackerDropdownOptions = (data.lists.trackers ?? []).map((tracker) => ({ id: String(tracker.id), name: tracker.name }));
   const projectFilterValue = filters.projectIds.map(String);
   const statusFilterValue = filters.statusIds.map(String);
+  const trackerFilterValue = filters.trackerIds.map(String);
   const showAssigneeDot = filters.assigneeIds.length > 0;
   const showProjectDot = filters.projectIds.length > 0;
   const showStatusDot = filters.statusIds.length > 0;
+  const showTrackerDot = filters.trackerIds.length > 0;
   const showDueCustomInput = filters.due === 'custom';
   const dueDaysValue = filters.dueDays ?? 7;
   const dueSortDirection = getSortDirection(sortKey, 'due');
@@ -473,7 +476,6 @@ export function KanbanToolbar({
           placeholder={labels.filter_subject}
           value={filters.q}
           onChange={(value) => updateFilters({ q: value })}
-          showTriggerLabel
         />
       </div>
 
@@ -509,6 +511,25 @@ export function KanbanToolbar({
           includeAllOption
           allLabel={labels.all}
           showDot={showProjectDot}
+          showTriggerLabel
+        />
+      </div>
+
+      <div className="rk-toolbar-separator" />
+
+      <div className="rk-toolbar-group">
+        <MultiSelectDropdown
+          label={labels.issue_tracker}
+          icon="label"
+          options={trackerDropdownOptions}
+          value={trackerFilterValue}
+          onChange={(value) => updateFilters({ trackerIds: value.map(Number) })}
+          onReset={() => updateFilters({ trackerIds: [] })}
+          width="200px"
+          labels={labels}
+          includeAllOption
+          allLabel={labels.all}
+          showDot={showTrackerDot}
           showTriggerLabel
         />
       </div>

@@ -10,6 +10,21 @@ class RedmineKanbanPermissionPolicyTest < Minitest::Test
     assert_policy_allows(:can_move_issue?, :manage_redmine_kanban, :edit_issues)
   end
 
+  def test_move_checks_manage_permission_on_board_and_edit_permission_on_issue_project
+    board_project = Object.new
+    issue_project = Object.new
+    user = Object.new
+    user.define_singleton_method(:allowed_to?) do |permission, project|
+      (permission == :manage_redmine_kanban && project.equal?(board_project)) ||
+        (permission == :edit_issues && project.equal?(issue_project))
+    end
+
+    policy = RedmineKanban::PermissionPolicy.new(user: user)
+
+    assert policy.can_move_issue?(issue_project, board_project)
+    refute policy.can_move_issue?(board_project, issue_project)
+  end
+
   def test_create_requires_manage_kanban_and_add_issues
     assert_policy_allows(:can_create_issue?, :manage_redmine_kanban, :add_issues)
   end
@@ -18,8 +33,36 @@ class RedmineKanbanPermissionPolicyTest < Minitest::Test
     assert_policy_allows(:can_update_issue?, :view_redmine_kanban, :edit_issues)
   end
 
+  def test_update_uses_board_view_permission_and_issue_edit_permission
+    board_project = Object.new
+    issue_project = Object.new
+    user = user_with_permissions(
+      [:view_redmine_kanban, board_project],
+      [:edit_issues, issue_project]
+    )
+
+    policy = RedmineKanban::PermissionPolicy.new(user: user)
+
+    assert policy.can_update_issue?(issue_project, board_project)
+    refute policy.can_update_issue?(issue_project, issue_project)
+  end
+
   def test_delete_requires_view_kanban_and_delete_issues
     assert_policy_allows(:can_delete_issue?, :view_redmine_kanban, :delete_issues)
+  end
+
+  def test_delete_uses_board_view_permission_and_issue_delete_permission
+    board_project = Object.new
+    issue_project = Object.new
+    user = user_with_permissions(
+      [:view_redmine_kanban, board_project],
+      [:delete_issues, issue_project]
+    )
+
+    policy = RedmineKanban::PermissionPolicy.new(user: user)
+
+    assert policy.can_delete_issue?(issue_project, board_project)
+    refute policy.can_delete_issue?(issue_project, issue_project)
   end
 
   def test_log_time_follows_redmine_log_time_permission
@@ -44,6 +87,14 @@ class RedmineKanbanPermissionPolicyTest < Minitest::Test
     Object.new.tap do |user|
       user.define_singleton_method(:allowed_to?) do |permission, project|
         project && permissions.include?(permission)
+      end
+    end
+  end
+
+  def user_with_permissions(*permission_projects)
+    Object.new.tap do |user|
+      user.define_singleton_method(:allowed_to?) do |permission, project|
+        permission_projects.include?([permission, project])
       end
     end
   end

@@ -44,4 +44,22 @@ describe('useKanbanPreferences', () => {
       assigneeIds: ['unassigned', '8'],
     });
   });
+
+  it('reads and persists trackerIds in the filter payload', () => {
+    localStorage.setItem(
+      'rk_filters:/projects/demo/kanban',
+      JSON.stringify({ trackerIds: [1, 2] }),
+    );
+
+    const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data'));
+    expect(result.current.filters.trackerIds).toEqual([1, 2]);
+
+    act(() => {
+      result.current.setFilters((previous) => ({ ...previous, trackerIds: [3] }));
+    });
+
+    expect(JSON.parse(localStorage.getItem('rk_filters:/projects/demo/kanban') ?? '{}')).toMatchObject({
+      trackerIds: [3],
+    });
+  });
 });

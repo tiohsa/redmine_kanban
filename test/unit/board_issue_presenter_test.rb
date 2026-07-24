@@ -2,8 +2,10 @@ require File.expand_path('../../../../test/test_helper', File.expand_path(__dir_
 require 'set'
 
 require_relative '../../lib/redmine_kanban/board_issue_presenter'
+include ActiveSupport::Testing::TimeHelpers
 
 class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
+  FakeProject = Struct.new(:id, :name)
   FakeStatus = Struct.new(:is_closed) do
     def is_closed?
       is_closed
@@ -15,6 +17,7 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
     :parent_id,
     :subject,
     :status_id,
+    :tracker_id,
     :status,
     :lock_version,
     :project,
@@ -22,15 +25,15 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
   )
 
   FakePolicy = Struct.new(:allowed) do
-    def can_move_issue?(_project)
+    def can_move_issue?(_issue_project, _board_project = _issue_project)
       allowed
     end
 
-    def can_update_issue?(_project)
+    def can_update_issue?(_issue_project, _board_project = _issue_project)
       allowed
     end
 
-    def can_delete_issue?(_project)
+    def can_delete_issue?(_issue_project, _board_project = _issue_project)
       allowed
     end
   end
@@ -44,7 +47,15 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
     tree = presenter.send(:subtask_tree, parent, Set[parent.id])
 
     assert_equal [2], tree.map { |node| node[:id] }
+    assert_equal({ id: 1, name: 'Project' }, tree.first[:project])
     assert_equal [3], tree.first[:subtasks].map { |node| node[:id] }
+  end
+
+  def test_aging_days_for_returns_days_since_update
+    issue = fake_issue(id: 1, subject: 'Aged')
+    issue.define_singleton_method(:updated_on) { Time.utc(2026, 7, 19) }
+
+    assert_equal 2, travel_to(Time.utc(2026, 7, 21)) { RedmineKanban::BoardIssuePresenter.aging_days_for(issue) }
   end
 
   def test_subtask_tree_skips_visited_issues
@@ -59,17 +70,57 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
     assert_empty tree.first[:subtasks]
   end
 
+  def test_permissions_use_board_project_for_cards_and_subtasks
+    board_project = Object.new
+    issue_project = FakeProject.new(2, 'Issue project')
+    parent = fake_issue(id: 1, subject: 'Parent', project: issue_project)
+    child = fake_issue(id: 2, parent_id: 1, subject: 'Child', project: issue_project)
+    calls = []
+    policy = Object.new
+    policy.define_singleton_method(:can_move_issue?) do |actual_issue_project, actual_board_project|
+      calls << [:move, actual_issue_project, actual_board_project]
+      true
+    end
+    policy.define_singleton_method(:can_update_issue?) do |actual_issue_project, actual_board_project|
+      calls << [:update, actual_issue_project, actual_board_project]
+      true
+    end
+    policy.define_singleton_method(:can_delete_issue?) do |actual_issue_project, actual_board_project|
+      calls << [:delete, actual_issue_project, actual_board_project]
+      true
+    end
+    presenter = RedmineKanban::BoardIssuePresenter.new(
+      user: Object.new,
+      subtasks_by_parent_id: { 1 => [child] },
+      board_project: board_project
+    )
+    presenter.define_singleton_method(:permission_policy) { policy }
+
+    presenter.send(:permissions_for, parent)
+    presenter.send(:subtask_tree, parent, Set[parent.id])
+
+    assert_equal [
+      [:move, parent, board_project],
+      [:update, parent, board_project],
+      [:delete, parent, board_project],
+      [:move, child, board_project],
+      [:update, child, board_project],
+      [:delete, child, board_project]
+    ], calls
+  end
+
   private
 
-  def fake_issue(id:, subject:, parent_id: nil)
+  def fake_issue(id:, subject:, parent_id: nil, project: FakeProject.new(1, 'Project'))
     FakeIssue.new(
       id: id,
       parent_id: parent_id,
       subject: subject,
       status_id: 1,
+      tracker_id: 1,
       status: FakeStatus.new(false),
       lock_version: 1,
-      project: Object.new
+      project: project
     )
   end
 

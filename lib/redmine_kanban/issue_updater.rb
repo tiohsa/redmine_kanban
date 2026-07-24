@@ -1,4 +1,5 @@
 require_relative 'subtask_loader'
+require_relative 'ancestor_issue_updates'
 
 module RedmineKanban
   class IssueUpdater
@@ -6,6 +7,7 @@ module RedmineKanban
     include PriorityPropagation
     include IssueWorkflow
     include ServiceResponse
+    include AncestorIssueUpdates
 
     def initialize(project:, user:)
       @project = project
@@ -16,7 +18,7 @@ module RedmineKanban
     def update(issue_id:, params:)
       issue = Issue.visible(@user).find_by(id: issue_id)
       return error_response('タスクが見つかりません', status: :not_found) unless issue
-      return error_response('権限がありません', status: :forbidden) unless issue.editable?
+      return error_response('権限がありません', status: :forbidden) unless PermissionPolicy.new(user: @user).can_update_issue?(issue, @project)
 
       issue.init_journal(@user)
 
@@ -58,9 +60,6 @@ module RedmineKanban
         end
       end
 
-      # Remove empty/nil values to avoid overwriting with defaults if not intended (though here we intend to update)
-      # Actually safe_attributes handles this, but for some normalization we did above.
-
       error_result = nil
       priority_updated = priority_id != :no_change
 
@@ -83,12 +82,16 @@ module RedmineKanban
 
       return error_result if error_result
 
+      ancestor_updates_required = issue.saved_change_to_status_id? || issue.saved_change_to_done_ratio?
+
       if priority_id.is_a?(Integer)
         reconcile_error = reconcile_priorities_after_commit!(issue, priority_id)
         return error_response(reconcile_error) if reconcile_error
       end
 
       result = { ok: true, issue: issue_presenter(issue).issue_to_h(issue) }
+      ancestor_updates = ancestor_updates_for(issue) if ancestor_updates_required
+      result[:ancestor_updates] = ancestor_updates if ancestor_updates&.any?
       result[:warning] = @warning if @warning.present?
       result
     rescue ActiveRecord::StaleObjectError

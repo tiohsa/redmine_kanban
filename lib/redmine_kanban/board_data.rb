@@ -61,6 +61,9 @@ module RedmineKanban
       bulk_subtask_title: "redmine_kanban.label_bulk_subtask_title",
       bulk_subtask_placeholder: "redmine_kanban.label_bulk_subtask_placeholder",
       bulk_subtask_help: "redmine_kanban.label_bulk_subtask_help",
+      bulk_subtask_mode: "redmine_kanban.label_bulk_subtask_mode",
+      bulk_subtask_table_mode: "redmine_kanban.label_bulk_subtask_table_mode",
+      bulk_subtask_text_mode: "redmine_kanban.label_bulk_subtask_text_mode",
       creating: "redmine_kanban.label_creating",
       created: "redmine_kanban.label_created",
       saving: "redmine_kanban.label_saving",
@@ -202,7 +205,11 @@ module RedmineKanban
       issues = fetch_issues(status_ids)
       total_issue_count = fetch_issues_total_count(status_ids)
       subtasks_by_parent_id = subtask_loader.subtasks_by_parent_id(issues.map(&:id))
-      presenter = BoardIssuePresenter.new(user: @user, subtasks_by_parent_id: subtasks_by_parent_id)
+      presenter = BoardIssuePresenter.new(
+        user: @user,
+        subtasks_by_parent_id: subtasks_by_parent_id,
+        board_project: @project
+      )
       lane_assignee_ids = @settings.lane_type == 'none' ? [] : fetch_lane_assignee_ids(status_ids)
       lanes = build_lanes(lane_assignee_ids)
 

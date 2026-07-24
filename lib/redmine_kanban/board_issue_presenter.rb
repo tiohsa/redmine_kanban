@@ -2,9 +2,10 @@ require 'set'
 
 module RedmineKanban
   class BoardIssuePresenter
-    def initialize(user:, subtasks_by_parent_id: {})
+    def initialize(user:, subtasks_by_parent_id: {}, board_project: nil)
       @user = user
       @subtasks_by_parent_id = subtasks_by_parent_id
+      @board_project = board_project
     end
 
     def issue_to_h(issue)
@@ -27,7 +28,7 @@ module RedmineKanban
         priority_name: issue.priority&.name,
         done_ratio: issue.done_ratio,
         updated_on: issue.updated_on&.iso8601,
-        aging_days: aging_days(issue),
+        aging_days: self.class.aging_days_for(issue),
         project: { id: issue.project_id, name: issue.project.name },
         permissions: permissions_for(issue),
         subtasks: subtask_tree(issue, Set[issue.id]),
@@ -38,13 +39,13 @@ module RedmineKanban
       }
     end
 
-    private
-
-    def aging_days(issue)
+    def self.aging_days_for(issue)
       return 0 unless issue.updated_on
 
       (Date.current - issue.updated_on.to_date).to_i
     end
+
+    private
 
     def subtask_tree(issue, visited_ids)
       children = @subtasks_by_parent_id[issue.id] || []
@@ -60,8 +61,10 @@ module RedmineKanban
         id: issue.id,
         subject: issue.subject,
         status_id: issue.status_id,
+        tracker_id: issue.tracker_id,
         is_closed: issue.status.is_closed?,
         lock_version: issue.lock_version,
+        project: { id: issue.project.id, name: issue.project.name },
         permissions: permissions_for(issue),
         subtasks: subtask_tree(issue, visited_ids),
       }
@@ -70,9 +73,9 @@ module RedmineKanban
     def permissions_for(issue)
       project = issue.project
       {
-        can_move: permission_policy.can_move_issue?(project),
-        can_edit: permission_policy.can_update_issue?(project),
-        can_delete: permission_policy.can_delete_issue?(project),
+        can_move: permission_policy.can_move_issue?(issue, @board_project || project),
+        can_edit: permission_policy.can_update_issue?(issue, @board_project || project),
+        can_delete: permission_policy.can_delete_issue?(issue, @board_project || project),
       }
     end
 

@@ -32,7 +32,7 @@ export function findSubtaskInTree(subtasks: Subtask[] | undefined, subtaskId: nu
 export function updateSubtasksTree(
   subtasks: Subtask[] | undefined,
   targetId: number,
-  patch: Pick<Subtask, 'status_id' | 'is_closed'>
+  patch: Partial<Pick<Subtask, 'status_id' | 'is_closed' | 'lock_version'>>
 ): Subtask[] | undefined {
   if (!subtasks?.length) return subtasks;
 

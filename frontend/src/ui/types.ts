@@ -17,9 +17,11 @@ export type Subtask = {
   id: number;
   subject: string;
   status_id: number;
+  tracker_id?: number;
   is_closed: boolean;
   lock_version?: number;
   permissions?: IssuePermissions;
+  project?: { id: number; name: string };
   subtasks?: Subtask[];
 };
 

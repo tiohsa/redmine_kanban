@@ -27,6 +27,10 @@ export function normalizeAssigneeIds(assigneeIds: string[], allowedAssigneeIds: 
   return assigneeIds.filter((assigneeId) => assigneeId === 'unassigned' || allowedAssigneeIds.has(assigneeId));
 }
 
+export function normalizeTrackerIds(trackerIds: number[], allowedTrackerIds: Set<number>): number[] {
+  return trackerIds.filter((trackerId) => allowedTrackerIds.has(trackerId));
+}
+
 export function resolveDefaultCreateProjectId(
   selectedProjectIds: number[],
   creatableProjectIds: Set<number>,
@@ -151,6 +155,10 @@ export function App({ dataUrl }: Props) {
     () => new Set((data?.lists.assignees ?? []).filter((assignee) => assignee.id !== null).map((assignee) => String(assignee.id))),
     [data],
   );
+  const allowedTrackerIds = useMemo(
+    () => new Set((data?.lists.trackers ?? []).map((tracker) => tracker.id)),
+    [data],
+  );
   const creatableProjectIds = useMemo(
     () => new Set((data?.lists.creatable_projects ?? []).map((project) => project.id)),
     [data],
@@ -169,6 +177,13 @@ export function App({ dataUrl }: Props) {
     if (normalizedAssigneeIds.length === filters.assigneeIds.length) return;
     setFilters((previous) => ({ ...previous, assigneeIds: normalizedAssigneeIds }));
   }, [allowedAssigneeIds, data, filters.assigneeIds, setFilters]);
+
+  useEffect(() => {
+    if (!data) return;
+    const normalizedTrackerIds = normalizeTrackerIds(filters.trackerIds, allowedTrackerIds);
+    if (normalizedTrackerIds.length === filters.trackerIds.length) return;
+    setFilters((previous) => ({ ...previous, trackerIds: normalizedTrackerIds }));
+  }, [allowedTrackerIds, data, filters.trackerIds, setFilters]);
 
   const effectiveLaneType = displayData?.meta.lane_type;
   const dialogs = useKanbanDialogs(baseUrl, data, effectiveLaneType);
@@ -358,23 +373,11 @@ export function App({ dataUrl }: Props) {
             }
 
             try {
-              const subtasks = payload.subtasks_subjects as string[] | undefined;
-              const parentPayload = { ...payload };
-              delete parentPayload.subtasks_subjects;
-
-              const result = await actions.createIssueMutation.mutateAsync(parentPayload);
+              const subtasks = payload.subtasks as Array<{ clientId: string; subject: string; trackerId: number }> | undefined;
+              const result = await actions.createIssueMutation.mutateAsync(payload);
               const createdIssue = result.issue;
 
               if (createdIssue && subtasks && subtasks.length > 0) {
-                const createdProjectId = createdIssue.project?.id;
-                for (const subject of subtasks) {
-                  await actions.createIssueMutation.mutateAsync({
-                    ...parentPayload,
-                    subject,
-                    parent_issue_id: createdIssue.id,
-                    project_id: createdProjectId ?? parentPayload.project_id,
-                  });
-                }
                 setNotice(
                   (labels?.created_with_subtasks ?? '')
                     .replace('%{id}', String(createdIssue.id))
@@ -390,6 +393,7 @@ export function App({ dataUrl }: Props) {
                   url: `/issues/${createdIssue.id}`,
                   issueId: createdIssue.id,
                   issueTitle: `#${createdIssue.id} ${createdIssue.subject ?? ''}`.trim(),
+                  projectId: createdIssue.project?.id,
                 });
               } else {
                 dialogs.setModal(null);
@@ -409,6 +413,7 @@ export function App({ dataUrl }: Props) {
           url={dialogs.iframeEditContext.url}
           issueId={dialogs.iframeEditContext.issueId}
           issueTitle={dialogs.iframeEditContext.issueTitle}
+          projectId={dialogs.iframeEditContext.projectId}
           labels={data.labels}
           baseUrl={baseUrl}
           queryKey={boardQueryKey}

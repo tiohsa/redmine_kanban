@@ -1,4 +1,5 @@
 require_relative 'subtask_loader'
+require_relative 'ancestor_issue_updates'
 
 module RedmineKanban
   class IssueMover
@@ -6,6 +7,7 @@ module RedmineKanban
     include PriorityPropagation
     include IssueWorkflow
     include ServiceResponse
+    include AncestorIssueUpdates
 
     def initialize(project:, issue:, user:)
       @project = project
@@ -15,7 +17,7 @@ module RedmineKanban
     end
 
     def move(status_id:, assigned_to_id: nil, priority_id: nil, assigned_to_provided: false, priority_provided: false, lock_version: nil)
-      return error_response('権限がありません') unless @issue.editable?
+      return error_response('権限がありません') unless PermissionPolicy.new(user: @user).can_update_issue?(@issue, @project)
 
       status_id = status_id.to_i
       assigned_to_id = normalize_assigned_to_id(assigned_to_id, assigned_to_provided)
@@ -93,12 +95,16 @@ module RedmineKanban
 
       return error_result if error_result
 
+      ancestor_updates_required = @issue.saved_change_to_status_id? || @issue.saved_change_to_done_ratio?
+
       if priority_id.is_a?(Integer)
         reconcile_error = reconcile_priorities_after_commit!(@issue, priority_id)
         return error_response(reconcile_error) if reconcile_error
       end
 
       result = { ok: true, issue: issue_presenter(@issue).issue_to_h(@issue) }
+      ancestor_updates = ancestor_updates_for(@issue) if ancestor_updates_required
+      result[:ancestor_updates] = ancestor_updates if ancestor_updates&.any?
       result[:warning] = warning if warning.present?
       result
     rescue ActiveRecord::StaleObjectError
@@ -141,7 +147,8 @@ module RedmineKanban
     def issue_presenter(issue)
       BoardIssuePresenter.new(
         user: @user,
-        subtasks_by_parent_id: SubtaskLoader.new(user: @user).subtasks_by_parent_id([issue.id])
+        subtasks_by_parent_id: SubtaskLoader.new(user: @user).subtasks_by_parent_id([issue.id]),
+        board_project: @project
       )
     end
 

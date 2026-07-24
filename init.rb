@@ -4,11 +4,11 @@ Redmine::Plugin.register :redmine_kanban do
   name 'Redmine Kanban'
   author 'tiohsa'
   description 'Redmine kanban'
-  version '0.2.0'
+  version '0.2.1'
   url 'https://github.com/tiohsa/redmine_kanban'
   author_url 'https://github.com/tiohsa'
   project_module :redmine_kanban do
-    permission :view_redmine_kanban, { 'redmine_kanban/kanban': [:show], 'redmine_kanban/api': [:index], 'redmine_kanban/ai_analysis': [:analyze] }, read: true, label: "redmine_kanban.permission_view"
+    permission :view_redmine_kanban, { 'redmine_kanban/kanban': [:show], 'redmine_kanban/api': [:index, :bootstrap, :issues, :counts, :trackers], 'redmine_kanban/ai_analysis': [:analyze] }, read: true, label: "redmine_kanban.permission_view"
     permission :manage_redmine_kanban, { 'redmine_kanban/api': [:move, :create] }, label: "redmine_kanban.permission_manage"
   end
 
