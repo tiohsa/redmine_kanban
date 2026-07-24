@@ -399,6 +399,8 @@ describe('IframeEditDialog layout variants', () => {
           expect.objectContaining({ subject: '子チケット 2', project_id: 3, tracker_id: 3 }),
         ],
       });
+      const bulkPayload = mutateAsyncMock.mock.calls[0]?.[0] as { subtasks: Array<Record<string, unknown>> };
+      expect(bulkPayload.subtasks[0]).not.toHaveProperty('description');
     });
     resolveBulkMutation?.([]);
 

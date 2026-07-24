@@ -66,6 +66,22 @@ export function draftsFromText(
   return { drafts, restoredCount, newCount };
 }
 
+export function preserveDraftsForText(text: string, preservedDrafts: SubtaskDraft[]): SubtaskDraft[] {
+  const remaining = new Map<string, number>();
+  extractSubjects(text).forEach((subject) => {
+    const key = normalizeSubject(subject);
+    remaining.set(key, (remaining.get(key) ?? 0) + 1);
+  });
+
+  const used = new Map<string, number>();
+  return preservedDrafts.filter((draft) => {
+    const key = normalizeSubject(draft.subject);
+    const nextUsed = (used.get(key) ?? 0) + 1;
+    used.set(key, nextUsed);
+    return nextUsed <= (remaining.get(key) ?? 0);
+  });
+}
+
 export function draftsToText(drafts: SubtaskDraft[]): string {
   return drafts.map((draft) => normalizeSubject(draft.subject)).filter(Boolean).join('\n');
 }

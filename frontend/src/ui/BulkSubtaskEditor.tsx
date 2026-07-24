@@ -5,6 +5,7 @@ import {
   draftsToCreateInputs,
   draftsToText,
   createDraftId,
+  preserveDraftsForText,
   type SubtaskCreateInput,
   type SubtaskDraft,
 } from './bulkSubtasks';
@@ -16,13 +17,16 @@ type Props = {
   trackers: Tracker[];
   disabled?: boolean;
   showRowTrackerButton?: boolean;
+  initialTrackerId?: number | null;
   className?: string;
   onChange?: (inputs: SubtaskCreateInput[]) => void;
   onValidationChange?: (message: string | null) => void;
 };
 
-export function BulkSubtaskEditor({ labels, trackers, disabled = false, showRowTrackerButton = true, className, onChange, onValidationChange }: Props) {
-  const defaultTracker = trackers[0]?.id ?? 0;
+export function BulkSubtaskEditor({ labels, trackers, disabled = false, showRowTrackerButton = true, initialTrackerId, className, onChange, onValidationChange }: Props) {
+  const defaultTracker = trackers.some((tracker) => tracker.id === initialTrackerId)
+    ? initialTrackerId ?? 0
+    : trackers[0]?.id ?? 0;
   const [mode, setMode] = useState<'text' | 'table'>('text');
   const [text, setText] = useState('');
   const [defaultTrackerId, setDefaultTrackerId] = useState(defaultTracker);
@@ -32,13 +36,22 @@ export function BulkSubtaskEditor({ labels, trackers, disabled = false, showRowT
   const [error, setError] = useState<string | null>(null);
   const firstSubjectRef = useRef<HTMLInputElement>(null);
   const lastEmittedRef = useRef<string>('');
+  const defaultTrackerExplicitlyChangedRef = useRef(false);
 
   useEffect(() => {
-    if (defaultTrackerId === 0 && defaultTracker > 0) setDefaultTrackerId(defaultTracker);
-    if (defaultTracker > 0) {
-      setDrafts((current) => current.map((draft) => draft.trackerId === 0 ? { ...draft, trackerId: defaultTracker } : draft));
+    const validTrackerIds = new Set(trackers.map((tracker) => tracker.id));
+    const fallbackTracker = trackers[0]?.id ?? 0;
+    const parentTracker = initialTrackerId && validTrackerIds.has(initialTrackerId) ? initialTrackerId : fallbackTracker;
+    setDefaultTrackerId((current) => {
+      if (current === 0 || !validTrackerIds.has(current)) return parentTracker;
+      return defaultTrackerExplicitlyChangedRef.current ? current : parentTracker;
+    });
+    if (fallbackTracker > 0) {
+      setDrafts((current) => current.map((draft) => validTrackerIds.has(draft.trackerId)
+        ? draft
+        : { ...draft, trackerId: fallbackTracker }));
     }
-  }, [defaultTracker, defaultTrackerId]);
+  }, [initialTrackerId, trackers]);
 
   const inputs = useMemo(() => {
     if (mode === 'table') return draftsToCreateInputs(drafts);
@@ -91,7 +104,7 @@ export function BulkSubtaskEditor({ labels, trackers, disabled = false, showRowT
   };
 
   const addRow = () => {
-    const draft = { id: `new-${Date.now()}-${drafts.length}`, subject: '', trackerId: defaultTrackerId };
+    const draft = { id: createDraftId(), subject: '', trackerId: defaultTrackerId };
     setDrafts((current) => [...current, draft]);
     window.requestAnimationFrame(() => document.querySelector<HTMLInputElement>(`[data-subtask-id="${draft.id}"]`)?.focus());
   };
@@ -128,7 +141,7 @@ export function BulkSubtaskEditor({ labels, trackers, disabled = false, showRowT
       {mode === 'text' ? (
         <label className="rk-field">
           <span className="rk-label">{labels.bulk_subtask_default_tracker ?? labels.issue_tracker ?? 'Tracker'}</span>
-          <select aria-label={labels.bulk_subtask_default_tracker ?? 'Default tracker'} value={defaultTrackerId || ''} onChange={(event) => setDefaultTrackerId(Number(event.target.value))} disabled={disabled}>
+          <select aria-label={labels.bulk_subtask_default_tracker ?? 'Default tracker'} value={defaultTrackerId || ''} onChange={(event) => { defaultTrackerExplicitlyChangedRef.current = true; setDefaultTrackerId(Number(event.target.value)); }} disabled={disabled}>
             <option value="">{labels.select_tracker ?? 'Select tracker'}</option>
             {trackers.map((tracker) => <option key={tracker.id} value={tracker.id}>{tracker.name}</option>)}
           </select>
@@ -137,7 +150,7 @@ export function BulkSubtaskEditor({ labels, trackers, disabled = false, showRowT
 
       {mode === 'text' ? (
         <>
-          <textarea aria-label={labels.bulk_subtask_title} rows={3} value={text} onChange={(event) => setText(event.target.value)} placeholder={labels.bulk_subtask_placeholder} disabled={disabled} />
+          <textarea aria-label={labels.bulk_subtask_title} rows={3} value={text} onChange={(event) => { const nextText = event.target.value; setText(nextText); setPreservedDrafts((current) => preserveDraftsForText(nextText, current)); }} placeholder={labels.bulk_subtask_placeholder} disabled={disabled} />
           <div className="rk-bulk-subtask-count">{inputs.length} {labels.bulk_subtask_count ?? 'items detected'}</div>
           {preservedDrafts.length > 0 ? <div className="rk-bulk-subtask-notice">✓ {notice ?? labels.bulk_subtask_preserved}</div> : null}
           {showRowTrackerButton ? <button type="button" className="rk-btn rk-btn-sm" onClick={enterTable} disabled={disabled}>{labels.bulk_subtask_edit_rows ?? 'Set tracker per row'}</button> : null}

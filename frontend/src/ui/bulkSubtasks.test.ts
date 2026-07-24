@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { draftsFromText, draftsToCreateInputs, draftsToText, extractSubjects } from './bulkSubtasks';
+import { draftsFromText, draftsToCreateInputs, draftsToText, extractSubjects, preserveDraftsForText, validateSubtaskInputs } from './bulkSubtasks';
 
 describe('bulk subtask conversions', () => {
   it('normalizes lines and ignores empty rows', () => {
@@ -39,5 +39,29 @@ describe('bulk subtask conversions', () => {
       { clientId: drafts[0].id, subject: 'A', trackerId: 1 },
       { clientId: drafts[1].id, subject: 'B', trackerId: 1 },
     ]);
+  });
+
+  it('drops preserved rows removed from text before they can be restored', () => {
+    const original = draftsFromText('A\nB', 1).drafts.map((draft, index) => ({ ...draft, trackerId: index + 10 }));
+    const afterDelete = preserveDraftsForText('A', original);
+    const afterReadd = draftsFromText('A\nB', 2, afterDelete);
+
+    expect(afterReadd.drafts.map((draft) => draft.trackerId)).toEqual([10, 2]);
+    expect(afterReadd.restoredCount).toBe(1);
+  });
+
+  it('keeps all rows when text is only reordered', () => {
+    const original = draftsFromText('A\nB', 1).drafts;
+    expect(preserveDraftsForText('B\nA', original)).toEqual(original);
+  });
+
+  it('counts only non-empty rows against the bulk limit', () => {
+    const validRows = Array.from({ length: 50 }, (_, index) => ({ id: `row-${index}`, subject: `Row ${index}`, trackerId: 1 }));
+    const withEmptyRow = draftsToCreateInputs([...validRows, { id: 'empty', subject: '  ', trackerId: 999 }]);
+    expect(withEmptyRow).toHaveLength(50);
+    expect(validateSubtaskInputs(withEmptyRow, new Set([1]), 'empty', 'invalid', 'too many')).toBeNull();
+
+    const tooMany = draftsToCreateInputs([...validRows, { id: 'extra', subject: 'Extra', trackerId: 1 }]);
+    expect(validateSubtaskInputs(tooMany, new Set([1]), 'empty', 'invalid', 'too many')).toBe('too many');
   });
 });

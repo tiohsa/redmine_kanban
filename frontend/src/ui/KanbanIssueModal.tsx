@@ -222,6 +222,7 @@ export function KanbanIssueModal({ data, baseUrl, ctx, onClose, onSaved, onDelet
             <BulkSubtaskEditor
               labels={labels}
               trackers={availableTrackers}
+              initialTrackerId={Number(trackerId) || null}
               onChange={setSubtasks}
               onValidationChange={setSubtaskError}
             />

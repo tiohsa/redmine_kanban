@@ -194,6 +194,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
   const [subtasks, setSubtasks] = useState<SubtaskCreateInput[]>([]);
   const [subtaskValidationError, setSubtaskValidationError] = useState<string | null>(null);
   const [trackerOptions, setTrackerOptions] = useState<Array<{ id: number; name: string }>>([]);
+  const [parentTrackerId, setParentTrackerId] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSaveTransitioning, setIsSaveTransitioning] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -222,6 +223,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
   const iframeSizeObserverCleanupRef = useRef<(() => void) | null>(null);
   const dialogResizeCleanupRef = useRef<(() => void) | null>(null);
   const parentAttributesRef = useRef<Record<string, number | undefined>>({});
+  const parentTrackerChangeCleanupRef = useRef<(() => void) | null>(null);
 
   const bulkMutation = useBulkSubtaskMutation(baseUrl, queryKey);
   const hasSubtaskInput = useMemo(
@@ -458,6 +460,11 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
         const trackerSelect = doc.querySelector<HTMLSelectElement>('select[name="issue[tracker_id]"], select#issue_tracker_id');
         if (trackerSelect) {
           setTrackerOptions(Array.from(trackerSelect.options).map((option) => ({ id: Number(option.value), name: option.textContent?.trim() ?? option.value })).filter((option) => option.id > 0));
+          setParentTrackerId(Number(trackerSelect.value) || null);
+          parentTrackerChangeCleanupRef.current?.();
+          const handleParentTrackerChange = () => setParentTrackerId(Number(trackerSelect.value) || null);
+          trackerSelect.addEventListener('change', handleParentTrackerChange);
+          parentTrackerChangeCleanupRef.current = () => trackerSelect.removeEventListener('change', handleParentTrackerChange);
         }
         const style = doc.createElement('style');
         const styleVariant = resolveDialogStyleVariant(mode, nextCurrentUrl, url);
@@ -602,6 +609,8 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
     iframeSizeObserverCleanupRef.current = null;
     dialogResizeCleanupRef.current?.();
     dialogResizeCleanupRef.current = null;
+    parentTrackerChangeCleanupRef.current?.();
+    parentTrackerChangeCleanupRef.current = null;
   }, []);
 
   const handleSubmit = () => {
@@ -765,6 +774,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
                 <BulkSubtaskEditor
                   labels={labels}
                   trackers={trackerOptions}
+                  initialTrackerId={parentTrackerId}
                   showRowTrackerButton={false}
                   disabled={isSubmitting || isSaveTransitioning}
                   onChange={setSubtasks}
