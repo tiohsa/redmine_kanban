@@ -360,8 +360,8 @@
 }
 
 .rk-dropdown-extra .rk-settings-row {
-  min-height: 42px;
-  padding: 8px;
+  min-height: 36px;
+  padding: 8px 12px;
   font-size: 13px;
 }
 
@@ -854,47 +854,48 @@
 .rk-sort-menu,
 .rk-settings-menu {
   position: absolute;
-  top: calc(100% + 12px);
+  top: calc(100% + 4px);
   right: 0;
   z-index: 200;
-  width: 288px;
-  padding: 10px 8px;
+  width: 240px;
+  padding: 8px;
   background: #fff;
   border: 1px solid var(--rk-border);
-  border-radius: 14px;
+  border-radius: 12px;
   box-shadow: 0 16px 34px rgb(15 23 42 / 14%), 0 3px 8px rgb(15 23 42 / 8%);
   animation: rk-fade-in 0.15s ease-out;
 }
 
 .rk-sort-menu {
-  width: 272px;
+  width: 220px;
 }
 
 .rk-settings-title {
-  padding: 8px 8px 10px;
+  padding: 8px 12px;
   color: var(--rk-text-dark);
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 700;
-  border-bottom: 1px solid var(--rk-border-light);
+  border-bottom: 1px solid var(--rk-border);
+  margin-bottom: 4px;
 }
 
 .rk-sort-row,
 .rk-settings-row,
 .rk-settings-select-row {
   width: 100%;
-  min-height: 44px;
+  min-height: 36px;
   box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 8px;
+  gap: 10px;
+  padding: 8px 12px;
   border: 0;
   border-bottom: 1px solid var(--rk-border-light);
   background: transparent;
   color: var(--rk-text-primary);
   font: inherit;
-  font-size: 14px;
+  font-size: 13px;
   text-align: left;
 }
 
@@ -916,17 +917,17 @@
 
 .rk-sort-direction {
   color: var(--rk-brand-blue);
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1;
 }
 
 .rk-settings-row {
-  min-height: 46px;
+  min-height: 36px;
 }
 
 .rk-switch {
-  width: 44px;
-  height: 24px;
+  width: 40px;
+  height: 20px;
   flex: 0 0 auto;
   padding: 3px;
   box-sizing: border-box;
@@ -941,8 +942,8 @@
 
 .rk-switch-thumb {
   display: block;
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: #fff;
   box-shadow: 0 1px 3px rgb(15 23 42 / 18%);
@@ -954,20 +955,20 @@
 }
 
 .rk-settings-select-row {
-  min-height: 52px;
+  min-height: 36px;
   border-bottom: 0;
 }
 
 .rk-settings-select-row select {
-  width: 196px;
-  height: 40px;
-  padding: 0 34px 0 12px;
+  width: 120px;
+  height: 32px;
+  padding: 0 28px 0 10px;
   border: 1px solid var(--rk-border-strong);
-  border-radius: 9px;
+  border-radius: 8px;
   background: #fff;
   color: var(--rk-text-primary);
   font: inherit;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .rk-settings-select-row select:focus,

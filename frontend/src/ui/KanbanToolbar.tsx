@@ -434,7 +434,7 @@ function SortPopover({ sortKey, onChangeSort, labels }: { sortKey: SortKey; onCh
             const selected = active?.key === option.key;
             const next = selected && sortKey === option.asc ? option.desc : option.asc;
             return (
-              <button key={option.key} type="button" className={`rk-sort-row ${selected ? 'rk-sort-row-selected' : ''}`} onClick={() => { onChangeSort(next); setOpen(false); }} role="menuitem">
+              <button key={option.key} type="button" className={`rk-sort-row ${selected ? 'rk-sort-row-selected' : ''}`} onClick={() => onChangeSort(next)} role="menuitem">
                 <span>{option.label}</span>
                 {selected ? <span className="rk-sort-direction">{sortKey === option.asc ? '↑' : '↓'}</span> : null}
               </button>
