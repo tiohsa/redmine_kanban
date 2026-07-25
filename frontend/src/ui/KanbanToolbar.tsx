@@ -1,8 +1,13 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React from 'react';
 import type { BoardData } from './types';
 import type { Filters } from './boardFilters';
 import type { SortKey } from './board/sort';
 import type { FitMode } from './kanbanShared';
+import { buildToolbarOptions, togglePriorityFilter } from './toolbar/toolbarOptions';
+import { SearchPopover } from './toolbar/SearchPopover';
+import { SortPopover } from './toolbar/SortPopover';
+import { DisplaySettingsPopover, SettingsToggle } from './toolbar/DisplaySettingsPopover';
+import { ToolbarDropdown, ToolbarMultiSelect } from './toolbar/ToolbarDropdown';
 
 type ToolbarProps = {
   data: BoardData;
@@ -33,419 +38,6 @@ type ToolbarProps = {
   onOpenHelp: () => void;
 };
 
-const FONT_SIZE_OPTIONS = ['10', '12', '14', '16', '18', '20', '22', '24', '26', '28', '30'] as const;
-
-function buildDropdownTriggerClass(showTriggerLabel: boolean | undefined, isOpen: boolean, isActive: boolean) {
-  return `rk-dropdown-trigger ${showTriggerLabel ? 'rk-dropdown-trigger-labeled' : ''} ${isOpen ? 'rk-active' : ''} ${isActive ? 'rk-active-soft' : ''}`;
-}
-
-function useDropdownDismiss(open: boolean, onDismiss: () => void) {
-  const triggerRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const handleClick = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (
-        triggerRef.current &&
-        !triggerRef.current.contains(target) &&
-        menuRef.current &&
-        !menuRef.current.contains(target)
-      ) {
-        onDismiss();
-      }
-    };
-
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [onDismiss, open]);
-
-  return { triggerRef, menuRef };
-}
-
-function Dropdown<T extends string>({
-  label,
-  icon,
-  options,
-  value,
-  onChange,
-  onReset,
-  width = '240px',
-  closeOnSelect = true,
-  labels,
-  showDot,
-  showTriggerLabel,
-}: {
-  label: string;
-  icon: string;
-  options: { id: T; name: string }[];
-  value: T;
-  onChange: (id: T) => void;
-  onReset?: () => void;
-  width?: string;
-  closeOnSelect?: boolean;
-  labels: Record<string, string>;
-  showDot?: boolean;
-  showTriggerLabel?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const { triggerRef, menuRef } = useDropdownDismiss(open, () => setOpen(false));
-
-  const selectedName = options.find((option) => option.id === value)?.name ?? value;
-  const triggerClassName = buildDropdownTriggerClass(showTriggerLabel, open, Boolean(showDot));
-
-  return (
-    <div className="rk-dropdown-container">
-      <div
-        ref={triggerRef}
-        className={triggerClassName}
-        onClick={() => setOpen(!open)}
-        title={selectedName}
-      >
-        <span className="rk-icon">{icon}</span>
-        {showTriggerLabel ? <span>{label}</span> : null}
-        {showDot ? <span className="rk-indicator-dot" /> : null}
-      </div>
-
-      {open ? (
-        <div ref={menuRef} className="rk-dropdown-menu" style={{ width }}>
-          <div className="rk-dropdown-title">{label}</div>
-          <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-            {options.map((option) => {
-              const checked = option.id === value;
-              return (
-                <div
-                  key={option.id}
-                  className={`rk-dropdown-item ${checked ? 'selected' : ''}`}
-                  onClick={() => {
-                    onChange(option.id);
-                    if (closeOnSelect) setOpen(false);
-                  }}
-                >
-                  <div className="rk-dropdown-checkbox" />
-                  <span>{option.name}</span>
-                </div>
-              );
-            })}
-          </div>
-          {onReset ? (
-            <div className="rk-dropdown-footer">
-              <button
-                type="button"
-                className="rk-dropdown-link"
-                onClick={() => {
-                  onReset();
-                  setOpen(false);
-                }}
-              >
-                {labels.reset}
-              </button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function MultiSelectDropdown({
-  label,
-  icon,
-  options,
-  value,
-  onChange,
-  onReset,
-  width = '240px',
-  labels,
-  includeAllOption = false,
-  allLabel,
-  showDot,
-  showTriggerLabel,
-  extraContent,
-}: {
-  label: string;
-  icon: string;
-  options: { id: string; name: string }[];
-  value: string[];
-  onChange: (ids: string[]) => void;
-  onReset?: () => void;
-  width?: string;
-  labels: Record<string, string>;
-  includeAllOption?: boolean;
-  allLabel?: string;
-  showDot?: boolean;
-  showTriggerLabel?: boolean;
-  extraContent?: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-  const { triggerRef, menuRef } = useDropdownDismiss(open, () => setOpen(false));
-
-  const optionIds = useMemo(() => options.map((option) => option.id), [options]);
-  const optionIdSet = useMemo(() => new Set(optionIds), [optionIds]);
-  const allSelected = optionIds.length > 0 && optionIds.every((id) => value.includes(id));
-  const selectedCount = value.filter((id) => optionIdSet.has(id)).length;
-  const resolvedAllLabel = allLabel ?? labels.all ?? 'All';
-  const title = allSelected
-    ? resolvedAllLabel
-    : value.length > 0
-      ? value.map((selected) => options.find((option) => option.id === selected)?.name).join(', ')
-      : label;
-  const triggerClassName = buildDropdownTriggerClass(showTriggerLabel, open, Boolean(showDot));
-  const triggerLabel = selectedCount > 0 ? `${label} (${selectedCount})` : label;
-
-  return (
-    <div className="rk-dropdown-container">
-      <div
-        ref={triggerRef}
-        className={triggerClassName}
-        onClick={() => setOpen(!open)}
-        title={title}
-      >
-        <span className="rk-icon">{icon}</span>
-        {showTriggerLabel ? <span>{triggerLabel}</span> : null}
-        {showDot ? <span className="rk-indicator-dot" /> : null}
-      </div>
-
-      {open ? (
-        <div ref={menuRef} className="rk-dropdown-menu" style={{ width }}>
-          <div className="rk-dropdown-title">{label}</div>
-          {extraContent ? <div className="rk-dropdown-extra">{extraContent}</div> : null}
-          <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-            {includeAllOption ? (
-              <div
-                key="__all__"
-                className={`rk-dropdown-item ${allSelected ? 'selected' : ''}`}
-                onClick={() => onChange(allSelected ? [] : optionIds)}
-              >
-                <div className="rk-dropdown-checkbox" />
-                <span>{resolvedAllLabel}</span>
-              </div>
-            ) : null}
-            {options.map((option) => {
-              const checked = value.includes(option.id);
-              return (
-                <div
-                  key={option.id}
-                  className={`rk-dropdown-item ${checked ? 'selected' : ''}`}
-                  onClick={() => {
-                    if (checked) onChange(value.filter((selected) => selected !== option.id));
-                    else onChange([...value, option.id]);
-                  }}
-                >
-                  <div className="rk-dropdown-checkbox" />
-                  <span>{option.name}</span>
-                </div>
-              );
-            })}
-          </div>
-          {onReset ? (
-            <div className="rk-dropdown-footer">
-              <button
-                type="button"
-                className="rk-dropdown-link"
-                onClick={() => {
-                  onReset();
-                  setOpen(false);
-                }}
-              >
-                {labels.reset}
-              </button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function SearchDropdown({
-  label,
-  title,
-  placeholder,
-  value,
-  onChange,
-  showTriggerLabel,
-}: {
-  label: string;
-  title: string;
-  placeholder: string;
-  value: string;
-  onChange: (value: string) => void;
-  showTriggerLabel?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const { triggerRef, menuRef } = useDropdownDismiss(open, () => setOpen(false));
-  const inputRef = useRef<HTMLInputElement>(null);
-  const triggerClassName = buildDropdownTriggerClass(showTriggerLabel, open, Boolean(value));
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key === 'f') {
-        const target = event.target as HTMLElement;
-        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
-        event.preventDefault();
-        setOpen(true);
-      }
-
-      if (event.key === 'Escape' && open) {
-        onChange('');
-        setOpen(false);
-        event.preventDefault();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onChange, open]);
-
-  return (
-    <div className="rk-dropdown-container">
-      <div
-        ref={triggerRef}
-        className={triggerClassName}
-        onClick={() => setOpen(!open)}
-        title={label}
-      >
-        <span className="rk-icon">filter_list</span>
-        {showTriggerLabel ? <span>{label}</span> : null}
-        {value ? <span className="rk-indicator-dot" /> : null}
-      </div>
-
-      {open ? (
-        <div ref={menuRef} className="rk-dropdown-menu" style={{ width: '300px' }}>
-          <div className="rk-dropdown-title">{title}</div>
-          <div style={{ padding: '12px' }}>
-            <div className="rk-search-box">
-              <span className="rk-icon">search</span>
-              <input
-                ref={inputRef}
-                autoFocus
-                value={value}
-                onChange={(event) => onChange(event.target.value)}
-                placeholder={placeholder}
-              />
-              {value ? (
-                <button
-                  type="button"
-                  className="rk-search-clear"
-                  aria-label={label}
-                  onClick={() => {
-                    onChange('');
-                    inputRef.current?.focus();
-                  }}
-                >
-                  <span className="rk-icon">close</span>
-                </button>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function SettingsToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
-  return (
-    <button type="button" className="rk-settings-row" onClick={onChange} role="switch" aria-checked={checked}>
-      <span>{label}</span>
-      <span className={`rk-switch ${checked ? 'rk-switch-on' : ''}`} aria-hidden="true">
-        <span className="rk-switch-thumb" />
-      </span>
-    </button>
-  );
-}
-
-function SettingsSelect({ label, value, options, onChange }: { label: string; value: string; options: { id: string; name: string }[]; onChange: (value: string) => void }) {
-  return (
-    <label className="rk-settings-select-row">
-      <span>{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
-        {options.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
-      </select>
-    </label>
-  );
-}
-
-function SettingsPopover({
-  labels,
-  showSubtasks,
-  onToggleShowSubtasks,
-  priorityLaneEnabled,
-  onTogglePriorityLane,
-  timeEntryOnClose,
-  onToggleTimeEntryOnClose,
-  fitMode,
-  onToggleFitMode,
-  fontSize,
-  onChangeFontSize,
-}: Pick<ToolbarProps, 'showSubtasks' | 'onToggleShowSubtasks' | 'priorityLaneEnabled' | 'onTogglePriorityLane' | 'timeEntryOnClose' | 'onToggleTimeEntryOnClose' | 'fitMode' | 'onToggleFitMode' | 'fontSize' | 'onChangeFontSize'> & { labels: Record<string, string> }) {
-  const [open, setOpen] = useState(false);
-  const { triggerRef, menuRef } = useDropdownDismiss(open, () => setOpen(false));
-  const title = labels.display_settings ?? 'Display settings';
-  const widthOptions = [
-    { id: 'none', name: labels.fit_none ?? 'Original size' },
-    { id: 'width', name: labels.fit_width ?? 'Fit to width' },
-  ];
-  const fontSizeOptions = FONT_SIZE_OPTIONS.map((value) => ({ id: value, name: `${value}px` }));
-
-  return (
-    <div className="rk-dropdown-container">
-      <div ref={triggerRef} className={`rk-btn rk-btn-labeled ${open ? 'rk-btn-toggle-active' : ''}`} onClick={() => setOpen(!open)} title={title} aria-expanded={open} role="button" tabIndex={0}>
-        <span className="rk-icon">tune</span>
-        <span className="rk-btn-label">{title}</span>
-      </div>
-      {open ? (
-        <div ref={menuRef} className="rk-settings-menu" role="dialog" aria-label={title}>
-          <div className="rk-settings-title">{title}</div>
-          <SettingsToggle label={labels.show_subtasks_short ?? labels.show_subtasks ?? 'Show subtasks'} checked={showSubtasks} onChange={onToggleShowSubtasks} />
-          <SettingsToggle label={labels.priority_lane_short ?? labels.show_priority_lanes ?? 'Priority lanes'} checked={priorityLaneEnabled} onChange={onTogglePriorityLane} />
-          <SettingsToggle label={labels.time_entry_short ?? 'Time entry on close'} checked={timeEntryOnClose} onChange={onToggleTimeEntryOnClose} />
-          <SettingsSelect label={labels.display_width ?? 'Display width'} value={fitMode} options={widthOptions} onChange={(value) => { if (value !== fitMode) onToggleFitMode(); }} />
-          <SettingsSelect label={labels.font_size ?? 'Font size'} value={String(fontSize)} options={fontSizeOptions} onChange={(value) => onChangeFontSize(Number(value))} />
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function SortPopover({ sortKey, onChangeSort, labels }: { sortKey: SortKey; onChangeSort: (key: SortKey) => void; labels: Record<string, string> }) {
-  const [open, setOpen] = useState(false);
-  const { triggerRef, menuRef } = useDropdownDismiss(open, () => setOpen(false));
-  const options: { key: 'due' | 'priority' | 'updated'; label: string; asc: SortKey; desc: SortKey }[] = [
-    { key: 'due', label: labels.issue_due_date ?? 'Due date', asc: 'due_asc', desc: 'due_desc' },
-    { key: 'priority', label: labels.issue_priority ?? 'Priority', asc: 'priority_asc', desc: 'priority_desc' },
-    { key: 'updated', label: labels.updated ?? 'Updated', asc: 'updated_asc', desc: 'updated_desc' },
-  ];
-  const active = options.find((option) => sortKey === option.asc || sortKey === option.desc);
-  const title = labels.sort ?? labels.sort_by ?? 'Sort';
-
-  return (
-    <div className="rk-dropdown-container">
-      <div ref={triggerRef} className={`rk-btn rk-btn-labeled ${open || active ? 'rk-btn-toggle-active' : ''}`} onClick={() => setOpen(!open)} title={title} aria-expanded={open} role="button" tabIndex={0}>
-        <span className="rk-icon">sort</span>
-        <span className="rk-btn-label">{title}</span>
-      </div>
-      {open ? (
-        <div ref={menuRef} className="rk-sort-menu" role="menu" aria-label={title}>
-          <div className="rk-settings-title">{title}</div>
-          {options.map((option) => {
-            const selected = active?.key === option.key;
-            const next = selected && sortKey === option.asc ? option.desc : option.asc;
-            return (
-              <button key={option.key} type="button" className={`rk-sort-row ${selected ? 'rk-sort-row-selected' : ''}`} onClick={() => onChangeSort(next)} role="menuitem">
-                <span>{option.label}</span>
-                {selected ? <span className="rk-sort-direction">{sortKey === option.asc ? '↑' : '↓'}</span> : null}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 export function KanbanToolbar({
   data,
   filters,
@@ -474,35 +66,17 @@ export function KanbanToolbar({
   onToggleViewableProjects,
   onOpenHelp,
 }: ToolbarProps) {
-  const assignees = data.lists.assignees ?? [];
   const labels = data.labels;
-  const projectOptions = (viewableProjectsEnabled ? data.lists.viewable_projects : data.lists.projects) ?? [];
   const updateFilters = (patch: Partial<Filters>) => onChange({ ...filters, ...patch });
-  const assigneeOptions = [
-    { id: 'unassigned', name: labels.unassigned },
-    ...assignees.filter((assignee) => assignee.id !== null).map((assignee) => ({ id: String(assignee.id), name: assignee.name })),
-  ];
-  const dueOptions = [
-    { id: 'all', name: labels.all },
-    { id: 'overdue', name: labels.overdue },
-    { id: 'thisweek', name: labels.this_week },
-    { id: '3days', name: labels.within_3_days },
-    { id: '7days', name: labels.within_1_week },
-    { id: '1day', name: labels.within_1_day },
-    { id: 'custom', name: labels.within_specified_days },
-    { id: 'none', name: labels.not_set },
-  ];
-  const priorityOptions = [
-    ...(data.lists.priorities ?? []).map((priority) => ({ id: String(priority.id), name: priority.name })),
-    { id: 'no_priority', name: labels.not_set },
-  ];
-  const priorityValue = filters.priorityFilterEnabled ? filters.priority : priorityOptions.map((option) => option.id);
-  const projectDropdownOptions = projectOptions.map((project) => ({
-    id: String(project.id),
-    name: '\xA0'.repeat(project.level * 2) + project.name,
-  }));
-  const statusDropdownOptions = data.columns.map((column) => ({ id: String(column.id), name: column.name }));
-  const trackerDropdownOptions = (data.lists.trackers ?? []).map((tracker) => ({ id: String(tracker.id), name: tracker.name }));
+  const {
+    assigneeOptions,
+    dueOptions,
+    priorityOptions,
+    priorityValue,
+    projectOptions,
+    statusOptions,
+    trackerOptions,
+  } = buildToolbarOptions(data, filters, viewableProjectsEnabled);
   const projectFilterValue = filters.projectIds.map(String);
   const statusFilterValue = filters.statusIds.map(String);
   const trackerFilterValue = filters.trackerIds.map(String);
@@ -528,7 +102,7 @@ export function KanbanToolbar({
       ) : null}
 
       <div className="rk-toolbar-group">
-        <SearchDropdown
+        <SearchPopover
           label={labels.filter}
           title={labels.filter_task}
           placeholder={labels.filter_subject}
@@ -540,7 +114,7 @@ export function KanbanToolbar({
       <div className="rk-toolbar-separator" />
 
       <div className="rk-toolbar-group">
-        <MultiSelectDropdown
+        <ToolbarMultiSelect
           label={labels.assignee}
           icon="person"
           options={assigneeOptions}
@@ -558,10 +132,10 @@ export function KanbanToolbar({
       <div className="rk-toolbar-separator" />
 
       <div className="rk-toolbar-group">
-        <MultiSelectDropdown
+        <ToolbarMultiSelect
           label={labels.project}
           icon="folder"
-          options={projectDropdownOptions}
+          options={projectOptions}
           value={projectFilterValue}
           onChange={(value) => updateFilters({ projectIds: value.map(Number) })}
           width="280px"
@@ -583,10 +157,10 @@ export function KanbanToolbar({
       <div className="rk-toolbar-separator" />
 
       <div className="rk-toolbar-group">
-        <MultiSelectDropdown
+        <ToolbarMultiSelect
           label={labels.issue_tracker}
           icon="label"
-          options={trackerDropdownOptions}
+          options={trackerOptions}
           value={trackerFilterValue}
           onChange={(value) => updateFilters({ trackerIds: value.map(Number) })}
           onReset={() => updateFilters({ trackerIds: [] })}
@@ -602,10 +176,10 @@ export function KanbanToolbar({
       <div className="rk-toolbar-separator" />
 
       <div className="rk-toolbar-group">
-        <MultiSelectDropdown
+        <ToolbarMultiSelect
           label={labels.status}
           icon="fact_check"
-          options={statusDropdownOptions}
+          options={statusOptions}
           value={statusFilterValue}
           onChange={(value) => updateFilters({ statusIds: value.map(Number) })}
           width="200px"
@@ -620,14 +194,13 @@ export function KanbanToolbar({
       <div className="rk-toolbar-separator" />
 
       <div className="rk-toolbar-group">
-        <MultiSelectDropdown
+        <ToolbarMultiSelect
           label={labels.issue_priority}
           icon="priority_high"
           options={priorityOptions}
           value={priorityValue}
           onChange={(value) => {
-            const enabled = value.length !== priorityOptions.length;
-            updateFilters({ priority: enabled ? value : [], priorityFilterEnabled: enabled });
+            updateFilters(togglePriorityFilter(value, priorityOptions.length));
           }}
           width="160px"
           labels={labels}
@@ -637,7 +210,7 @@ export function KanbanToolbar({
           showTriggerLabel
         />
 
-        <Dropdown
+        <ToolbarDropdown
           label={labels.due}
           icon="calendar_month"
           options={dueOptions}
@@ -673,7 +246,7 @@ export function KanbanToolbar({
       <div className="rk-toolbar-spacer" />
 
       <div className="rk-toolbar-group">
-        <SettingsPopover
+        <DisplaySettingsPopover
           labels={labels}
           showSubtasks={showSubtasks}
           onToggleShowSubtasks={onToggleShowSubtasks}

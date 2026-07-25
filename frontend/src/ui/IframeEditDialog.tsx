@@ -6,119 +6,42 @@ import { BulkSubtaskError, useBulkSubtaskMutation } from './hooks/useBulkSubtask
 import { BulkSubtaskEditor } from './BulkSubtaskEditor';
 import type { SubtaskCreateInput } from './bulkSubtasks';
 import { getJson } from './http';
+import {
+  buildIssueEditUrl,
+  findJournalEditForm,
+  getActiveSaveForm,
+  getRedmineFormErrorMessage,
+  hasRedmineFormError,
+  isIssueShowUrl,
+  readNumericFormValue,
+  shouldTreatEditLoadAsSuccess,
+  submitForm,
+  type SaveTarget,
+} from './iframe/redmineForm';
+import {
+  calculateDialogHeight,
+  getDialogContentHeight,
+  MAX_DIALOG_VIEWPORT_HEIGHT_RATIO,
+} from './iframe/iframeMeasurement';
+import { observeDialogChrome, observeIframeDocument } from './iframe/iframeObservers';
+import { resolveSaveLoadOutcome } from './iframe/saveFlow';
 
-const REDMINE_ERROR_SELECTORS = ['#errorExplanation', '.flash.error', '.flash-error', '#flash_error', '.conflict'] as const;
-const MAX_DIALOG_VIEWPORT_HEIGHT_RATIO = 0.9;
-const MIN_DIALOG_HEIGHT_PX = 320;
 const DEFAULT_DIALOG_WIDTH_PX = 1600;
 const COMPACT_ICON_BUTTON_SIZE = 24;
 const COMPACT_ACTION_BUTTON_HEIGHT = 28;
 const COMPACT_ACTION_BUTTON_MIN_WIDTH = 112;
 
 type DialogMode = 'form' | 'saving' | 'issue-show' | 'error';
-export type SaveTarget = 'issue' | 'new-issue' | 'journal' | 'time_entry' | null;
-
-type ObserverWindow = Window & {
-  ResizeObserver?: typeof ResizeObserver;
-  MutationObserver?: typeof MutationObserver;
-};
-
-export function hasRedmineFormError(doc: Document): boolean {
-  return REDMINE_ERROR_SELECTORS.some((selector) => doc.querySelector(selector) !== null);
-}
-
-export function getRedmineFormErrorMessage(doc: Document): string | null {
-  for (const selector of REDMINE_ERROR_SELECTORS) {
-    const element = doc.querySelector<HTMLElement>(selector);
-    const text = element?.textContent?.trim();
-    if (text) return text;
-  }
-
-  return null;
-}
-
-export function isIssueShowUrl(currentUrl: string): boolean {
-  const normalizedUrl = currentUrl.split('#')[0];
-  return /\/issues\/\d+(?:\?.*)?$/.test(normalizedUrl) && !normalizedUrl.includes('/edit');
-}
-
-export function buildIssueEditUrl(currentUrl: string, fallbackIssueId: number): string {
-  const fallbackUrl = `/issues/${fallbackIssueId}/edit`;
-
-  if (!currentUrl) {
-    return fallbackUrl;
-  }
-
-  try {
-    const isAbsoluteUrl = /^[a-z][a-z\d+\-.]*:\/\//i.test(currentUrl);
-    const parsedUrl = new URL(currentUrl, 'http://redmine-kanban.local');
-    const match = parsedUrl.pathname.match(/^\/issues\/(\d+)\/?$/);
-
-    if (!match) {
-      return fallbackUrl;
-    }
-
-    parsedUrl.pathname = `/issues/${match[1]}/edit`;
-    parsedUrl.search = '';
-    parsedUrl.hash = '';
-
-    return isAbsoluteUrl ? parsedUrl.toString() : parsedUrl.pathname;
-  } catch {
-    return fallbackUrl;
-  }
-}
-
-export function shouldTreatEditLoadAsSuccess(currentUrl: string, doc: Document): boolean {
-  return isIssueShowUrl(currentUrl) && !hasRedmineFormError(doc);
-}
-
-export function findJournalEditForm(doc: Document): HTMLFormElement | null {
-  return (
-    doc.querySelector<HTMLFormElement>('form[action*="/journals/"]') ||
-    doc.querySelector<HTMLFormElement>('form[id^="journal-"][id$="-form"]') ||
-    doc.querySelector<HTMLTextAreaElement>('textarea[name="journal[notes]"]')?.closest('form') ||
-    null
-  );
-}
-
-export function getActiveSaveForm(
-  doc: Document,
-  mode: Props['mode'],
-  currentUrl: string,
-): { form: HTMLFormElement; target: SaveTarget } | null {
-  if (mode === 'time_entry') {
-    const timeEntryForm = doc.querySelector<HTMLFormElement>('#new_time_entry');
-    return timeEntryForm ? { form: timeEntryForm, target: 'time_entry' } : null;
-  }
-
-  const journalForm = findJournalEditForm(doc);
-  if (journalForm) return { form: journalForm, target: 'journal' };
-
-  const issueForm = doc.querySelector<HTMLFormElement>('#issue-form');
-  if (issueForm) {
-    return {
-      form: issueForm,
-      target: mode === 'create' || currentUrl.includes('/issues/new') ? 'new-issue' : 'issue',
-    };
-  }
-
-  return null;
-}
-
-export function submitForm(form: HTMLFormElement): void {
-  const submitButton = form.querySelector<HTMLElement>('input[type="submit"], button[type="submit"]');
-  if (submitButton) {
-    submitButton.click();
-    return;
-  }
-
-  if (typeof form.requestSubmit === 'function') {
-    form.requestSubmit();
-    return;
-  }
-
-  form.submit();
-}
+export type { SaveTarget } from './iframe/redmineForm';
+export {
+  buildIssueEditUrl,
+  findJournalEditForm,
+  getActiveSaveForm,
+  hasRedmineFormError,
+  isIssueShowUrl,
+  shouldTreatEditLoadAsSuccess,
+  submitForm,
+} from './iframe/redmineForm';
 
 export function resolveDialogStyleVariant(
   mode: Props['mode'] = 'edit',
@@ -129,20 +52,6 @@ export function resolveDialogStyleVariant(
     return 'time-entry-compact';
   }
   return isIssueShowUrl(currentUrl || fallbackUrl) ? 'issue-view' : 'issue-compact';
-}
-
-export function getElementOuterHeight(element: HTMLElement | null): number {
-  if (!element) return 0;
-  return Math.ceil(element.getBoundingClientRect().height);
-}
-
-export function getDocumentScrollHeight(element: HTMLElement): number {
-  return Math.max(
-    element.scrollHeight,
-    element.clientHeight,
-    element.offsetHeight,
-    Math.ceil(element.getBoundingClientRect().height),
-  );
 }
 
 export function formatBulkSubtaskError(error: unknown, fallback: string): string {
@@ -158,23 +67,6 @@ export function formatBulkSubtaskError(error: unknown, fallback: string): string
     statusText,
     reason,
   ].filter(Boolean).join('：');
-}
-
-export function getDialogContentHeight(doc: Document): number {
-  const candidates = [
-    doc.querySelector<HTMLElement>('#content'),
-    doc.querySelector<HTMLElement>('#main'),
-    doc.body,
-    doc.documentElement,
-  ];
-
-  for (const element of candidates) {
-    if (!element) continue;
-    const height = getDocumentScrollHeight(element);
-    if (height > 0) return height;
-  }
-
-  return 0;
 }
 
 type Props = {
@@ -258,46 +150,21 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
       return;
     }
 
-    const maxHeightPx = Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO);
-    const chromeHeight =
-      getElementOuterHeight(headerRef.current) +
-      getElementOuterHeight(errorRef.current) +
-      getElementOuterHeight(subtaskSectionRef.current) +
-      getElementOuterHeight(footerRef.current);
-    const iframeContentHeight = getDialogContentHeight(doc);
-    const nextHeight = Math.min(
-      maxHeightPx,
-      Math.max(MIN_DIALOG_HEIGHT_PX, chromeHeight + iframeContentHeight),
-    );
-
-    setDialogHeightPx(nextHeight);
+    setDialogHeightPx(calculateDialogHeight(
+      window.innerHeight,
+      getDialogContentHeight(doc),
+      [headerRef.current, errorRef.current, subtaskSectionRef.current, footerRef.current],
+    ));
   }, []);
 
   const bindIframeSizeObservers = useCallback((doc: Document) => {
     iframeSizeObserverCleanupRef.current?.();
 
-    const cleanupCallbacks: Array<() => void> = [];
-    const iframeWindow = iframeRef.current?.contentWindow as ObserverWindow | null;
-    const resizeObserverCtor = iframeWindow?.ResizeObserver ?? window.ResizeObserver;
-    const mutationObserverCtor = iframeWindow?.MutationObserver ?? window.MutationObserver;
-
-    if (typeof resizeObserverCtor !== 'undefined') {
-      const resizeObserver = new resizeObserverCtor(() => {
-        measureDialogHeight();
-      });
-      const resizeTargets = [
-        doc.querySelector<HTMLElement>('#content'),
-        doc.querySelector<HTMLElement>('#main'),
-        doc.body,
-        doc.documentElement,
-      ].filter((element): element is HTMLElement => Boolean(element));
-
-      resizeTargets.forEach((element) => resizeObserver.observe(element));
-      cleanupCallbacks.push(() => resizeObserver.disconnect());
-    }
-
-    if (typeof mutationObserverCtor !== 'undefined' && doc.body) {
-      const mutationObserver = new mutationObserverCtor(() => {
+    iframeSizeObserverCleanupRef.current = observeIframeDocument(
+      doc,
+      iframeRef.current?.contentWindow ?? null,
+      measureDialogHeight,
+      () => {
         measureDialogHeight();
         if (isSubmittingRef.current && saveTargetRef.current === 'journal' && !hasRedmineFormError(doc) && !findJournalEditForm(doc)) {
           handleSuccessRef.current?.(issueId);
@@ -308,19 +175,8 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
             setDialogMode('form');
           }
         }
-      });
-      mutationObserver.observe(doc.body, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        characterData: true,
-      });
-      cleanupCallbacks.push(() => mutationObserver.disconnect());
-    }
-
-    iframeSizeObserverCleanupRef.current = () => {
-      cleanupCallbacks.forEach((cleanup) => cleanup());
-    };
+      },
+    );
   }, [currentUrl, issueId, measureDialogHeight, mode]);
 
   const handleSuccess = useCallback(async (targetIssueId: number) => {
@@ -401,13 +257,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
 
   const submitIssueForm = useCallback((form: HTMLFormElement, target: SaveTarget) => {
     const formData = new FormData(form);
-    const getVal = (name: string) => {
-      const value = formData.get(name);
-      if (typeof value === 'string' && value.trim()) return Number(value);
-      const field = form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement | null;
-      if (field && field.value.trim()) return Number(field.value);
-      return undefined;
-    };
+    const getVal = (name: string) => readNumericFormValue(formData, form, name);
 
     parentAttributesRef.current = {
       project_id: getVal('issue[project_id]') ?? getVal('project_id') ?? projectId,
@@ -511,36 +361,22 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
         }
 
       if (isSubmittingRef.current) {
-        const currentSaveTarget = saveTargetRef.current;
-        const hasError = hasRedmineFormError(doc);
-
-        if (hasError) {
+        const outcome = resolveSaveLoadOutcome({
+          doc,
+          currentUrl: nextCurrentUrl,
+          saveTarget: saveTargetRef.current,
+          mode,
+          fallbackIssueId: issueId,
+        });
+        if (outcome.type === 'error') {
           setDialogMode('error');
           setIsSubmitting(false);
           setSaveTarget(null);
           saveTargetRef.current = null;
-        } else if (currentSaveTarget === 'new-issue') {
-          const newIssueId = extractIssueIdFromUrl(nextCurrentUrl);
-          if (newIssueId) {
-            void handleSuccess(newIssueId);
-            return;
-          }
-        } else if (currentSaveTarget === 'issue' && shouldTreatEditLoadAsSuccess(nextCurrentUrl, doc)) {
-          const loadedIssueId = extractIssueIdFromUrl(nextCurrentUrl) ?? issueId;
-          void handleSuccess(loadedIssueId);
+        } else if (outcome.type === 'success') {
+          void handleSuccess(outcome.issueId);
           return;
-        } else if (currentSaveTarget === 'time_entry') {
-          if (!nextCurrentUrl.includes('/time_entries/new')) {
-            void handleSuccess(issueId);
-            return;
-          }
-        } else if (currentSaveTarget === 'journal' && !findJournalEditForm(doc)) {
-          void handleSuccess(issueId);
-          return;
-        } else if (
-          currentSaveTarget === 'issue' &&
-          getActiveSaveForm(doc, mode, nextCurrentUrl)?.target === 'issue'
-        ) {
+        } else if (outcome.type === 'keep-submitting') {
           // Keep the submit lock while the iframe is still showing the form
           // that initiated this save. Redmine can reload that form before
           // navigating to the saved issue, and another click must not submit it again.
@@ -574,25 +410,10 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
   }, [onClose, isSubmitting]);
 
   useEffect(() => {
-    const resizeObserver = typeof ResizeObserver !== 'undefined'
-      ? new ResizeObserver(() => {
-        measureDialogHeight();
-      })
-      : null;
-
-    const handleResize = () => {
-      measureDialogHeight();
-    };
-
-    [headerRef.current, footerRef.current, subtaskSectionRef.current, errorRef.current]
-      .filter((element): element is HTMLDivElement => Boolean(element))
-      .forEach((element) => resizeObserver?.observe(element));
-
-    window.addEventListener('resize', handleResize);
-    dialogResizeCleanupRef.current = () => {
-      window.removeEventListener('resize', handleResize);
-      resizeObserver?.disconnect();
-    };
+    dialogResizeCleanupRef.current = observeDialogChrome(
+      [headerRef.current, footerRef.current, subtaskSectionRef.current, errorRef.current],
+      measureDialogHeight,
+    );
 
     measureDialogHeight();
 
