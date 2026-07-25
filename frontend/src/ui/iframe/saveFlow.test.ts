@@ -1,0 +1,37 @@
+// @vitest-environment jsdom
+import { describe, expect, it } from 'vitest';
+import { resolveSaveLoadOutcome } from './saveFlow';
+
+const doc = (html: string) => new DOMParser().parseFromString(html, 'text/html');
+
+describe('resolveSaveLoadOutcome', () => {
+  it('keeps the submit lock while an issue edit form reloads', () => {
+    expect(resolveSaveLoadOutcome({
+      doc: doc('<form id="issue-form"></form>'),
+      currentUrl: '/issues/12/edit',
+      saveTarget: 'issue',
+      mode: 'edit',
+      fallbackIssueId: 12,
+    })).toEqual({ type: 'keep-submitting' });
+  });
+
+  it('resolves a newly created issue id from the redirect', () => {
+    expect(resolveSaveLoadOutcome({
+      doc: doc('<main>saved</main>'),
+      currentUrl: '/issues/42',
+      saveTarget: 'new-issue',
+      mode: 'create',
+      fallbackIssueId: 0,
+    })).toEqual({ type: 'success', issueId: 42 });
+  });
+
+  it('reports Redmine validation errors before redirect handling', () => {
+    expect(resolveSaveLoadOutcome({
+      doc: doc('<div id="errorExplanation">invalid</div>'),
+      currentUrl: '/issues/42',
+      saveTarget: 'issue',
+      mode: 'edit',
+      fallbackIssueId: 42,
+    })).toEqual({ type: 'error' });
+  });
+});

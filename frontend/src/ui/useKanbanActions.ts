@@ -6,6 +6,7 @@ import { isHttpError, postJson } from './http';
 import { applyAncestorIssueUpdates, updateIssueInBoard, updateSubtaskInBoard, useIssueMutation } from './useIssueMutation';
 import { findSubtask, resolveAssigneeName, resolveMutationError, resolvePriorityName, resolveSubtaskStatus, resolveBoardIssue, type IssueMutationResult, type MovePayload, type UpdatePayload } from './kanbanShared';
 import { discardBulkIdempotencyKey, getOrCreateBulkIdempotencyKey, stableSerialize, storageKeyForBulkSignature } from './bulkIdempotency';
+import { buildBulkCreateRequest, buildRestoreIssuePayload, isBulkCreateInput } from './kanbanActionPayloads';
 
 type Args = {
   baseUrl: string;
@@ -183,17 +184,8 @@ export function useKanbanActions({
 
   const createIssueMutation = useMutation({
     mutationFn: async (payload: Record<string, unknown>) => {
-      const subtasks = payload.subtasks;
-      if (Array.isArray(subtasks)) {
-        const { subtasks: _subtasks, ...parent } = payload;
-        const requestPayload = { parent, subtasks: subtasks.map((subtask) => ({
-            subject: (subtask as { subject: string }).subject,
-            tracker_id: (subtask as { trackerId: number }).trackerId,
-            project_id: parent.project_id,
-            priority_id: parent.priority_id,
-            status_id: parent.status_id,
-            assigned_to_id: parent.assigned_to_id,
-          })) };
+      if (isBulkCreateInput(payload)) {
+        const requestPayload = buildBulkCreateRequest(payload);
         const signature = stableSerialize(requestPayload);
         const running = bulkInFlightRef.current.get(signature);
         if (running) return running;
@@ -211,16 +203,8 @@ export function useKanbanActions({
       return postJson<{ ok: boolean; issue?: Issue }>(`${baseUrl}/issues`, { issue: payload }, 'POST');
     },
     onSuccess: (_result, payload) => {
-      if (Array.isArray(payload.subtasks)) {
-        const { subtasks: _subtasks, ...parent } = payload;
-        const requestPayload = { parent, subtasks: (payload.subtasks as Array<Record<string, unknown>>).map((subtask) => ({
-          subject: subtask.subject,
-          tracker_id: subtask.trackerId,
-          project_id: parent.project_id,
-          priority_id: parent.priority_id,
-          status_id: parent.status_id,
-          assigned_to_id: parent.assigned_to_id,
-        })) };
+      if (isBulkCreateInput(payload)) {
+        const requestPayload = buildBulkCreateRequest(payload);
         discardBulkIdempotencyKey(storageKeyForBulkSignature(stableSerialize(requestPayload)));
       }
     },
@@ -290,17 +274,7 @@ export function useKanbanActions({
     try {
       const response = await postJson<{ ok: boolean; issue?: Issue; message?: string }>(
         `${baseUrl}/issues`,
-        { issue: {
-          subject: pendingDeleteIssue.subject,
-          project_id: pendingDeleteIssue.project?.id,
-          description: pendingDeleteIssue.description,
-          status_id: pendingDeleteIssue.status_id,
-          assigned_to_id: pendingDeleteIssue.assigned_to_id,
-          tracker_id: pendingDeleteIssue.tracker_id,
-          priority_id: pendingDeleteIssue.priority_id,
-          start_date: pendingDeleteIssue.start_date,
-          due_date: pendingDeleteIssue.due_date,
-        } },
+        { issue: buildRestoreIssuePayload(pendingDeleteIssue) },
         'POST',
       );
 
