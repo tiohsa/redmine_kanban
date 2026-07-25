@@ -201,4 +201,6 @@ CI では以下を実行します。
 
 ## ライセンス
 
+プラグインコードは GPLv2 です。同梱する第三者フォントについては [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) を参照してください。
+
 本プロジェクトは GNU General Public License v2.0 (GPLv2) の下で公開されています。

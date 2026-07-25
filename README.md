@@ -199,4 +199,6 @@ Both browser jobs start Redmine using `.github/e2e/docker-compose.yml`, run migr
 
 ## License
 
+Plugin code: GPLv2. Bundled third-party fonts: see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+
 This project is licensed under the GNU General Public License v2.0 (GPLv2).

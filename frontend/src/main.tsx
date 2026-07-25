@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 // Import bundled fonts (Self-hosted via Fontsource)
 import '@fontsource-variable/dm-sans';
 import '@fontsource-variable/noto-sans-jp';
-import '@fontsource/material-symbols-outlined';
+import '@fontsource/material-symbols-outlined/400.css';
 
 import { App } from './ui/App';
 import './ui/styles.css';

@@ -2,9 +2,22 @@ import path from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+const fontsourceAssets = {
+  name: 'redmine-kanban-fontsource-assets',
+  enforce: 'pre' as const,
+  transform(code: string, id: string) {
+    if (!id.includes('/node_modules/@fontsource') || !id.endsWith('.css')) return;
+
+    return code.replace(/url\((['"]?)([^'"()]+)\1\)/g, (_match, quote: string, url: string) => {
+      const separator = url.includes('?') ? '&' : '?';
+      return `url(${quote}${url}${separator}no-inline${quote})`;
+    });
+  },
+};
+
 export default defineConfig(({ mode }) => ({
   base: './',
-  plugins: [react()],
+  plugins: [fontsourceAssets, react()],
   define: mode === 'test'
     ? undefined
     : {

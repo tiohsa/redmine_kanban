@@ -168,7 +168,7 @@
 
 .rk-title {
   margin: 0;
-  font-family: var(--rk-font-display);
+  font-family: var(--rk-font-main);
   font-size: 32px;
   font-weight: 600;
   color: var(--rk-text-primary);
@@ -773,7 +773,7 @@
   border-radius: 4px;
   background: var(--rk-bg-secondary);
   color: var(--rk-text-secondary);
-  font-family: var(--rk-font-ui);
+  font-family: var(--rk-font-main);
   font-weight: 500;
   border: 1px solid transparent;
 }
@@ -1127,7 +1127,7 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 
 .rk-modal-head h3 {
   margin: 0;
-  font-family: var(--rk-font-display);
+  font-family: var(--rk-font-main);
   font-size: 24px;
   font-weight: 500;
 }
@@ -1150,7 +1150,7 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 
 .rk-issue-dialog-title-wrap h3 {
   margin: 0;
-  font-family: var(--rk-font-display);
+  font-family: var(--rk-font-main);
   font-size: 18px;
   line-height: 1.5;
   font-weight: 500;
@@ -1283,7 +1283,7 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 
 .rk-form .rk-label {
   line-height: normal;
-  font-family: var(--rk-font-mid);
+  font-family: var(--rk-font-main);
   font-weight: 500;
   color: var(--rk-text-primary);
 }
@@ -1639,7 +1639,7 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 
 .rk-help-title-wrap h3 {
   margin: 0;
-  font-family: var(--rk-font-display);
+  font-family: var(--rk-font-main);
   font-size: 24px;
   font-weight: 500;
 }
