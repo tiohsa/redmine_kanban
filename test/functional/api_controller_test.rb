@@ -847,6 +847,8 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     )
 
     assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal true, json.dig('issue', 'permissions', 'can_move')
     issue.reload
     assert_equal 'After update', issue.subject
   end

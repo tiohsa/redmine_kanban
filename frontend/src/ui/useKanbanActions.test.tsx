@@ -100,6 +100,23 @@ describe('useKanbanActions delete flow', () => {
     expect(setError).not.toHaveBeenCalledWith('削除に失敗しました');
   });
 
+  it('does not issue another DELETE when the delete notice is dismissed', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const { result } = renderActions();
+
+    await act(async () => { result.current.requestDelete(1); });
+    await waitFor(() => expect(result.current.pendingDeleteIssue?.id).toBe(1));
+
+    act(() => { result.current.dismissDeleteNotice(); });
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      '/projects/demo/kanban/issues/1',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+    expect(result.current.pendingDeleteIssue).toBeNull();
+  });
+
   it('shows the API message for an HTTP delete error and clears Undo', async () => {
     const setError = vi.fn();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ message: 'ロックが競合しました' }), { status: 409 }));

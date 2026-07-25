@@ -69,6 +69,8 @@ export function App({ dataUrl }: Props) {
   const [loadingMoreIssues, setLoadingMoreIssues] = useState(false);
   const queryClient = useQueryClient();
   const boardRef = useRef<CanvasBoardHandle>(null);
+  const dismissNotice = useCallback(() => setNotice(null), []);
+  const dismissError = useCallback(() => setError(null), []);
 
   const {
     projectScope,
@@ -255,9 +257,9 @@ export function App({ dataUrl }: Props) {
         error={error}
         pendingDeleteIssue={actions.pendingDeleteIssue}
         isRestoring={actions.isRestoring}
-        onCloseNotice={() => setNotice(null)}
-        onCloseError={() => setError(null)}
-        onFinalizeDelete={(issueId) => { void actions.deleteIssue(issueId); }}
+        onCloseNotice={dismissNotice}
+        onCloseError={dismissError}
+        onDismissDeleteNotice={actions.dismissDeleteNotice}
         onUndoDelete={() => { void actions.handleUndo(); }}
       />
 

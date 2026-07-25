@@ -1,5 +1,8 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import type { BoardData, Issue } from './types';
+
+export const NOTICE_AUTO_DISMISS_MS = 5_000;
+export const DELETE_NOTICE_AUTO_DISMISS_MS = 8_000;
 
 type Props = {
   data: BoardData | null;
@@ -10,7 +13,7 @@ type Props = {
   isRestoring: boolean;
   onCloseNotice: () => void;
   onCloseError: () => void;
-  onFinalizeDelete: (issueId: number) => void;
+  onDismissDeleteNotice: () => void;
   onUndoDelete: () => void;
 };
 
@@ -23,10 +26,25 @@ export function KanbanPopupHost({
   isRestoring,
   onCloseNotice,
   onCloseError,
-  onFinalizeDelete,
+  onDismissDeleteNotice,
   onUndoDelete,
 }: Props) {
   const labels = data?.labels;
+
+  useEffect(() => {
+    if (!notice && !pendingDeleteIssue) return undefined;
+    if (pendingDeleteIssue && isRestoring) return undefined;
+
+    const timeout = window.setTimeout(() => {
+      if (pendingDeleteIssue) {
+        onDismissDeleteNotice();
+      } else {
+        onCloseNotice();
+      }
+    }, pendingDeleteIssue ? DELETE_NOTICE_AUTO_DISMISS_MS : NOTICE_AUTO_DISMISS_MS);
+
+    return () => window.clearTimeout(timeout);
+  }, [isRestoring, notice, onCloseNotice, onDismissDeleteNotice, pendingDeleteIssue]);
 
   return (
     <div className="rk-popup-host" aria-live="polite" aria-relevant="additions text">
@@ -49,7 +67,7 @@ export function KanbanPopupHost({
               aria-label={labels?.close}
               onClick={() => {
                 if (pendingDeleteIssue) {
-                  onFinalizeDelete(pendingDeleteIssue.id);
+                  onDismissDeleteNotice();
                 } else {
                   onCloseNotice();
                 }
