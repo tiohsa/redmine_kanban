@@ -60,12 +60,13 @@ export function KanbanPopupHost({
           </div>
           <div className="rk-popup-body">
             {pendingDeleteIssue ? (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                <span>{(labels?.deleted_with_undo ?? '').replace('%{id}', String(pendingDeleteIssue.id))}</span>
+              <div className="rk-popup-delete-notice">
+                <span className="rk-popup-delete-message">
+                  {(labels?.deleted_with_undo ?? '').replace('%{id}', String(pendingDeleteIssue.id))}
+                </span>
                 <button
                   type="button"
-                  className="rk-btn rk-btn-primary"
-                  style={{ height: '24px', fontSize: '11px', padding: '0 8px' }}
+                  className="rk-btn rk-btn-primary rk-popup-undo-btn"
                   onClick={onUndoDelete}
                   disabled={isRestoring}
                 >
