@@ -4,8 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "vite build",
+    "build": "npm run clean:fonts && vite build",
     "build:watch": "vite build --watch",
+    "clean:fonts": "node scripts/clean-font-assets.mjs",
     "dev": "vite",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit",

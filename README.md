@@ -192,11 +192,13 @@ The CI workflow runs:
 - frontend `lint`
 - frontend `typecheck`
 - frontend unit tests with Vitest
-- Playwright E2E on Redmine 6.1
+- Playwright E2E on Redmine 7.0 and Redmine 6.1
 - Playwright compatibility smoke test on Redmine 6.0
 
 Both browser jobs start Redmine using `.github/e2e/docker-compose.yml`, run migrations, load default data, seed `ecookbook` via `e2e/setup_redmine.rb`, and upload Playwright reports on completion.
 
 ## License
+
+Plugin code: GPLv2. Bundled third-party fonts: see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 This project is licensed under the GNU General Public License v2.0 (GPLv2).
