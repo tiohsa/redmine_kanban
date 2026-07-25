@@ -12,11 +12,16 @@ type Args = {
   baseUrl: string;
   boardQueryKey: QueryKey;
   data: BoardData | null;
-  refresh: () => Promise<void>;
+  refresh: (options?: { suppressError?: boolean }) => Promise<void>;
   timeEntryOnClose: boolean;
   setNotice: (value: string | null) => void;
   setError: (value: string | null) => void;
   setIframeTimeEntryUrl: (value: string | null) => void;
+};
+
+type DeleteResponse = {
+  ok?: boolean;
+  message?: string;
 };
 
 export function useKanbanActions({
@@ -215,13 +220,29 @@ export function useKanbanActions({
     try {
       const resolved = data ? resolveBoardIssue(data, issueId) : null;
       if (resolved?.lockVersion === null || resolved?.lockVersion === undefined) throw new Error('lock_version is required');
-      await postJson(`${baseUrl}/issues/${issueId}`, { issue: { lock_version: resolved.lockVersion } }, 'DELETE');
-      await refresh();
+      const response = await postJson<DeleteResponse>(
+        `${baseUrl}/issues/${issueId}`,
+        { issue: { lock_version: resolved.lockVersion } },
+        'DELETE',
+      );
+      if (response.ok === false) {
+        setError(response.message || (data ? data.labels.delete_failed : ''));
+        setPendingDeleteIssue(null);
+        return;
+      }
     } catch (error: unknown) {
       const payload = isHttpError<{ message?: string }>(error) ? error.payload : null;
       setError(payload?.message || (data ? data.labels.delete_failed : ''));
       setPendingDeleteIssue(null);
-      await refresh();
+      return;
+    }
+
+    // Deletion succeeded. A failed refetch is a board-loading problem, not a deletion failure;
+    // keep the deleted issue available so the user can still use Undo.
+    try {
+      await refresh({ suppressError: true });
+    } catch {
+      // The board query owns the refetch error state and its user-facing message.
     }
   }, [baseUrl, data, refresh, setError]);
 

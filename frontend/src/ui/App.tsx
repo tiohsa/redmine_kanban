@@ -131,13 +131,22 @@ export function App({ dataUrl }: Props) {
       });
   }, [baseUrl, boardQueryKey, data?.labels.load_more_failed, filters.projectIds, filters.statusIds, hiddenStatusIds, pagination, queryClient]);
 
-  useEffect(() => {
-    if (boardQuery.error) {
-      setError(data?.labels.load_failed ?? null);
-    }
-  }, [boardQuery.error, data?.labels.load_failed]);
+  const suppressNextBoardErrorRef = useRef(false);
 
-  const refresh = useCallback(async () => {
+  useEffect(() => {
+    if (!boardQuery.error) {
+      if (boardQuery.data) suppressNextBoardErrorRef.current = false;
+      return;
+    }
+    if (suppressNextBoardErrorRef.current) {
+      suppressNextBoardErrorRef.current = false;
+      return;
+    }
+    setError(data?.labels.load_failed ?? null);
+  }, [boardQuery.data, boardQuery.error, data?.labels.load_failed]);
+
+  const refresh = useCallback(async (options: { suppressError?: boolean } = {}) => {
+    if (options.suppressError) suppressNextBoardErrorRef.current = true;
     await queryClient.invalidateQueries({ queryKey: boardQueryKey });
   }, [boardQueryKey, queryClient]);
 
