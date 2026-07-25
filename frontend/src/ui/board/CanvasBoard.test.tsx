@@ -320,6 +320,102 @@ describe('CanvasBoard cursor lifecycle', () => {
     expect(context.lineTo).toHaveBeenCalledWith(subtaskX + 'Closed child'.length * 7, subtaskY + 12 * 0.58);
   });
 
+  it('draws an external project on its own metadata row', async () => {
+    const issue = makeIssue(7, {
+      assigned_to_name: '担当者',
+      due_date: '2026-07-30',
+      project: { id: 2, name: '別プロジェクト' },
+    });
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const context = createCanvasContextWithSpies();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+
+    render(
+      <CanvasBoard
+        data={data}
+        state={state}
+        canMove
+        canCreate
+        onCommand={vi.fn()}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onView={vi.fn()}
+        onDelete={vi.fn()}
+        onEditClick={vi.fn()}
+        labels={data.labels}
+      />,
+    );
+
+    await waitFor(() => expect(context.fillText).toHaveBeenCalledWith('別プロジェクト', expect.any(Number), expect.any(Number)));
+
+    const assigneeCall = context.fillText.mock.calls.find(([text]) => text === '担当者');
+    const projectCall = context.fillText.mock.calls.find(([text]) => text === '別プロジェクト');
+    const dueDateCall = context.fillText.mock.calls.find(([text]) => text === '2026-07-30');
+    expect(assigneeCall).toBeTruthy();
+    expect(projectCall).toBeTruthy();
+    expect(dueDateCall).toBeTruthy();
+    expect((projectCall as [string, number, number])[2]).toBeGreaterThan((assigneeCall as [string, number, number])[2]);
+    expect((dueDateCall as [string, number, number])[2]).toBeGreaterThan((projectCall as [string, number, number])[2]);
+  });
+
+  it('keeps the due-date row compact when the project is current or absent', () => {
+    const metrics = getMetrics(14);
+    const currentProjectIssue = makeIssue(8, { project: { id: 1, name: 'Current' } });
+    const noProjectIssue = makeIssue(9);
+    const currentHeight = measureCardHeightCached(currentProjectIssue, metrics, undefined, undefined, 14, 260, 1);
+    const noProjectHeight = measureCardHeightCached(noProjectIssue, metrics, undefined, undefined, 14, 260, 1);
+    const externalHeight = measureCardHeightCached(
+      makeIssue(10, { project: { id: 2, name: 'External' } }),
+      metrics,
+      undefined,
+      undefined,
+      14,
+      260,
+      1,
+    );
+
+    expect(currentHeight).toBe(noProjectHeight);
+    expect(externalHeight).toBeGreaterThan(currentHeight);
+  });
+
+  it('truncates long assignee and project metadata within the card width', async () => {
+    const longAssignee = '担当者名'.repeat(40);
+    const longProject = '非常に長いプロジェクト名称'.repeat(20);
+    const issue = makeIssue(11, {
+      assigned_to_name: longAssignee,
+      project: { id: 2, name: longProject },
+    });
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const context = createCanvasContextWithSpies();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+
+    render(
+      <CanvasBoard
+        data={data}
+        state={state}
+        canMove
+        canCreate
+        onCommand={vi.fn()}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onView={vi.fn()}
+        onDelete={vi.fn()}
+        onEditClick={vi.fn()}
+        labels={data.labels}
+      />,
+    );
+
+    await waitFor(() => expect(context.fillText.mock.calls.some(([text]) => String(text).startsWith('非常に長いプロジェクト名称'))).toBe(true));
+    const assigneeText = context.fillText.mock.calls.find(([text]) => String(text).startsWith('担当者名'))?.[0] as string;
+    const projectText = context.fillText.mock.calls.find(([text]) => String(text).startsWith('非常に長いプロジェクト名称'))?.[0] as string;
+    expect(assigneeText).not.toBe(longAssignee);
+    expect(projectText).not.toBe(longProject);
+    expect(context.measureText(assigneeText).width).toBeLessThanOrEqual(80);
+    expect(context.measureText(projectText).width).toBeLessThanOrEqual(195);
+  });
+
   it('uses a 2x backing store at DPR 2 while keeping CSS size unchanged', async () => {
     setDevicePixelRatio(2);
     const issue = makeIssue(3);

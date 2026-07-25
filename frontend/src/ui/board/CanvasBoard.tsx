@@ -819,9 +819,14 @@ function measureCardHeight(
   metrics: ReturnType<typeof getMetrics>,
   ctx?: CanvasRenderingContext2D | null,
   fontSize?: number,
-  cardWidth?: number
+  cardWidth?: number,
+  currentProjectId?: number
 ): number {
   let h = metrics.cardBaseHeight;
+  const metaFontSize = Math.max(10, (fontSize ?? 13) - 2);
+  if (issue.project && issue.project.id !== currentProjectId) {
+    h += metaFontSize + 7;
+  }
 
   if (ctx && fontSize && cardWidth) {
     ctx.font = `400 ${fontSize}px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif`;
@@ -850,8 +855,8 @@ export function makeSubtaskSignature(issue: Issue) {
   return `${subtaskRows.length}:${lastSubtaskId}:${closedCount}`;
 }
 
-export function makeCardHeightCacheKey(issue: Issue, fontSize: number | undefined, columnWidth: number | undefined) {
-  return [issue.id, issue.subject, makeSubtaskSignature(issue), fontSize ?? 'default', columnWidth ?? 'default'].join('|');
+export function makeCardHeightCacheKey(issue: Issue, fontSize: number | undefined, columnWidth: number | undefined, currentProjectId?: number) {
+  return [issue.id, issue.subject, makeSubtaskSignature(issue), fontSize ?? 'default', columnWidth ?? 'default', currentProjectId ?? 'default'].join('|');
 }
 
 export function measureCardHeightCached(
@@ -860,15 +865,16 @@ export function measureCardHeightCached(
   cache: CardHeightCache | undefined,
   ctx?: CanvasRenderingContext2D | null,
   fontSize?: number,
-  cardWidth?: number
+  cardWidth?: number,
+  currentProjectId?: number
 ) {
-  if (!cache) return measureCardHeight(issue, metrics, ctx, fontSize, cardWidth);
+  if (!cache) return measureCardHeight(issue, metrics, ctx, fontSize, cardWidth, currentProjectId);
 
-  const key = makeCardHeightCacheKey(issue, fontSize, cardWidth);
+  const key = makeCardHeightCacheKey(issue, fontSize, cardWidth, currentProjectId);
   const cached = cache.get(key);
   if (cached !== undefined) return cached;
 
-  const height = measureCardHeight(issue, metrics, ctx, fontSize, cardWidth);
+  const height = measureCardHeight(issue, metrics, ctx, fontSize, cardWidth, currentProjectId);
   cache.set(key, height);
   return height;
 }
@@ -894,7 +900,7 @@ function computeLaneHeight(
       for (const cardId of cardIds) {
         const issue = state.cardsById.get(cardId);
         if (issue) {
-          height += measureCardHeightCached(issue, metrics, cardHeightCache, measureCtx, fontSize, metrics.columnWidth);
+          height += measureCardHeightCached(issue, metrics, cardHeightCache, measureCtx, fontSize, metrics.columnWidth, data.meta.project_id);
         }
       }
       height += (cardIds.length - 1) * metrics.cardGap;
@@ -1143,7 +1149,7 @@ function drawCells(
         const issue = state.cardsById.get(cardId);
         if (!issue) continue;
 
-          const cardH = measureCardHeightCached(issue, metrics, cardHeightCache, ctx, fontSize, layout.columnWidth);
+          const cardH = measureCardHeightCached(issue, metrics, cardHeightCache, ctx, fontSize, layout.columnWidth, data.meta.project_id);
           const cardRect = {
             x: cellRect.x + metrics.cellPadding,
             y: currentY,
@@ -1290,20 +1296,27 @@ function drawCard(
   if (issue.assigned_to_name) {
     drawIcon(ctx, 'person', currentX, row1Y, 14, theme.textSecondary);
     currentX += 16;
-    const nameText = truncateText(ctx, issue.assigned_to_name, 80);
+    const nameText = truncateText(ctx, issue.assigned_to_name, Math.min(80, Math.max(0, x + w - 12 - currentX)));
     ctx.fillText(nameText, currentX, row1Y);
     currentX += ctx.measureText(nameText).width + 12;
   }
 
-  if (issue.project && issue.project.id !== data.meta.project_id) {
-    drawIcon(ctx, 'folder', currentX, row1Y, 14, theme.textSecondary);
+  const hasExternalProject = !!issue.project && issue.project.id !== data.meta.project_id;
+  const row2Y = row1Y + metaFontSize + 7;
+  let metadataY = row2Y;
+
+  if (hasExternalProject && issue.project) {
+    currentX = contentX;
+    drawIcon(ctx, 'folder', currentX, row2Y, 14, theme.textSecondary);
     currentX += 16;
-    const projectName = truncateText(ctx, issue.project.name, 120);
-    ctx.fillText(projectName, currentX, row1Y);
+    const projectMaxWidth = Math.max(0, x + w - 12 - currentX);
+    const projectName = truncateText(ctx, issue.project.name, projectMaxWidth);
+    ctx.fillText(projectName, currentX, row2Y);
+    metadataY = row2Y + metaFontSize + 7;
   }
 
-  // 6. Metadata Row 2: Due Date | Priority | Aging
-  const row2Y = row1Y + metaFontSize + 7;
+  // 6. Metadata Row 2/3: Due Date | Priority | Aging
+  const dueDateRowY = metadataY;
   currentX = contentX;
   const limitX = issue.done_ratio !== undefined ? x + w - 32 : x + w - 12;
 
@@ -1329,12 +1342,12 @@ function drawCard(
     fg = colorEntry.fg;
 
     if (issue.priority_id) { // Always draw if priority_id exists (even normal) to allow editing
-      const width = drawBadge(ctx, issue.priority_name || '', currentX, row2Y - 1, bg, fg, metaFontSize);
+      const width = drawBadge(ctx, issue.priority_name || '', currentX, dueDateRowY - 1, bg, fg, metaFontSize);
 
       if (rectMap) {
         rectMap.priorityBadges.set(issue.id, {
           x: currentX,
-          y: row2Y - 1,
+          y: dueDateRowY - 1,
           width: width,
           height: metaFontSize + (Math.max(2, Math.round(metaFontSize * 0.2)) * 2) + 4 // approximated height from drawBadge
         });
@@ -1399,12 +1412,12 @@ function drawCard(
     }
 
     if (dueState !== 'normal') {
-      const width = drawBadge(ctx, badgeText, currentX, row2Y - 1, bg, fg, metaFontSize, badgeIcon);
+      const width = drawBadge(ctx, badgeText, currentX, dueDateRowY - 1, bg, fg, metaFontSize, badgeIcon);
 
       if (rectMap) {
         rectMap.dateBadges.set(issue.id, {
           x: currentX,
-          y: row2Y - 1,
+          y: dueDateRowY - 1,
           width: width,
           height: metaFontSize + (Math.max(2, Math.round(metaFontSize * 0.2)) * 2) + 4
         });
@@ -1413,12 +1426,12 @@ function drawCard(
       currentX += width + 8;
     } else {
       // Normal state: White badge with border
-      const width = drawBadge(ctx, badgeText, currentX, row2Y - 1, theme.surface, theme.textSecondary, metaFontSize, badgeIcon, theme.surface);
+      const width = drawBadge(ctx, badgeText, currentX, dueDateRowY - 1, theme.surface, theme.textSecondary, metaFontSize, badgeIcon, theme.surface);
 
       if (rectMap) {
         rectMap.dateBadges.set(issue.id, {
           x: currentX,
-          y: row2Y - 1,
+          y: dueDateRowY - 1,
           width: width,
           height: metaFontSize + (Math.max(2, Math.round(metaFontSize * 0.2)) * 2) + 4
         });
@@ -1438,10 +1451,10 @@ function drawCard(
 
     const requiredAgeWidth = 16 + ageTextWidth;
     if (currentX + requiredAgeWidth <= limitX) {
-      drawIcon(ctx, 'history', currentX, row2Y + 4, 14, ageColor);
+      drawIcon(ctx, 'history', currentX, dueDateRowY + 4, 14, ageColor);
       currentX += 16;
       ctx.fillStyle = ageColor;
-      ctx.fillText(ageText, currentX, row2Y + 4);
+      ctx.fillText(ageText, currentX, dueDateRowY + 4);
     }
   }
 
@@ -1471,7 +1484,7 @@ function drawCard(
     // Better: Right aligned on Row 2 (Metadata).
     const donutRightX = x + w - 16; // Aligned with the center of the edit button above
     const badgeHeight = metaFontSize + (Math.max(2, Math.round(metaFontSize * 0.2)) * 2) + 4;
-    const donutCenterY = row2Y - 1 + badgeHeight / 2;
+    const donutCenterY = dueDateRowY - 1 + badgeHeight / 2;
     drawProgressDonut(ctx, donutRightX, donutCenterY, donutRadius, issue.done_ratio, theme);
 
     if (rectMap) {
@@ -1491,7 +1504,7 @@ function drawCard(
     const subtaskFontSize = Math.max(10, fontSize - 1);
     // Align the divider to the actual metadata rows so larger fonts / wrapped subjects
     // do not cause the separator to overlap assignee or priority text.
-    const subtaskAreaY = row2Y + metaFontSize + 12;
+    const subtaskAreaY = dueDateRowY + metaFontSize + 12;
     const subtaskStartY = subtaskAreaY + 16;
 
     // Register subtask area for hit exclusion (from separator line to bottom of card)
@@ -1801,7 +1814,7 @@ function drawDragOverlay(
     x: drag.current.x - offsetX,
     y: drag.current.y - offsetY,
     width: layout.columnWidth - metrics.cellPadding * 2,
-    height: measureCardHeight(issue, metrics),
+    height: measureCardHeight(issue, metrics, undefined, undefined, undefined, data.meta.project_id),
   };
   ctx.save();
   ctx.globalAlpha = 0.9;
