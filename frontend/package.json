@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "pnpm run clean:fonts && vite build",
+    "build": "npm run clean:fonts && vite build",
     "build:watch": "vite build --watch",
     "clean:fonts": "node scripts/clean-font-assets.mjs",
     "dev": "vite",
