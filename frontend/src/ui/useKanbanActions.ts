@@ -12,11 +12,16 @@ type Args = {
   baseUrl: string;
   boardQueryKey: QueryKey;
   data: BoardData | null;
-  refresh: () => Promise<void>;
+  refresh: (options?: { suppressError?: boolean }) => Promise<void>;
   timeEntryOnClose: boolean;
   setNotice: (value: string | null) => void;
   setError: (value: string | null) => void;
   setIframeTimeEntryUrl: (value: string | null) => void;
+};
+
+type DeleteResponse = {
+  ok?: boolean;
+  message?: string;
 };
 
 export function useKanbanActions({
@@ -211,17 +216,33 @@ export function useKanbanActions({
     onSettled: () => { void refresh(); },
   });
 
-  const deleteIssue = useCallback(async (issueId: number) => {
+  const deleteIssue = useCallback(async (issueId: number, undoIssue: Issue | null = null) => {
+    setPendingDeleteIssue(null);
     try {
       const resolved = data ? resolveBoardIssue(data, issueId) : null;
       if (resolved?.lockVersion === null || resolved?.lockVersion === undefined) throw new Error('lock_version is required');
-      await postJson(`${baseUrl}/issues/${issueId}`, { issue: { lock_version: resolved.lockVersion } }, 'DELETE');
-      await refresh();
+      const response = await postJson<DeleteResponse>(
+        `${baseUrl}/issues/${issueId}`,
+        { issue: { lock_version: resolved.lockVersion } },
+        'DELETE',
+      );
+      if (response.ok === false) {
+        setError(response.message || (data ? data.labels.delete_failed : ''));
+        return;
+      }
     } catch (error: unknown) {
       const payload = isHttpError<{ message?: string }>(error) ? error.payload : null;
       setError(payload?.message || (data ? data.labels.delete_failed : ''));
-      setPendingDeleteIssue(null);
-      await refresh();
+      return;
+    }
+
+    setPendingDeleteIssue(undoIssue);
+    // Deletion succeeded. A failed refetch is a board-loading problem, not a deletion failure;
+    // keep the deleted issue available so the user can still use Undo.
+    try {
+      await refresh({ suppressError: true });
+    } catch {
+      // The board query owns the refetch error state and its user-facing message.
     }
   }, [baseUrl, data, refresh, setError]);
 
@@ -262,10 +283,13 @@ export function useKanbanActions({
   const requestDelete = useCallback((issueId: number, source: 'card' | 'subtask' = 'card') => {
     const issue = data?.issues.find((it) => it.id === issueId);
     if (!issue) return;
-    setPendingDeleteIssue(source === 'card' ? issue : null);
     setNotice(null);
-    void deleteIssue(issueId);
+    void deleteIssue(issueId, source === 'card' ? issue : null);
   }, [data, deleteIssue, setNotice]);
+
+  const dismissDeleteNotice = useCallback(() => {
+    setPendingDeleteIssue(null);
+  }, []);
 
   const handleUndo = useCallback(async () => {
     if (!pendingDeleteIssue || isRestoring) return;
@@ -300,6 +324,7 @@ export function useKanbanActions({
     moveIssue,
     toggleSubtask,
     requestDelete,
+    dismissDeleteNotice,
     handleUndo,
     deleteIssue,
     updateIssueMutation,
