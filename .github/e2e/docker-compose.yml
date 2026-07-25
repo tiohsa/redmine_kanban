@@ -13,7 +13,7 @@ services:
       retries: 20
 
   redmine:
-    image: ${REDMINE_IMAGE:-redmine:6.1}
+    image: ${REDMINE_IMAGE:-redmine:7.0}
     depends_on:
       db:
         condition: service_healthy

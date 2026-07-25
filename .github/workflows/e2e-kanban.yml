@@ -126,13 +126,13 @@ jobs:
       - name: Run frontend unit tests
         run: npm --prefix frontend run test -- --run
 
-  ruby-test:
-    name: Ruby unit and API tests
+  ruby-test-redmine-70:
+    name: Redmine 7.0 Ruby unit and API tests
     needs: init
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      REDMINE_IMAGE: redmine:6.1
+      REDMINE_IMAGE: redmine:7.0
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -194,8 +194,8 @@ jobs:
         if: always()
         run: docker compose -f .github/e2e/docker-compose.yml down -v
 
-  e2e-redmine-61:
-    name: Redmine 6.1 Full E2E
+  e2e-full:
+    name: Redmine ${{ matrix.redmine_version }} Full E2E
     needs:
       - build
       - lint
@@ -203,8 +203,12 @@ jobs:
       - test
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        redmine_version: ['7.0', '6.1']
     env:
-      REDMINE_IMAGE: redmine:6.1
+      REDMINE_IMAGE: redmine:${{ matrix.redmine_version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -273,7 +277,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-redmine-${{ matrix.redmine_version }}
           path: e2e/playwright-report
           if-no-files-found: ignore
 

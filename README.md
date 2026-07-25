@@ -192,7 +192,7 @@ The CI workflow runs:
 - frontend `lint`
 - frontend `typecheck`
 - frontend unit tests with Vitest
-- Playwright E2E on Redmine 6.1
+- Playwright E2E on Redmine 7.0 and Redmine 6.1
 - Playwright compatibility smoke test on Redmine 6.0
 
 Both browser jobs start Redmine using `.github/e2e/docker-compose.yml`, run migrations, load default data, seed `ecookbook` via `e2e/setup_redmine.rb`, and upload Playwright reports on completion.

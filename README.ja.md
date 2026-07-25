@@ -194,7 +194,7 @@ CI では以下を実行します。
 - frontend の `lint`
 - frontend の `typecheck`
 - Vitest による frontend unit test
-- Redmine 6.1 上での Playwright E2E
+- Redmine 7.0 および Redmine 6.1 上での Playwright E2E
 - Redmine 6.0 上での Playwright 互換 smoke test
 
 ブラウザ系 job はどちらも `.github/e2e/docker-compose.yml` で Redmine を起動し、migration、初期データ投入、`e2e/setup_redmine.rb` による `ecookbook` シード、Playwright レポートの upload まで実行します。
