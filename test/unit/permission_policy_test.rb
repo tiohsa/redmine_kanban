@@ -29,15 +29,15 @@ class RedmineKanbanPermissionPolicyTest < Minitest::Test
     assert_policy_allows(:can_create_issue?, :manage_redmine_kanban, :add_issues)
   end
 
-  def test_update_requires_view_kanban_and_edit_issues
-    assert_policy_allows(:can_update_issue?, :view_redmine_kanban, :edit_issues)
+  def test_update_requires_manage_kanban_and_edit_issues
+    assert_policy_allows(:can_update_issue?, :manage_redmine_kanban, :edit_issues)
   end
 
-  def test_update_uses_board_view_permission_and_issue_edit_permission
+  def test_update_uses_board_manage_permission_and_issue_edit_permission
     board_project = Object.new
     issue_project = Object.new
     user = user_with_permissions(
-      [:view_redmine_kanban, board_project],
+      [:manage_redmine_kanban, board_project],
       [:edit_issues, issue_project]
     )
 
@@ -47,15 +47,15 @@ class RedmineKanbanPermissionPolicyTest < Minitest::Test
     refute policy.can_update_issue?(issue_project, issue_project)
   end
 
-  def test_delete_requires_view_kanban_and_delete_issues
-    assert_policy_allows(:can_delete_issue?, :view_redmine_kanban, :delete_issues)
+  def test_delete_requires_manage_kanban_and_delete_issues
+    assert_policy_allows(:can_delete_issue?, :manage_redmine_kanban, :delete_issues)
   end
 
-  def test_delete_uses_board_view_permission_and_issue_delete_permission
+  def test_delete_uses_board_manage_permission_and_issue_delete_permission
     board_project = Object.new
     issue_project = Object.new
     user = user_with_permissions(
-      [:view_redmine_kanban, board_project],
+      [:manage_redmine_kanban, board_project],
       [:delete_issues, issue_project]
     )
 

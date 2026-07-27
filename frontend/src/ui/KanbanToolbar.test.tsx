@@ -16,8 +16,6 @@ function makeData(): BoardData {
       can_create: true,
       can_delete: true,
       lane_type: 'assignee',
-      wip_limit_mode: 'column',
-      wip_exceed_behavior: 'block',
       aging_warn_days: 3,
       aging_danger_days: 7,
       aging_exclude_closed: true,
@@ -105,8 +103,6 @@ describe('KanbanToolbar', () => {
         onScrollToTop={vi.fn()}
         timeEntryOnClose={false}
         onToggleTimeEntryOnClose={vi.fn()}
-        priorityLaneEnabled={false}
-        onTogglePriorityLane={vi.fn()}
         viewableProjectsEnabled={false}
         onToggleViewableProjects={vi.fn()}
         onOpenHelp={vi.fn()}
@@ -198,7 +194,7 @@ describe('KanbanToolbar', () => {
     fireEvent.click(settingsTriggers[settingsTriggers.length - 1]);
     expect(screen.getByRole('dialog', { name: 'Display settings' })).toBeTruthy();
     expect(screen.getByRole('switch', { name: 'Show subtasks' })).toBeTruthy();
-    expect(container.querySelectorAll('.rk-settings-select-row')).toHaveLength(2);
+    expect(container.querySelectorAll('.rk-settings-select-row')).toHaveLength(5);
   });
 
   it('places the viewable-project switch in the project filter popup', () => {

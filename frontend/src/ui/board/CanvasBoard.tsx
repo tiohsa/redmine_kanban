@@ -950,11 +950,8 @@ function drawHeaders(
     const x = layout.gridStartX + index * layout.columnWidth;
 
     ctx.font = "500 13px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif";
-    const limit = column.wip_limit ?? null;
     const count = column.count ?? 0;
-    const over = limit && count > limit;
-
-    const badgeText = (limit || count > 0) ? (limit ? `${count} / ${limit}` : String(count)) : '';
+    const badgeText = count > 0 ? String(count) : '';
     ctx.font = "500 11px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif";
     const badgeWidth = badgeText ? ctx.measureText(badgeText).width + 10 : 0;
     const visIconWidth = 24;
@@ -972,16 +969,14 @@ function drawHeaders(
       const badgeX = x + layout.columnWidth - badgeWidth - 12;
       const badgeY = (layout.headerHeight - badgeHeight) / 2;
 
-      ctx.fillStyle = over ? theme.dangerBg : '#e2e8f0';
-      ctx.strokeStyle = over ? theme.danger : 'transparent';
-      if (over) ctx.lineWidth = 1;
+      ctx.fillStyle = '#e2e8f0';
+      ctx.strokeStyle = 'transparent';
 
       roundedRect(ctx, badgeX, badgeY, badgeWidth, badgeHeight, 4);
       ctx.fill();
-      if (over) ctx.stroke();
 
       ctx.font = "500 11px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif";
-      ctx.fillStyle = over ? theme.danger : theme.textSecondary;
+      ctx.fillStyle = theme.textSecondary;
       ctx.textAlign = 'center';
       ctx.fillText(badgeText, badgeX + badgeWidth / 2, badgeY + badgeHeight / 2);
       ctx.textAlign = 'left';

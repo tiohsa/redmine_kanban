@@ -2,9 +2,6 @@ module RedmineKanban
   class KanbanController < ApplicationController
     menu_item :redmine_kanban
 
-    def show
-      @settings = Setting.plugin_redmine_kanban || {}
-    end
+    def show; end
   end
 end
-

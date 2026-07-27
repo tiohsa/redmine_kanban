@@ -66,6 +66,13 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_response :success
   end
 
+  def test_issue_limit_is_clamped_to_the_server_maximum
+    get :index, params: { project_id: @project.identifier, issue_limit: 100_000 }
+
+    assert_response :success
+    assert_equal RedmineKanban::BoardData::MAX_ISSUE_LIMIT, JSON.parse(@response.body).dig('meta', 'pagination', 'issue_limit')
+  end
+
   def test_trackers_is_available_with_view_permission
     get :trackers, params: { project_id: @project.identifier }
 

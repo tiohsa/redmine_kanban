@@ -90,8 +90,14 @@ export function App({ dataUrl }: Props) {
     setFontSize,
     timeEntryOnClose,
     setTimeEntryOnClose,
-    priorityLaneEnabled,
-    setPriorityLaneEnabled,
+    laneType,
+    setLaneType,
+    agingWarnDays,
+    setAgingWarnDays,
+    agingDangerDays,
+    setAgingDangerDays,
+    agingExcludeClosed,
+    setAgingExcludeClosed,
     viewableProjectsEnabled,
     setViewableProjectsEnabled,
   } = useKanbanPreferences(dataUrl);
@@ -154,8 +160,8 @@ export function App({ dataUrl }: Props) {
 
   const displayData = useMemo(() => {
     if (!data) return null;
-    return buildDisplayData(data, priorityLaneEnabled);
-  }, [data, priorityLaneEnabled]);
+    return buildDisplayData(data, laneType, { warnDays: agingWarnDays, dangerDays: agingDangerDays, excludeClosed: agingExcludeClosed });
+  }, [agingDangerDays, agingExcludeClosed, agingWarnDays, data, laneType]);
 
   const projectOptions = useMemo(
     () => (viewableProjectsEnabled ? data?.lists.viewable_projects : data?.lists.projects) ?? [],
@@ -290,8 +296,14 @@ export function App({ dataUrl }: Props) {
           onScrollToTop={() => boardRef.current?.scrollToTop()}
           timeEntryOnClose={timeEntryOnClose}
           onToggleTimeEntryOnClose={() => setTimeEntryOnClose((value) => !value)}
-          priorityLaneEnabled={priorityLaneEnabled}
-          onTogglePriorityLane={() => setPriorityLaneEnabled((value) => !value)}
+          laneType={laneType}
+          onChangeLaneType={setLaneType}
+          agingWarnDays={agingWarnDays}
+          onChangeAgingWarnDays={setAgingWarnDays}
+          agingDangerDays={agingDangerDays}
+          onChangeAgingDangerDays={setAgingDangerDays}
+          agingExcludeClosed={agingExcludeClosed}
+          onToggleAgingExcludeClosed={() => setAgingExcludeClosed((value) => !value)}
           viewableProjectsEnabled={viewableProjectsEnabled}
           onToggleViewableProjects={() => setViewableProjectsEnabled((value) => !value)}
           onOpenHelp={() => dialogs.setHelpOpen(true)}

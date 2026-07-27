@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { FitMode } from '../kanbanShared';
+import type { LaneType } from '../useKanbanPreferences';
 import { useDropdownDismiss } from './useDropdownDismiss';
 
 const FONT_SIZE_OPTIONS = ['10', '12', '14', '16', '18', '20', '22', '24', '26', '28', '30'] as const;
@@ -15,11 +16,11 @@ export function SettingsToggle({ label, checked, onChange }: { label: string; ch
   );
 }
 
-function SettingsSelect({ label, value, options, onChange }: { label: string; value: string; options: { id: string; name: string }[]; onChange: (value: string) => void }) {
+function SettingsSelect({ label, value, options, onChange, selectClassName }: { label: string; value: string; options: { id: string; name: string }[]; onChange: (value: string) => void; selectClassName?: string }) {
   return (
     <label className="rk-settings-select-row">
       <span>{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
+      <select className={selectClassName} value={value} onChange={(event) => onChange(event.target.value)}>
         {options.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
       </select>
     </label>
@@ -30,8 +31,14 @@ export function DisplaySettingsPopover({
   labels,
   showSubtasks,
   onToggleShowSubtasks,
-  priorityLaneEnabled,
-  onTogglePriorityLane,
+  laneType,
+  onChangeLaneType,
+  agingWarnDays,
+  onChangeAgingWarnDays,
+  agingDangerDays,
+  onChangeAgingDangerDays,
+  agingExcludeClosed,
+  onToggleAgingExcludeClosed,
   timeEntryOnClose,
   onToggleTimeEntryOnClose,
   fitMode,
@@ -42,8 +49,14 @@ export function DisplaySettingsPopover({
   labels: Record<string, string>;
   showSubtasks: boolean;
   onToggleShowSubtasks: () => void;
-  priorityLaneEnabled: boolean;
-  onTogglePriorityLane: () => void;
+  laneType: LaneType;
+  onChangeLaneType: (value: LaneType) => void;
+  agingWarnDays: number;
+  onChangeAgingWarnDays: (value: number) => void;
+  agingDangerDays: number;
+  onChangeAgingDangerDays: (value: number) => void;
+  agingExcludeClosed: boolean;
+  onToggleAgingExcludeClosed: () => void;
   timeEntryOnClose: boolean;
   onToggleTimeEntryOnClose: () => void;
   fitMode: FitMode;
@@ -70,7 +83,14 @@ export function DisplaySettingsPopover({
         <div ref={menuRef} className="rk-settings-menu" role="dialog" aria-label={title}>
           <div className="rk-settings-title">{title}</div>
           <SettingsToggle label={labels.show_subtasks_short ?? labels.show_subtasks ?? 'Show subtasks'} checked={showSubtasks} onChange={onToggleShowSubtasks} />
-          <SettingsToggle label={labels.priority_lane_short ?? labels.show_priority_lanes ?? 'Priority lanes'} checked={priorityLaneEnabled} onChange={onTogglePriorityLane} />
+          <SettingsSelect label={labels.lane_type ?? 'Swimlane'} value={laneType} options={[
+            { id: 'none', name: labels.none ?? 'None' },
+            { id: 'assignee', name: labels.assignee ?? 'Assignee' },
+            { id: 'priority', name: labels.issue_priority ?? 'Priority' },
+          ]} onChange={(value) => onChangeLaneType(value as LaneType)} />
+          <SettingsSelect label={labels.aging_warn_days ?? 'Aging warning days'} value={String(agingWarnDays)} options={[0, 1, 3, 5, 7, 14, 30].map((value) => ({ id: String(value), name: String(value) }))} onChange={(value) => onChangeAgingWarnDays(Number(value))} selectClassName="rk-settings-aging-days-select" />
+          <SettingsSelect label={labels.aging_danger_days ?? 'Aging danger days'} value={String(agingDangerDays)} options={[1, 3, 5, 7, 14, 30, 60].map((value) => ({ id: String(value), name: String(value) }))} onChange={(value) => onChangeAgingDangerDays(Number(value))} selectClassName="rk-settings-aging-days-select" />
+          <SettingsToggle label={labels.aging_exclude_closed ?? 'Exclude closed issues from aging'} checked={agingExcludeClosed} onChange={onToggleAgingExcludeClosed} />
           <SettingsToggle label={labels.time_entry_short ?? 'Time entry on close'} checked={timeEntryOnClose} onChange={onToggleTimeEntryOnClose} />
           <SettingsSelect label={labels.display_width ?? 'Display width'} value={fitMode} options={widthOptions} onChange={(value) => { if (value !== fitMode) onToggleFitMode(); }} />
           <SettingsSelect label={labels.font_size ?? 'Font size'} value={String(fontSize)} options={fontSizeOptions} onChange={(value) => onChangeFontSize(Number(value))} />
