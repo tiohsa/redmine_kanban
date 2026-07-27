@@ -9,7 +9,6 @@ module RedmineKanban
     def initialize(project:, user:)
       @project = project
       @user = user
-      @settings = Settings.new(Setting.plugin_redmine_kanban)
     end
 
     def create(params:)

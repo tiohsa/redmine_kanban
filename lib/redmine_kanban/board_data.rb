@@ -2,6 +2,8 @@ require_relative 'subtask_loader'
 
 module RedmineKanban
   class BoardData
+    DEFAULT_ISSUE_LIMIT = 500
+    MAX_ISSUE_LIMIT = 1_000
     LABEL_TRANSLATION_KEYS = {
       all: "redmine_kanban.label_all",
       me: "redmine_kanban.label_me",
@@ -129,11 +131,17 @@ module RedmineKanban
       sort_by: "redmine_kanban.label_sort_by",
       sort: "redmine_kanban.label_sort",
       display_settings: "redmine_kanban.label_display_settings",
+      lane_type: "redmine_kanban.label_lane_type",
+      none: "redmine_kanban.label_none",
+      aging_warn_days: "redmine_kanban.label_aging_warn_days",
+      aging_danger_days: "redmine_kanban.label_aging_danger_days",
+      aging_exclude_closed: "redmine_kanban.label_aging_exclude_closed",
       show_subtasks_short: "redmine_kanban.label_show_subtasks_short",
       priority_lane_short: "redmine_kanban.label_priority_lane_short",
       viewable_projects_short: "redmine_kanban.label_viewable_projects_short",
       time_entry_short: "redmine_kanban.label_time_entry_short",
       display_width: "redmine_kanban.label_display_width",
+      font_size: "redmine_kanban.label_font_size",
       scroll_top: "redmine_kanban.label_scroll_top",
       enable_time_entry_on_close: "redmine_kanban.label_enable_time_entry_on_close",
       disable_time_entry_on_close: "redmine_kanban.label_disable_time_entry_on_close",
@@ -152,7 +160,6 @@ module RedmineKanban
     def initialize(project:, user:, project_ids: nil, issue_status_ids: nil, exclude_status_ids: nil, issue_limit: nil, issue_offset: nil)
       @project = project
       @user = user
-      @settings = Settings.new(Setting.plugin_redmine_kanban)
       @project_catalog = ProjectCatalog.new(user: @user)
       @project_ids = sanitize_project_ids(normalize_ids(project_ids)).presence || [@project.id]
       @issue_status_ids = normalize_ids(issue_status_ids)
@@ -168,7 +175,7 @@ module RedmineKanban
     private
 
     def with_performance_metrics
-      return yield unless @settings.performance_logging_enabled?
+      return yield unless ENV['REDMINE_KANBAN_PERF_LOG'] == '1'
 
       started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       sql_count = 0
@@ -203,8 +210,7 @@ module RedmineKanban
 
     def build_payload
       statuses = IssueStatus.sorted.to_a
-      hidden_status_ids = default_hidden_status_ids(statuses) | @settings.hidden_status_ids
-      columns = statuses.reject { |s| hidden_status_ids.include?(s.id) }.map do |s|
+      columns = statuses.map do |s|
         { id: s.id, name: s.name, is_closed: s.is_closed }
       end
 
@@ -217,11 +223,10 @@ module RedmineKanban
         subtasks_by_parent_id: subtasks_by_parent_id,
         board_project: @project
       )
-      lane_assignee_ids = @settings.lane_type == 'none' ? [] : fetch_lane_assignee_ids(status_ids)
+      lane_assignee_ids = fetch_lane_assignee_ids(status_ids)
       lanes = build_lanes(lane_assignee_ids)
 
       counts = fetch_column_counts(status_ids)
-      wip_limits = @settings.wip_limits
 
       {
         ok: true,
@@ -231,12 +236,7 @@ module RedmineKanban
           can_move: permission_policy.can_move_issue?(@project),
           can_create: permission_policy.can_create_issue?(@project),
           can_delete: permission_policy.can_delete_issue?(@project),
-          lane_type: @settings.lane_type,
-          wip_limit_mode: @settings.wip_limit_mode,
-          wip_exceed_behavior: @settings.wip_exceed_behavior,
-          aging_warn_days: @settings.aging_warn_days,
-          aging_danger_days: @settings.aging_danger_days,
-          aging_exclude_closed: @settings.aging_exclude_closed?,
+          lane_type: 'assignee',
           pagination: {
             issue_limit: @issue_limit,
             offset: @issue_offset,
@@ -246,21 +246,12 @@ module RedmineKanban
             has_more_issues: @issue_offset + issues.size < total_issue_count
           }
         },
-        columns: columns.map do |c|
-          c.merge(
-            wip_limit: (wip_limits[c[:id]] if wip_limits[c[:id]].to_i > 0),
-            count: counts[c[:id]].to_i
-          )
-        end,
+        columns: columns.map { |c| c.merge(count: counts[c[:id]].to_i) },
         lanes: lanes,
         lists: cached_lists,
         issues: issues.map { |issue| presenter.issue_to_h(issue) },
         labels: cached_labels
       }
-    end
-
-    def default_hidden_status_ids(statuses)
-      []
     end
 
     def permission_policy
@@ -290,8 +281,6 @@ module RedmineKanban
     end
 
     def build_lanes(assigned_to_ids)
-      return [{ id: 'none', name: l("redmine_kanban.label_all"), assigned_to_id: nil }] if @settings.lane_type == 'none'
-
       ids = assigned_to_ids.uniq
       users = User.where(id: ids).sorted.to_a
       lanes = [{ id: 'unassigned', name: l("redmine_kanban.label_unassigned"), assigned_to_id: nil }]
@@ -322,8 +311,9 @@ module RedmineKanban
     end
 
     def normalize_issue_limit(value)
-      id = value.to_i
-      id.positive? ? id : @settings.issue_limit
+      return DEFAULT_ISSUE_LIMIT unless value.to_i.positive?
+
+      [value.to_i, MAX_ISSUE_LIMIT].min
     end
 
     def normalize_issue_offset(value)

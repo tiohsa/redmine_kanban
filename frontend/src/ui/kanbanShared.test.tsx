@@ -29,8 +29,6 @@ function makeBoardData(issues: Issue[]): BoardData {
       can_create: true,
       can_delete: true,
       lane_type: 'assignee',
-      wip_limit_mode: 'column',
-      wip_exceed_behavior: 'block',
       aging_warn_days: 3,
       aging_danger_days: 7,
       aging_exclude_closed: true,
@@ -147,7 +145,7 @@ describe('buildDisplayData', () => {
     ];
     data.labels = { not_set: 'Not set' };
 
-    const displayData = buildDisplayData(data, true);
+    const displayData = buildDisplayData(data, 'priority', { warnDays: 3, dangerDays: 7, excludeClosed: true });
 
     expect(displayData.meta.lane_type).toBe('priority');
     expect(displayData.lanes.map((lane) => lane.id)).toEqual([2, 1, 'no_priority']);

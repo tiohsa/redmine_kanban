@@ -2,6 +2,7 @@ import React from 'react';
 import type { BoardData, Issue, Lane } from './types';
 import { findSubtaskInTree } from './subtasksTree';
 import { isHttpError } from './http';
+import type { LaneType } from './useKanbanPreferences';
 
 export type FitMode = 'none' | 'width';
 
@@ -109,8 +110,22 @@ export function resolvePriorityName(data: BoardData, priorityId: number | null):
   return priority?.name ?? null;
 }
 
-export function buildDisplayData(data: BoardData, priorityLaneEnabled: boolean): BoardData {
-  if (!priorityLaneEnabled) return data;
+export function buildDisplayData(
+  data: BoardData,
+  laneType: LaneType,
+  aging: { warnDays: number; dangerDays: number; excludeClosed: boolean },
+): BoardData {
+  const meta = {
+    ...data.meta,
+    lane_type: laneType,
+    aging_warn_days: aging.warnDays,
+    aging_danger_days: Math.max(aging.warnDays, aging.dangerDays),
+    aging_exclude_closed: aging.excludeClosed,
+  };
+  if (laneType === 'assignee') return { ...data, meta };
+  if (laneType === 'none') {
+    return { ...data, meta, lanes: [{ id: 'none', name: data.labels.all, assigned_to_id: null }] };
+  }
 
   const prioritiesHighToLow = [...(data.lists.priorities ?? [])].reverse();
   const priorityLanes: Lane[] = [
@@ -131,8 +146,7 @@ export function buildDisplayData(data: BoardData, priorityLaneEnabled: boolean):
   return {
     ...data,
     meta: {
-      ...data.meta,
-      lane_type: 'priority',
+      ...meta,
     },
     lanes: priorityLanes,
   };

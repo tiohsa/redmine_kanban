@@ -1,7 +1,7 @@
 # Redmine Kanban
 
 Modern Kanban board plugin for Redmine, built with React + Vite.
-It goes beyond simple task visualization with WIP limits, aging detection, and flow-focused controls.
+It provides task visualization, per-user display preferences, aging detection, and flow-focused controls.
 
 [日本語版はこちら](README.ja.md) | [Setup](../../SETUP.md) | [Requirements](../../requirement.md)
 
@@ -23,13 +23,12 @@ It goes beyond simple task visualization with WIP limits, aging detection, and f
 
 ## Overview
 
-Redmine Kanban helps teams keep flow healthy and visible. It focuses on limiting WIP, exposing stalled work, and letting teams move issues quickly with minimal friction.
+Redmine Kanban helps teams keep flow healthy and visible by exposing stalled work and letting teams move issues quickly with minimal friction.
 
 ## Key Features
 
 - **Canvas-Based Rendering**: High-performance board rendering using HTML Canvas for smooth scrolling and large dataset handling.
-- **WIP Control**: Limit work-in-progress (WIP) per column or assignee. Configurable behavior on limit exceed (block or warn).
-- **Aging Detection**: Highlight tasks that have not been updated for a long time. Thresholds are configurable.
+- **Aging Detection**: Highlight tasks that have not been updated for a long time. Thresholds are stored in each user's display preferences.
 - **Swimlanes**: Switch lanes by assignee or priority (or disable lanes for a single-row board).
 - **Drag & Drop**: Intuitive card movement with Redmine workflow-aware status transitions. Cards can also be grabbed from the subtask area.
 - **Advanced Filtering**: Filter by assignee, due date, priority, blocked status, and more.
@@ -80,17 +79,11 @@ pnpm run build
 2. Enable **Kanban** in Project Settings → Modules.
 3. Open the **Kanban** tab from the project menu.
 
-## Configuration
+## Display preferences
 
-Adjust these options in the plugin configuration screen:
+There is no plugin-wide configuration screen. Each user can set swimlanes, hidden statuses, aging thresholds, sorting, fit mode, font size, and subtask display from the board. Card moves only apply the status and any lane attribute explicitly selected by the user; Redmine workflow and permissions remain authoritative.
 
-- **Swimlane Type**: None / Assignee / Priority
-- **Issue Display Limit**: Max number of cards to display
-- **Hidden Statuses**: Statuses to hide from the board
-- **WIP Limit Mode**: Per column / Per column × lane
-- **WIP Exceed Behavior**: Block / Warn only
-- **Aging Thresholds**: Days for warning and danger levels
-- **Status Auto-Update**: Rules for automatic status changes on card movement
+The API protects the server with a fixed default page size of 500 issues and a maximum page size of 1,000 issues. Set `REDMINE_KANBAN_PERF_LOG=1` only when operational performance logging is needed.
 
 ## Technology Stack
 

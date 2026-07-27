@@ -2,7 +2,6 @@ export type Column = {
   id: number;
   name: string;
   is_closed: boolean;
-  wip_limit?: number | null;
   count?: number;
 };
 
@@ -80,8 +79,6 @@ export type Meta = {
   can_create: boolean;
   can_delete: boolean;
   lane_type: 'none' | 'assignee' | 'priority';
-  wip_limit_mode: 'column' | 'column_lane';
-  wip_exceed_behavior: 'block' | 'warn';
   aging_warn_days: number;
   aging_danger_days: number;
   aging_exclude_closed: boolean;

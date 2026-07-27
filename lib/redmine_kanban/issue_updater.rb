@@ -12,7 +12,6 @@ module RedmineKanban
     def initialize(project:, user:)
       @project = project
       @user = user
-      @settings = Settings.new(Setting.plugin_redmine_kanban)
     end
 
     def update(issue_id:, params:)
@@ -45,16 +44,7 @@ module RedmineKanban
       if params[:status_id].present? && params[:status_id].to_i != issue.status_id
         status_id = params[:status_id].to_i
         if status_allowed_for?(issue, status_id)
-          wip_check = check_wip!(
-            issue: issue,
-            status_id: status_id,
-            assigned_to_id: attributes['assigned_to_id'] || issue.assigned_to_id,
-          )
-          if wip_check[:blocked]
-            return error_response(wip_check[:message])
-          end
           attributes['status_id'] = status_id
-          @warning = wip_check[:message]
         else
           return error_response('ワークフロー上、このステータスへ遷移できません')
         end
@@ -92,7 +82,6 @@ module RedmineKanban
       result = { ok: true, issue: issue_presenter(issue).issue_to_h(issue) }
       ancestor_updates = ancestor_updates_for(issue) if ancestor_updates_required
       result[:ancestor_updates] = ancestor_updates if ancestor_updates&.any?
-      result[:warning] = @warning if @warning.present?
       result
     rescue ActiveRecord::StaleObjectError
       error_response('他ユーザにより更新されました', status: :conflict)

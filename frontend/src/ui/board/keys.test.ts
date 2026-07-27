@@ -11,8 +11,6 @@ const baseData: BoardData = {
     can_create: true,
     can_delete: true,
     lane_type: 'none',
-    wip_limit_mode: 'column',
-    wip_exceed_behavior: 'warn',
     aging_warn_days: 3,
     aging_danger_days: 7,
     aging_exclude_closed: true,

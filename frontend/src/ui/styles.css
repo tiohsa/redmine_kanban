@@ -625,20 +625,6 @@
   align-items: center;
 }
 
-.rk-wip {
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 4px;
-  background: #f1f5f9;
-  color: var(--rk-text-secondary);
-}
-
-.rk-wip-over {
-  background: var(--rk-danger-bg);
-  color: var(--rk-danger);
-}
-
 .rk-lanes {
   display: flex;
   flex-direction: column;
@@ -1001,6 +987,10 @@
   color: var(--rk-text-primary);
   font: inherit;
   font-size: 13px;
+}
+
+.rk-settings-select-row select.rk-settings-aging-days-select {
+  width: 80px;
 }
 
 .rk-settings-select-row select:focus,

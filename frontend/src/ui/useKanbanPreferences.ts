@@ -4,6 +4,8 @@ import type { Filters } from './boardFilters';
 import { buildProjectScopeFromDataUrl, makeScopedStorageKey, readScopedBooleanWithLegacy, readScopedNumberSetWithLegacy } from './utils/storage';
 import type { FitMode } from './kanbanShared';
 
+export type LaneType = 'none' | 'assignee' | 'priority';
+
 const DEFAULT_FILTERS: Filters = {
   assigneeIds: [],
   q: '',
@@ -62,6 +64,10 @@ export function useKanbanPreferences(dataUrl: string) {
   const filtersStorageKey = useMemo(() => makeScopedStorageKey('rk_filters', projectScope), [projectScope]);
   const hiddenStatusStorageKey = useMemo(() => makeScopedStorageKey('rk_hidden_status_ids', projectScope), [projectScope]);
   const priorityLaneStorageKey = useMemo(() => makeScopedStorageKey('rk_priority_lane_enabled', projectScope), [projectScope]);
+  const laneTypeStorageKey = useMemo(() => makeScopedStorageKey('rk_lane_type', projectScope), [projectScope]);
+  const agingWarnDaysStorageKey = useMemo(() => makeScopedStorageKey('rk_aging_warn_days', projectScope), [projectScope]);
+  const agingDangerDaysStorageKey = useMemo(() => makeScopedStorageKey('rk_aging_danger_days', projectScope), [projectScope]);
+  const agingExcludeClosedStorageKey = useMemo(() => makeScopedStorageKey('rk_aging_exclude_closed', projectScope), [projectScope]);
   const viewableProjectsStorageKey = useMemo(() => makeScopedStorageKey('rk_viewable_projects_enabled', projectScope), [projectScope]);
 
   const [filters, setFilters] = useState<Filters>(() => readFilters(filtersStorageKey));
@@ -102,9 +108,14 @@ export function useKanbanPreferences(dataUrl: string) {
   const [timeEntryOnClose, setTimeEntryOnClose] = useState(() => {
     return readStorageValue('rk_time_entry_on_close') === '1';
   });
-  const [priorityLaneEnabled, setPriorityLaneEnabled] = useState(() =>
-    readScopedBooleanWithLegacy(priorityLaneStorageKey, 'rk_priority_lane_enabled', false),
-  );
+  const [laneType, setLaneType] = useState<LaneType>(() => {
+    const value = readStorageValue(laneTypeStorageKey);
+    if (value === 'none' || value === 'assignee' || value === 'priority') return value;
+    return readScopedBooleanWithLegacy(priorityLaneStorageKey, 'rk_priority_lane_enabled', false) ? 'priority' : 'assignee';
+  });
+  const [agingWarnDays, setAgingWarnDays] = useState(() => Math.max(0, Number(readStorageValue(agingWarnDaysStorageKey)) || 3));
+  const [agingDangerDays, setAgingDangerDays] = useState(() => Math.max(agingWarnDays, Number(readStorageValue(agingDangerDaysStorageKey)) || 7));
+  const [agingExcludeClosed, setAgingExcludeClosed] = useState(() => readScopedBooleanWithLegacy(agingExcludeClosedStorageKey, 'rk_aging_exclude_closed', true));
   const [viewableProjectsEnabled, setViewableProjectsEnabled] = useState(() =>
     readScopedBooleanWithLegacy(viewableProjectsStorageKey, 'rk_viewable_projects_enabled', false),
   );
@@ -153,8 +164,20 @@ export function useKanbanPreferences(dataUrl: string) {
   }, [timeEntryOnClose]);
 
   useEffect(() => {
-    writeStorageValue(priorityLaneStorageKey, priorityLaneEnabled ? '1' : '0');
-  }, [priorityLaneEnabled, priorityLaneStorageKey]);
+    writeStorageValue(laneTypeStorageKey, laneType);
+  }, [laneType, laneTypeStorageKey]);
+
+  useEffect(() => {
+    writeStorageValue(agingWarnDaysStorageKey, String(agingWarnDays));
+  }, [agingWarnDays, agingWarnDaysStorageKey]);
+
+  useEffect(() => {
+    writeStorageValue(agingDangerDaysStorageKey, String(agingDangerDays));
+  }, [agingDangerDays, agingDangerDaysStorageKey]);
+
+  useEffect(() => {
+    writeStorageValue(agingExcludeClosedStorageKey, agingExcludeClosed ? '1' : '0');
+  }, [agingExcludeClosed, agingExcludeClosedStorageKey]);
 
   useEffect(() => {
     writeStorageValue(viewableProjectsStorageKey, viewableProjectsEnabled ? '1' : '0');
@@ -178,8 +201,14 @@ export function useKanbanPreferences(dataUrl: string) {
     setFontSize,
     timeEntryOnClose,
     setTimeEntryOnClose,
-    priorityLaneEnabled,
-    setPriorityLaneEnabled,
+    laneType,
+    setLaneType,
+    agingWarnDays,
+    setAgingWarnDays,
+    agingDangerDays,
+    setAgingDangerDays,
+    agingExcludeClosed,
+    setAgingExcludeClosed,
     viewableProjectsEnabled,
     setViewableProjectsEnabled,
   };

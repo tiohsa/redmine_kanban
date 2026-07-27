@@ -3,6 +3,7 @@ import type { BoardData } from './types';
 import type { Filters } from './boardFilters';
 import type { SortKey } from './board/sort';
 import type { FitMode } from './kanbanShared';
+import type { LaneType } from './useKanbanPreferences';
 import { buildToolbarOptions, togglePriorityFilter } from './toolbar/toolbarOptions';
 import { SearchPopover } from './toolbar/SearchPopover';
 import { SortPopover } from './toolbar/SortPopover';
@@ -31,8 +32,14 @@ type ToolbarProps = {
   loadingMoreIssues?: boolean;
   timeEntryOnClose: boolean;
   onToggleTimeEntryOnClose: () => void;
-  priorityLaneEnabled: boolean;
-  onTogglePriorityLane: () => void;
+  laneType?: LaneType;
+  onChangeLaneType?: (value: LaneType) => void;
+  agingWarnDays?: number;
+  onChangeAgingWarnDays?: (value: number) => void;
+  agingDangerDays?: number;
+  onChangeAgingDangerDays?: (value: number) => void;
+  agingExcludeClosed?: boolean;
+  onToggleAgingExcludeClosed?: () => void;
   viewableProjectsEnabled: boolean;
   onToggleViewableProjects: () => void;
   onOpenHelp: () => void;
@@ -60,8 +67,14 @@ export function KanbanToolbar({
   loadingMoreIssues,
   timeEntryOnClose,
   onToggleTimeEntryOnClose,
-  priorityLaneEnabled,
-  onTogglePriorityLane,
+  laneType = 'assignee',
+  onChangeLaneType = () => {},
+  agingWarnDays = 3,
+  onChangeAgingWarnDays = () => {},
+  agingDangerDays = 7,
+  onChangeAgingDangerDays = () => {},
+  agingExcludeClosed = true,
+  onToggleAgingExcludeClosed = () => {},
   viewableProjectsEnabled,
   onToggleViewableProjects,
   onOpenHelp,
@@ -250,8 +263,14 @@ export function KanbanToolbar({
           labels={labels}
           showSubtasks={showSubtasks}
           onToggleShowSubtasks={onToggleShowSubtasks}
-          priorityLaneEnabled={priorityLaneEnabled}
-          onTogglePriorityLane={onTogglePriorityLane}
+          laneType={laneType}
+          onChangeLaneType={onChangeLaneType}
+          agingWarnDays={agingWarnDays}
+          onChangeAgingWarnDays={onChangeAgingWarnDays}
+          agingDangerDays={agingDangerDays}
+          onChangeAgingDangerDays={onChangeAgingDangerDays}
+          agingExcludeClosed={agingExcludeClosed}
+          onToggleAgingExcludeClosed={onToggleAgingExcludeClosed}
           timeEntryOnClose={timeEntryOnClose}
           onToggleTimeEntryOnClose={onToggleTimeEntryOnClose}
           fitMode={fitMode}

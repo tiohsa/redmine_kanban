@@ -62,4 +62,20 @@ describe('useKanbanPreferences', () => {
       trackerIds: [3],
     });
   });
+
+  it('persists lane and aging display preferences in the project scope', () => {
+    const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data'));
+
+    act(() => {
+      result.current.setLaneType('priority');
+      result.current.setAgingWarnDays(5);
+      result.current.setAgingDangerDays(14);
+      result.current.setAgingExcludeClosed(false);
+    });
+
+    expect(localStorage.getItem('rk_lane_type:/projects/demo/kanban')).toBe('priority');
+    expect(localStorage.getItem('rk_aging_warn_days:/projects/demo/kanban')).toBe('5');
+    expect(localStorage.getItem('rk_aging_danger_days:/projects/demo/kanban')).toBe('14');
+    expect(localStorage.getItem('rk_aging_exclude_closed:/projects/demo/kanban')).toBe('0');
+  });
 });
