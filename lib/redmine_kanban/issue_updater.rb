@@ -38,7 +38,9 @@ module RedmineKanban
       attributes['done_ratio'] = normalize_done_ratio(params[:done_ratio]) if params.key?(:done_ratio)
 
       lock_version = normalize_lock_version(params[:lock_version])
-      issue.lock_version = lock_version if lock_version
+      return error_response('lock_versionが必要です') if lock_version.nil?
+
+      issue.lock_version = lock_version
 
       # Handle status change if provided
       if params[:status_id].present? && params[:status_id].to_i != issue.status_id

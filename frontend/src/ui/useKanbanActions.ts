@@ -3,7 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import type { QueryKey } from '@tanstack/react-query';
 import type { BoardData, Issue } from './types';
 import { isHttpError, postJson } from './http';
-import { applyAncestorIssueUpdates, updateIssueInBoard, updateSubtaskInBoard, useIssueMutation } from './useIssueMutation';
+import { applyAncestorIssueUpdates, replaceIssueInBoard, updateIssueInBoard, updateSubtaskInBoard, useIssueMutation } from './useIssueMutation';
 import { findSubtask, resolveAssigneeName, resolveMutationError, resolvePriorityName, resolveSubtaskStatus, resolveBoardIssue, type IssueMutationResult, type MovePayload, type UpdatePayload } from './kanbanShared';
 import { discardBulkIdempotencyKey, getOrCreateBulkIdempotencyKey, stableSerialize, storageKeyForBulkSignature } from './bulkIdempotency';
 import { buildBulkCreateRequest, buildRestoreIssuePayload, isBulkCreateInput } from './kanbanActionPayloads';
@@ -39,6 +39,7 @@ export function useKanbanActions({
   const [isRestoring, setIsRestoring] = useState(false);
   const busyIssueIdsRef = useRef<Set<number>>(new Set());
   const busyMutationCountsRef = useRef(new Map<number, number>());
+  const deletingIssueIdsRef = useRef(new Set<number>());
   const bulkInFlightRef = useRef(new Map<string, Promise<{ ok: boolean; issue?: Issue; subtasks?: Issue[] }>>());
 
   const setIssueBusy = useCallback((issueId: number, busy: boolean) => {
@@ -111,30 +112,7 @@ export function useKanbanActions({
     },
     applyServer: (prev, result, payload, options = { applyTarget: true }) => {
       if (!options.applyTarget) return applyAncestorIssueUpdates(prev, result.ancestor_updates);
-      const updated = updateIssueInBoard(prev, payload.issueId, (issue) => {
-        const nextAssignedToId = payload.assignedToId === undefined ? issue.assigned_to_id : payload.assignedToId;
-        return {
-          ...result.issue,
-          status_id: payload.statusId,
-          assigned_to_id: nextAssignedToId,
-          assigned_to_name: resolveAssigneeName(prev, nextAssignedToId),
-          priority_id: payload.priorityId === undefined ? issue.priority_id : payload.priorityId,
-          priority_name:
-            payload.priorityId === undefined
-              ? issue.priority_name ?? null
-              : resolvePriorityName(prev, payload.priorityId ?? null),
-        };
-      });
-      const isClosed = prev.columns.find((column) => column.id === payload.statusId)?.is_closed ?? false;
-      const subtaskPatch = {
-        status_id: payload.statusId,
-        is_closed: isClosed,
-        ...(typeof result.issue.lock_version === 'number' ? { lock_version: result.issue.lock_version } : {}),
-      };
-      return applyAncestorIssueUpdates(
-        updateSubtaskInBoard(updated, payload.issueId, subtaskPatch),
-        result.ancestor_updates,
-      );
+      return applyAncestorIssueUpdates(replaceIssueInBoard(prev, result.issue), result.ancestor_updates);
     },
     onError: (error) => {
       setError(resolveMutationError(error, data?.labels, data?.labels.move_failed));
@@ -171,14 +149,7 @@ export function useKanbanActions({
       }),
     applyServer: (prev, result, payload, options = { applyTarget: true }) => {
       if (!options.applyTarget) return applyAncestorIssueUpdates(prev, result.ancestor_updates);
-      const updated = updateIssueInBoard(prev, payload.issueId, (issue) => {
-        const patch = payload.patch as Partial<Issue>;
-        const next = { ...result.issue, ...patch };
-        if ('assigned_to_id' in patch) next.assigned_to_name = resolveAssigneeName(prev, patch.assigned_to_id ?? null);
-        if ('priority_id' in patch) next.priority_name = resolvePriorityName(prev, patch.priority_id ?? null);
-        return next;
-      });
-      return applyAncestorIssueUpdates(updated, result.ancestor_updates);
+      return applyAncestorIssueUpdates(replaceIssueInBoard(prev, result.issue), result.ancestor_updates);
     },
     onSuccess: (result) => {
       if (result.warning) setNotice(result.warning);
@@ -217,7 +188,11 @@ export function useKanbanActions({
   });
 
   const deleteIssue = useCallback(async (issueId: number, undoIssue: Issue | null = null) => {
+    if (deletingIssueIdsRef.current.has(issueId)) return;
+    deletingIssueIdsRef.current.add(issueId);
+    beginIssueMutation(issueId);
     setPendingDeleteIssue(null);
+    let deleted = false;
     try {
       const resolved = data ? resolveBoardIssue(data, issueId) : null;
       if (resolved?.lockVersion === null || resolved?.lockVersion === undefined) throw new Error('lock_version is required');
@@ -230,41 +205,42 @@ export function useKanbanActions({
         setError(response.message || (data ? data.labels.delete_failed : ''));
         return;
       }
-    } catch (error: unknown) {
-      const payload = isHttpError<{ message?: string }>(error) ? error.payload : null;
-      setError(payload?.message || (data ? data.labels.delete_failed : ''));
-      return;
-    }
-
-    setPendingDeleteIssue(undoIssue);
-    // Deletion succeeded. A failed refetch is a board-loading problem, not a deletion failure;
-    // keep the deleted issue available so the user can still use Undo.
-    try {
+      deleted = true;
+      setPendingDeleteIssue(undoIssue);
+      // Deletion succeeded. A failed refetch is a board-loading problem, not a deletion failure;
+      // keep the deleted issue available so the user can still use Undo.
       await refresh({ suppressError: true });
-    } catch {
+    } catch (error: unknown) {
       // The board query owns the refetch error state and its user-facing message.
+      if (!deleted) {
+        const payload = isHttpError<{ message?: string }>(error) ? error.payload : null;
+        setError(payload?.message || (data ? data.labels.delete_failed : ''));
+      }
+    } finally {
+      deletingIssueIdsRef.current.delete(issueId);
+      endIssueMutation(issueId);
     }
-  }, [baseUrl, data, refresh, setError]);
+  }, [baseUrl, beginIssueMutation, data, endIssueMutation, refresh, setError]);
 
   const moveIssue = useCallback((issueId: number, statusId: number, assignedToId?: number | null, priorityId?: number | null) => {
     if (!data || isIssueBusy(issueId)) return;
-    const issue = data.issues.find((it) => it.id === issueId);
-    if (!issue) return;
-    if (issue.lock_version === undefined || issue.lock_version === null) {
+    const resolved = resolveBoardIssue(data, issueId);
+    if (!resolved) return;
+    if (resolved.lockVersion === null) {
       setError(data.labels.update_failed);
       return;
     }
 
     setNotice(null);
     setIssueBusy(issueId, true);
-    moveIssueMutation.mutate({ issueId, statusId, assignedToId, priorityId, lockVersion: issue.lock_version });
+    moveIssueMutation.mutate({ issueId, statusId, assignedToId, priorityId, lockVersion: resolved.lockVersion });
   }, [data, isIssueBusy, moveIssueMutation, setError, setIssueBusy, setNotice]);
 
   const toggleSubtask = useCallback((subtaskId: number, currentClosed: boolean) => {
     if (!data || isIssueBusy(subtaskId)) return;
     const subtaskInfo = findSubtask(data, subtaskId);
     if (!subtaskInfo) return;
-    const targetStatusId = resolveSubtaskStatus(data, currentClosed);
+    const targetStatusId = resolveSubtaskStatus(data, currentClosed, subtaskInfo.allowedStatusIds);
     if (!targetStatusId || subtaskInfo.lockVersion === null) {
       setError(data.labels.subtask_update_failed ?? null);
       return;
@@ -281,11 +257,12 @@ export function useKanbanActions({
   }, [data, isIssueBusy, moveIssueMutation, setError, setIssueBusy, setNotice]);
 
   const requestDelete = useCallback((issueId: number, source: 'card' | 'subtask' = 'card') => {
-    const issue = data?.issues.find((it) => it.id === issueId);
-    if (!issue) return;
+    if (!data || isIssueBusy(issueId)) return;
+    const resolved = resolveBoardIssue(data, issueId);
+    if (!resolved) return;
     setNotice(null);
-    void deleteIssue(issueId, source === 'card' ? issue : null);
-  }, [data, deleteIssue, setNotice]);
+    void deleteIssue(issueId, source === 'card' ? resolved.boardIssue ?? null : null);
+  }, [data, deleteIssue, isIssueBusy, setNotice]);
 
   const dismissDeleteNotice = useCallback(() => {
     setPendingDeleteIssue(null);

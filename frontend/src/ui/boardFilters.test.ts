@@ -91,6 +91,14 @@ describe('applyBoardDataFilters', () => {
     expect(filtered?.issues.map((issue) => issue.id)).toEqual([1]);
   });
 
+  it('keeps a paged child visible until its parent is loaded', () => {
+    const data = makeBoardData([makeIssue(2, 1, 'Child', { parent_id: 1 })]);
+
+    const filtered = applyBoardDataFilters(data, true, []);
+
+    expect(filtered?.issues.map((issue) => issue.id)).toEqual([2]);
+  });
+
   it('hides nested subtasks from parent cards when subtasks are shown as separate cards', () => {
     const data = makeBoardData([
       makeIssue(1, 1, 'Parent', {

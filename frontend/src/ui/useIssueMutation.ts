@@ -177,6 +177,7 @@ export function updateIssueInBoard(
   issueId: number,
   updater: IssueUpdater
 ): BoardData {
+  const previous = data.issues.find((issue) => issue.id === issueId);
   let issues = data.issues.map((issue) => (issue.id === issueId ? updater(issue) : issue));
   const updated = issues.find((issue) => issue.id === issueId);
   if (updated?.parent_id) {
@@ -197,7 +198,7 @@ export function updateIssueInBoard(
   return {
     ...data,
     issues,
-    columns: rebuildColumnCounts({ ...data, issues }),
+    columns: updateColumnCounts(data.columns, previous?.status_id, updated?.status_id),
   };
 }
 
@@ -275,14 +276,12 @@ function replaceSubtask(subtasks: Subtask[] | undefined, nextIssue: Issue): Subt
   return changed ? next : subtasks;
 }
 
-function rebuildColumnCounts(data: BoardData): BoardData['columns'] {
-  const counts = new Map<number, number>();
-  for (const issue of data.issues) {
-    counts.set(issue.status_id, (counts.get(issue.status_id) ?? 0) + 1);
-  }
+function updateColumnCounts(columns: BoardData['columns'], previousStatusId?: number, nextStatusId?: number): BoardData['columns'] {
+  if (previousStatusId === undefined || nextStatusId === undefined || previousStatusId === nextStatusId) return columns;
 
-  return data.columns.map((column) => ({
-    ...column,
-    count: counts.get(column.id) ?? 0,
-  }));
+  return columns.map((column) => {
+    if (column.id === previousStatusId) return { ...column, count: Math.max(0, (column.count ?? 0) - 1) };
+    if (column.id === nextStatusId) return { ...column, count: (column.count ?? 0) + 1 };
+    return column;
+  });
 }

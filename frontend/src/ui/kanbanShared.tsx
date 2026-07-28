@@ -37,6 +37,7 @@ export type UpdatePayload = {
 export type SubtaskInfo = {
   lockVersion: number | null;
   assignedToId?: number | null;
+  allowedStatusIds?: number[];
 };
 
 export type ResolvedBoardIssue = {
@@ -44,12 +45,14 @@ export type ResolvedBoardIssue = {
   subject: string;
   lockVersion: number | null;
   assignedToId?: number | null;
+  allowedStatusIds?: number[];
   issueUrl: string;
   issueEditUrl: string;
   kind: 'issue' | 'subtask';
   trackerId?: number;
   parentIssueId?: number;
   projectId?: number;
+  boardIssue?: Issue;
 };
 
 type FieldErrors = {
@@ -173,6 +176,8 @@ export function resolveBoardIssue(data: BoardData, issueId: number): ResolvedBoa
       trackerId: issue.tracker_id,
       parentIssueId: issue.parent_id ?? undefined,
       projectId: issue.project?.id,
+      boardIssue: issue,
+      allowedStatusIds: issue.allowed_status_ids,
     };
   }
 
@@ -189,6 +194,7 @@ export function resolveBoardIssue(data: BoardData, issueId: number): ResolvedBoa
       kind: 'subtask',
       parentIssueId: parent.id,
       projectId: subtask.project?.id ?? parent.project?.id,
+      allowedStatusIds: subtask.allowed_status_ids,
     };
   }
 
@@ -202,14 +208,16 @@ export function findSubtask(data: BoardData, subtaskId: number): SubtaskInfo | n
   return {
     lockVersion: resolved.lockVersion,
     assignedToId: resolved.assignedToId,
+    allowedStatusIds: resolved.allowedStatusIds,
   };
 }
 
-export function resolveSubtaskStatus(data: BoardData, currentClosed: boolean): number | null {
+export function resolveSubtaskStatus(data: BoardData, currentClosed: boolean, allowedStatusIds?: number[]): number | null {
+  const allowed = allowedStatusIds ? new Set(allowedStatusIds) : null;
   if (currentClosed) {
-    return data.columns.find((c) => !c.is_closed)?.id ?? null;
+    return data.columns.find((c) => !c.is_closed && (!allowed || allowed.has(c.id)))?.id ?? null;
   }
-  return data.columns.find((c) => c.is_closed)?.id ?? null;
+  return data.columns.find((c) => c.is_closed && (!allowed || allowed.has(c.id)))?.id ?? null;
 }
 
 export function linkifyText(text: string): React.ReactNode[] {

@@ -136,12 +136,15 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
       params: {
         project_id: @project.identifier,
         id: issue.id,
-        subject: 'Updated subject',
-        tracker_id: issue.tracker_id,
-        assigned_to_id: issue.assigned_to_id,
-        due_date: issue.due_date&.to_s,
-        priority_id: issue.priority_id,
-        description: issue.description
+        issue: {
+          subject: 'Updated subject',
+          tracker_id: issue.tracker_id,
+          lock_version: issue.lock_version,
+          assigned_to_id: issue.assigned_to_id,
+          due_date: issue.due_date&.to_s,
+          priority_id: issue.priority_id,
+          description: issue.description
+        }
       }
     )
 
@@ -617,6 +620,26 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
 
     assert_response :unprocessable_entity
     assert Issue.exists?(issue.id)
+  end
+
+  def test_move_requires_lock_version_without_changing_issue
+    issue = build_issue(subject: 'Move lock required')
+    target_status = IssueStatus.where.not(id: issue.status_id).first
+    assert_not_nil target_status
+
+    patch :move, params: { project_id: @project.identifier, id: issue.id, issue: { status_id: target_status.id } }
+
+    assert_response :unprocessable_entity
+    assert_equal issue.status_id, issue.reload.status_id
+  end
+
+  def test_update_requires_lock_version_without_changing_issue
+    issue = build_issue(subject: 'Update lock required')
+
+    patch :update, params: { project_id: @project.identifier, id: issue.id, issue: { subject: 'Must not save' } }
+
+    assert_response :unprocessable_entity
+    assert_equal 'Update lock required', issue.reload.subject
   end
 
   def test_destroy_rejects_stale_lock_version_without_deleting

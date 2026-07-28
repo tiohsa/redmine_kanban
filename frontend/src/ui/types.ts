@@ -20,6 +20,7 @@ export type Subtask = {
   is_closed: boolean;
   lock_version?: number;
   permissions?: IssuePermissions;
+  allowed_status_ids?: number[];
   project?: { id: number; name: string };
   subtasks?: Subtask[];
 };
@@ -56,6 +57,7 @@ export type Issue = {
   done_ratio?: number;
   subtasks?: Subtask[];
   permissions?: IssuePermissions;
+  allowed_status_ids?: number[];
   urls: {
     issue: string;
     issue_edit: string;

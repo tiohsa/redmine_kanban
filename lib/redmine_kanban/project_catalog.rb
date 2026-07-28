@@ -2,8 +2,9 @@ require 'set'
 
 module RedmineKanban
   class ProjectCatalog
-    def initialize(user:)
+    def initialize(user:, board_project: nil)
       @user = user
+      @board_project = board_project
     end
 
     def subtree_projects(root:)
@@ -54,7 +55,7 @@ module RedmineKanban
     end
 
     def can_create_issue?(project)
-      @user.allowed_to?(:add_issues, project)
+      PermissionPolicy.new(user: @user).can_create_issue?(project, @board_project || project)
     end
   end
 end

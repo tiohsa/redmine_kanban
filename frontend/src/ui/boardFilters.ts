@@ -21,9 +21,11 @@ export function applyBoardDataFilters(
 
   let result = displayData;
   if (showSubtasks) {
+    const loadedIssueIds = new Set(result.issues.map((issue) => issue.id));
     result = {
       ...result,
-      issues: result.issues.filter((issue) => !issue.parent_id),
+      // A paged child must remain visible until its parent has been loaded.
+      issues: result.issues.filter((issue) => !issue.parent_id || !loadedIssueIds.has(issue.parent_id)),
     };
   } else {
     result = {
