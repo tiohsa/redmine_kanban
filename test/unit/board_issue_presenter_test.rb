@@ -21,6 +21,9 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
     :status,
     :lock_version,
     :project,
+    :assigned_to_id,
+    :due_date,
+    :priority_id,
     keyword_init: true
   )
 
@@ -132,7 +135,10 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
       tracker_id: 1,
       status: FakeStatus.new(1, false),
       lock_version: 1,
-      project: project
+      project: project,
+      assigned_to_id: nil,
+      due_date: nil,
+      priority_id: 1
     )
   end
 

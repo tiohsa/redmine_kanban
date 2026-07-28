@@ -66,7 +66,7 @@ class RedmineKanbanPriorityConcurrencyTest < ActiveSupport::TestCase
     issue = create_issue('Concurrent priority', priority: @original_priority)
     expected_lock_version = issue.lock_version
 
-    issue.update!(priority: @new_priority)
+    issue.reload.update!(priority: @new_priority)
 
     reconciler = Object.new.extend(RedmineKanban::PriorityPropagation)
     reconciler.send(:ensure_priority_applied!, issue.reload, @original_priority.id, expected_lock_version)

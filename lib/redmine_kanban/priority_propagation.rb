@@ -52,6 +52,12 @@ module RedmineKanban
 
     def ensure_priority_applied!(issue, priority_id, expected_lock_version = nil)
       return nil unless priority_id.is_a?(Integer)
+
+      # Child saves may update the parent through Redmine callbacks. Reload so
+      # the final reconciliation observes the database value instead of the
+      # priority that was assigned to this in-memory instance before a child
+      # callback ran.
+      issue.reload
       return nil if issue.priority_id == priority_id
 
       if expected_lock_version
