@@ -28,31 +28,48 @@ module RedmineKanban
       nil
     end
 
-    def ensure_priority_applied!(issue, priority_id)
+    def priority_lock_versions_for(issue)
+      ([issue] + issue.children.to_a).to_h { |item| [item.id, item.lock_version] }
+    end
+
+    def reconcile_priorities_after_commit!(issue, priority_id, expected_lock_versions)
+      return nil unless priority_id.is_a?(Integer)
+
+      issue.reload
+      return nil unless expected_lock_versions.key?(issue.id)
+      issue_error = ensure_priority_applied!(issue, priority_id, expected_lock_versions[issue.id])
+      return issue_error if issue_error
+
+      issue.children.each do |child|
+        child.reload
+        next unless expected_lock_versions.key?(child.id)
+        child_error = ensure_priority_applied!(child, priority_id, expected_lock_versions[child.id])
+        return child_error if child_error
+      end
+
+      nil
+    end
+
+    def ensure_priority_applied!(issue, priority_id, expected_lock_version = nil)
       return nil unless priority_id.is_a?(Integer)
       return nil if issue.priority_id == priority_id
+
+      if expected_lock_version
+        updated = Issue.where(id: issue.id, lock_version: expected_lock_version)
+                       .update_all(priority_id: priority_id, lock_version: expected_lock_version + 1)
+        if updated == 1
+          issue.reload
+          return nil
+        end
+
+        return nil
+      end
 
       issue.update_column(:priority_id, priority_id)
       issue.priority_id = priority_id
       nil
     rescue StandardError => e
       "チケット ##{issue.id} の優先度を反映できません: #{e.message}"
-    end
-
-    def reconcile_priorities_after_commit!(issue, priority_id)
-      return nil unless priority_id.is_a?(Integer)
-
-      issue.reload
-      issue_error = ensure_priority_applied!(issue, priority_id)
-      return issue_error if issue_error
-
-      issue.children.each do |child|
-        child.reload
-        child_error = ensure_priority_applied!(child, priority_id)
-        return child_error if child_error
-      end
-
-      nil
     end
   end
 end

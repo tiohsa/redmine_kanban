@@ -16,6 +16,7 @@ describe('useKanbanPreferences', () => {
     );
 
     const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data'));
+    act(() => { result.current.setCurrentUserId(7); });
 
     expect(result.current.filters.assigneeIds).toEqual(['unassigned', '12']);
     expect(result.current.filters.q).toBe('abc');
@@ -28,6 +29,7 @@ describe('useKanbanPreferences', () => {
     );
 
     const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data'));
+    act(() => { result.current.setCurrentUserId(7); });
 
     expect(result.current.filters.assigneeIds).toEqual([]);
     expect(result.current.filters.q).toBe('legacy');
@@ -35,12 +37,13 @@ describe('useKanbanPreferences', () => {
 
   it('persists assigneeIds in the new filter format', () => {
     const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data'));
+    act(() => { result.current.setCurrentUserId(7); });
 
     act(() => {
       result.current.setFilters((previous) => ({ ...previous, assigneeIds: ['unassigned', '8'] }));
     });
 
-    expect(JSON.parse(localStorage.getItem('rk_filters:/projects/demo/kanban') ?? '{}')).toMatchObject({
+    expect(JSON.parse(localStorage.getItem('rk_filters:/projects/demo/kanban:user:7') ?? '{}')).toMatchObject({
       assigneeIds: ['unassigned', '8'],
     });
   });
@@ -52,19 +55,21 @@ describe('useKanbanPreferences', () => {
     );
 
     const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data'));
+    act(() => { result.current.setCurrentUserId(7); });
     expect(result.current.filters.trackerIds).toEqual([1, 2]);
 
     act(() => {
       result.current.setFilters((previous) => ({ ...previous, trackerIds: [3] }));
     });
 
-    expect(JSON.parse(localStorage.getItem('rk_filters:/projects/demo/kanban') ?? '{}')).toMatchObject({
+    expect(JSON.parse(localStorage.getItem('rk_filters:/projects/demo/kanban:user:7') ?? '{}')).toMatchObject({
       trackerIds: [3],
     });
   });
 
   it('persists lane and aging display preferences in the project scope', () => {
     const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data'));
+    act(() => { result.current.setCurrentUserId(7); });
 
     act(() => {
       result.current.setLaneType('priority');
@@ -73,9 +78,21 @@ describe('useKanbanPreferences', () => {
       result.current.setAgingExcludeClosed(false);
     });
 
-    expect(localStorage.getItem('rk_lane_type:/projects/demo/kanban')).toBe('priority');
-    expect(localStorage.getItem('rk_aging_warn_days:/projects/demo/kanban')).toBe('5');
-    expect(localStorage.getItem('rk_aging_danger_days:/projects/demo/kanban')).toBe('14');
-    expect(localStorage.getItem('rk_aging_exclude_closed:/projects/demo/kanban')).toBe('0');
+    expect(localStorage.getItem('rk_lane_type:/projects/demo/kanban:user:7')).toBe('priority');
+    expect(localStorage.getItem('rk_aging_warn_days:/projects/demo/kanban:user:7')).toBe('5');
+    expect(localStorage.getItem('rk_aging_danger_days:/projects/demo/kanban:user:7')).toBe('14');
+    expect(localStorage.getItem('rk_aging_exclude_closed:/projects/demo/kanban:user:7')).toBe('0');
+  });
+
+  it('keeps preferences isolated when the Redmine user changes', () => {
+    localStorage.setItem('rk_filters:/projects/demo/kanban:user:7', JSON.stringify({ q: 'user-a' }));
+    localStorage.setItem('rk_filters:/projects/demo/kanban:user:8', JSON.stringify({ q: 'user-b' }));
+    const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data'));
+
+    act(() => { result.current.setCurrentUserId(7); });
+    expect(result.current.filters.q).toBe('user-a');
+
+    act(() => { result.current.setCurrentUserId(8); });
+    expect(result.current.filters.q).toBe('user-b');
   });
 });

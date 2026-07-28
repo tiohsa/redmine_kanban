@@ -62,6 +62,18 @@ class RedmineKanbanPriorityConcurrencyTest < ActiveSupport::TestCase
     parent_update&.join
   end
 
+  def test_post_commit_reconcile_does_not_overwrite_a_newer_priority_update
+    issue = create_issue('Concurrent priority', priority: @original_priority)
+    expected_lock_version = issue.lock_version
+
+    issue.update!(priority: @new_priority)
+
+    reconciler = Object.new.extend(RedmineKanban::PriorityPropagation)
+    reconciler.send(:ensure_priority_applied!, issue.reload, @original_priority.id, expected_lock_version)
+
+    assert_equal @new_priority.id, issue.reload.priority_id
+  end
+
   private
 
   def create_issue(subject, parent_issue_id: nil, priority:)

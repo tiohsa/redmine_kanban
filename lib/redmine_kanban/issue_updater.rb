@@ -54,6 +54,7 @@ module RedmineKanban
 
       error_result = nil
       priority_updated = priority_id != :no_change
+      priority_lock_versions = nil
 
       Issue.transaction do
         issue.safe_attributes = attributes
@@ -69,6 +70,7 @@ module RedmineKanban
             error_result = error_response(priority_error)
             raise ActiveRecord::Rollback
           end
+          priority_lock_versions = priority_lock_versions_for(issue)
         end
       end
 
@@ -77,7 +79,7 @@ module RedmineKanban
       ancestor_updates_required = issue.saved_change_to_status_id? || issue.saved_change_to_done_ratio?
 
       if priority_id.is_a?(Integer)
-        reconcile_error = reconcile_priorities_after_commit!(issue, priority_id)
+        reconcile_error = reconcile_priorities_after_commit!(issue, priority_id, priority_lock_versions)
         return error_response(reconcile_error) if reconcile_error
       end
 

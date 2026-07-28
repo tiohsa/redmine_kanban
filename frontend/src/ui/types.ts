@@ -17,6 +17,9 @@ export type Subtask = {
   subject: string;
   status_id: number;
   tracker_id?: number;
+  assigned_to_id?: number | null;
+  due_date?: string | null;
+  priority_id?: number | null;
   is_closed: boolean;
   lock_version?: number;
   permissions?: IssuePermissions;
