@@ -45,6 +45,7 @@ export type ResolvedBoardIssue = {
   subject: string;
   lockVersion: number | null;
   assignedToId?: number | null;
+  allowedStatusIds?: number[];
   issueUrl: string;
   issueEditUrl: string;
   kind: 'issue' | 'subtask';
