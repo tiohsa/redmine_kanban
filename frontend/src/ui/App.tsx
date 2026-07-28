@@ -100,6 +100,7 @@ export function App({ dataUrl }: Props) {
     setAgingExcludeClosed,
     viewableProjectsEnabled,
     setViewableProjectsEnabled,
+    setCurrentUserId,
   } = useKanbanPreferences(dataUrl);
 
   const baseUrl = useMemo(() => projectScope, [projectScope]);
@@ -116,6 +117,10 @@ export function App({ dataUrl }: Props) {
   });
 
   const data = boardQuery.data ?? null;
+
+  useEffect(() => {
+    if (data) setCurrentUserId(data.meta.current_user_id);
+  }, [data, setCurrentUserId]);
   const loading = boardQuery.isLoading;
   const labels = data?.labels;
   const pagination = data?.meta.pagination;

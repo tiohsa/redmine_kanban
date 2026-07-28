@@ -45,6 +45,7 @@ module RedmineKanban
       preserve_parent_priority = priority_id == :no_change && @issue.parent_id.present?
       parent = nil
       parent_priority_before = nil
+      priority_lock_versions = nil
 
       Issue.transaction do
         if preserve_parent_priority
@@ -66,6 +67,7 @@ module RedmineKanban
           error_result = error_response(priority_error)
           raise ActiveRecord::Rollback
         end
+        priority_lock_versions = priority_lock_versions_for(@issue) if priority_id.is_a?(Integer)
 
         if preserve_parent_priority
           parent_error = restore_parent_priority!(parent, parent_priority_before)
@@ -81,7 +83,7 @@ module RedmineKanban
       ancestor_updates_required = @issue.saved_change_to_status_id? || @issue.saved_change_to_done_ratio?
 
       if priority_id.is_a?(Integer)
-        reconcile_error = reconcile_priorities_after_commit!(@issue, priority_id)
+        reconcile_error = reconcile_priorities_after_commit!(@issue, priority_id, priority_lock_versions)
         return error_response(reconcile_error) if reconcile_error
       end
 

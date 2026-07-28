@@ -78,6 +78,20 @@ describe('updateIssueInBoard', () => {
     expect(next.columns.find((column) => column.id === 1)?.count).toBe(700);
   });
 
+  it('updates server column totals when only a nested subtask changes status', () => {
+    const board = makeBoardData([
+      makeIssue(10, { subtasks: [{ id: 20, subject: 'Nested', status_id: 1, is_closed: false }] }),
+    ]);
+    board.columns[0].count = 100;
+    board.columns[1].count = 20;
+
+    const next = updateIssueInBoard(board, 20, (issue) => ({ ...issue, status_id: 2 }));
+
+    expect(next.issues[0].subtasks?.[0]).toMatchObject({ id: 20, status_id: 2, is_closed: true });
+    expect(next.columns.find((column) => column.id === 1)?.count).toBe(99);
+    expect(next.columns.find((column) => column.id === 2)?.count).toBe(21);
+  });
+
   it('syncs parent subtask status when child issue is updated', () => {
     const board = makeBoardData([
       makeIssue(10, {
@@ -154,6 +168,19 @@ describe('updateSubtaskInBoard', () => {
       is_closed: false,
       lock_version: 5,
     });
+  });
+
+  it('updates column totals for a nested subtask patch without a top-level card', () => {
+    const board = makeBoardData([
+      makeIssue(10, { subtasks: [{ id: 20, subject: 'Child', status_id: 2, is_closed: true }] }),
+    ]);
+    board.columns[0].count = 99;
+    board.columns[1].count = 21;
+
+    const next = updateSubtaskInBoard(board, 20, { status_id: 1, is_closed: false });
+
+    expect(next.columns.find((column) => column.id === 1)?.count).toBe(100);
+    expect(next.columns.find((column) => column.id === 2)?.count).toBe(20);
   });
 });
 

@@ -129,7 +129,6 @@ module RedmineKanban
       within_1_day: "redmine_kanban.label_within_1_day",
       within_specified_days: "redmine_kanban.label_within_specified_days",
       sort_by: "redmine_kanban.label_sort_by",
-      sort: "redmine_kanban.label_sort",
       display_settings: "redmine_kanban.label_display_settings",
       lane_type: "redmine_kanban.label_lane_type",
       none: "redmine_kanban.label_none",

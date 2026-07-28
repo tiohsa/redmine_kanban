@@ -203,6 +203,40 @@ describe('buildVisibleIssues', () => {
     expect(issues[0].subtasks?.[0].subtasks?.map((issue) => issue.id)).toEqual([4]);
   });
 
+  it('uses text, assignee, priority, and due-date predicates for descendants', () => {
+    const todayDate = new Date();
+    const today = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, '0')}-${String(todayDate.getDate()).padStart(2, '0')}`;
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Parent', {
+        assigned_to_id: 1,
+        subtasks: [
+          { id: 2, subject: 'Needle', status_id: 1, tracker_id: 1, assigned_to_id: 8, priority_id: 2, due_date: today, is_closed: false },
+          { id: 3, subject: 'Other', status_id: 1, tracker_id: 1, assigned_to_id: 9, priority_id: 1, due_date: '2000-01-01', is_closed: false },
+        ],
+      }),
+    ]);
+
+    for (const filters of [
+      makeFilters({ q: 'needle' }),
+      makeFilters({ assigneeIds: ['8'] }),
+      makeFilters({ priority: ['2'], priorityFilterEnabled: true }),
+      makeFilters({ due: '7days' }),
+    ]) {
+      const issues = buildVisibleIssues(data, filters, new Set(), null);
+      expect(issues).toHaveLength(1);
+      expect(issues[0].subtasks?.map((subtask) => subtask.id)).toEqual([2]);
+    }
+  });
+
+  it('hides a parent when neither it nor any descendant matches', () => {
+    const data = makeBoardData([makeIssue(1, 1, 'Parent', {
+      subtasks: [{ id: 2, subject: 'Child', status_id: 1, tracker_id: 1, assigned_to_id: 3, is_closed: false }],
+    })]);
+
+    expect(buildVisibleIssues(data, makeFilters({ q: 'absent' }), new Set(), null)).toEqual([]);
+    expect(buildVisibleIssues(data, makeFilters({ assigneeIds: ['8'] }), new Set(), null)).toEqual([]);
+  });
+
   it('includes no-priority issues when no_priority is selected', () => {
     const data = makeBoardData([
       makeIssue(1, 1, 'Prioritized', { priority_id: 1 }),

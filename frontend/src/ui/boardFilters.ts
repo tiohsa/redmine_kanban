@@ -96,9 +96,11 @@ function filterSubtasks(subtasks: Issue['subtasks'], filters: Filters): NonNulla
   return (subtasks ?? []).flatMap((subtask) => {
     const child = subtask as unknown as Issue;
     const nested = filterSubtasks(child.subtasks, filters);
-    const matchesSelf = filters.trackerIds.length === 0 || (child.tracker_id !== undefined && filters.trackerIds.includes(child.tracker_id));
+    const now = new Date();
+    const now0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const matchesSelf = matchesIssue(child, null, filters, filters.q.trim().toLowerCase(), now0, startOfWeek(now), endOfWeek(now));
     if (!matchesSelf && nested.length === 0) return [];
-    return [{ ...subtask, tracker_id: child.tracker_id, subtasks: nested }];
+    return [{ ...subtask, subtasks: nested }];
   });
 }
 

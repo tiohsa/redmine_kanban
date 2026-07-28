@@ -153,7 +153,7 @@ function issuesMatch(current: Issue, optimistic: Issue | null | undefined): bool
   return Boolean(optimistic) && JSON.stringify(current) === JSON.stringify(optimistic);
 }
 
-function findIssueInBoard(data: BoardData, issueId: number): Issue | null {
+export function findIssueInBoard(data: BoardData, issueId: number): Issue | null {
   const direct = data.issues.find((issue) => issue.id === issueId);
   if (direct) return direct;
   for (const issue of data.issues) {
@@ -177,24 +177,20 @@ export function updateIssueInBoard(
   issueId: number,
   updater: IssueUpdater
 ): BoardData {
-  const previous = data.issues.find((issue) => issue.id === issueId);
-  let issues = data.issues.map((issue) => (issue.id === issueId ? updater(issue) : issue));
-  const updated = issues.find((issue) => issue.id === issueId);
-  if (updated?.parent_id) {
-    const closed = data.columns.find((column) => column.id === updated.status_id)?.is_closed ?? false;
-    issues = issues.map((issue) => {
-      if (!issue.subtasks) return issue;
-      const nextSubtasks = updateSubtasksTree(issue.subtasks, updated.id, {
-        status_id: updated.status_id,
-        is_closed: closed,
-      });
-      if (nextSubtasks === issue.subtasks) return issue;
-      return {
-        ...issue,
-        subtasks: nextSubtasks,
-      };
+  const previous = findIssueInBoard(data, issueId);
+  if (!previous) return data;
+
+  const updated = updater(previous);
+  const closed = data.columns.find((column) => column.id === updated.status_id)?.is_closed ?? false;
+  const issues = data.issues.map((issue) => {
+    const nextIssue = issue.id === issueId ? updated : issue;
+    const subtasks = updateSubtasksTree(nextIssue.subtasks, issueId, {
+      status_id: updated.status_id,
+      is_closed: closed,
+      lock_version: updated.lock_version,
     });
-  }
+    return subtasks === nextIssue.subtasks ? nextIssue : { ...nextIssue, subtasks };
+  });
   return {
     ...data,
     issues,
@@ -216,7 +212,14 @@ export function updateSubtaskInBoard(
     return { ...issue, subtasks };
   });
 
-  return changed ? { ...data, issues } : data;
+  if (!changed) return data;
+
+  const previous = findIssueInBoard(data, subtaskId);
+  return {
+    ...data,
+    issues,
+    columns: updateColumnCounts(data.columns, previous?.status_id, patch.status_id),
+  };
 }
 
 export function applyAncestorIssueUpdates(
