@@ -48,7 +48,7 @@ function createWrapper(client: QueryClient) {
   };
 }
 
-function renderActions(options: { refresh?: () => Promise<void>; setError?: (value: string | null) => void } = {}) {
+function renderActions(options: { data?: BoardData; refresh?: () => Promise<void>; setError?: (value: string | null) => void } = {}) {
   const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   const setError = options.setError ?? vi.fn();
   const refresh = options.refresh ?? vi.fn(async () => undefined);
@@ -56,7 +56,7 @@ function renderActions(options: { refresh?: () => Promise<void>; setError?: (val
     () => useKanbanActions({
       baseUrl: '/projects/demo/kanban',
       boardQueryKey: ['kanban', 'board'],
-      data: makeBoardData(),
+      data: options.data ?? makeBoardData(),
       refresh,
       timeEntryOnClose: false,
       setNotice: vi.fn(),
@@ -135,5 +135,33 @@ describe('useKanbanActions delete flow', () => {
     await waitFor(() => expect(setError).toHaveBeenCalledWith('削除できません'));
 
     expect(result.current.pendingDeleteIssue).toBeNull();
+  });
+
+  it('deletes a nested subtask and does not create an Undo payload', async () => {
+    const board = makeBoardData(makeIssue(1));
+    board.issues[0].subtasks = [{ id: 2, subject: 'Nested', status_id: 1, is_closed: false, lock_version: 4 }];
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const { result } = renderActions({ data: board });
+
+    await act(async () => { result.current.requestDelete(2, 'subtask'); });
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
+
+    expect(globalThis.fetch).toHaveBeenCalledWith('/projects/demo/kanban/issues/2', expect.objectContaining({ method: 'DELETE' }));
+    expect(result.current.pendingDeleteIssue).toBeNull();
+  });
+
+  it('sends one DELETE while the same issue is in flight', async () => {
+    let resolveFetch!: (response: Response) => void;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => new Promise((resolve) => { resolveFetch = resolve; }));
+    const { result } = renderActions();
+
+    act(() => {
+      result.current.requestDelete(1);
+      result.current.requestDelete(1);
+    });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+    await act(async () => { resolveFetch(new Response(JSON.stringify({ ok: true }), { status: 200 })); });
+    await waitFor(() => expect(result.current.pendingDeleteIssue?.id).toBe(1));
   });
 });

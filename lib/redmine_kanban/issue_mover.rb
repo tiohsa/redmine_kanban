@@ -23,6 +23,8 @@ module RedmineKanban
       priority_id = normalize_priority_id(priority_id, priority_provided)
       lock_version = normalize_lock_version(lock_version)
 
+      return error_response('lock_versionが必要です') if lock_version.nil?
+
       if priority_id == :invalid
         return error_response('優先度の値が不正です')
       end
@@ -41,9 +43,16 @@ module RedmineKanban
 
       error_result = nil
       preserve_parent_priority = priority_id == :no_change && @issue.parent_id.present?
-      parent_priority_before = @issue.parent&.priority_id if preserve_parent_priority
+      parent = nil
+      parent_priority_before = nil
 
       Issue.transaction do
+        if preserve_parent_priority
+          parent = @issue.parent
+          parent.lock! if parent
+          parent_priority_before = parent&.priority_id
+        end
+
         @issue.safe_attributes = attrs
         @issue.lock_version = lock_version if lock_version
 
@@ -59,7 +68,7 @@ module RedmineKanban
         end
 
         if preserve_parent_priority
-          parent_error = restore_parent_priority!(parent_priority_before)
+          parent_error = restore_parent_priority!(parent, parent_priority_before)
           if parent_error
             error_result = error_response(parent_error)
             raise ActiveRecord::Rollback
@@ -102,9 +111,9 @@ module RedmineKanban
       normalize_active_priority_id(value)
     end
 
-    def restore_parent_priority!(expected_priority_id)
-      parent = @issue.parent
+    def restore_parent_priority!(parent, expected_priority_id)
       return nil unless parent
+      parent.reload
       return nil if parent.priority_id == expected_priority_id
 
       parent.update_column(:priority_id, expected_priority_id)

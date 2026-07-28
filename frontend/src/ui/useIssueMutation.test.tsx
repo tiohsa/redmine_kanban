@@ -53,18 +53,29 @@ function createWrapper(client: QueryClient) {
 }
 
 describe('updateIssueInBoard', () => {
-  it('updates matching issue and rebuilds column counts', () => {
+  it('updates matching issue by applying a status-count delta to the server totals', () => {
     const board = makeBoardData([
       makeIssue(1, { status_id: 1 }),
       makeIssue(2, { status_id: 1 }),
       makeIssue(3, { status_id: 2 }),
     ]);
+    board.columns[0].count = 699;
+    board.columns[1].count = 1;
 
     const next = updateIssueInBoard(board, 2, (issue) => ({ ...issue, status_id: 2 }));
 
     expect(next.issues.find((issue) => issue.id === 2)?.status_id).toBe(2);
-    expect(next.columns.find((column) => column.id === 1)?.count).toBe(1);
+    expect(next.columns.find((column) => column.id === 1)?.count).toBe(698);
     expect(next.columns.find((column) => column.id === 2)?.count).toBe(2);
+  });
+
+  it('does not change column counts when an edit preserves status', () => {
+    const board = makeBoardData([makeIssue(1, { status_id: 1 })]);
+    board.columns[0].count = 700;
+
+    const next = updateIssueInBoard(board, 1, (issue) => ({ ...issue, subject: 'Edited' }));
+
+    expect(next.columns.find((column) => column.id === 1)?.count).toBe(700);
   });
 
   it('syncs parent subtask status when child issue is updated', () => {

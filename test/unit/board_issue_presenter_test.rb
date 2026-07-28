@@ -6,7 +6,7 @@ include ActiveSupport::Testing::TimeHelpers
 
 class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
   FakeProject = Struct.new(:id, :name)
-  FakeStatus = Struct.new(:is_closed) do
+  FakeStatus = Struct.new(:id, :is_closed) do
     def is_closed?
       is_closed
     end
@@ -56,6 +56,18 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
     issue.define_singleton_method(:updated_on) { Time.utc(2026, 7, 19) }
 
     assert_equal 2, travel_to(Time.utc(2026, 7, 21)) { RedmineKanban::BoardIssuePresenter.aging_days_for(issue) }
+  end
+
+  def test_allowed_status_ids_uses_redmine_workflow_for_current_user
+    issue = fake_issue(id: 1, subject: 'Workflow')
+    current = Struct.new(:id).new(1)
+    allowed_closed = Struct.new(:id).new(3)
+    issue.status = current
+    issue.define_singleton_method(:new_statuses_allowed_to) { |_user| [allowed_closed] }
+
+    presenter = presenter_for({})
+
+    assert_equal [1, 3], presenter.send(:allowed_status_ids_for, issue)
   end
 
   def test_subtask_tree_skips_visited_issues
@@ -118,7 +130,7 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
       subject: subject,
       status_id: 1,
       tracker_id: 1,
-      status: FakeStatus.new(false),
+      status: FakeStatus.new(1, false),
       lock_version: 1,
       project: project
     )

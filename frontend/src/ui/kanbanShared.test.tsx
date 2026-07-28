@@ -55,7 +55,7 @@ describe('resolveBoardIssue', () => {
   it('resolves top-level issues with existing urls', () => {
     const data = makeBoardData([makeIssue(10, { subject: 'Top level', project: { id: 3, name: 'Subproject' } })]);
 
-    expect(resolveBoardIssue(data, 10)).toEqual({
+    expect(resolveBoardIssue(data, 10)).toMatchObject({
       id: 10,
       subject: 'Top level',
       lockVersion: 3,
@@ -133,6 +133,27 @@ describe('findSubtask', () => {
       lockVersion: 11,
       assignedToId: undefined,
     });
+  });
+});
+
+describe('resolveSubtaskStatus', () => {
+  it('selects an allowed closed status instead of the first closed board column', async () => {
+    const { resolveSubtaskStatus } = await import('./kanbanShared');
+    const data = makeBoardData([]);
+    data.columns = [
+      { id: 1, name: 'Open', is_closed: false },
+      { id: 2, name: 'Blocked closed', is_closed: true },
+      { id: 3, name: 'Allowed closed', is_closed: true },
+    ];
+
+    expect(resolveSubtaskStatus(data, false, [3])).toBe(3);
+  });
+
+  it('returns null when the workflow offers no status for the requested transition', async () => {
+    const { resolveSubtaskStatus } = await import('./kanbanShared');
+    const data = makeBoardData([]);
+
+    expect(resolveSubtaskStatus(data, false, [1])).toBeNull();
   });
 });
 

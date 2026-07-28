@@ -48,7 +48,7 @@ module RedmineKanban
     end
 
     def project_catalog
-      @project_catalog ||= ProjectCatalog.new(user: @user)
+      @project_catalog ||= ProjectCatalog.new(user: @user, board_project: @project)
     end
   end
 end

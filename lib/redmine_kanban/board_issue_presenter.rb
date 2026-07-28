@@ -31,6 +31,7 @@ module RedmineKanban
         aging_days: self.class.aging_days_for(issue),
         project: { id: issue.project_id, name: issue.project.name },
         permissions: permissions_for(issue),
+        allowed_status_ids: allowed_status_ids_for(issue),
         subtasks: subtask_tree(issue, Set[issue.id]),
         urls: {
           issue: Rails.application.routes.url_helpers.issue_path(issue),
@@ -66,6 +67,7 @@ module RedmineKanban
         lock_version: issue.lock_version,
         project: { id: issue.project.id, name: issue.project.name },
         permissions: permissions_for(issue),
+        allowed_status_ids: allowed_status_ids_for(issue),
         subtasks: subtask_tree(issue, visited_ids),
       }
     end
@@ -77,6 +79,11 @@ module RedmineKanban
         can_edit: permission_policy.can_update_issue?(issue, @board_project || project),
         can_delete: permission_policy.can_delete_issue?(issue, @board_project || project),
       }
+    end
+
+    def allowed_status_ids_for(issue)
+      statuses = issue.respond_to?(:new_statuses_allowed_to) ? issue.new_statuses_allowed_to(@user) : []
+      ([issue.status] + statuses).compact.map(&:id).uniq
     end
 
     def permission_policy
