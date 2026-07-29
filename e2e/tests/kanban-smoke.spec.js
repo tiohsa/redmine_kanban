@@ -86,3 +86,90 @@ test('kanban page loads without request errors and without Loading text', async 
   expect(pageErrors, pageErrors.join('\n')).toEqual([]);
   expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
 });
+
+test('nested child can close and reopen while server column counts return to baseline', async ({ page, baseURL }) => {
+  const redmineBase = baseURL || 'http://127.0.0.1:3002';
+  const dataUrl = `${redmineBase}/projects/ecookbook/kanban/data`;
+
+  await adminLogin(page, redmineBase);
+  await page.goto(`${redmineBase}/projects/ecookbook/kanban`);
+
+  const getBoard = async () => page.evaluate(async (url) => {
+    const response = await fetch(url, { credentials: 'same-origin' });
+    return response.json();
+  }, dataUrl);
+  let initial = await getBoard();
+  let parent = initial.issues.find((issue) => issue.subject === 'Kanban E2E parent issue');
+  let child = parent?.subtasks?.find((subtask) => subtask.subject === 'Kanban E2E nested child');
+  expect(parent).toBeTruthy();
+  expect(child).toBeTruthy();
+
+  const openColumn = initial.columns.find((column) =>
+    !column.is_closed && child.allowed_status_ids.includes(column.id)
+  );
+  const closedColumn = initial.columns.find((column) =>
+    column.is_closed && child.allowed_status_ids.includes(column.id)
+  );
+  expect(openColumn).toBeTruthy();
+  expect(closedColumn).toBeTruthy();
+
+  const moveChild = async (statusId, lockVersion) => page.evaluate(
+    async ({ issueId, statusId: targetStatusId, lockVersion: currentLockVersion }) => {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+      const response = await fetch(
+        `/projects/ecookbook/kanban/issues/${issueId}/move`,
+        {
+          method: 'PATCH',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': csrfToken,
+          },
+          body: JSON.stringify({
+            issue: {
+              status_id: targetStatusId,
+              lock_version: currentLockVersion,
+            },
+          }),
+        },
+      );
+      return { status: response.status, body: await response.json() };
+    },
+    { issueId: child.id, statusId, lockVersion },
+  );
+
+  // A Playwright retry can start after the previous attempt already closed the
+  // child. Normalize to the open baseline before asserting count deltas.
+  if (child.status_id !== openColumn.id) {
+    const normalized = await moveChild(openColumn.id, child.lock_version);
+    expect(normalized.status).toBe(200);
+    initial = await getBoard();
+    parent = initial.issues.find((issue) => issue.subject === 'Kanban E2E parent issue');
+    child = parent?.subtasks?.find((subtask) => subtask.subject === 'Kanban E2E nested child');
+  }
+
+  const closed = await moveChild(closedColumn.id, child.lock_version);
+  expect(closed.status).toBe(200);
+  expect(closed.body.issue).toMatchObject({
+    id: child.id,
+    status_id: closedColumn.id,
+    status_is_closed: true,
+  });
+
+  const afterClose = await getBoard();
+  expect(afterClose.columns.find((column) => column.id === openColumn.id).count).toBe(openColumn.count - 1);
+  expect(afterClose.columns.find((column) => column.id === closedColumn.id).count).toBe(closedColumn.count + 1);
+
+  const reopened = await moveChild(openColumn.id, closed.body.issue.lock_version);
+  expect(reopened.status).toBe(200);
+  expect(reopened.body.issue).toMatchObject({
+    id: child.id,
+    status_id: openColumn.id,
+    status_is_closed: false,
+  });
+
+  const afterReopen = await getBoard();
+  expect(afterReopen.columns.map((column) => [column.id, column.count])).toEqual(
+    initial.columns.map((column) => [column.id, column.count]),
+  );
+});

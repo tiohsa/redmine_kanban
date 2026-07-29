@@ -203,6 +203,78 @@ describe('buildVisibleIssues', () => {
     expect(issues[0].subtasks?.[0].subtasks?.map((issue) => issue.id)).toEqual([4]);
   });
 
+  it('applies the status filter to descendant branches', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Open parent', {
+        subtasks: [
+          { id: 2, subject: 'Closed child', status_id: 2, is_closed: true },
+          { id: 3, subject: 'Open child', status_id: 1, is_closed: false },
+        ],
+      }),
+    ]);
+
+    const issues = buildVisibleIssues(data, makeFilters({ statusIds: [1] }), new Set(), null);
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0].subtasks?.map((subtask) => subtask.id)).toEqual([3]);
+  });
+
+  it('keeps a parent as context when only a descendant matches status and project', () => {
+    const data = makeBoardData([
+      makeIssue(1, 2, 'Parent', {
+        project: { id: 1, name: 'Root' },
+        subtasks: [
+          {
+            id: 2,
+            subject: 'Matching child',
+            status_id: 1,
+            is_closed: false,
+            project: { id: 9, name: 'Subproject' },
+          },
+          {
+            id: 3,
+            subject: 'Wrong project',
+            status_id: 1,
+            is_closed: false,
+            project: { id: 1, name: 'Root' },
+          },
+        ],
+      }),
+    ]);
+
+    const issues = buildVisibleIssues(
+      data,
+      makeFilters({ statusIds: [1], projectIds: [9] }),
+      new Set(),
+      null,
+    );
+
+    expect(issues.map((issue) => issue.id)).toEqual([1]);
+    expect(issues[0].subtasks?.map((subtask) => subtask.id)).toEqual([2]);
+  });
+
+  it('hides a parent when neither it nor any descendant matches project', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Parent', {
+        project: { id: 1, name: 'Root' },
+        subtasks: [{
+          id: 2,
+          subject: 'Child',
+          status_id: 1,
+          is_closed: false,
+          project: { id: 2, name: 'Other' },
+        }],
+      }),
+    ]);
+
+    expect(buildVisibleIssues(
+      data,
+      makeFilters({ projectIds: [9] }),
+      new Set(),
+      null,
+    )).toEqual([]);
+  });
+
   it('uses text, assignee, priority, and due-date predicates for descendants', () => {
     const todayDate = new Date();
     const today = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, '0')}-${String(todayDate.getDate()).padStart(2, '0')}`;

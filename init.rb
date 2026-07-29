@@ -4,7 +4,7 @@ Redmine::Plugin.register :redmine_kanban do
   name 'Redmine Kanban'
   author 'tiohsa'
   description 'Redmine kanban'
-  version '0.3.2'
+  version '0.4.0'
   url 'https://github.com/tiohsa/redmine_kanban'
   author_url 'https://github.com/tiohsa'
   project_module :redmine_kanban do

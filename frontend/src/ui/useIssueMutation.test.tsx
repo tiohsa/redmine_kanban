@@ -277,6 +277,148 @@ describe('replaceIssueInBoard', () => {
     const next = replaceIssueInBoard(board, makeIssue(1, { subject: 'After' }));
     expect(next.issues[0].subject).toBe('After');
   });
+
+  it('replaces a deeply nested subtask and applies a status-count delta', () => {
+    const board = makeBoardData([
+      makeIssue(10, {
+        subtasks: [{
+          id: 20,
+          subject: 'Child',
+          status_id: 1,
+          is_closed: false,
+          subtasks: [{
+            id: 30,
+            subject: 'Grandchild',
+            status_id: 1,
+            is_closed: false,
+            lock_version: 4,
+          }],
+        }],
+      }),
+    ]);
+    board.columns[0].count = 100;
+    board.columns[1].count = 20;
+
+    const next = replaceIssueInBoard(board, makeIssue(30, {
+      subject: 'Server grandchild',
+      status_id: 2,
+      lock_version: 5,
+    }));
+
+    expect(next.issues[0].subtasks?.[0].subtasks?.[0]).toMatchObject({
+      subject: 'Server grandchild',
+      status_id: 2,
+      is_closed: true,
+      lock_version: 5,
+    });
+    expect(next.columns.map((column) => column.count)).toEqual([99, 21]);
+  });
+
+  it('preserves subtask-only attributes when applying a normal issue response', () => {
+    const board = makeBoardData([
+      makeIssue(10, {
+        subtasks: [{
+          id: 20,
+          subject: 'Child',
+          status_id: 1,
+          tracker_id: 3,
+          assigned_to_id: 8,
+          priority_id: 2,
+          due_date: '2026-08-01',
+          is_closed: false,
+          lock_version: 4,
+          allowed_status_ids: [1, 2],
+          permissions: { can_move: true, can_edit: true, can_delete: false },
+          project: { id: 9, name: 'Subproject' },
+          subtasks: [{ id: 30, subject: 'Grandchild', status_id: 1, is_closed: false }],
+        }],
+      }),
+    ]);
+
+    const next = replaceIssueInBoard(board, makeIssue(20, {
+      subject: 'Server child',
+      status_id: 2,
+      tracker_id: 3,
+      assigned_to_id: 8,
+      priority_id: 2,
+      due_date: '2026-08-01',
+      lock_version: 5,
+    }));
+    const child = next.issues[0].subtasks?.[0];
+
+    expect(child).toMatchObject({
+      subject: 'Server child',
+      status_id: 2,
+      is_closed: true,
+      lock_version: 5,
+      allowed_status_ids: [1, 2],
+      permissions: { can_move: true, can_edit: true, can_delete: false },
+      project: { id: 9, name: 'Subproject' },
+    });
+    expect(child?.subtasks?.map((subtask) => subtask.id)).toEqual([30]);
+  });
+
+  it('derives an open subtask state from the canonical server status', () => {
+    const board = makeBoardData([
+      makeIssue(10, {
+        subtasks: [{
+          id: 20,
+          subject: 'Closed child',
+          status_id: 2,
+          is_closed: true,
+          lock_version: 5,
+        }],
+      }),
+    ]);
+    board.columns[0].count = 99;
+    board.columns[1].count = 21;
+
+    const next = replaceIssueInBoard(board, makeIssue(20, {
+      subject: 'Reopened child',
+      status_id: 1,
+      lock_version: 6,
+    }));
+
+    expect(next.issues[0].subtasks?.[0]).toMatchObject({
+      status_id: 1,
+      is_closed: false,
+      lock_version: 6,
+    });
+    expect(next.columns.map((column) => column.count)).toEqual([100, 20]);
+  });
+
+  it('keeps pagination metadata and applies deltas to full server counts', () => {
+    const board = makeBoardData([
+      makeIssue(10, {
+        subtasks: [{
+          id: 20,
+          subject: 'Loaded child',
+          status_id: 1,
+          is_closed: false,
+          lock_version: 4,
+        }],
+      }),
+    ]);
+    board.meta.pagination = {
+      issue_limit: 25,
+      offset: 0,
+      issue_count: 1,
+      total_issue_count: 700,
+      next_offset: 25,
+      has_more_issues: true,
+    };
+    board.columns[0].count = 680;
+    board.columns[1].count = 20;
+
+    const next = replaceIssueInBoard(board, makeIssue(20, {
+      status_id: 2,
+      lock_version: 5,
+    }));
+
+    expect(next.columns.map((column) => column.count)).toEqual([679, 21]);
+    expect(next.meta.pagination).toEqual(board.meta.pagination);
+    expect(next.issues).toHaveLength(1);
+  });
 });
 
 describe('isIssueFresh', () => {
@@ -321,6 +463,54 @@ describe('useIssueMutation', () => {
       done_ratio: 80,
       status_id: 2,
     });
+  });
+
+  it('does not rewind a nested subtask or server counts with a stale response', async () => {
+    const queryKey = ['kanban', 'board', 'nested-freshness'] as const;
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const current = makeBoardData([
+      makeIssue(10, {
+        subtasks: [{
+          id: 20,
+          subject: 'Current child',
+          status_id: 1,
+          is_closed: false,
+          lock_version: 12,
+          allowed_status_ids: [1, 2],
+        }],
+      }),
+    ]);
+    current.columns[0].count = 100;
+    current.columns[1].count = 20;
+    queryClient.setQueryData(queryKey, current);
+
+    const { result } = renderHook(
+      () => useIssueMutation({
+        queryKey,
+        mutationFn: async () => ({
+          issue: makeIssue(20, {
+            subject: 'Stale child',
+            status_id: 2,
+            lock_version: 11,
+          }),
+        }),
+        applyOptimistic: (data) => data,
+        applyServer: (data, response: { issue: Issue }, _payload, options = { applyTarget: true }) =>
+          options.applyTarget ? replaceIssueInBoard(data, response.issue) : data,
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await act(async () => { await result.current.mutateAsync({ issueId: 20 }); });
+
+    const next = queryClient.getQueryData<BoardData>(queryKey);
+    expect(next?.issues[0].subtasks?.[0]).toMatchObject({
+      subject: 'Current child',
+      status_id: 1,
+      is_closed: false,
+      lock_version: 12,
+    });
+    expect(next?.columns.map((column) => column.count)).toEqual([100, 20]);
   });
 
   it('applies optimistic update, then applies server response and settles callbacks', async () => {
@@ -421,6 +611,98 @@ describe('useIssueMutation', () => {
     expect(onError).toHaveBeenCalledTimes(1);
   });
 
+  it('rolls back nested subtask status and server column totals on error', async () => {
+    const queryKey = ['kanban', 'board', 'nested-error'] as const;
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const initial = makeBoardData([
+      makeIssue(10, {
+        subtasks: [{
+          id: 20,
+          subject: 'Child',
+          status_id: 1,
+          is_closed: false,
+          lock_version: 3,
+        }],
+      }),
+    ]);
+    initial.columns[0].count = 100;
+    initial.columns[1].count = 20;
+    queryClient.setQueryData(queryKey, initial);
+
+    const { result } = renderHook(
+      () => useIssueMutation({
+        queryKey,
+        mutationFn: async () => { throw new Error('validation failed'); },
+        applyOptimistic: (data) => updateIssueInBoard(data, 20, (issue) => ({
+          ...issue,
+          status_id: 2,
+        })),
+        applyServer: (data) => data,
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await act(async () => {
+      await expect(result.current.mutateAsync({ issueId: 20 })).rejects.toThrow('validation failed');
+    });
+
+    const current = queryClient.getQueryData<BoardData>(queryKey);
+    expect(current?.issues[0].subtasks?.[0]).toMatchObject({
+      status_id: 1,
+      is_closed: false,
+      lock_version: 3,
+    });
+    expect(current?.columns.map((column) => column.count)).toEqual([100, 20]);
+  });
+
+  it('rolls back a failed nested reopen and restores server column totals', async () => {
+    const queryKey = ['kanban', 'board', 'nested-reopen-error'] as const;
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const initial = makeBoardData([
+      makeIssue(10, {
+        subtasks: [{
+          id: 20,
+          subject: 'Child',
+          status_id: 2,
+          is_closed: true,
+          lock_version: 4,
+        }],
+      }),
+    ]);
+    initial.columns[0].count = 99;
+    initial.columns[1].count = 21;
+    queryClient.setQueryData(queryKey, initial);
+
+    const { result } = renderHook(
+      () => useIssueMutation({
+        queryKey,
+        mutationFn: async () => { throw new Error('conflict'); },
+        applyOptimistic: (data) => updateIssueInBoard(data, 20, (issue) => ({
+          ...issue,
+          status_id: 1,
+        })),
+        applyServer: (data) => data,
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await act(async () => {
+      await expect(result.current.mutateAsync({ issueId: 20 })).rejects.toThrow('conflict');
+    });
+
+    const current = queryClient.getQueryData<BoardData>(queryKey);
+    expect(current?.issues[0].subtasks?.[0]).toMatchObject({
+      status_id: 2,
+      is_closed: true,
+      lock_version: 4,
+    });
+    expect(current?.columns.map((column) => column.count)).toEqual([99, 21]);
+  });
+
   it('does not roll back a successful overlapping mutation when a later mutation fails', async () => {
     const queryKey = ['kanban', 'board', 'overlap'] as const;
     const queryClient = new QueryClient({
@@ -474,6 +756,77 @@ describe('useIssueMutation', () => {
 
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey });
     expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0].subject).not.toBe('V10');
+  });
+
+  it('does not let overlapping nested responses or failures corrupt column counts', async () => {
+    const queryKey = ['kanban', 'board', 'nested-overlap'] as const;
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const initial = makeBoardData([
+      makeIssue(10, {
+        subtasks: [{
+          id: 20,
+          subject: 'Child',
+          status_id: 1,
+          is_closed: false,
+          lock_version: 10,
+        }],
+      }),
+    ]);
+    initial.columns[0].count = 100;
+    initial.columns[1].count = 20;
+    queryClient.setQueryData(queryKey, initial);
+
+    let resolveClose!: (value: { issue: Issue }) => void;
+    let rejectReopen!: (error: Error) => void;
+    let callCount = 0;
+    const closeRequest = new Promise<{ issue: Issue }>((resolve) => { resolveClose = resolve; });
+    const reopenRequest = new Promise<{ issue: Issue }>((_resolve, reject) => { rejectReopen = reject; });
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(
+      () => useIssueMutation<{ issueId: number; statusId: number }, { issue: Issue }>({
+        queryKey,
+        mutationFn: () => {
+          callCount += 1;
+          return callCount === 1 ? closeRequest : reopenRequest;
+        },
+        applyOptimistic: (data, payload) => updateIssueInBoard(data, payload.issueId, (issue) => ({
+          ...issue,
+          status_id: payload.statusId,
+        })),
+        applyServer: (data, response, _payload, options = { applyTarget: true }) =>
+          options.applyTarget ? replaceIssueInBoard(data, response.issue) : data,
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    let close!: Promise<unknown>;
+    let reopen!: Promise<unknown>;
+    await act(async () => {
+      close = result.current.mutateAsync({ issueId: 20, statusId: 2 });
+      reopen = result.current.mutateAsync({ issueId: 20, statusId: 1 });
+      await waitFor(() => expect(callCount).toBe(2));
+    });
+
+    await act(async () => {
+      resolveClose({ issue: makeIssue(20, { status_id: 2, lock_version: 11 }) });
+      await close;
+    });
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0].subtasks?.[0]).toMatchObject({
+      status_id: 1,
+      is_closed: false,
+    });
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.columns.map((column) => column.count)).toEqual([100, 20]);
+
+    await act(async () => {
+      rejectReopen(new Error('conflict'));
+      await expect(reopen).rejects.toThrow('conflict');
+    });
+
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey });
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.columns.map((column) => column.count)).toEqual([100, 20]);
   });
 
   it('keeps an issue busy until the latest overlapping mutation settles', async () => {
