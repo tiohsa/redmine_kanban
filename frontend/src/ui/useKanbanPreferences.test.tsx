@@ -142,4 +142,20 @@ describe('useKanbanPreferences', () => {
     act(() => { result.current.setCurrentUserId(8); });
     expect(result.current.filters.q).toBe('user-b');
   });
+
+  it('keeps lane preferences isolated between projects for the same user', () => {
+    localStorage.setItem('rk_lane_type:/projects/alpha/kanban:user:7', 'priority');
+    localStorage.setItem('rk_lane_type:/projects/beta/kanban:user:7', 'none');
+
+    const alpha = renderHook(() => useKanbanPreferences('/projects/alpha/kanban/data'));
+    const beta = renderHook(() => useKanbanPreferences('/projects/beta/kanban/data'));
+
+    act(() => {
+      alpha.result.current.setCurrentUserId(7);
+      beta.result.current.setCurrentUserId(7);
+    });
+
+    expect(alpha.result.current.laneType).toBe('priority');
+    expect(beta.result.current.laneType).toBe('none');
+  });
 });
