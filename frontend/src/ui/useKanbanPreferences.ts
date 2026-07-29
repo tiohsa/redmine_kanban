@@ -33,6 +33,14 @@ function writeStorageValue(key: string, value: string) {
   }
 }
 
+function removeStorageValue(key: string) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
+
 function readFilters(storageKey: string | null, legacyKey?: string): Filters {
   try {
     const value = (storageKey && readStorageValue(storageKey)) || (legacyKey && readStorageValue(legacyKey));
@@ -107,7 +115,25 @@ export function useKanbanPreferences(dataUrl: string) {
     setFontSize(Number(readStorageValue(fontSizeStorageKey!) ?? readStorageValue('rk_font_size')) || 13);
     setTimeEntryOnClose((readStorageValue(timeEntryStorageKey!) ?? readStorageValue('rk_time_entry_on_close')) === '1');
     const laneType = readStorageValue(laneTypeStorageKey!);
-    setLaneType(laneType === 'none' || laneType === 'priority' || laneType === 'assignee' ? laneType : readScopedBooleanWithLegacy(priorityLaneStorageKey!, makeScopedStorageKey('rk_priority_lane_enabled', projectScope), false) ? 'priority' : 'assignee');
+    const legacyLaneTypeStorageKey = makeScopedStorageKey('rk_lane_type', projectScope);
+    const legacyLaneType = laneType === null ? readStorageValue(legacyLaneTypeStorageKey) : null;
+    const resolvedLaneType = laneType ?? legacyLaneType;
+    setLaneType(
+      resolvedLaneType === 'none' || resolvedLaneType === 'priority' || resolvedLaneType === 'assignee'
+        ? resolvedLaneType
+        : readScopedBooleanWithLegacy(
+            priorityLaneStorageKey!,
+            makeScopedStorageKey('rk_priority_lane_enabled', projectScope),
+            false,
+          )
+          ? 'priority'
+          : 'assignee',
+    );
+    if (laneType === null && legacyLaneType !== null) {
+      // The project-scoped value belonged to the first user upgrading from the
+      // legacy version. Consume it so a later Redmine user does not inherit it.
+      removeStorageValue(legacyLaneTypeStorageKey);
+    }
     const warnDays = Math.max(0, Number(readStorageValue(agingWarnDaysStorageKey!) ?? readStorageValue(makeScopedStorageKey('rk_aging_warn_days', projectScope))) || 3);
     setAgingWarnDays(warnDays);
     setAgingDangerDays(Math.max(warnDays, Number(readStorageValue(agingDangerDaysStorageKey!) ?? readStorageValue(makeScopedStorageKey('rk_aging_danger_days', projectScope))) || 7));

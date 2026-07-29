@@ -165,3 +165,127 @@ describe('useKanbanActions delete flow', () => {
     await waitFor(() => expect(result.current.pendingDeleteIssue?.id).toBe(1));
   });
 });
+
+describe('useKanbanActions nested toggle flow', () => {
+  it('uses the canonical lock version for a consecutive close then reopen', async () => {
+    const queryKey = ['kanban', 'board', 'toggle'] as const;
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const initial = makeBoardData(makeIssue(1));
+    initial.columns = [
+      { id: 1, name: 'Open', is_closed: false, count: 100 },
+      { id: 2, name: 'Closed', is_closed: true, count: 20 },
+    ];
+    initial.issues[0].subtasks = [{
+      id: 2,
+      subject: 'Nested',
+      status_id: 1,
+      is_closed: false,
+      lock_version: 3,
+      allowed_status_ids: [1, 2],
+    }];
+    queryClient.setQueryData(queryKey, initial);
+
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        issue: { ...makeIssue(2), status_id: 2, lock_version: 4 },
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        issue: { ...makeIssue(2), status_id: 1, lock_version: 5 },
+      }), { status: 200 }));
+
+    const { result, rerender } = renderHook(
+      ({ data }: { data: BoardData }) => useKanbanActions({
+        baseUrl: '/projects/demo/kanban',
+        boardQueryKey: queryKey,
+        data,
+        refresh: vi.fn(async () => undefined),
+        timeEntryOnClose: false,
+        setNotice: vi.fn(),
+        setError: vi.fn(),
+        setIframeTimeEntryUrl: vi.fn(),
+      }),
+      {
+        initialProps: { data: initial },
+        wrapper: createWrapper(queryClient),
+      },
+    );
+
+    act(() => { result.current.toggleSubtask(2, false); });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0].subtasks?.[0]).toMatchObject({
+        status_id: 2,
+        is_closed: true,
+        lock_version: 4,
+      });
+    });
+
+    const afterClose = queryClient.getQueryData<BoardData>(queryKey)!;
+    rerender({ data: afterClose });
+    act(() => { result.current.toggleSubtask(2, true); });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    const firstRequest = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    const secondRequest = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
+    expect(firstRequest.issue.lock_version).toBe(3);
+    expect(secondRequest.issue.lock_version).toBe(4);
+    await waitFor(() => {
+      expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0].subtasks?.[0]).toMatchObject({
+        status_id: 1,
+        is_closed: false,
+        lock_version: 5,
+      });
+    });
+  });
+
+  it.each([
+    [422, 'Validation failed'],
+    [409, 'Conflict'],
+  ])('rolls back nested state and counts after an HTTP %i response', async (status, message) => {
+    const queryKey = ['kanban', 'board', 'toggle-error', status] as const;
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const initial = makeBoardData(makeIssue(1));
+    initial.columns = [
+      { id: 1, name: 'Open', is_closed: false, count: 100 },
+      { id: 2, name: 'Closed', is_closed: true, count: 20 },
+    ];
+    initial.issues[0].subtasks = [{
+      id: 2,
+      subject: 'Nested',
+      status_id: 1,
+      is_closed: false,
+      lock_version: 3,
+      allowed_status_ids: [1, 2],
+    }];
+    queryClient.setQueryData(queryKey, initial);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
+      JSON.stringify({ message }),
+      { status },
+    ));
+
+    const { result } = renderHook(
+      () => useKanbanActions({
+        baseUrl: '/projects/demo/kanban',
+        boardQueryKey: queryKey,
+        data: initial,
+        refresh: vi.fn(async () => undefined),
+        timeEntryOnClose: false,
+        setNotice: vi.fn(),
+        setError: vi.fn(),
+        setIframeTimeEntryUrl: vi.fn(),
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    act(() => { result.current.toggleSubtask(2, false); });
+
+    await waitFor(() => {
+      expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0].subtasks?.[0]).toMatchObject({
+        status_id: 1,
+        is_closed: false,
+        lock_version: 3,
+      });
+    });
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.columns.map((column) => column.count)).toEqual([100, 20]);
+  });
+});

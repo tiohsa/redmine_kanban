@@ -250,33 +250,66 @@ function parseDate(value: string | null | undefined): number | null {
 }
 
 export function replaceIssueInBoard(data: BoardData, nextIssue: Issue): BoardData {
+  const previous = findIssueInBoard(data, nextIssue.id);
+  if (!previous) return data;
+
   const direct = data.issues.some((issue) => issue.id === nextIssue.id);
   if (direct) return updateIssueInBoard(data, nextIssue.id, () => nextIssue);
 
   let changed = false;
   const issues = data.issues.map((issue) => {
-    const subtasks = replaceSubtask(issue.subtasks, nextIssue);
+    const subtasks = replaceSubtask(issue.subtasks, nextIssue, data);
     if (subtasks === issue.subtasks) return issue;
     changed = true;
     return { ...issue, subtasks };
   });
-  return changed ? { ...data, issues } : data;
+  return changed ? {
+    ...data,
+    issues,
+    columns: updateColumnCounts(data.columns, previous.status_id, nextIssue.status_id),
+  } : data;
 }
 
-function replaceSubtask(subtasks: Subtask[] | undefined, nextIssue: Issue): Subtask[] | undefined {
+function replaceSubtask(
+  subtasks: Subtask[] | undefined,
+  nextIssue: Issue,
+  data: BoardData,
+): Subtask[] | undefined {
   if (!subtasks) return subtasks;
   let changed = false;
   const next = subtasks.map((subtask) => {
     if (subtask.id === nextIssue.id) {
       changed = true;
-      return nextIssue as unknown as Subtask;
+      return issueResponseToSubtask(subtask, nextIssue, data);
     }
-    const nested = replaceSubtask(subtask.subtasks, nextIssue);
+    const nested = replaceSubtask(subtask.subtasks, nextIssue, data);
     if (nested === subtask.subtasks) return subtask;
     changed = true;
     return { ...subtask, subtasks: nested };
   });
   return changed ? next : subtasks;
+}
+
+function issueResponseToSubtask(current: Subtask, nextIssue: Issue, data: BoardData): Subtask {
+  const isClosed = nextIssue.status_is_closed
+    ?? data.columns.find((column) => column.id === nextIssue.status_id)?.is_closed
+    ?? current.is_closed;
+
+  return {
+    ...current,
+    subject: nextIssue.subject,
+    status_id: nextIssue.status_id,
+    tracker_id: nextIssue.tracker_id,
+    assigned_to_id: nextIssue.assigned_to_id,
+    due_date: nextIssue.due_date,
+    priority_id: nextIssue.priority_id,
+    is_closed: isClosed,
+    lock_version: nextIssue.lock_version,
+    permissions: nextIssue.permissions ?? current.permissions,
+    allowed_status_ids: nextIssue.allowed_status_ids ?? current.allowed_status_ids,
+    project: nextIssue.project ?? current.project,
+    subtasks: current.subtasks,
+  };
 }
 
 function updateColumnCounts(columns: BoardData['columns'], previousStatusId?: number, nextStatusId?: number): BoardData['columns'] {

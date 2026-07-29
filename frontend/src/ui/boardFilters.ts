@@ -107,6 +107,13 @@ function filterSubtasks(subtasks: Issue['subtasks'], filters: Filters): NonNulla
 function matchesIssue(issue: Issue, _data: BoardData | null, filters: Filters, q: string, now0: Date, start: Date, end: Date): boolean {
     if (q && !issue.subject.toLowerCase().includes(q)) return false;
 
+    if (filters.statusIds.length > 0 && !filters.statusIds.includes(issue.status_id)) return false;
+
+    if (filters.projectIds.length > 0) {
+      const projectId = issue.project?.id ?? _data?.meta.project_id;
+      if (projectId === undefined || !filters.projectIds.includes(projectId)) return false;
+    }
+
     if (filters.assigneeIds.length > 0) {
       const matchesAssignee = filters.assigneeIds.some((assigneeId) => {
         if (assigneeId === 'unassigned') return issue.assigned_to_id === null;

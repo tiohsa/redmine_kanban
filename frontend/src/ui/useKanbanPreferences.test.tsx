@@ -84,6 +84,53 @@ describe('useKanbanPreferences', () => {
     expect(localStorage.getItem('rk_aging_exclude_closed:/projects/demo/kanban:user:7')).toBe('0');
   });
 
+  it.each(['none', 'assignee', 'priority'] as const)(
+    'migrates legacy project-scoped lane type %s to the first user',
+    (laneType) => {
+      localStorage.setItem('rk_lane_type:/projects/demo/kanban', laneType);
+
+      const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data'));
+      act(() => { result.current.setCurrentUserId(7); });
+
+      expect(result.current.laneType).toBe(laneType);
+      expect(localStorage.getItem('rk_lane_type:/projects/demo/kanban:user:7')).toBe(laneType);
+      expect(localStorage.getItem('rk_lane_type:/projects/demo/kanban')).toBeNull();
+    },
+  );
+
+  it('prefers a user-scoped lane type over both legacy formats', () => {
+    localStorage.setItem('rk_lane_type:/projects/demo/kanban:user:7', 'none');
+    localStorage.setItem('rk_lane_type:/projects/demo/kanban', 'assignee');
+    localStorage.setItem('rk_priority_lane_enabled:/projects/demo/kanban', '1');
+
+    const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data'));
+    act(() => { result.current.setCurrentUserId(7); });
+
+    expect(result.current.laneType).toBe('none');
+    expect(localStorage.getItem('rk_lane_type:/projects/demo/kanban')).toBe('assignee');
+  });
+
+  it('uses the priority-lane legacy setting only when no lane type exists', () => {
+    localStorage.setItem('rk_priority_lane_enabled:/projects/demo/kanban', '1');
+
+    const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data'));
+    act(() => { result.current.setCurrentUserId(7); });
+
+    expect(result.current.laneType).toBe('priority');
+  });
+
+  it('does not copy a consumed legacy lane type to the next Redmine user', () => {
+    localStorage.setItem('rk_lane_type:/projects/demo/kanban', 'priority');
+    const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data'));
+
+    act(() => { result.current.setCurrentUserId(7); });
+    expect(result.current.laneType).toBe('priority');
+
+    act(() => { result.current.setCurrentUserId(8); });
+    expect(result.current.laneType).toBe('assignee');
+    expect(localStorage.getItem('rk_lane_type:/projects/demo/kanban:user:8')).toBe('assignee');
+  });
+
   it('keeps preferences isolated when the Redmine user changes', () => {
     localStorage.setItem('rk_filters:/projects/demo/kanban:user:7', JSON.stringify({ q: 'user-a' }));
     localStorage.setItem('rk_filters:/projects/demo/kanban:user:8', JSON.stringify({ q: 'user-b' }));
