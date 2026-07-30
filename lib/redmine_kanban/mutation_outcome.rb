@@ -1,0 +1,12 @@
+module RedmineKanban
+  module MutationOutcome
+    private
+
+    def mutation_outcome_for(issue)
+      {
+        status_changed: issue.saved_change_to_status_id?,
+        done_ratio_changed: issue.saved_change_to_done_ratio?
+      }.freeze
+    end
+  end
+end

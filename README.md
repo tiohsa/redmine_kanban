@@ -83,7 +83,7 @@ pnpm run build
 
 There is no plugin-wide configuration screen. Each user can set swimlanes, hidden statuses, aging thresholds, sorting, fit mode, font size, and subtask display from the board. Card moves only apply the status and any lane attribute explicitly selected by the user; Redmine workflow and permissions remain authoritative.
 
-The API protects the server with a fixed default page size of 500 issues and a maximum page size of 1,000 issues. Set `REDMINE_KANBAN_PERF_LOG=1` only when operational performance logging is needed.
+The API protects the server with a fixed default page size of 500 issues and a maximum page size of 1,000 issues. Recursive responses use canonical roots and a 1,500-node total budget; optional `meta.tree` reports the budget and truncation. Set `REDMINE_KANBAN_PERF_LOG=1` only when operational performance logging is needed.
 
 ## Technology Stack
 
@@ -168,8 +168,11 @@ Board data notes:
 
 - `issues[].subtasks` is a recursive tree (`subtasks[].subtasks...`) for nested subtasks.
 - Subtask rows shown in the canvas are flattened on the frontend for rendering/hit-testing, but the API preserves hierarchy.
+- Deleted Issue recreation is available only for domain top-level Issues. It creates a new Issue with the displayed subject, project, description, status, assignee, tracker, priority, dates, and done ratio; it never recreates a child Issue without its parent.
 
 Bulk creation uses `Rails.cache` for idempotency. The cache identity is scoped by user, project, operation, `Idempotency-Key`, and a canonical digest of the request payload; an atomic claim means only the claimant runs creation, while processing and completed entries reject a different payload or return the previous response for the same payload. The client reuses the key for the same logical operation during a browser session. Failed validation or exceptions remove the claim so the same operation can be retried.
+
+Bulk creation accepts at most 50 non-empty subtasks per request; requests with 51 or more are rejected before the transaction starts.
 
 The guarantee covers duplicate submissions from one browser, retries of the same logical operation during that browser session, duplicate claims within one Redmine process, and duplicate claims across processes when the cache store provides an atomic shared `unless_exist` write. It does not provide persistent exactly-once behavior across MemoryStore process boundaries, cache loss, or server restarts.
 

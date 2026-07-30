@@ -105,7 +105,7 @@ type Props = {
   onCreate: (ctx: { statusId: number; laneId?: string | number; projectId?: number }) => void;
   onEdit: (issueId: number) => void;
   onView: (issueId: number) => void;
-  onDelete: (issueId: number, source: 'card' | 'subtask') => void;
+  onDelete: (issueId: number) => void;
   onEditClick: (editUrl: string) => void;
   onSubtaskToggle?: (subtaskId: number, currentClosed: boolean) => void;
   onPriorityClick?: (issueId: number, currentPriorityId: number, x: number, y: number) => void;
@@ -501,7 +501,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         if (isBusy(hit.subtaskId)) return;
         const issue = state.cardsById.get(hit.issueId);
         if (!subtaskPermissions(issue, hit.subtaskId)?.can_delete) return;
-        onDelete(hit.subtaskId, 'subtask');
+        onDelete(hit.subtaskId);
         return;
       }
       case 'card_subject':
@@ -525,7 +525,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         if (isBusy(hit.issueId)) return;
         const issue = state.cardsById.get(hit.issueId);
         if (!canDeleteIssue(issue)) return;
-        onDelete(hit.issueId, 'card');
+        onDelete(hit.issueId);
         return;
       }
       case 'priority': {

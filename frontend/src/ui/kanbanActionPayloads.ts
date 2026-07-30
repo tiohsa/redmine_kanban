@@ -51,5 +51,6 @@ export function buildRestoreIssuePayload(issue: Issue): Record<string, unknown> 
     priority_id: issue.priority_id,
     start_date: issue.start_date,
     due_date: issue.due_date,
+    done_ratio: issue.done_ratio,
   };
 }

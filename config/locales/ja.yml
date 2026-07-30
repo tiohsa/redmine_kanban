@@ -103,7 +103,7 @@ ja:
     label_updated_with_subtasks: "チケット #%{id} を更新し、%{count} 件の子チケットを作成しました"
     label_created_subtask_failed: "チケット #%{id} を作成しましたが、子チケットの作成に失敗しました"
     label_updated_subtask_failed: "チケット #%{id} を更新しましたが、子チケットの作成に失敗しました"
-    label_deleted_with_undo: "#%{id} を削除しました（同じ内容で再作成できます。元の履歴・コメント・添付・関連・ウォッチャーは復元されません）"
+    label_deleted_with_undo: "トップレベルチケット #%{id} を削除しました（表示中の項目で再作成できます。元のID・履歴・コメント・添付・関連・ウォッチャーは復元されません）"
     label_url_clickable: "（URLをクリックできます）"
     label_issue_create_dialog_title: "チケット登録"
     label_issue_edit_dialog_title: "チケット編集"

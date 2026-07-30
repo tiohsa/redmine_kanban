@@ -37,4 +37,17 @@ class RedmineKanbanSubtaskLoaderTest < ActiveSupport::TestCase
     # The child issue should be returned as a subtask of the parent issue
     assert_includes result[parent.id].map(&:id), child.id
   end
+
+  def test_limits_recursive_nodes_and_reports_truncation
+    parent = Issue.create!(project: @project, tracker_id: 1, subject: 'Budget parent', author: @user, status_id: 1, priority_id: 4)
+    child = Issue.create!(project: @project, tracker_id: 1, subject: 'Budget child', author: @user, status_id: 1, priority_id: 4, parent_id: parent.id)
+    Issue.create!(project: @project, tracker_id: 1, subject: 'Budget grandchild', author: @user, status_id: 1, priority_id: 4, parent_id: child.id)
+
+    loader = RedmineKanban::SubtaskLoader.new(user: @user, max_nodes: 1)
+    result = loader.subtasks_by_parent_id([parent.id])
+
+    assert_equal [child.id], result.fetch(parent.id).map(&:id)
+    assert_equal [child.id], loader.loaded_issue_ids
+    assert_equal true, loader.truncated?
+  end
 end

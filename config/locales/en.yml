@@ -48,7 +48,7 @@ en:
     label_updated_with_subtasks: "Updated issue #%{id} and %{count} subtasks"
     label_created_subtask_failed: "Created issue #%{id} but failed to create subtasks"
     label_updated_subtask_failed: "Updated issue #%{id} but failed to create subtasks"
-    label_deleted_with_undo: "Deleted #%{id}. You can recreate the same content; history, comments, attachments, relations, and watchers are not restored."
+    label_deleted_with_undo: "Deleted top-level issue #%{id}. You can recreate its displayed fields; history, comments, attachments, relations, watchers, and the original ID are not restored."
     label_url_clickable: "(URLs are clickable)"
     label_search: "Search"
     label_due: "Due Date"

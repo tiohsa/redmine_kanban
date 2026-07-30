@@ -1,4 +1,4 @@
-require_relative 'subtask_loader'
+require_relative 'board_context'
 
 module RedmineKanban
   class BoardData
@@ -159,8 +159,8 @@ module RedmineKanban
     def initialize(project:, user:, project_ids: nil, issue_status_ids: nil, exclude_status_ids: nil, issue_limit: nil, issue_offset: nil)
       @project = project
       @user = user
-      @project_catalog = ProjectCatalog.new(user: @user)
-      @project_ids = sanitize_project_ids(normalize_ids(project_ids)).presence || [@project.id]
+      @board_context = BoardContext.new(project: @project, user: @user, project_ids: normalize_ids(project_ids))
+      @project_ids = @board_context.project_ids
       @issue_status_ids = normalize_ids(issue_status_ids)
       @exclude_status_ids = normalize_ids(exclude_status_ids)
       @issue_limit = normalize_issue_limit(issue_limit)
@@ -193,7 +193,10 @@ module RedmineKanban
       Rails.logger.info(
         '[redmine_kanban] board_data_perf ' \
         "project_id=#{@project.id} sql_count=#{sql_count} " \
-        "issue_count=#{result[:issues].size} subtask_count=#{count_subtasks(result[:issues])} " \
+        "root_issue_count=#{result.dig(:meta, :tree, :root_issue_count)} " \
+        "unique_node_count=#{result.dig(:meta, :tree, :unique_node_count)} " \
+        "serialized_node_count=#{result.dig(:meta, :tree, :serialized_node_count)} " \
+        "duplicate_node_count=#{result.dig(:meta, :tree, :duplicate_node_count)} " \
         "json_bytes=#{result.to_json.bytesize} elapsed_ms=#{elapsed_ms}"
       )
       result
@@ -216,12 +219,8 @@ module RedmineKanban
       status_ids = columns.map { |c| c[:id] }
       issues = fetch_issues(status_ids)
       total_issue_count = fetch_issues_total_count(status_ids)
-      subtasks_by_parent_id = subtask_loader.subtasks_by_parent_id(issues.map(&:id))
-      presenter = BoardIssuePresenter.new(
-        user: @user,
-        subtasks_by_parent_id: subtasks_by_parent_id,
-        board_project: @project
-      )
+      presenter, loader = @board_context.presenter(issues.map(&:id))
+      canonical_issues = issues.reject { |issue| loader.loaded_issue_ids.include?(issue.id) }
       lane_assignee_ids = fetch_lane_assignee_ids(status_ids)
       lanes = build_lanes(lane_assignee_ids)
 
@@ -231,6 +230,7 @@ module RedmineKanban
         ok: true,
         meta: {
           project_id: @project.id,
+          project_ids: @project_ids,
           current_user_id: @user.id,
           can_move: permission_policy.can_move_issue?(@project),
           can_create: permission_policy.can_create_issue?(@project),
@@ -243,12 +243,20 @@ module RedmineKanban
             total_issue_count: total_issue_count,
             next_offset: issues.size + @issue_offset,
             has_more_issues: @issue_offset + issues.size < total_issue_count
+          },
+          tree: {
+            node_limit: @board_context.tree_node_limit,
+            root_issue_count: canonical_issues.size,
+            unique_node_count: canonical_issues.size + loader.loaded_issue_ids.size,
+            serialized_node_count: canonical_issues.size + loader.loaded_issue_ids.size,
+            duplicate_node_count: issues.size + loader.loaded_issue_ids.size - canonical_issues.size - loader.loaded_issue_ids.size,
+            truncated: loader.truncated?
           }
         },
         columns: columns.map { |c| c.merge(count: counts[c[:id]].to_i) },
         lanes: lanes,
         lists: cached_lists,
-        issues: issues.map { |issue| presenter.issue_to_h(issue) },
+        issues: canonical_issues.map { |issue| presenter.issue_to_h(issue) },
         labels: cached_labels
       }
     end
@@ -334,10 +342,6 @@ module RedmineKanban
 
     def lists_builder
       @lists_builder ||= BoardListsBuilder.new(project: @project, project_ids: @project_ids, user: @user)
-    end
-
-    def subtask_loader
-      @subtask_loader ||= SubtaskLoader.new(user: @user, project_ids: @project_ids)
     end
 
     def cached_lists

@@ -42,6 +42,15 @@ export function useKanbanActions({
   const deletingIssueIdsRef = useRef(new Set<number>());
   const bulkInFlightRef = useRef(new Map<string, Promise<{ ok: boolean; issue?: Issue; subtasks?: Issue[] }>>());
 
+  const scopedUrl = useCallback((path: string) => {
+    const projectIds = data?.meta.project_ids ?? [];
+    if (projectIds.length === 0) return `${baseUrl}${path}`;
+
+    const params = new URLSearchParams();
+    projectIds.forEach((projectId) => params.append('project_ids[]', String(projectId)));
+    return `${baseUrl}${path}?${params.toString()}`;
+  }, [baseUrl, data?.meta.project_ids]);
+
   const setIssueBusy = useCallback((issueId: number, busy: boolean) => {
     const nextRef = new Set(busyIssueIdsRef.current);
     if (busy) nextRef.add(issueId);
@@ -84,7 +93,7 @@ export function useKanbanActions({
       if (payload.priorityId !== undefined) issuePayload.priority_id = payload.priorityId;
 
       return postJson<IssueMutationResult>(
-        `${baseUrl}/issues/${payload.issueId}/move`,
+        scopedUrl(`/issues/${payload.issueId}/move`),
         { issue: issuePayload },
         'PATCH',
       );
@@ -135,7 +144,7 @@ export function useKanbanActions({
     queryKey: boardQueryKey,
     mutationFn: async (payload) =>
       postJson<IssueMutationResult>(
-        `${baseUrl}/issues/${payload.issueId}`,
+        scopedUrl(`/issues/${payload.issueId}`),
         { issue: { ...payload.patch, lock_version: payload.lockVersion } },
         'PATCH',
       ),
@@ -168,7 +177,7 @@ export function useKanbanActions({
         const request = (async () => {
           const { key } = getOrCreateBulkIdempotencyKey(signature);
           return postJson<{ ok: boolean; issue?: Issue; subtasks?: Issue[] }>(
-            `${baseUrl}/issues/bulk`, requestPayload, 'POST', { 'Idempotency-Key': key },
+            scopedUrl('/issues/bulk'), requestPayload, 'POST', { 'Idempotency-Key': key },
           );
         })();
         bulkInFlightRef.current.set(signature, request);
@@ -176,7 +185,7 @@ export function useKanbanActions({
           if (bulkInFlightRef.current.get(signature) === request) bulkInFlightRef.current.delete(signature);
         }
       }
-      return postJson<{ ok: boolean; issue?: Issue }>(`${baseUrl}/issues`, { issue: payload }, 'POST');
+      return postJson<{ ok: boolean; issue?: Issue }>(scopedUrl('/issues'), { issue: payload }, 'POST');
     },
     onSuccess: (_result, payload) => {
       if (isBulkCreateInput(payload)) {
@@ -197,7 +206,7 @@ export function useKanbanActions({
       const resolved = data ? resolveBoardIssue(data, issueId) : null;
       if (resolved?.lockVersion === null || resolved?.lockVersion === undefined) throw new Error('lock_version is required');
       const response = await postJson<DeleteResponse>(
-        `${baseUrl}/issues/${issueId}`,
+        scopedUrl(`/issues/${issueId}`),
         { issue: { lock_version: resolved.lockVersion } },
         'DELETE',
       );
@@ -220,7 +229,7 @@ export function useKanbanActions({
       deletingIssueIdsRef.current.delete(issueId);
       endIssueMutation(issueId);
     }
-  }, [baseUrl, beginIssueMutation, data, endIssueMutation, refresh, setError]);
+  }, [beginIssueMutation, data, endIssueMutation, refresh, scopedUrl, setError]);
 
   const moveIssue = useCallback((issueId: number, statusId: number, assignedToId?: number | null, priorityId?: number | null) => {
     if (!data || isIssueBusy(issueId)) return;
@@ -256,12 +265,12 @@ export function useKanbanActions({
     });
   }, [data, isIssueBusy, moveIssueMutation, setError, setIssueBusy, setNotice]);
 
-  const requestDelete = useCallback((issueId: number, source: 'card' | 'subtask' = 'card') => {
+  const requestDelete = useCallback((issueId: number) => {
     if (!data || isIssueBusy(issueId)) return;
     const resolved = resolveBoardIssue(data, issueId);
     if (!resolved) return;
     setNotice(null);
-    void deleteIssue(issueId, source === 'card' ? resolved.boardIssue ?? null : null);
+    void deleteIssue(issueId, resolved.parentIssueId ? null : resolved.boardIssue ?? null);
   }, [data, deleteIssue, isIssueBusy, setNotice]);
 
   const dismissDeleteNotice = useCallback(() => {
@@ -274,7 +283,7 @@ export function useKanbanActions({
 
     try {
       const response = await postJson<{ ok: boolean; issue?: Issue; message?: string }>(
-        `${baseUrl}/issues`,
+        scopedUrl('/issues'),
         { issue: buildRestoreIssuePayload(pendingDeleteIssue) },
         'POST',
       );
@@ -291,7 +300,7 @@ export function useKanbanActions({
     } finally {
       setIsRestoring(false);
     }
-  }, [baseUrl, data, isRestoring, pendingDeleteIssue, refresh, setError, setNotice]);
+  }, [data, isRestoring, pendingDeleteIssue, refresh, scopedUrl, setError, setNotice]);
 
   return {
     busyIssueIds,

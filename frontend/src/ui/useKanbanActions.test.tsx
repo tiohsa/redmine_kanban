@@ -143,11 +143,39 @@ describe('useKanbanActions delete flow', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
     const { result } = renderActions({ data: board });
 
-    await act(async () => { result.current.requestDelete(2, 'subtask'); });
+    await act(async () => { result.current.requestDelete(2); });
     await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
 
     expect(globalThis.fetch).toHaveBeenCalledWith('/projects/demo/kanban/issues/2', expect.objectContaining({ method: 'DELETE' }));
     expect(result.current.pendingDeleteIssue).toBeNull();
+  });
+
+  it('does not offer recreation when a child issue is displayed as an individual card', async () => {
+    const childCard = makeIssue(2);
+    childCard.parent_id = 1;
+    const board = makeBoardData(childCard);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const { result } = renderActions({ data: board });
+
+    await act(async () => { result.current.requestDelete(2); });
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
+
+    expect(result.current.pendingDeleteIssue).toBeNull();
+  });
+
+  it('preserves the current board project scope for mutation requests', async () => {
+    const board = makeBoardData();
+    board.meta.project_ids = [3, 7];
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const { result } = renderActions({ data: board });
+
+    await act(async () => { result.current.requestDelete(1); });
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      '/projects/demo/kanban/issues/1?project_ids%5B%5D=3&project_ids%5B%5D=7',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
   });
 
   it('sends one DELETE while the same issue is in flight', async () => {

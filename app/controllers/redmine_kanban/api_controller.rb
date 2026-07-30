@@ -52,7 +52,7 @@ module RedmineKanban
 
     def move
       payload = params[:issue] || params
-      render_service_result(IssueMover.new(project: @project, issue: @issue, user: User.current).move(
+      render_service_result(IssueMover.new(project: @project, issue: @issue, user: User.current, board_context: mutation_board_context).move(
         status_id: payload[:status_id],
         assigned_to_id: payload[:assigned_to_id],
         priority_id: payload[:priority_id],
@@ -64,12 +64,12 @@ module RedmineKanban
 
     def create
       issue_params = params[:issue] || params
-      render_service_result(IssueCreator.new(project: @project, user: User.current).create(params: issue_params))
+      render_service_result(IssueCreator.new(project: @project, user: User.current, board_context: mutation_board_context).create(params: issue_params))
     end
 
     def bulk_create
       payload = params[:bulk] || params
-      result = IssueCreator.new(project: @project, user: User.current).create_with_subtasks(
+      result = IssueCreator.new(project: @project, user: User.current, board_context: mutation_board_context).create_with_subtasks(
         parent_params: payload[:parent] || {},
         subtasks: payload[:subtasks] || [],
         idempotency_key: request.headers['Idempotency-Key']
@@ -79,7 +79,7 @@ module RedmineKanban
 
     def update
       payload = params[:issue] || params
-      render_service_result(IssueUpdater.new(project: @project, user: User.current).update(issue_id: @issue.id, params: payload))
+      render_service_result(IssueUpdater.new(project: @project, user: User.current, board_context: mutation_board_context).update(issue_id: @issue.id, params: payload))
     end
 
     def destroy
@@ -122,6 +122,14 @@ module RedmineKanban
         issue_limit: params[:issue_limit],
         issue_offset: params[:offset]
       ).to_h
+    end
+
+    def mutation_board_context
+      BoardContext.new(
+        project: @project,
+        user: User.current,
+        project_ids: normalize_integer_array_param(params[:project_ids])
+      )
     end
 
     def require_move_permission

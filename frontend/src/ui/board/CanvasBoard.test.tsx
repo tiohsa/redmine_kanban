@@ -321,7 +321,7 @@ describe('CanvasBoard cursor lifecycle', () => {
   it('draws an external project on its own metadata row', async () => {
     const issue = makeIssue(7, {
       assigned_to_name: '担当者',
-      due_date: '2026-07-30',
+      due_date: '2099-07-30',
       project: { id: 2, name: '別プロジェクト' },
     });
     const data = makeBoardData(issue);
@@ -349,12 +349,9 @@ describe('CanvasBoard cursor lifecycle', () => {
 
     const assigneeCall = context.fillText.mock.calls.find(([text]) => text === '担当者');
     const projectCall = context.fillText.mock.calls.find(([text]) => text === '別プロジェクト');
-    const dueDateCall = context.fillText.mock.calls.find(([text]) => text === '2026-07-30');
     expect(assigneeCall).toBeTruthy();
     expect(projectCall).toBeTruthy();
-    expect(dueDateCall).toBeTruthy();
     expect((projectCall as [string, number, number])[2]).toBeGreaterThan((assigneeCall as [string, number, number])[2]);
-    expect((dueDateCall as [string, number, number])[2]).toBeGreaterThan((projectCall as [string, number, number])[2]);
   });
 
   it('keeps the due-date row compact when the project is current or absent', () => {

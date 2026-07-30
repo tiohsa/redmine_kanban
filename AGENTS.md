@@ -165,6 +165,19 @@ frontend/src/main.tsx → assets/javascripts/redmine_kanban_spa.js
 
 The `process.env` is replaced at build time for production. In test mode, no substitution is performed.
 
+### Board Context and Tree Contract
+
+- `BoardData` and all mutation serializers use `BoardContext`; callers preserve the sanitized `meta.project_ids` scope in mutation query parameters.
+- Recursive board responses serialize canonical roots only. A root already reachable from another root on the current page is represented once in `subtasks`.
+- The complete response is bounded to 1,500 unique nodes. Optional `meta.tree` exposes `node_limit`, node counts, duplicate roots eliminated, and `truncated`.
+- Set `REDMINE_KANBAN_PERF_LOG=1` to log SQL count, node counts, JSON bytes, and elapsed time for a board response.
+
+### Mutation and Recreate Contract
+
+- `IssueMover` and `IssueUpdater` capture status/done-ratio changes immediately after save, before Priority propagation can reload the record.
+- Recreate-after-delete is only available for domain top-level Issues (`parent_id` absent), never based on Canvas card/subtask representation. It copies displayed editable fields including `done_ratio`, but not the original ID, history, comments, attachments, relations, or watchers.
+- Bulk create accepts at most 50 non-empty subtasks server-side. A 51st valid row returns 422 before an idempotency claim or transaction starts.
+
 ### Backend API Endpoints
 
 | Method | Path | Description |

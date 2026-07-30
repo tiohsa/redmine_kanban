@@ -83,6 +83,7 @@ export type Lists = {
 
 export type Meta = {
   project_id: number;
+  project_ids?: number[];
   current_user_id: number;
   can_move: boolean;
   can_create: boolean;

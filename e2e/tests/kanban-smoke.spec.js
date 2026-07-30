@@ -104,17 +104,18 @@ test('nested child can close and reopen while server column counts return to bas
   expect(parent).toBeTruthy();
   expect(child).toBeTruthy();
 
-  const openColumn = initial.columns.find((column) =>
+  let openColumn = initial.columns.find((column) =>
     !column.is_closed && child.allowed_status_ids.includes(column.id)
   );
-  const closedColumn = initial.columns.find((column) =>
+  let closedColumn = initial.columns.find((column) =>
     column.is_closed && child.allowed_status_ids.includes(column.id)
   );
   expect(openColumn).toBeTruthy();
   expect(closedColumn).toBeTruthy();
+  const targetPriority = initial.lists.priorities.find((priority) => priority.id !== child.priority_id)?.id;
 
-  const moveChild = async (statusId, lockVersion) => page.evaluate(
-    async ({ issueId, statusId: targetStatusId, lockVersion: currentLockVersion }) => {
+  const moveChild = async (statusId, lockVersion, priorityId) => page.evaluate(
+    async ({ issueId, statusId: targetStatusId, lockVersion: currentLockVersion, priorityId: nextPriorityId }) => {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
       const response = await fetch(
         `/projects/ecookbook/kanban/issues/${issueId}/move`,
@@ -129,13 +130,14 @@ test('nested child can close and reopen while server column counts return to bas
             issue: {
               status_id: targetStatusId,
               lock_version: currentLockVersion,
+              ...(nextPriorityId ? { priority_id: nextPriorityId } : {}),
             },
           }),
         },
       );
       return { status: response.status, body: await response.json() };
     },
-    { issueId: child.id, statusId, lockVersion },
+    { issueId: child.id, statusId, lockVersion, priorityId },
   );
 
   // A Playwright retry can start after the previous attempt already closed the
@@ -146,15 +148,22 @@ test('nested child can close and reopen while server column counts return to bas
     initial = await getBoard();
     parent = initial.issues.find((issue) => issue.subject === 'Kanban E2E parent issue');
     child = parent?.subtasks?.find((subtask) => subtask.subject === 'Kanban E2E nested child');
+    openColumn = initial.columns.find((column) => !column.is_closed && child.allowed_status_ids.includes(column.id));
+    closedColumn = initial.columns.find((column) => column.is_closed && child.allowed_status_ids.includes(column.id));
+    expect(openColumn).toBeTruthy();
+    expect(closedColumn).toBeTruthy();
   }
 
-  const closed = await moveChild(closedColumn.id, child.lock_version);
+  const closed = await moveChild(closedColumn.id, child.lock_version, targetPriority);
   expect(closed.status).toBe(200);
   expect(closed.body.issue).toMatchObject({
     id: child.id,
     status_id: closedColumn.id,
     status_is_closed: true,
   });
+  expect(closed.body.ancestor_updates).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: parent.id, done_ratio: expect.any(Number), lock_version: expect.any(Number) }),
+  ]));
 
   const afterClose = await getBoard();
   expect(afterClose.columns.find((column) => column.id === openColumn.id).count).toBe(openColumn.count - 1);

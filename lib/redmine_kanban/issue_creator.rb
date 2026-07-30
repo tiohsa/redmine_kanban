@@ -1,4 +1,4 @@
-require_relative 'subtask_loader'
+require_relative 'board_context'
 
 module RedmineKanban
   class IssueCreator
@@ -6,9 +6,12 @@ module RedmineKanban
     include IssueParentAttributes
     include ServiceResponse
 
-    def initialize(project:, user:)
+    MAX_BULK_SUBTASKS = 50
+
+    def initialize(project:, user:, board_context: nil)
       @project = project
       @user = user
+      @board_context = board_context || BoardContext.new(project: project, user: user)
     end
 
     def create(params:)
@@ -67,6 +70,7 @@ module RedmineKanban
         'due_date' => normalize_date(params[:due_date]),
         'tracker_id' => tracker_id.to_i
       }
+      attributes['done_ratio'] = normalize_done_ratio(params[:done_ratio]) if param_key_provided?(params, 'done_ratio')
 
       if params[:parent_issue_id].present?
         attributes['parent_issue_id'] = params[:parent_issue_id]
@@ -84,6 +88,10 @@ module RedmineKanban
 
     def create_with_subtasks(parent_params:, subtasks:, idempotency_key:)
       return error_response('Idempotency-Keyが必要です', status: :unprocessable_entity) if idempotency_key.blank?
+
+      if normalized_subtask_count(subtasks) > MAX_BULK_SUBTASKS
+        return error_response('子チケットは最大50件まで作成できます', field_errors: { subtasks: ['子チケットは最大50件まで作成できます'] })
+      end
 
       RedmineKanban::BulkIdempotency.with_request(
         user_id: @user.id,
@@ -135,9 +143,16 @@ module RedmineKanban
     end
 
     def subtask_collection(subtasks)
-      return subtasks.to_h.values if subtasks.respond_to?(:to_h) && !subtasks.is_a?(Array)
+      unless subtasks.is_a?(Array)
+        return subtasks.to_unsafe_h.values if subtasks.respond_to?(:to_unsafe_h)
+        return subtasks.to_h.values if subtasks.respond_to?(:to_h)
+      end
 
       Array(subtasks)
+    end
+
+    def normalized_subtask_count(subtasks)
+      subtask_collection(subtasks).count { |subtask| (subtask[:subject] || subtask['subject']).to_s.strip.present? }
     end
 
     def default_tracker_id(project)
@@ -168,11 +183,14 @@ module RedmineKanban
       normalize_optional_date(value)
     end
 
+    def normalize_done_ratio(value)
+      return nil if value.nil? || value.to_s.strip.empty?
+
+      value.to_i.clamp(0, 100)
+    end
+
     def issue_presenter(issue)
-      BoardIssuePresenter.new(
-        user: @user,
-        subtasks_by_parent_id: SubtaskLoader.new(user: @user).subtasks_by_parent_id([issue.id])
-      )
+      @board_context.presenter([issue.id]).first
     end
 
   end
