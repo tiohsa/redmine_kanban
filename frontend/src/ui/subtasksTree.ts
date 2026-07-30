@@ -32,7 +32,15 @@ export function findSubtaskInTree(subtasks: Subtask[] | undefined, subtaskId: nu
 export function updateSubtasksTree(
   subtasks: Subtask[] | undefined,
   targetId: number,
-  patch: Partial<Pick<Subtask, 'status_id' | 'is_closed' | 'lock_version'>>
+  patch: Partial<Subtask>
+): Subtask[] | undefined {
+  return updateSubtasksTreeWith(subtasks, targetId, (subtask) => ({ ...subtask, ...patch }));
+}
+
+export function updateSubtasksTreeWith(
+  subtasks: Subtask[] | undefined,
+  targetId: number,
+  updater: (subtask: Subtask) => Subtask,
 ): Subtask[] | undefined {
   if (!subtasks?.length) return subtasks;
 
@@ -40,16 +48,37 @@ export function updateSubtasksTree(
   const next = subtasks.map((subtask) => {
     let current = subtask;
     if (subtask.id === targetId) {
-      current = { ...current, ...patch };
+      current = updater(current);
       changed = true;
     }
 
-    const nested = updateSubtasksTree(current.subtasks, targetId, patch);
+    const nested = updateSubtasksTreeWith(current.subtasks, targetId, updater);
     if (nested !== current.subtasks) {
       current = { ...current, subtasks: nested };
       changed = true;
     }
 
+    return current;
+  });
+
+  return changed ? next : subtasks;
+}
+
+export function mapSubtasksTree(
+  subtasks: Subtask[] | undefined,
+  updater: (subtask: Subtask) => Subtask,
+): Subtask[] | undefined {
+  if (!subtasks?.length) return subtasks;
+
+  let changed = false;
+  const next = subtasks.map((subtask) => {
+    let current = updater(subtask);
+    if (current !== subtask) changed = true;
+    const nested = mapSubtasksTree(current.subtasks, updater);
+    if (nested !== current.subtasks) {
+      current = { ...current, subtasks: nested };
+      changed = true;
+    }
     return current;
   });
 

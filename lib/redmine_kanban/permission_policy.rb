@@ -10,21 +10,21 @@ module RedmineKanban
 
     def can_move_issue?(issue_or_project, board_project = issue_or_project)
       issue_project = project_for(issue_or_project)
-      allowed_to?(:manage_redmine_kanban, board_project) && allowed_to?(:edit_issues, issue_project) && tracker_editable?(issue_or_project)
+      can_manage_board?(board_project) && allowed_to?(:edit_issues, issue_project) && tracker_editable?(issue_or_project)
     end
 
     def can_create_issue?(issue_project, board_project = issue_project)
-      allowed_to?(:manage_redmine_kanban, board_project) && allowed_to?(:add_issues, issue_project)
+      can_manage_board?(board_project) && allowed_to?(:add_issues, issue_project)
     end
 
     def can_update_issue?(issue_or_project, board_project = issue_or_project)
       issue_project = project_for(issue_or_project)
-      allowed_to?(:manage_redmine_kanban, board_project) && allowed_to?(:edit_issues, issue_project) && tracker_editable?(issue_or_project)
+      can_manage_board?(board_project) && allowed_to?(:edit_issues, issue_project) && tracker_editable?(issue_or_project)
     end
 
     def can_delete_issue?(issue_or_project, board_project = issue_or_project)
       issue_project = project_for(issue_or_project)
-      allowed_to?(:manage_redmine_kanban, board_project) && allowed_to?(:delete_issues, issue_project) && tracker_deletable?(issue_or_project)
+      can_manage_board?(board_project) && allowed_to?(:delete_issues, issue_project) && tracker_deletable?(issue_or_project)
     end
 
     def can_log_time?(project)
@@ -32,6 +32,10 @@ module RedmineKanban
     end
 
     private
+
+    def can_manage_board?(project)
+      can_view_board?(project) && allowed_to?(:manage_redmine_kanban, project)
+    end
 
     def allowed_to?(permission, project)
       !!project && @user.allowed_to?(permission, project)

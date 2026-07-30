@@ -69,7 +69,7 @@ class BulkIdempotencyTest < ActiveSupport::TestCase
   end
 
   def test_atomic_claim_failure_with_processing_entry_does_not_run_block
-    Rails.cache = AtomicClaimFailureCache.new({ 'status' => 'processing' })
+    Rails.cache = AtomicClaimFailureCache.new({ 'status' => 'processing', 'payload_digest' => payload_digest({}) })
     called = false
 
     result = bulk_idempotency.with_request(user_id: 1, project_id: 2, idempotency_key: 'atomic-processing') do
@@ -83,7 +83,7 @@ class BulkIdempotencyTest < ActiveSupport::TestCase
 
   def test_atomic_claim_failure_with_completed_entry_returns_previous_result
     previous = { ok: true, issue: { id: 42 } }
-    Rails.cache = AtomicClaimFailureCache.new({ 'status' => 'completed', 'response' => previous })
+    Rails.cache = AtomicClaimFailureCache.new({ 'status' => 'completed', 'payload_digest' => payload_digest({}), 'response' => previous })
     called = false
 
     result = bulk_idempotency.with_request(user_id: 1, project_id: 2, idempotency_key: 'atomic-completed') do
@@ -118,6 +118,29 @@ class BulkIdempotencyTest < ActiveSupport::TestCase
 
     assert_equal false, first[:ok]
     assert_equal({ ok: true, value: 2 }, second)
+  end
+
+  def test_rejects_the_same_key_when_the_payload_differs
+    first = bulk_idempotency.with_request(user_id: 1, project_id: 2, idempotency_key: 'payload-conflict', payload: { parent: { subject: 'A' } }) do
+      { ok: true, value: 1 }
+    end
+    second = bulk_idempotency.with_request(user_id: 1, project_id: 2, idempotency_key: 'payload-conflict', payload: { 'parent' => { 'subject' => 'B' } }) do
+      { ok: true, value: 2 }
+    end
+
+    assert_equal true, first[:ok]
+    assert_equal :conflict, second[:http_status]
+  end
+
+  def test_accepts_equivalent_hashes_with_different_key_order_and_key_types
+    bulk_idempotency.with_request(user_id: 1, project_id: 2, idempotency_key: 'canonical-payload', payload: { parent: { subject: 'A', tracker_id: 1 } }) do
+      { ok: true, value: 1 }
+    end
+    result = bulk_idempotency.with_request(user_id: 1, project_id: 2, idempotency_key: 'canonical-payload', payload: { 'parent' => { 'tracker_id' => 1, 'subject' => 'A' } }) do
+      { ok: true, value: 2 }
+    end
+
+    assert_equal({ ok: true, value: 1 }, result)
   end
 
   def test_different_keys_can_run_without_waiting_for_each_other
@@ -157,7 +180,7 @@ class BulkIdempotencyTest < ActiveSupport::TestCase
 
   def test_completed_key_returns_previous_result_without_recreating
     result = { ok: true, issue: { id: 42 } }
-    Rails.cache.write(bulk_cache_key('completed'), { 'status' => 'completed', 'response' => result })
+    Rails.cache.write(bulk_cache_key('completed'), { 'status' => 'completed', 'payload_digest' => payload_digest({}), 'response' => result })
     called = false
 
     actual = bulk_idempotency.with_request(user_id: 1, project_id: 2, idempotency_key: 'completed') do
@@ -177,5 +200,9 @@ class BulkIdempotencyTest < ActiveSupport::TestCase
 
   def bulk_cache_key(key)
     ['redmine_kanban', 'bulk_create', 1, 2, key].join(':')
+  end
+
+  def payload_digest(payload)
+    bulk_idempotency.send(:payload_digest, payload)
   end
 end

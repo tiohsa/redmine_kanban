@@ -1,22 +1,28 @@
+require 'digest'
+require 'json'
+
 module RedmineKanban
   module BulkIdempotency
     PROCESSING_TTL = 10.minutes
     COMPLETED_TTL = 24.hours
 
     class << self
-      def with_request(user_id:, project_id:, idempotency_key:)
+      def with_request(user_id:, project_id:, idempotency_key:, payload: {})
         cache_key = key(user_id: user_id, project_id: project_id, idempotency_key: idempotency_key)
+        digest = payload_digest(payload)
 
         claimed = claim_mutex.synchronize do
           existing = Rails.cache.read(cache_key)
-          if completed?(existing)
+          if existing && !payload_matches?(existing, digest)
+            payload_conflict_response
+          elsif completed?(existing)
             completed_result(existing)
           elsif processing?(existing)
             processing_response
           else
             Rails.cache.write(
               cache_key,
-              { 'status' => 'processing' },
+              { 'status' => 'processing', 'payload_digest' => digest },
               expires_in: PROCESSING_TTL,
               unless_exist: true
             )
@@ -28,6 +34,7 @@ module RedmineKanban
         unless claimed
           return claim_mutex.synchronize do
             existing = Rails.cache.read(cache_key)
+            return payload_conflict_response if existing && !payload_matches?(existing, digest)
             return completed_result(existing) if completed?(existing)
             return processing_response if processing?(existing)
             processing_response
@@ -38,7 +45,7 @@ module RedmineKanban
         if result[:ok]
           Rails.cache.write(
             cache_key,
-            { 'status' => 'completed', 'response' => result },
+            { 'status' => 'completed', 'payload_digest' => digest, 'response' => result },
             expires_in: COMPLETED_TTL
           )
         else
@@ -71,6 +78,32 @@ module RedmineKanban
 
       def processing_response
         { ok: false, message: '同じ一括作成リクエストが処理中です', field_errors: {}, http_status: :conflict }
+      end
+
+      def payload_conflict_response
+        { ok: false, message: '同じIdempotency-Keyが異なる一括作成リクエストに使用されています', field_errors: {}, http_status: :conflict }
+      end
+
+      def payload_matches?(entry, digest)
+        (entry['payload_digest'] || entry[:payload_digest]) == digest
+      end
+
+      def payload_digest(payload)
+        Digest::SHA256.hexdigest(JSON.generate(canonicalize(payload)))
+      end
+
+      def canonicalize(value)
+        value = value.to_unsafe_h if value.respond_to?(:to_unsafe_h)
+        case value
+        when Hash
+          value.each_with_object({}) do |(key, child), result|
+            result[key.to_s] = canonicalize(child)
+          end.sort.to_h
+        when Array
+          value.map { |child| canonicalize(child) }
+        else
+          value
+        end
       end
 
       def claim_mutex

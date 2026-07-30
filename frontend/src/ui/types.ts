@@ -22,6 +22,9 @@ export type Subtask = {
   priority_id?: number | null;
   is_closed: boolean;
   lock_version?: number;
+  updated_on?: string | null;
+  aging_days?: number;
+  done_ratio?: number;
   permissions?: IssuePermissions;
   allowed_status_ids?: number[];
   project?: { id: number; name: string };

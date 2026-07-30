@@ -34,7 +34,7 @@ Redmine Kanban helps teams keep flow healthy and visible by exposing stalled wor
 - **Advanced Filtering**: Filter by assignee, due date, priority, blocked status, and more.
 - **Direct Creation from Board**: Create new tickets from column headers or cells during standups.
 - **Nested Subtask Display**: View subtasks recursively (child / grandchild / deeper) either inside parent cards or as separate cards, and toggle completion.
-- **Undo Function**: Restore accidentally deleted tasks.
+- **Recreate Deleted Issue**: Recreate a deleted top-level issue with the displayed content. It creates a new issue; history, comments, attachments, relations, watchers, and the original ID are not restored.
 - **Project Filter**: Filter across projects and subprojects.
 
 ## Screenshots
@@ -169,7 +169,7 @@ Board data notes:
 - `issues[].subtasks` is a recursive tree (`subtasks[].subtasks...`) for nested subtasks.
 - Subtask rows shown in the canvas are flattened on the frontend for rendering/hit-testing, but the API preserves hierarchy.
 
-Bulk creation uses `Rails.cache` for idempotency. The cache key is scoped by user, project, operation, and `Idempotency-Key`; an atomic claim means only the claimant runs creation, while processing and completed entries reject duplicates or return the previous response. The client reuses the key for the same logical operation during a browser session. Failed validation or exceptions remove the claim so the same operation can be retried.
+Bulk creation uses `Rails.cache` for idempotency. The cache identity is scoped by user, project, operation, `Idempotency-Key`, and a canonical digest of the request payload; an atomic claim means only the claimant runs creation, while processing and completed entries reject a different payload or return the previous response for the same payload. The client reuses the key for the same logical operation during a browser session. Failed validation or exceptions remove the claim so the same operation can be retried.
 
 The guarantee covers duplicate submissions from one browser, retries of the same logical operation during that browser session, duplicate claims within one Redmine process, and duplicate claims across processes when the cache store provides an atomic shared `unless_exist` write. It does not provide persistent exactly-once behavior across MemoryStore process boundaries, cache loss, or server restarts.
 

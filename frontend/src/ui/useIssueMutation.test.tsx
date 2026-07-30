@@ -212,6 +212,31 @@ describe('applyAncestorIssueUpdates', () => {
     expect(next.issues).toHaveLength(3);
   });
 
+  it('updates nested-only ancestors and rejects an older nested response', () => {
+    const board = makeBoardData([
+      makeIssue(10, {
+        subtasks: [{
+          id: 20,
+          subject: 'Parent',
+          status_id: 1,
+          is_closed: false,
+          lock_version: 1,
+          updated_on: '2026-07-18T00:00:00Z',
+          subtasks: [{ id: 30, subject: 'Child', status_id: 1, is_closed: false }],
+        }],
+      }),
+    ]);
+
+    const fresh = applyAncestorIssueUpdates(board, [
+      { id: 20, done_ratio: 50, lock_version: 2, updated_on: '2026-07-18T00:02:00Z', aging_days: 0 },
+    ]);
+    const stale = applyAncestorIssueUpdates(fresh, [
+      { id: 20, done_ratio: 25, lock_version: 1, updated_on: '2026-07-18T00:01:00Z', aging_days: 1 },
+    ]);
+
+    expect(stale.issues[0]?.subtasks?.[0]).toMatchObject({ done_ratio: 50, lock_version: 2, aging_days: 0 });
+  });
+
   it('ignores ancestors that are not loaded without replacing paginated board data', () => {
     const board = makeBoardData([makeIssue(20, { done_ratio: 50 }), makeIssue(30)]);
 
@@ -272,6 +297,18 @@ describe('applyAncestorIssueUpdates', () => {
 });
 
 describe('replaceIssueInBoard', () => {
+  it('keeps top-level and nested copies of the same issue canonical', () => {
+    const board = makeBoardData([
+      makeIssue(1, { subtasks: [{ id: 2, subject: 'Old copy', status_id: 1, is_closed: false, lock_version: 1 }] }),
+      makeIssue(2, { subject: 'Old copy', lock_version: 1 }),
+    ]);
+
+    const next = replaceIssueInBoard(board, makeIssue(2, { subject: 'Canonical', lock_version: 2, done_ratio: 50, updated_on: '2026-07-18T00:02:00Z' }));
+
+    expect(next.issues[1]).toMatchObject({ subject: 'Canonical', lock_version: 2, done_ratio: 50 });
+    expect(next.issues[0]?.subtasks?.[0]).toMatchObject({ subject: 'Canonical', lock_version: 2, done_ratio: 50 });
+  });
+
   it('replaces an issue by id', () => {
     const board = makeBoardData([makeIssue(1, { subject: 'Before' })]);
     const next = replaceIssueInBoard(board, makeIssue(1, { subject: 'After' }));

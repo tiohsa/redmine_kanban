@@ -51,8 +51,8 @@ export function buildVisibleIssues(
   hiddenStatusIds: Set<number>,
   pendingDeleteIssue: Issue | null,
 ): Issue[] {
-  let visible = filterIssues(filteredData?.issues ?? [], filteredData, filters);
-  visible = visible.filter((issue) => !hiddenStatusIds.has(issue.status_id));
+  let visible = filterIssues(filteredData?.issues ?? [], filteredData, filters)
+    .filter((issue) => !hiddenStatusIds.has(issue.status_id));
 
   if (pendingDeleteIssue) {
     visible = visible.filter((issue) => issue.id !== pendingDeleteIssue.id);

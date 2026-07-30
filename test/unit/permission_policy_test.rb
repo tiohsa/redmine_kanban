@@ -15,7 +15,7 @@ class RedmineKanbanPermissionPolicyTest < Minitest::Test
     issue_project = Object.new
     user = Object.new
     user.define_singleton_method(:allowed_to?) do |permission, project|
-      (permission == :manage_redmine_kanban && project.equal?(board_project)) ||
+      ([:view_redmine_kanban, :manage_redmine_kanban].include?(permission) && project.equal?(board_project)) ||
         (permission == :edit_issues && project.equal?(issue_project))
     end
 
@@ -37,6 +37,7 @@ class RedmineKanbanPermissionPolicyTest < Minitest::Test
     board_project = Object.new
     issue_project = Object.new
     user = user_with_permissions(
+      [:view_redmine_kanban, board_project],
       [:manage_redmine_kanban, board_project],
       [:edit_issues, issue_project]
     )
@@ -55,6 +56,7 @@ class RedmineKanbanPermissionPolicyTest < Minitest::Test
     board_project = Object.new
     issue_project = Object.new
     user = user_with_permissions(
+      [:view_redmine_kanban, board_project],
       [:manage_redmine_kanban, board_project],
       [:delete_issues, issue_project]
     )
@@ -73,9 +75,10 @@ class RedmineKanbanPermissionPolicyTest < Minitest::Test
   private
 
   def assert_policy_allows(method_name, first_permission, second_permission)
-    assert policy_with(first_permission, second_permission).public_send(method_name, @project)
-    refute policy_with(first_permission).public_send(method_name, @project)
-    refute policy_with(second_permission).public_send(method_name, @project)
+    assert policy_with(:view_redmine_kanban, first_permission, second_permission).public_send(method_name, @project)
+    refute policy_with(:view_redmine_kanban, first_permission).public_send(method_name, @project)
+    refute policy_with(:view_redmine_kanban, second_permission).public_send(method_name, @project)
+    refute policy_with(first_permission, second_permission).public_send(method_name, @project)
     refute policy_with.public_send(method_name, @project)
   end
 

@@ -2,7 +2,7 @@ import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-quer
 import { useRef } from 'react';
 import type { BoardData, Issue, Subtask } from './types';
 import type { AncestorIssueUpdate } from './kanbanShared';
-import { updateSubtasksTree } from './subtasksTree';
+import { mapSubtasksTree, updateSubtasksTree } from './subtasksTree';
 
 type MutationContext = {
   prev?: BoardData;
@@ -184,11 +184,7 @@ export function updateIssueInBoard(
   const closed = data.columns.find((column) => column.id === updated.status_id)?.is_closed ?? false;
   const issues = data.issues.map((issue) => {
     const nextIssue = issue.id === issueId ? updated : issue;
-    const subtasks = updateSubtasksTree(nextIssue.subtasks, issueId, {
-      status_id: updated.status_id,
-      is_closed: closed,
-      lock_version: updated.lock_version,
-    });
+    const subtasks = updateSubtasksTree(nextIssue.subtasks, issueId, subtaskPatchFromIssue(updated, data, undefined, closed));
     return subtasks === nextIssue.subtasks ? nextIssue : { ...nextIssue, subtasks };
   });
   return {
@@ -205,11 +201,16 @@ export function updateSubtaskInBoard(
 ): BoardData {
   let changed = false;
   const issues = data.issues.map((issue) => {
-    const subtasks = updateSubtasksTree(issue.subtasks, subtaskId, patch);
-    if (subtasks === issue.subtasks) return issue;
+    let nextIssue = issue;
+    if (issue.id === subtaskId) {
+      nextIssue = { ...issue, ...patch };
+      changed = true;
+    }
+    const subtasks = updateSubtasksTree(nextIssue.subtasks, subtaskId, patch);
+    if (subtasks === nextIssue.subtasks) return nextIssue;
 
     changed = true;
-    return { ...issue, subtasks };
+    return { ...nextIssue, subtasks };
   });
 
   if (!changed) return data;
@@ -232,12 +233,19 @@ export function applyAncestorIssueUpdates(
   let changed = false;
   const issues = data.issues.map((issue) => {
     const update = updatesById.get(issue.id);
-    if (!update) return issue;
+    let nextIssue = issue;
+    if (update && isIssueFresh(issue, { ...issue, ...update })) {
+      nextIssue = { ...issue, ...update };
+      changed = true;
+    }
 
-    if (!isIssueFresh(issue, { ...issue, ...update })) return issue;
-
-    changed = true;
-    return { ...issue, ...update };
+    const subtasks = mapSubtasksTree(nextIssue.subtasks, (subtask) => {
+      const nestedUpdate = updatesById.get(subtask.id);
+      if (!nestedUpdate || !isIssueFresh(subtask as unknown as Issue, { ...subtask, ...nestedUpdate } as unknown as Issue)) return subtask;
+      changed = true;
+      return { ...subtask, ...nestedUpdate };
+    });
+    return subtasks === nextIssue.subtasks ? nextIssue : { ...nextIssue, subtasks };
   });
 
   return changed ? { ...data, issues } : data;
@@ -291,24 +299,29 @@ function replaceSubtask(
 }
 
 function issueResponseToSubtask(current: Subtask, nextIssue: Issue, data: BoardData): Subtask {
+  return { ...current, ...subtaskPatchFromIssue(nextIssue, data, current) };
+}
+
+function subtaskPatchFromIssue(nextIssue: Issue, data: BoardData, fallback?: Subtask, fallbackIsClosed?: boolean): Partial<Subtask> {
   const isClosed = nextIssue.status_is_closed
-    ?? data.columns.find((column) => column.id === nextIssue.status_id)?.is_closed
-    ?? current.is_closed;
+    ?? fallbackIsClosed
+    ?? data.columns.find((column) => column.id === nextIssue.status_id)?.is_closed;
 
   return {
-    ...current,
     subject: nextIssue.subject,
     status_id: nextIssue.status_id,
     tracker_id: nextIssue.tracker_id,
     assigned_to_id: nextIssue.assigned_to_id,
     due_date: nextIssue.due_date,
     priority_id: nextIssue.priority_id,
-    is_closed: isClosed,
+    is_closed: isClosed ?? fallback?.is_closed ?? false,
     lock_version: nextIssue.lock_version,
-    permissions: nextIssue.permissions ?? current.permissions,
-    allowed_status_ids: nextIssue.allowed_status_ids ?? current.allowed_status_ids,
-    project: nextIssue.project ?? current.project,
-    subtasks: current.subtasks,
+    updated_on: nextIssue.updated_on,
+    aging_days: nextIssue.aging_days,
+    done_ratio: nextIssue.done_ratio,
+    permissions: nextIssue.permissions ?? fallback?.permissions,
+    allowed_status_ids: nextIssue.allowed_status_ids ?? fallback?.allowed_status_ids,
+    project: nextIssue.project ?? fallback?.project,
   };
 }
 

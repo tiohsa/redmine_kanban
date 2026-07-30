@@ -126,6 +126,27 @@ describe('buildVisibleIssues', () => {
     expect(issues.map((issue) => issue.id)).toEqual([1]);
   });
 
+  it('keeps hidden-status subtasks and descendants beneath a visible parent', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Parent', {
+        subtasks: [{
+          id: 2,
+          subject: 'Hidden child',
+          status_id: 2,
+          is_closed: true,
+          subtasks: [{ id: 3, subject: 'Hidden grandchild', status_id: 2, is_closed: true }],
+        }],
+      }),
+    ]);
+
+    const issues = buildVisibleIssues(data, makeFilters(), new Set([2]), null);
+
+    expect(issues[0]?.subtasks).toMatchObject([{
+      id: 2,
+      subtasks: [{ id: 3 }],
+    }]);
+  });
+
   it('filters issues by multiple selected assignees using OR semantics', () => {
     const data = makeBoardData([
       makeIssue(1, 1, 'Mine', { assigned_to_id: 7 }),
