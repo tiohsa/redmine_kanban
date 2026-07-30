@@ -126,7 +126,7 @@ describe('buildVisibleIssues', () => {
     expect(issues.map((issue) => issue.id)).toEqual([1]);
   });
 
-  it('hides a nested excluded status while retaining its visible descendants', () => {
+  it('keeps hidden-status subtasks and descendants beneath a visible parent', () => {
     const data = makeBoardData([
       makeIssue(1, 1, 'Parent', {
         subtasks: [{
@@ -134,22 +134,17 @@ describe('buildVisibleIssues', () => {
           subject: 'Hidden child',
           status_id: 2,
           is_closed: true,
-          subtasks: [{ id: 3, subject: 'Visible grandchild', status_id: 1, is_closed: false }],
+          subtasks: [{ id: 3, subject: 'Hidden grandchild', status_id: 2, is_closed: true }],
         }],
       }),
     ]);
 
     const issues = buildVisibleIssues(data, makeFilters(), new Set([2]), null);
 
-    expect(issues[0]?.subtasks).toMatchObject([{ id: 3 }]);
-  });
-
-  it('removes a hidden nested leaf', () => {
-    const data = makeBoardData([
-      makeIssue(1, 1, 'Parent', { subtasks: [{ id: 2, subject: 'Hidden child', status_id: 2, is_closed: true }] }),
-    ]);
-
-    expect(buildVisibleIssues(data, makeFilters(), new Set([2]), null)[0]?.subtasks).toEqual([]);
+    expect(issues[0]?.subtasks).toMatchObject([{
+      id: 2,
+      subtasks: [{ id: 3 }],
+    }]);
   });
 
   it('filters issues by multiple selected assignees using OR semantics', () => {

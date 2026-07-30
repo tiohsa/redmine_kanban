@@ -51,7 +51,7 @@ export function buildVisibleIssues(
   hiddenStatusIds: Set<number>,
   pendingDeleteIssue: Issue | null,
 ): Issue[] {
-  let visible = filterIssues(filteredData?.issues ?? [], filteredData, filters, hiddenStatusIds)
+  let visible = filterIssues(filteredData?.issues ?? [], filteredData, filters)
     .filter((issue) => !hiddenStatusIds.has(issue.status_id));
 
   if (pendingDeleteIssue) {
@@ -77,7 +77,7 @@ function endOfWeek(date: Date): Date {
   return e;
 }
 
-function filterIssues(issues: Issue[], data: BoardData | null, filters: Filters, hiddenStatusIds: Set<number>): Issue[] {
+function filterIssues(issues: Issue[], data: BoardData | null, filters: Filters): Issue[] {
   const q = filters.q.trim().toLowerCase();
   const now = new Date();
   const now0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -85,21 +85,20 @@ function filterIssues(issues: Issue[], data: BoardData | null, filters: Filters,
   const end = endOfWeek(now);
 
   return issues.flatMap((issue) => {
-    const filteredSubtasks = filterSubtasks(issue.subtasks, filters, hiddenStatusIds);
+    const filteredSubtasks = filterSubtasks(issue.subtasks, filters);
     const matchesSelf = matchesIssue(issue, data, filters, q, now0, start, end);
     if (!matchesSelf && filteredSubtasks.length === 0) return [];
     return [{ ...issue, subtasks: filteredSubtasks }];
   });
 }
 
-function filterSubtasks(subtasks: Issue['subtasks'], filters: Filters, hiddenStatusIds: Set<number>): NonNullable<Issue['subtasks']> {
+function filterSubtasks(subtasks: Issue['subtasks'], filters: Filters): NonNullable<Issue['subtasks']> {
   return (subtasks ?? []).flatMap((subtask) => {
     const child = subtask as unknown as Issue;
-    const nested = filterSubtasks(child.subtasks, filters, hiddenStatusIds);
+    const nested = filterSubtasks(child.subtasks, filters);
     const now = new Date();
     const now0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const matchesSelf = matchesIssue(child, null, filters, filters.q.trim().toLowerCase(), now0, startOfWeek(now), endOfWeek(now));
-    if (hiddenStatusIds.has(child.status_id)) return nested;
     if (!matchesSelf && nested.length === 0) return [];
     return [{ ...subtask, subtasks: nested }];
   });
