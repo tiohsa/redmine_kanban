@@ -88,7 +88,8 @@ module RedmineKanban
       RedmineKanban::BulkIdempotency.with_request(
         user_id: @user.id,
         project_id: @project.id,
-        idempotency_key: idempotency_key
+        idempotency_key: idempotency_key,
+        payload: { parent: parent_params, subtasks: subtask_collection(subtasks) }
       ) do
         result = nil
         Issue.transaction do

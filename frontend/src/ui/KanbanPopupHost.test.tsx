@@ -20,9 +20,9 @@ const data = {
   labels: {
     notice: '通知',
     close: '閉じる',
-    undo: '復元',
-    restoring: '復元中',
-    deleted_with_undo: 'チケット #%{id} を削除しました。復元できます。',
+    undo: '同じ内容で再作成',
+    restoring: '再作成中',
+    deleted_with_undo: 'チケット #%{id} を削除しました。同じ内容で再作成できます。',
   },
 } as unknown as BoardData;
 
@@ -50,7 +50,7 @@ describe('KanbanPopupHost', () => {
     );
   }
 
-  it('renders the deleted notice and restores the issue when undo is clicked', () => {
+  it('renders the recreation contract and invokes recreation when clicked', () => {
     const onUndoDelete = vi.fn();
 
     render(
@@ -68,8 +68,8 @@ describe('KanbanPopupHost', () => {
       />
     );
 
-    expect(screen.getByText('チケット #42 を削除しました。復元できます。')).toBeTruthy();
-    const undoButton = screen.getByRole('button', { name: '復元' });
+    expect(screen.getByText('チケット #42 を削除しました。同じ内容で再作成できます。')).toBeTruthy();
+    const undoButton = screen.getByRole('button', { name: '同じ内容で再作成' });
     expect(undoButton.className).toContain('rk-popup-undo-btn');
 
     fireEvent.click(undoButton);

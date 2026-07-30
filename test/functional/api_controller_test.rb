@@ -52,6 +52,40 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     end
   end
 
+  def test_all_mutation_endpoints_require_view_permission_without_changing_data
+    issue = build_issue(subject: 'View permission guard')
+    tracker = @project.trackers.first
+    @role.remove_permission!(:view_redmine_kanban)
+
+    assert_no_difference('Issue.count') do
+      patch :move, params: { project_id: @project.identifier, id: issue.id, issue: { status_id: issue.status_id, lock_version: issue.lock_version } }
+    end
+    assert_response :forbidden
+
+    assert_no_difference('Issue.count') do
+      patch :update, params: { project_id: @project.identifier, id: issue.id, issue: { subject: 'Must not update', lock_version: issue.lock_version } }
+    end
+    assert_response :forbidden
+    assert_equal 'View permission guard', issue.reload.subject
+
+    assert_no_difference('Issue.count') do
+      delete :destroy, params: { project_id: @project.identifier, id: issue.id, issue: { lock_version: issue.lock_version } }
+    end
+    assert_response :forbidden
+    assert Issue.exists?(issue.id)
+
+    assert_no_difference('Issue.count') do
+      post :create, params: { project_id: @project.identifier, issue: { subject: 'Must not create', tracker_id: tracker.id } }
+    end
+    assert_response :forbidden
+
+    @request.headers['Idempotency-Key'] = 'view-permission-bulk'
+    assert_no_difference('Issue.count') do
+      post :bulk_create, params: { project_id: @project.identifier, bulk: { parent: { subject: 'Must not bulk create', tracker_id: tracker.id }, subtasks: [] } }
+    end
+    assert_response :forbidden
+  end
+
   def test_read_api_endpoints_allow_paged_reads_with_view_permission
     2.times { |index| build_issue(subject: "Paged issue #{index}") }
 
@@ -110,6 +144,22 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     refute_includes json['issues'].map { |issue| issue['id'] }, issue_b.id
     assert_includes json['columns'].map { |column| column['id'] }, status_b.id
     assert_equal column_counts_by_status(baseline), column_counts_by_status(json)
+  end
+
+  def test_board_omits_an_out_of_scope_descendant_from_the_recursive_tree
+    parent = build_issue(subject: 'Scoped parent')
+    other_project = build_project(name: 'Out of scope child', identifier: "out-of-scope-child-#{Time.now.to_i}")
+    child = build_issue(subject: 'Out of scope child', project: other_project)
+    # Redmine validation prevents creating this relationship normally. Defend the
+    # board against historical or externally corrupted data nevertheless.
+    child.update_column(:parent_id, parent.id)
+
+    json = index_response
+    card = json.fetch('issues').find { |issue| issue['id'] == parent.id }
+
+    assert_not_nil card
+    assert_equal [], card['subtasks']
+    refute_includes json.fetch('issues').map { |issue| issue['id'] }, child.id
   end
 
   def test_index_keeps_assignee_lane_from_unfiltered_issue_pool
@@ -685,6 +735,21 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_equal first_result, JSON.parse(@response.body)
   end
 
+  def test_bulk_create_rejects_a_completed_key_with_a_different_payload
+    tracker = @project.trackers.first
+    @request.headers['Idempotency-Key'] = 'bulk-payload-conflict'
+    first = { project_id: @project.identifier, bulk: { parent: { subject: 'First parent', tracker_id: tracker.id }, subtasks: [] } }
+
+    assert_difference('Issue.count', 1) { post :bulk_create, params: first }
+    assert_response :success
+
+    assert_no_difference('Issue.count') do
+      post :bulk_create, params: first.deep_merge(bulk: { parent: { subject: 'Different parent', tracker_id: tracker.id } })
+    end
+    assert_response :conflict
+    assert_equal false, JSON.parse(@response.body)['ok']
+  end
+
   def test_bulk_create_adds_children_to_existing_parent_atomically
     parent = build_issue(subject: 'Existing parent')
     tracker = @project.trackers.first
@@ -718,7 +783,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     key = 'processing-cache-test'
     Rails.cache.write(
       bulk_cache_key(key),
-      { 'status' => 'processing' },
+      { 'status' => 'processing', 'payload_digest' => bulk_payload_digest(parent: {}, subtasks: []) },
       expires_in: RedmineKanban::BulkIdempotency::PROCESSING_TTL
     )
 
@@ -738,7 +803,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     response = { 'ok' => true, 'issue' => { 'id' => 999 }, 'subtasks' => [] }
     Rails.cache.write(
       bulk_cache_key(key),
-      { 'status' => 'completed', 'response' => response },
+      { 'status' => 'completed', 'payload_digest' => bulk_payload_digest(parent: {}, subtasks: []), 'response' => response },
       expires_in: RedmineKanban::BulkIdempotency::COMPLETED_TTL
     )
 
@@ -978,6 +1043,10 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
 
   def bulk_cache_key(key)
     ['redmine_kanban', 'bulk_create', @user.id, @project.id, key].join(':')
+  end
+
+  def bulk_payload_digest(payload)
+    RedmineKanban::BulkIdempotency.send(:payload_digest, payload)
   end
 
 end

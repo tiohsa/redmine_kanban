@@ -337,7 +337,7 @@ module RedmineKanban
     end
 
     def subtask_loader
-      @subtask_loader ||= SubtaskLoader.new(user: @user)
+      @subtask_loader ||= SubtaskLoader.new(user: @user, project_ids: @project_ids)
     end
 
     def cached_lists

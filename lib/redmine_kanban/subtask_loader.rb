@@ -2,8 +2,9 @@ require 'set'
 
 module RedmineKanban
   class SubtaskLoader
-    def initialize(user:)
+    def initialize(user:, project_ids: nil)
       @user = user
+      @project_ids = Array(project_ids).filter_map { |id| id.to_i.positive? ? id.to_i : nil }.uniq
     end
 
     def subtasks_by_parent_id(root_issue_ids)
@@ -20,6 +21,7 @@ module RedmineKanban
       until parent_ids.empty?
         children = Issue.visible(@user)
                         .where(parent_id: parent_ids)
+                        .then { |scope| @project_ids.any? ? scope.where(project_id: @project_ids) : scope }
                         .includes(:assigned_to, :priority, :status, :project)
                         .order(:parent_id, :lft, :id)
                         .to_a
