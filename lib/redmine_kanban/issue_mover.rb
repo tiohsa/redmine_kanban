@@ -1,4 +1,4 @@
-require_relative 'subtask_loader'
+require_relative 'board_context'
 require_relative 'ancestor_issue_updates'
 
 module RedmineKanban
@@ -8,11 +8,13 @@ module RedmineKanban
     include IssueWorkflow
     include ServiceResponse
     include AncestorIssueUpdates
+    include MutationOutcome
 
-    def initialize(project:, issue:, user:)
+    def initialize(project:, issue:, user:, board_context: nil)
       @project = project
       @issue = issue
       @user = user
+      @board_context = board_context || BoardContext.new(project: project, user: user)
     end
 
     def move(status_id:, assigned_to_id: nil, priority_id: nil, assigned_to_provided: false, priority_provided: false, lock_version: nil)
@@ -46,6 +48,7 @@ module RedmineKanban
       parent = nil
       parent_priority_before = nil
       priority_lock_versions = nil
+      mutation_outcome = nil
 
       Issue.transaction do
         if preserve_parent_priority
@@ -62,6 +65,7 @@ module RedmineKanban
           raise ActiveRecord::Rollback
         end
 
+        mutation_outcome = mutation_outcome_for(@issue)
         priority_error = apply_priority_updates!(@issue, priority_id)
         if priority_error
           error_result = error_response(priority_error)
@@ -80,7 +84,7 @@ module RedmineKanban
 
       return error_result if error_result
 
-      ancestor_updates_required = @issue.saved_change_to_status_id? || @issue.saved_change_to_done_ratio?
+      ancestor_updates_required = mutation_outcome[:status_changed] || mutation_outcome[:done_ratio_changed]
 
       if priority_id.is_a?(Integer)
         reconcile_error = reconcile_priorities_after_commit!(@issue, priority_id, priority_lock_versions)
@@ -125,11 +129,7 @@ module RedmineKanban
     end
 
     def issue_presenter(issue)
-      BoardIssuePresenter.new(
-        user: @user,
-        subtasks_by_parent_id: SubtaskLoader.new(user: @user).subtasks_by_parent_id([issue.id]),
-        board_project: @project
-      )
+      @board_context.presenter([issue.id]).first
     end
 
   end

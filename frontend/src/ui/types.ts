@@ -83,6 +83,7 @@ export type Lists = {
 
 export type Meta = {
   project_id: number;
+  project_ids?: number[];
   current_user_id: number;
   can_move: boolean;
   can_create: boolean;
@@ -91,6 +92,7 @@ export type Meta = {
   aging_warn_days: number;
   aging_danger_days: number;
   aging_exclude_closed: boolean;
+  tree?: TreeMeta;
   pagination?: {
     issue_limit: number;
     offset: number;
@@ -98,7 +100,20 @@ export type Meta = {
     total_issue_count: number;
     next_offset: number;
     has_more_issues: boolean;
+    tree_parent_id?: number;
   };
+};
+
+export type TreeMeta = {
+  node_limit: number;
+  root_issue_count: number;
+  unique_node_count: number;
+  serialized_node_count: number;
+  duplicate_node_count: number;
+  truncated: boolean;
+  truncated_parent_ids?: number[];
+  loaded_node_count?: number;
+  db_row_count?: number;
 };
 
 export type BoardData = {

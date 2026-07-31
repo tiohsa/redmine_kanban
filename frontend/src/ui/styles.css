@@ -223,6 +223,32 @@
   gap: 4px;
 }
 
+.rk-tree-truncation {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--rk-warn);
+  border-radius: 6px;
+  background: var(--rk-warn-bg);
+  color: var(--rk-text-dark);
+  font-size: 12px;
+}
+
+.rk-tree-truncation .rk-icon {
+  color: var(--rk-warn);
+  font-size: 18px;
+}
+
+.rk-tree-truncation .rk-btn {
+  margin-left: auto;
+}
+
+.rk-tree-truncation .rk-btn + .rk-btn {
+  margin-left: 0;
+}
+
 .rk-toolbar-separator {
   width: 1px;
   height: 20px;

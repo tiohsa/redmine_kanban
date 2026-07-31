@@ -1,4 +1,4 @@
-require_relative 'subtask_loader'
+require_relative 'board_context'
 require_relative 'ancestor_issue_updates'
 
 module RedmineKanban
@@ -8,10 +8,12 @@ module RedmineKanban
     include IssueWorkflow
     include ServiceResponse
     include AncestorIssueUpdates
+    include MutationOutcome
 
-    def initialize(project:, user:)
+    def initialize(project:, user:, board_context: nil)
       @project = project
       @user = user
+      @board_context = board_context || BoardContext.new(project: project, user: user)
     end
 
     def update(issue_id:, params:)
@@ -55,6 +57,7 @@ module RedmineKanban
       error_result = nil
       priority_updated = priority_id != :no_change
       priority_lock_versions = nil
+      mutation_outcome = nil
 
       Issue.transaction do
         issue.safe_attributes = attributes
@@ -64,6 +67,7 @@ module RedmineKanban
           raise ActiveRecord::Rollback
         end
 
+        mutation_outcome = mutation_outcome_for(issue)
         if priority_updated
           priority_error = apply_priority_updates!(issue, priority_id)
           if priority_error
@@ -76,7 +80,7 @@ module RedmineKanban
 
       return error_result if error_result
 
-      ancestor_updates_required = issue.saved_change_to_status_id? || issue.saved_change_to_done_ratio?
+      ancestor_updates_required = mutation_outcome[:status_changed] || mutation_outcome[:done_ratio_changed]
 
       if priority_id.is_a?(Integer)
         reconcile_error = reconcile_priorities_after_commit!(issue, priority_id, priority_lock_versions)
@@ -120,11 +124,7 @@ module RedmineKanban
     end
 
     def issue_presenter(issue)
-      BoardIssuePresenter.new(
-        user: @user,
-        board_project: @project,
-        subtasks_by_parent_id: SubtaskLoader.new(user: @user).subtasks_by_parent_id([issue.id])
-      )
+      @board_context.presenter([issue.id]).first
     end
 
   end

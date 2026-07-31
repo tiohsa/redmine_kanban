@@ -50,6 +50,7 @@ export function buildBoardIssuesUrl(
   excludeStatusIds: Iterable<number>,
   issueLimit: number,
   offset: number,
+  treeParentId?: number,
 ): string {
   const params = new URLSearchParams();
 
@@ -58,6 +59,9 @@ export function buildBoardIssuesUrl(
   appendNumberParams(params, 'exclude_status_ids[]', excludeStatusIds);
   params.append('issue_limit', String(issueLimit));
   params.append('offset', String(Math.max(0, offset)));
+  if (treeParentId && Number.isFinite(treeParentId) && treeParentId > 0) {
+    params.append('tree_parent_id', String(treeParentId));
+  }
 
   return `${baseUrl}/issues?${params.toString()}`;
 }

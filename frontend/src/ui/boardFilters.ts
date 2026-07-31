@@ -1,4 +1,5 @@
 import type { BoardData, Issue } from './types';
+import { flattenIssueTree, nestedIssueIds } from './boardTree';
 
 export type Filters = {
   assigneeIds: string[];
@@ -21,19 +22,17 @@ export function applyBoardDataFilters(
 
   let result = displayData;
   if (showSubtasks) {
-    const loadedIssueIds = new Set(result.issues.map((issue) => issue.id));
+    const loadedNestedIds = nestedIssueIds(result.issues);
     result = {
       ...result,
-      // A paged child must remain visible until its parent has been loaded.
-      issues: result.issues.filter((issue) => !issue.parent_id || !loadedIssueIds.has(issue.parent_id)),
+      // A child root is removed only when the current parent tree contains it.
+      issues: result.issues.filter((issue) => !loadedNestedIds.has(issue.id)),
     };
   } else {
     result = {
       ...result,
-      issues: result.issues.map((issue) => ({
-        ...issue,
-        subtasks: [],
-      })),
+      // Keep the displayed Issue collection stable when nested rows are rendered as cards.
+      issues: flattenIssueTree(result.issues),
     };
   }
   if (statusIds.length > 0) {

@@ -209,6 +209,7 @@ jobs:
         redmine_version: ['7.0', '6.1']
     env:
       REDMINE_IMAGE: redmine:${{ matrix.redmine_version }}
+      REDMINE_KANBAN_E2E_TREE_FIXTURE: '1'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -264,7 +265,8 @@ jobs:
 
       - name: Seed project/module for E2E
         run: |
-          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+          docker compose -f .github/e2e/docker-compose.yml exec -T --user redmine \
+            -e REDMINE_KANBAN_E2E_TREE_FIXTURE=1 redmine \
             bundle exec rails runner -e production plugins/redmine_kanban/e2e/setup_redmine.rb
 
       - name: Run Playwright E2E
@@ -355,7 +357,7 @@ jobs:
 
       - name: Seed project/module for E2E
         run: |
-          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+          docker compose -f .github/e2e/docker-compose.yml exec -T --user redmine redmine \
             bundle exec rails runner -e production plugins/redmine_kanban/e2e/setup_redmine.rb
 
       - name: Run Playwright compatibility smoke

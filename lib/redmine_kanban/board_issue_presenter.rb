@@ -6,9 +6,22 @@ module RedmineKanban
       @user = user
       @subtasks_by_parent_id = subtasks_by_parent_id
       @board_project = board_project
+      @serialized_ids = Set.new
     end
 
     def issue_to_h(issue)
+      issues_to_h([issue]).first
+    end
+
+    def issues_to_h(issues)
+      @serialized_ids = Set.new
+      Array(issues).filter_map { |issue| issue_to_h_without_reset(issue) }
+    end
+
+    def issue_to_h_without_reset(issue)
+      return if @serialized_ids.include?(issue.id)
+
+      @serialized_ids.add(issue.id)
       {
         id: issue.id,
         parent_id: issue.parent_id,
@@ -27,7 +40,7 @@ module RedmineKanban
         priority_id: issue.priority_id,
         priority_name: issue.priority&.name,
         done_ratio: issue.done_ratio,
-        updated_on: issue.updated_on&.iso8601,
+        updated_on: updated_on_for(issue)&.iso8601,
         aging_days: self.class.aging_days_for(issue),
         project: { id: issue.project_id, name: issue.project.name },
         permissions: permissions_for(issue),
@@ -41,7 +54,7 @@ module RedmineKanban
     end
 
     def self.aging_days_for(issue)
-      return 0 unless issue.updated_on
+      return 0 unless issue.respond_to?(:updated_on) && issue.updated_on
 
       (Date.current - issue.updated_on.to_date).to_i
     end
@@ -49,15 +62,45 @@ module RedmineKanban
     private
 
     def subtask_tree(issue, visited_ids)
-      children = @subtasks_by_parent_id[issue.id] || []
-      children.filter_map do |child|
-        next if visited_ids.include?(child.id)
+      result = []
+      stack = [{
+        parent_id: issue.id,
+        visited_ids: visited_ids.is_a?(Set) ? visited_ids : Set.new(visited_ids),
+        children: nil,
+        index: 0,
+        target: result
+      }]
 
-        subtask_to_h(child, visited_ids + [child.id])
+      until stack.empty?
+        frame = stack.last
+        frame[:children] ||= @subtasks_by_parent_id[frame[:parent_id]] || []
+        if frame[:index] >= frame[:children].length
+          stack.pop
+          next
+        end
+
+        child = frame[:children][frame[:index]]
+        frame[:index] += 1
+        next if frame[:visited_ids].include?(child.id) || @serialized_ids.include?(child.id)
+
+        @serialized_ids.add(child.id)
+        child_hash = subtask_to_h(child)
+        frame[:target] << child_hash
+        child_visited_ids = frame[:visited_ids].dup
+        child_visited_ids.add(child.id)
+        stack << {
+          parent_id: child.id,
+          visited_ids: child_visited_ids,
+          children: nil,
+          index: 0,
+          target: child_hash[:subtasks]
+        }
       end
+
+      result
     end
 
-    def subtask_to_h(issue, visited_ids)
+    def subtask_to_h(issue)
       {
         id: issue.id,
         subject: issue.subject,
@@ -68,10 +111,13 @@ module RedmineKanban
         priority_id: issue.priority_id,
         is_closed: issue.status.is_closed?,
         lock_version: issue.lock_version,
+        updated_on: updated_on_for(issue)&.iso8601,
+        done_ratio: issue.respond_to?(:done_ratio) ? issue.done_ratio : nil,
+        aging_days: self.class.aging_days_for(issue),
         project: { id: issue.project.id, name: issue.project.name },
         permissions: permissions_for(issue),
         allowed_status_ids: allowed_status_ids_for(issue),
-        subtasks: subtask_tree(issue, visited_ids),
+        subtasks: [],
       }
     end
 
@@ -91,6 +137,10 @@ module RedmineKanban
 
     def permission_policy
       @permission_policy ||= PermissionPolicy.new(user: @user)
+    end
+
+    def updated_on_for(issue)
+      issue.updated_on if issue.respond_to?(:updated_on)
     end
   end
 end

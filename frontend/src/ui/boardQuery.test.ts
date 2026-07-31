@@ -17,6 +17,12 @@ describe('buildBoardIssuesUrl', () => {
       '/projects/demo/kanban/issues?project_ids%5B%5D=2&project_ids%5B%5D=4&issue_status_ids%5B%5D=1&issue_status_ids%5B%5D=9&exclude_status_ids%5B%5D=3&exclude_status_ids%5B%5D=7&issue_limit=100&offset=200',
     );
   });
+
+  it('serializes a scoped tree parent for subtree recovery', () => {
+    expect(
+      buildBoardIssuesUrl('/projects/demo/kanban', [], [], new Set(), 500, 12, 42),
+    ).toBe('/projects/demo/kanban/issues?issue_limit=500&offset=12&tree_parent_id=42');
+  });
 });
 
 describe('buildBoardDataUrl', () => {

@@ -29,7 +29,10 @@ type ToolbarProps = {
   onScrollToTop: () => void;
   pagination?: BoardData['meta']['pagination'];
   onLoadMoreIssues?: () => void;
+  onLoadMoreTree?: () => void;
+  onRefreshTree?: () => void;
   loadingMoreIssues?: boolean;
+  loadingMoreTree?: boolean;
   timeEntryOnClose: boolean;
   onToggleTimeEntryOnClose: () => void;
   laneType?: LaneType;
@@ -64,7 +67,10 @@ export function KanbanToolbar({
   onScrollToTop,
   pagination,
   onLoadMoreIssues = () => {},
+  onLoadMoreTree = () => {},
+  onRefreshTree = () => {},
   loadingMoreIssues,
+  loadingMoreTree,
   timeEntryOnClose,
   onToggleTimeEntryOnClose,
   laneType = 'assignee',
@@ -103,6 +109,20 @@ export function KanbanToolbar({
 
   return (
     <div className="rk-toolbar">
+      {data.meta.tree?.truncated ? (
+        <div className="rk-tree-truncation" role="status" aria-live="polite">
+          <span className="rk-icon" aria-hidden="true">warning</span>
+          <span>{labels.tree_truncated ?? 'Some subtasks are not shown yet.'}</span>
+          {data.meta.tree.truncated_parent_ids?.length ? (
+            <button type="button" className="rk-btn rk-btn-sm" onClick={onLoadMoreTree} disabled={loadingMoreTree}>
+              {labels.tree_load_more ?? labels.load_more_issues ?? 'Load more'}
+            </button>
+          ) : null}
+          <button type="button" className="rk-btn rk-btn-sm" onClick={onRefreshTree}>
+            {labels.tree_refresh ?? 'Refresh tree'}
+          </button>
+        </div>
+      ) : null}
       {canCreate ? (
         <>
           <div className="rk-toolbar-group">

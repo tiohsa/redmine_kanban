@@ -35,7 +35,7 @@ Redmine Kanban は、作業の滞留を早期に可視化し、チームのフ�
 - **高度なフィルタリング**: 担当者、期限、優先度、Blocked 状態などで絞り込み可能。
 - **Kanban からの直接作成**: 列ヘッダやセルから新規チケットを作成可能。
 - **再帰サブタスク表示**: 子・孫以降を含むサブタスク階層を表示できます。親チケット内にまとめて表示するか、子チケットを個別カードとして表示するかを切り替え可能です。
-- **削除後の再作成**: 削除したトップレベルチケットを表示内容で再作成できます。新しいチケットが作成され、元のID・履歴・コメント・添付・関連・ウォッチャーは復元されません。
+- **削除後の再作成**: 削除したトップレベルチケットを、表示中の件名、プロジェクト、説明、ステータス、担当者、トラッカー、優先度、開始日、期日、進捗率で再作成できます。子チケットは親なしのトップレベルチケットとして再作成しません。新しいチケットが作成され、元のID・履歴・コメント・添付・関連・ウォッチャーは復元されません。
 - **プロジェクトフィルタ**: 複数プロジェクトやサブプロジェクトでフィルタリング可能。
 
 ## スクリーンショット
@@ -84,7 +84,7 @@ pnpm run build
 
 プラグイン全体の設定画面はありません。各ユーザーはボード上でスイムレーン、非表示ステータス、停滞閾値、並び替え、表示幅、文字サイズ、子チケット表示を設定できます。カード移動では、ユーザーが明示したレーン属性とステータスだけを変更し、Redmine の Workflow と権限を正とします。
 
-API はサーバ保護のため、標準で 500 件、最大で 1,000 件まで取得します。運用時に性能ログが必要な場合だけ `REDMINE_KANBAN_PERF_LOG=1` を指定してください。
+API はサーバ保護のため、標準で 500 件、最大で 1,000 件まで取得します。再帰レスポンスはcanonical rootと合計1,500 unique nodeのbudgetを使用し、`meta.tree` にbudget、unique/serialized数、重複root数、取得row数、truncationを返します。`meta.tree.truncated` がtrueの場合、`truncated_parent_ids` から追加取得できる親ツリーを特定できます。フロントエンドは `/projects/:project_id/kanban/issues?tree_parent_id=...&offset=...` で直下の子ページを取得し、通常のroot paginationとは別に統合します。運用時に性能ログが必要な場合だけ `REDMINE_KANBAN_PERF_LOG=1` を指定してください。
 
 ## 技術スタック
 
@@ -146,8 +146,12 @@ docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
   bundle exec rake db:migrate redmine:plugins:migrate RAILS_ENV=production
 docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
   env REDMINE_LANG=en bundle exec rake redmine:load_default_data RAILS_ENV=production
-docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
-  bundle exec rails runner -e production plugins/redmine_kanban/e2e/setup_redmine.rb
+docker compose -f .github/e2e/docker-compose.yml exec -T --user redmine redmine \
+bundle exec rails runner -e production plugins/redmine_kanban/e2e/setup_redmine.rb
+
+# truncation E2E 用の高fan-outツリーfixture（任意）
+docker compose -f .github/e2e/docker-compose.yml exec -T --user redmine redmine \
+  env REDMINE_KANBAN_E2E_TREE_FIXTURE=1 bundle exec rails runner -e production plugins/redmine_kanban/e2e/setup_redmine.rb
 
 # E2E 実行
 REDMINE_BASE_URL=http://127.0.0.1:3002 \
@@ -169,12 +173,22 @@ REDMINE_BASE_URL=http://127.0.0.1:3002 \
 
 - `issues[].subtasks` は再帰ツリー構造です（`subtasks[].subtasks...`）。
 - Canvas 上の子チケット行はフロントで描画/ヒット判定用にフラット化していますが、API は階層を保持します。
+- 同じIssueはrootまたはnestedのどちらか一方でcanonical化されます。親ツリーへ実際に含まれるまで子チケットをrootから除外しないため、未ロード・truncatedのIssueが表示から消えません。
+- `GET /projects/:project_id/kanban/issues` は通常のrootページングに加え、`tree_parent_id` と `offset` による子ツリーの追加取得を受け付けます。子ツリーは決定的な `lft` / `id` 順で返され、ページ追加後も通常のrootページング情報を置き換えません。
 
 一括作成の冪等性は `Rails.cache` で管理します。cache identity はユーザー・プロジェクト・操作・`Idempotency-Key`・canonical request payload digest で識別されます。atomicなclaimに成功した処理だけが作成処理を実行し、同じキーでも異なるpayloadは409、同一payloadのcompletedは以前のresponseを返します。クライアントは同一ブラウザセッション中の同一論理操作で同じキーを再利用し、入力検証失敗または例外時はclaimを削除して再試行できます。
 
 保証範囲は、同一ブラウザの二重送信、ブラウザセッション中の同一論理操作の再試行、同一Redmineプロセス内の重複claim、およびatomicな共有 `CacheStore` の `unless_exist` 書き込みを使う複数プロセス間の重複claim防止です。プロセス分離されたMemoryStore、キャッシュ消失、サーバー再起動をまたぐ永続的なexactly-onceは保証しません。
 
 このプラグインは特徴としてデータベースマイグレーションや独自テーブルを追加しません。キャッシュ消失、サーバー再起動、プロセスごとのMemoryStoreなど共有されないStoreでは、永続的なexactly-once保証はできません。より強い保証が必要な環境では、共有atomic/persistent CacheStoreまたは外部Idempotencyサービスを提供してください。
+
+seed済みのRedmineプロジェクトに対するTreeのresource指標は、次で再現できます。
+
+```bash
+REDMINE_KANBAN_BENCHMARK_PROJECT=ecookbook \
+  docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+  bundle exec rails runner -e production plugins/redmine_kanban/script/benchmark_tree.rb
+```
 
 
 ## CI

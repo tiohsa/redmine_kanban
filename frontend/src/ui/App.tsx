@@ -13,6 +13,7 @@ import { DatePopup, PriorityPopup, ProgressPopup } from './KanbanPopups';
 import { KanbanToolbar } from './KanbanToolbar';
 import { HelpDialog } from './HelpDialog';
 import { buildDisplayData, payloadFieldError, payloadMessage, resolveMutationError } from './kanbanShared';
+import { directSubtaskCount, mergeIssueTrees } from './boardTree';
 import { useKanbanActions } from './useKanbanActions';
 import { useKanbanDialogs } from './useKanbanDialogs';
 import { useKanbanPreferences } from './useKanbanPreferences';
@@ -42,24 +43,92 @@ export function resolveDefaultCreateProjectId(
   return null;
 }
 
-export function mergeIssuePage(current: BoardData, page: Pick<BoardData, 'meta' | 'issues'>): BoardData {
-  const seenIssueIds = new Set(current.issues.map((issue) => issue.id));
-  const appendedIssues = page.issues.filter((issue) => !seenIssueIds.has(issue.id));
-  const issues = [...current.issues, ...appendedIssues];
+export function mergeIssuePage(
+  current: BoardData,
+  page: Pick<BoardData, 'meta' | 'issues'>,
+  resolvedTreeParentIds: number[] = [],
+  attachTreeParentIds: number[] = resolvedTreeParentIds,
+): BoardData {
+  const issues = mergeIssueTrees(current.issues, page.issues, attachTreeParentIds);
+  const currentPagination = current.meta.pagination;
+  const pagePagination = page.meta.pagination;
+  const totalIssueCount = pagePagination?.total_issue_count ?? currentPagination?.total_issue_count ?? issues.length;
+  const nextOffset = Math.min(
+    totalIssueCount,
+    Math.max(
+      currentPagination?.next_offset ?? currentPagination?.issue_count ?? 0,
+      pagePagination?.next_offset ?? pagePagination?.issue_count ?? 0,
+      issues.length,
+    ),
+  );
+  const isTreePage = pagePagination?.tree_parent_id !== undefined;
+  const pagination = isTreePage
+    ? currentPagination
+    : (
+        pagePagination || currentPagination
+          ? {
+              ...(currentPagination ?? pagePagination!),
+              ...(pagePagination ?? {}),
+              offset: 0,
+              issue_count: issues.length,
+              total_issue_count: totalIssueCount,
+              next_offset: nextOffset,
+              has_more_issues: nextOffset < totalIssueCount,
+            }
+          : undefined
+      );
+  const tree = mergeTreeMetadata(current.meta.tree, page.meta.tree, issues, resolvedTreeParentIds);
 
   return {
     ...current,
     meta: {
       ...current.meta,
-      pagination: page.meta.pagination
-        ? {
-            ...page.meta.pagination,
-            offset: 0,
-            issue_count: issues.length,
-          }
-        : current.meta.pagination,
+      ...(pagination ? { pagination } : {}),
+      ...(tree ? { tree } : {}),
     },
     issues,
+  };
+}
+
+function mergeTreeMetadata(
+  currentTree: BoardData['meta']['tree'],
+  pageTree: BoardData['meta']['tree'],
+  issues: Issue[],
+  resolvedTreeParentIds: number[] = [],
+): BoardData['meta']['tree'] {
+  if (!currentTree && !pageTree) return undefined;
+
+  const ids: number[] = [];
+  const pending = [...issues].reverse();
+  while (pending.length > 0) {
+    const node = pending.pop();
+    if (!node) continue;
+    ids.push(node.id);
+    pending.push(...[...(node.subtasks ?? [])].reverse() as unknown as Issue[]);
+  }
+
+  const truncatedParentIdSet = new Set([
+    ...(currentTree?.truncated_parent_ids ?? []),
+    ...(pageTree?.truncated_parent_ids ?? []),
+  ]);
+  for (const parentId of resolvedTreeParentIds) truncatedParentIdSet.delete(parentId);
+  const truncatedParentIds = Array.from(truncatedParentIdSet).sort((left, right) => left - right);
+  const legacyTruncation = Boolean(currentTree?.truncated && !(currentTree.truncated_parent_ids?.length) && resolvedTreeParentIds.length === 0);
+  const truncated = truncatedParentIds.length > 0 || Boolean(pageTree?.truncated && !(pageTree.truncated_parent_ids?.length)) || legacyTruncation;
+  const base = pageTree ?? currentTree!;
+
+  return {
+    ...base,
+    root_issue_count: issues.length,
+    unique_node_count: new Set(ids).size,
+    serialized_node_count: ids.length,
+    duplicate_node_count: Math.max(currentTree?.duplicate_node_count ?? 0, pageTree?.duplicate_node_count ?? 0),
+    truncated,
+    truncated_parent_ids: truncatedParentIds,
+    loaded_node_count: Math.max(ids.length - issues.length, 0),
+    ...(currentTree?.db_row_count !== undefined || pageTree?.db_row_count !== undefined
+      ? { db_row_count: Math.max(currentTree?.db_row_count ?? 0, pageTree?.db_row_count ?? 0) }
+      : {}),
   };
 }
 
@@ -67,6 +136,8 @@ export function App({ dataUrl }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadingMoreIssues, setLoadingMoreIssues] = useState(false);
+  const [loadingMoreTree, setLoadingMoreTree] = useState(false);
+  const treeOffsetsRef = useRef(new Map<number, number>());
   const queryClient = useQueryClient();
   const boardRef = useRef<CanvasBoardHandle>(null);
   const dismissNotice = useCallback(() => setNotice(null), []);
@@ -144,6 +215,44 @@ export function App({ dataUrl }: Props) {
       });
   }, [baseUrl, boardQueryKey, data?.labels.load_more_failed, filters.projectIds, filters.statusIds, hiddenStatusIds, pagination, queryClient]);
 
+  const handleLoadMoreTree = useCallback(() => {
+    const parentId = data?.meta.tree?.truncated_parent_ids?.[0];
+    if (!parentId || !pagination) return;
+
+    const offset = treeOffsetsRef.current.get(parentId) ?? directSubtaskCount(data.issues, parentId);
+    setLoadingMoreTree(true);
+    getJson<Pick<BoardData, 'ok' | 'meta' | 'issues'>>(
+      buildBoardIssuesUrl(
+        baseUrl,
+        filters.projectIds,
+        filters.statusIds,
+        hiddenStatusIds,
+        pagination.issue_limit,
+        offset,
+        parentId,
+      ),
+      )
+      .then((page) => {
+        const hasMore = Boolean(page.meta.pagination?.has_more_issues);
+        const issueCount = page.meta.pagination?.issue_count ?? page.issues.length;
+        if (hasMore) {
+          treeOffsetsRef.current.set(parentId, offset + issueCount);
+        } else {
+          treeOffsetsRef.current.delete(parentId);
+        }
+        const resolvedParentIds = hasMore ? [] : [parentId];
+        queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
+          current ? mergeIssuePage(current, page, resolvedParentIds, [parentId]) : current
+        ));
+      })
+      .catch((caught) => {
+        setError(caught instanceof Error ? caught.message : data?.labels.load_more_failed ?? null);
+      })
+      .finally(() => {
+        setLoadingMoreTree(false);
+      });
+  }, [baseUrl, boardQueryKey, data, filters.projectIds, filters.statusIds, hiddenStatusIds, pagination, queryClient]);
+
   const suppressNextBoardErrorRef = useRef(false);
 
   useEffect(() => {
@@ -159,9 +268,14 @@ export function App({ dataUrl }: Props) {
   }, [boardQuery.data, boardQuery.error, data?.labels.load_failed]);
 
   const refresh = useCallback(async (options: { suppressError?: boolean } = {}) => {
+    treeOffsetsRef.current.clear();
     if (options.suppressError) suppressNextBoardErrorRef.current = true;
     await queryClient.invalidateQueries({ queryKey: boardQueryKey });
   }, [boardQueryKey, queryClient]);
+
+  useEffect(() => {
+    treeOffsetsRef.current.clear();
+  }, [boardQueryKey]);
 
   const displayData = useMemo(() => {
     if (!data) return null;
@@ -292,7 +406,10 @@ export function App({ dataUrl }: Props) {
           canCreate={canCreate}
           pagination={pagination}
           onLoadMoreIssues={handleLoadMoreIssues}
+          onLoadMoreTree={handleLoadMoreTree}
+          onRefreshTree={() => { void refresh(); }}
           loadingMoreIssues={loadingMoreIssues}
+          loadingMoreTree={loadingMoreTree}
           onCreate={() => {
             if (defaultCreateProjectId === null) return;
             const defaultStatus = data.columns.find((column) => !column.is_closed)?.id ?? data.columns[0]?.id ?? 1;

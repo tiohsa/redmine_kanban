@@ -126,8 +126,12 @@ docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
   bundle exec rake db:migrate redmine:plugins:migrate RAILS_ENV=production
 docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
   env REDMINE_LANG=en bundle exec rake redmine:load_default_data RAILS_ENV=production
-docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+docker compose -f .github/e2e/docker-compose.yml exec -T --user redmine redmine \
   bundle exec rails runner -e production plugins/redmine_kanban/e2e/setup_redmine.rb
+
+# Optional: seed the 1,505-child truncation fixture used by the tree E2E.
+docker compose -f .github/e2e/docker-compose.yml exec -T --user redmine redmine \
+  env REDMINE_KANBAN_E2E_TREE_FIXTURE=1 bundle exec rails runner -e production plugins/redmine_kanban/e2e/setup_redmine.rb
 
 # 4. Run E2E
 REDMINE_BASE_URL=http://127.0.0.1:3002 \
@@ -164,6 +168,21 @@ frontend/src/main.tsx → assets/javascripts/redmine_kanban_spa.js
 ```
 
 The `process.env` is replaced at build time for production. In test mode, no substitution is performed.
+
+### Board Context and Tree Contract
+
+- `BoardData` and all mutation serializers use `BoardContext`; callers preserve the sanitized `meta.project_ids` scope in mutation query parameters.
+- Recursive board responses serialize canonical roots only. A root already reachable from another root on the current page is represented once in `subtasks`.
+- The complete response is bounded to 1,500 unique nodes. Optional `meta.tree` exposes `node_limit`, unique/serialized node counts, duplicate roots eliminated, loaded node/DB row counts, and `truncated_parent_ids` when a subtree is incomplete.
+- A child is removed from the root list only when it is actually present in the serialized parent tree. Truncated or not-yet-loaded children remain reachable as roots. The frontend recovers a truncated parent with `/kanban/issues?tree_parent_id=<id>&offset=<direct-child-count>`; subtree pages use deterministic `lft`/`id` ordering and do not overwrite root pagination metadata.
+- Set `REDMINE_KANBAN_PERF_LOG=1` to log SQL count, node counts, JSON bytes, and elapsed time for a board response.
+- `script/benchmark_tree.rb` emits root/unique/serialized nodes, DB rows, SQL count, duplicate count, JSON bytes, elapsed time, node limit, and truncation for a seeded project.
+
+### Mutation and Recreate Contract
+
+- `IssueMover` and `IssueUpdater` capture status/done-ratio changes immediately after save, before Priority propagation can reload the record.
+- Recreate-after-delete is only available for domain top-level Issues (`parent_id` absent), never based on Canvas card/subtask representation. It copies displayed editable fields including `done_ratio`, but not the original ID, history, comments, attachments, relations, or watchers.
+- Bulk create accepts at most 50 non-empty subtasks server-side. A 51st valid row returns 422 before an idempotency claim or transaction starts.
 
 ### Backend API Endpoints
 
