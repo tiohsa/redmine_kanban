@@ -92,11 +92,18 @@ end
 
 # Keep the small mutation fixture on the first board page even when the
 # optional high-fan-out fixture is enabled. Child Issues are part of the
-# normal Issue page before they are folded into the parent tree, so making
-# their timestamps equal to the seed time can push the parent out of the
-# page on databases with coarse timestamp precision. Put all direct children
-# safely before the parent, then make the parent the newest fixture row.
+# normal Issue page before they are folded into the parent tree, so normalize
+# every fixture timestamp after seeding. This avoids relying on insertion
+# timing or database timestamp precision to keep the parent ahead of the
+# high-fan-out rows.
 Issue.where(parent_id: parent_issue.id).update_all(updated_on: 1.day.ago)
-parent_issue.update_column(:updated_on, Time.current + 1.hour)
+if ENV['REDMINE_KANBAN_E2E_TREE_FIXTURE'] == '1'
+  Issue.where(project: project, subject: 'Kanban E2E truncation parent')
+       .update_all(updated_on: Time.current + 6.months)
+  Issue.where(project: project)
+       .where('subject LIKE ?', 'Kanban E2E truncation child %')
+       .update_all(updated_on: 2.days.ago)
+end
+parent_issue.update_column(:updated_on, Time.current + 1.year)
 
 puts 'E2E seed setup completed'
