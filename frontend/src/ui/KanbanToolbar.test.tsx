@@ -81,11 +81,11 @@ function makeFilters(overrides: Partial<Filters> = {}): Filters {
 }
 
 describe('KanbanToolbar', () => {
-  function renderToolbar(filters: Filters, onChange = vi.fn()) {
+  function renderToolbar(filters: Filters, onChange = vi.fn(), data = makeData(), onRefreshTree = vi.fn()) {
     const onChangeSort = vi.fn();
     const rendered = render(
       <KanbanToolbar
-        data={makeData()}
+        data={data}
         filters={filters}
         onChange={onChange}
         sortKey="updated_desc"
@@ -101,6 +101,7 @@ describe('KanbanToolbar', () => {
         canCreate={false}
         onCreate={vi.fn()}
         onScrollToTop={vi.fn()}
+        onRefreshTree={onRefreshTree}
         timeEntryOnClose={false}
         onToggleTimeEntryOnClose={vi.fn()}
         viewableProjectsEnabled={false}
@@ -204,5 +205,32 @@ describe('KanbanToolbar', () => {
 
     expect(container.querySelector('.rk-dropdown-extra [role="switch"]')).toBeTruthy();
     expect(container.querySelector('.rk-settings-menu')?.textContent ?? '').not.toContain('Show viewable projects');
+  });
+
+  it('announces tree truncation and exposes a refresh recovery action', () => {
+    const data = makeData();
+    const onRefreshTree = vi.fn();
+    data.meta.tree = {
+      node_limit: 1500,
+      root_issue_count: 1,
+      unique_node_count: 1500,
+      serialized_node_count: 1500,
+      duplicate_node_count: 0,
+      truncated: true,
+    };
+    data.meta.pagination = {
+      issue_limit: 500,
+      offset: 0,
+      issue_count: 500,
+      total_issue_count: 1000,
+      next_offset: 500,
+      has_more_issues: true,
+    };
+
+    renderToolbar(makeFilters(), vi.fn(), data, onRefreshTree);
+
+    expect(screen.getByRole('status').textContent).toContain('Some subtasks are not shown yet.');
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh tree' }));
+    expect(onRefreshTree).toHaveBeenCalledOnce();
   });
 });

@@ -69,6 +69,11 @@ module RedmineKanban
 
     def bulk_create
       payload = params[:bulk] || params
+      unless parameter_hash?(payload)
+        render json: { ok: false, message: '一括作成payloadの形式が不正です', field_errors: { bulk: ['Hash形式で指定してください'] } }, status: :unprocessable_entity
+        return
+      end
+
       result = IssueCreator.new(project: @project, user: User.current, board_context: mutation_board_context).create_with_subtasks(
         parent_params: payload[:parent] || {},
         subtasks: payload[:subtasks] || [],
@@ -120,7 +125,8 @@ module RedmineKanban
         issue_status_ids: normalize_integer_array_param(params[:issue_status_ids]),
         exclude_status_ids: normalize_integer_array_param(params[:exclude_status_ids]),
         issue_limit: params[:issue_limit],
-        issue_offset: params[:offset]
+        issue_offset: params[:offset],
+        tree_parent_id: params[:tree_parent_id]
       ).to_h
     end
 
@@ -166,7 +172,15 @@ module RedmineKanban
     end
 
     def target_project_for_create
-      issue_params = params[:issue] || params.dig(:bulk, :parent) || {}
+      if params[:bulk].present? && !parameter_hash?(params[:bulk])
+        return @project
+      end
+
+      bulk_parent = parameter_hash?(params[:bulk]) ? params[:bulk][:parent] : nil
+      issue_params = params[:issue] || bulk_parent || {}
+      return @project if params[:bulk].present? && !parameter_hash?(issue_params)
+      return nil unless parameter_hash?(issue_params)
+
       parent_issue_id = issue_params[:parent_issue_id] || issue_params['parent_issue_id']
       if parent_issue_id.present?
         parent = Issue.visible(User.current).find_by(id: parent_issue_id)
@@ -181,6 +195,10 @@ module RedmineKanban
       end
 
       @project
+    end
+
+    def parameter_hash?(value)
+      value.is_a?(Hash) || value.respond_to?(:to_unsafe_h)
     end
 
     def render_service_result(result)

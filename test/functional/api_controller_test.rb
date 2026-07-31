@@ -210,6 +210,76 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_equal json.dig('meta', 'tree', 'unique_node_count'), json.dig('meta', 'tree', 'serialized_node_count')
   end
 
+  def test_board_tree_budget_limits_recursive_rows_and_reports_reachable_truncation
+    isolated_project = build_project(name: 'Tree budget project', identifier: "tree-budget-#{Time.now.to_i}")
+    open_status, closed_status = distinct_open_statuses
+    parent = build_issue(subject: 'Budget parent', project: isolated_project, status: open_status)
+    child = build_issue(subject: 'Budget child', project: isolated_project, status: open_status, parent_issue_id: parent.id)
+    grandchildren = 10.times.map do |index|
+      build_issue(subject: "Budget grandchild #{index}", project: isolated_project, status: closed_status, parent_issue_id: child.id)
+    end
+
+    payload = RedmineKanban::BoardData.new(
+      project: isolated_project,
+      user: @user,
+      issue_status_ids: [open_status.id],
+      issue_limit: 100,
+      tree_node_limit: 3
+    ).to_h
+    response_ids = []
+    pending = payload.fetch(:issues).reverse
+    until pending.empty?
+      issue = pending.pop
+      response_ids << issue.fetch(:id)
+      pending.concat(issue.fetch(:subtasks).reverse)
+    end
+
+    tree = payload.dig(:meta, :tree)
+    assert_equal [parent.id], payload.fetch(:issues).map { |issue| issue.fetch(:id) }
+    assert_includes response_ids, child.id
+    assert_equal 3, tree.fetch(:unique_node_count)
+    assert_equal tree.fetch(:unique_node_count), tree.fetch(:serialized_node_count)
+    assert_operator tree.fetch(:serialized_node_count), :<=, tree.fetch(:node_limit)
+    assert_equal true, tree.fetch(:truncated)
+    assert_includes tree.fetch(:truncated_parent_ids), child.id
+    assert_operator tree.fetch(:db_row_count), :<, grandchildren.size
+    assert_operator tree.fetch(:duplicate_node_count), :>=, 1
+  end
+
+  def test_tree_parent_page_recovers_direct_children_without_status_filter_loss
+    parent = build_issue(subject: 'Tree recovery parent')
+    open_status, closed_status = distinct_open_statuses
+    first_child = build_issue(subject: 'Tree recovery open child', status: open_status, parent_issue_id: parent.id)
+    second_child = build_issue(subject: 'Tree recovery closed child', status: closed_status, parent_issue_id: parent.id)
+
+    get :issues, params: {
+      project_id: @project.identifier,
+      tree_parent_id: parent.id,
+      issue_status_ids: [open_status.id],
+      issue_limit: 1,
+      offset: 0
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal [first_child.id], json.fetch('issues').map { |issue| issue.fetch('id') }
+    assert_equal 2, json.dig('meta', 'pagination', 'total_issue_count')
+    assert_equal 1, json.dig('meta', 'pagination', 'issue_count')
+    assert_equal parent.id, json.fetch('issues').first.fetch('parent_id')
+    refute_includes json.fetch('issues').map { |issue| issue.fetch('id') }, second_child.id
+
+    get :issues, params: {
+      project_id: @project.identifier,
+      tree_parent_id: parent.id,
+      issue_status_ids: [open_status.id],
+      issue_limit: 1,
+      offset: 1
+    }
+
+    assert_response :success
+    assert_equal [second_child.id], JSON.parse(@response.body).fetch('issues').map { |issue| issue.fetch('id') }
+  end
+
   def test_index_keeps_assignee_lane_from_unfiltered_issue_pool
     status_a, status_b = distinct_open_statuses
     other_user = User.active.where.not(id: @user.id).first
@@ -898,6 +968,60 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
 
     assert_difference('Issue.count', 1) do
       post :bulk_create, params: { project_id: @project.identifier, bulk: { parent: { subject: 'Hash retry', tracker_id: tracker.id }, subtasks: {} } }
+    end
+    assert_response :success
+  end
+
+  def test_bulk_create_rejects_malformed_rows_before_claim_and_allows_same_key_retry
+    tracker = @project.trackers.first
+
+    ['scalar', ['nested']].each_with_index do |malformed_row, index|
+      key = "bulk-malformed-row-#{index}"
+      @request.headers['Idempotency-Key'] = key
+      malformed = { project_id: @project.identifier, bulk: { parent: { subject: "Malformed #{index}", tracker_id: tracker.id }, subtasks: [malformed_row] } }
+
+      assert_no_difference('Issue.count', "malformed row #{malformed_row.inspect}") { post :bulk_create, params: malformed }
+      assert_response :unprocessable_entity
+      field_errors = JSON.parse(@response.body).fetch('field_errors')
+      assert field_errors.keys.any? { |field| field.include?('subtasks[0]') }
+      assert_nil Rails.cache.read(bulk_cache_key(key))
+
+      assert_difference('Issue.count', 1) do
+        post :bulk_create, params: { project_id: @project.identifier, bulk: { parent: { subject: "Retry #{index}", tracker_id: tracker.id }, subtasks: [] } }
+      end
+      assert_response :success
+    end
+  end
+
+  def test_bulk_create_rejects_a_scalar_subtask_collection_without_claiming_the_key
+    tracker = @project.trackers.first
+    key = 'bulk-malformed-collection'
+    @request.headers['Idempotency-Key'] = key
+
+    assert_no_difference('Issue.count') do
+      post :bulk_create, params: { project_id: @project.identifier, bulk: { parent: { subject: 'Malformed collection', tracker_id: tracker.id }, subtasks: 'scalar' } }
+    end
+
+    assert_response :unprocessable_entity
+    assert_equal ['配列またはHash形式で指定してください'], JSON.parse(@response.body).dig('field_errors', 'subtasks')
+    assert_nil Rails.cache.read(bulk_cache_key(key))
+  end
+
+  def test_bulk_create_rejects_a_scalar_parent_as_a_validation_error
+    tracker = @project.trackers.first
+    key = 'bulk-malformed-parent'
+    @request.headers['Idempotency-Key'] = key
+
+    assert_no_difference('Issue.count') do
+      post :bulk_create, params: { project_id: @project.identifier, bulk: { parent: 'scalar', subtasks: [] } }
+    end
+
+    assert_response :unprocessable_entity
+    assert_equal ['各行はHash形式で指定してください'], JSON.parse(@response.body).dig('field_errors', 'parent')
+    assert_nil Rails.cache.read(bulk_cache_key(key))
+
+    assert_difference('Issue.count', 1) do
+      post :bulk_create, params: { project_id: @project.identifier, bulk: { parent: { subject: 'Parent retry', tracker_id: tracker.id }, subtasks: [] } }
     end
     assert_response :success
   end

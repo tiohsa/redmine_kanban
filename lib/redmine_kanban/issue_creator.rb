@@ -89,7 +89,13 @@ module RedmineKanban
     def create_with_subtasks(parent_params:, subtasks:, idempotency_key:)
       return error_response('Idempotency-Keyが必要です', status: :unprocessable_entity) if idempotency_key.blank?
 
-      if normalized_subtask_count(subtasks) > MAX_BULK_SUBTASKS
+      normalized_parent = normalize_bulk_parent(parent_params)
+      return normalized_parent if normalized_parent.is_a?(Hash) && normalized_parent[:ok] == false
+
+      normalized_subtasks = normalize_bulk_subtasks(subtasks)
+      return normalized_subtasks if normalized_subtasks.is_a?(Hash) && normalized_subtasks[:ok] == false
+
+      if normalized_subtasks.count { |subtask| subtask[:subject].to_s.strip.present? } > MAX_BULK_SUBTASKS
         return error_response('子チケットは最大50件まで作成できます', field_errors: { subtasks: ['子チケットは最大50件まで作成できます'] })
       end
 
@@ -97,15 +103,15 @@ module RedmineKanban
         user_id: @user.id,
         project_id: @project.id,
         idempotency_key: idempotency_key,
-        payload: { parent: parent_params, subtasks: subtask_collection(subtasks) }
+        payload: { parent: normalized_parent, subtasks: normalized_subtasks }
       ) do
         result = nil
         Issue.transaction do
-          parent_issue_id = parent_params[:parent_issue_id] || parent_params['parent_issue_id']
+          parent_issue_id = normalized_parent[:parent_issue_id]
           parent_result = if parent_issue_id.present?
                             existing_parent_result(parent_issue_id)
                           else
-                            create(params: parent_params)
+                            create(params: normalized_parent)
                           end
           unless parent_result[:ok]
             result = parent_result
@@ -114,7 +120,7 @@ module RedmineKanban
 
           parent_id = parent_result.dig(:issue, :id) || parent_result.dig('issue', 'id')
           created = []
-          subtask_collection(subtasks).each_with_index do |subtask_params, index|
+          normalized_subtasks.each_with_index do |subtask_params, index|
             child_result = create(params: subtask_params.merge(parent_issue_id: parent_id))
             unless child_result[:ok]
               result = child_result.merge(
@@ -142,17 +148,19 @@ module RedmineKanban
       { ok: true, issue: issue_presenter(parent).issue_to_h(parent) }
     end
 
-    def subtask_collection(subtasks)
-      unless subtasks.is_a?(Array)
-        return subtasks.to_unsafe_h.values if subtasks.respond_to?(:to_unsafe_h)
-        return subtasks.to_h.values if subtasks.respond_to?(:to_h)
-      end
-
-      Array(subtasks)
+    def normalize_bulk_parent(parent_params)
+      BulkPayloadNormalizer.normalize_row(parent_params, field: 'parent')
+    rescue BulkPayloadNormalizer::Error => error
+      error_response(error.message, field_errors: error.field_errors)
     end
 
-    def normalized_subtask_count(subtasks)
-      subtask_collection(subtasks).count { |subtask| (subtask[:subject] || subtask['subject']).to_s.strip.present? }
+    def normalize_bulk_subtasks(subtasks)
+      BulkPayloadNormalizer.normalize_collection(subtasks)
+    rescue BulkPayloadNormalizer::Error => error
+      response = error_response(error.message, field_errors: error.field_errors)
+      response[:row_index] = error.row_index unless error.row_index.nil?
+      response[:row_key] = error.row_key unless error.row_key.nil?
+      response
     end
 
     def default_tracker_id(project)

@@ -1,3 +1,4 @@
+require 'set'
 require_relative 'board_context'
 
 module RedmineKanban
@@ -56,6 +57,9 @@ module RedmineKanban
       load_failed: "redmine_kanban.label_load_failed",
       load_more_issues: "redmine_kanban.label_load_more_issues",
       load_more_failed: "redmine_kanban.label_load_more_failed",
+      tree_truncated: "redmine_kanban.label_tree_truncated",
+      tree_load_more: "redmine_kanban.label_tree_load_more",
+      tree_refresh: "redmine_kanban.label_tree_refresh",
       no_result: "redmine_kanban.label_no_result",
       reset: "redmine_kanban.label_reset",
       undo: "redmine_kanban.label_undo",
@@ -156,15 +160,21 @@ module RedmineKanban
     }.freeze
 
 
-    def initialize(project:, user:, project_ids: nil, issue_status_ids: nil, exclude_status_ids: nil, issue_limit: nil, issue_offset: nil)
+    def initialize(project:, user:, project_ids: nil, issue_status_ids: nil, exclude_status_ids: nil, issue_limit: nil, issue_offset: nil, tree_parent_id: nil, tree_node_limit: BoardContext::DEFAULT_TREE_NODE_LIMIT)
       @project = project
       @user = user
-      @board_context = BoardContext.new(project: @project, user: @user, project_ids: normalize_ids(project_ids))
+      @board_context = BoardContext.new(
+        project: @project,
+        user: @user,
+        project_ids: normalize_ids(project_ids),
+        tree_node_limit: tree_node_limit
+      )
       @project_ids = @board_context.project_ids
       @issue_status_ids = normalize_ids(issue_status_ids)
       @exclude_status_ids = normalize_ids(exclude_status_ids)
       @issue_limit = normalize_issue_limit(issue_limit)
       @issue_offset = normalize_issue_offset(issue_offset)
+      @tree_parent_id = normalize_optional_id(tree_parent_id)
     end
 
     def to_h
@@ -197,6 +207,7 @@ module RedmineKanban
         "unique_node_count=#{result.dig(:meta, :tree, :unique_node_count)} " \
         "serialized_node_count=#{result.dig(:meta, :tree, :serialized_node_count)} " \
         "duplicate_node_count=#{result.dig(:meta, :tree, :duplicate_node_count)} " \
+        "db_row_count=#{result.dig(:meta, :tree, :db_row_count)} " \
         "json_bytes=#{result.to_json.bytesize} elapsed_ms=#{elapsed_ms}"
       )
       result
@@ -210,6 +221,19 @@ module RedmineKanban
       Array(subtasks).sum { |subtask| 1 + count_subtask_nodes(subtask[:subtasks]) }
     end
 
+    def serialized_node_ids(issues)
+      ids = []
+      pending = Array(issues).reverse
+
+      until pending.empty?
+        node = pending.pop
+        ids << node[:id]
+        pending.concat(Array(node[:subtasks]).reverse)
+      end
+
+      ids
+    end
+
     def build_payload
       statuses = IssueStatus.sorted.to_a
       columns = statuses.map do |s|
@@ -220,7 +244,11 @@ module RedmineKanban
       issues = fetch_issues(status_ids)
       total_issue_count = fetch_issues_total_count(status_ids)
       presenter, loader = @board_context.presenter(issues.map(&:id))
-      canonical_issues = issues.reject { |issue| loader.loaded_issue_ids.include?(issue.id) }
+      nested_issue_ids = loader.loaded_issue_ids.to_set
+      canonical_issues = issues.reject { |issue| nested_issue_ids.include?(issue.id) }
+      serialized_issues = presenter.issues_to_h(canonical_issues)
+      serialized_issue_ids = serialized_node_ids(serialized_issues)
+      raw_node_ids = issues.map(&:id) + loader.loaded_issue_ids
       lane_assignee_ids = fetch_lane_assignee_ids(status_ids)
       lanes = build_lanes(lane_assignee_ids)
 
@@ -242,21 +270,25 @@ module RedmineKanban
             issue_count: issues.size,
             total_issue_count: total_issue_count,
             next_offset: issues.size + @issue_offset,
-            has_more_issues: @issue_offset + issues.size < total_issue_count
+            has_more_issues: @issue_offset + issues.size < total_issue_count,
+            **(@tree_parent_id ? { tree_parent_id: @tree_parent_id } : {})
           },
           tree: {
             node_limit: @board_context.tree_node_limit,
             root_issue_count: canonical_issues.size,
-            unique_node_count: canonical_issues.size + loader.loaded_issue_ids.size,
-            serialized_node_count: canonical_issues.size + loader.loaded_issue_ids.size,
-            duplicate_node_count: issues.size + loader.loaded_issue_ids.size - canonical_issues.size - loader.loaded_issue_ids.size,
-            truncated: loader.truncated?
+            unique_node_count: serialized_issue_ids.uniq.size,
+            serialized_node_count: serialized_issue_ids.size,
+            duplicate_node_count: raw_node_ids.size - raw_node_ids.uniq.size,
+            truncated: loader.truncated?,
+            truncated_parent_ids: loader.truncated_parent_ids,
+            loaded_node_count: loader.loaded_issue_ids.size,
+            db_row_count: issues.size + loader.fetched_row_count
           }
         },
         columns: columns.map { |c| c.merge(count: counts[c[:id]].to_i) },
         lanes: lanes,
         lists: cached_lists,
-        issues: canonical_issues.map { |issue| presenter.issue_to_h(issue) },
+        issues: serialized_issues,
         labels: cached_labels
       }
     end
@@ -267,14 +299,15 @@ module RedmineKanban
 
     def fetch_issues(status_ids)
       relation = base_issue_scope(status_ids)
-      relation = relation.where(status_id: filtered_status_ids(status_ids))
+      relation = relation.where(status_id: filtered_status_ids(status_ids)) unless @tree_parent_id
       relation = relation.includes(:assigned_to, :priority, :status, :project)
-      relation.order(updated_on: :desc, id: :desc).offset(@issue_offset).limit(@issue_limit).to_a
+      order = @tree_parent_id ? { lft: :asc, id: :asc } : { updated_on: :desc, id: :desc }
+      relation.order(order).offset(@issue_offset).limit(@issue_limit).to_a
     end
 
     def fetch_issues_total_count(status_ids)
       relation = base_issue_scope(status_ids)
-      relation = relation.where(status_id: filtered_status_ids(status_ids))
+      relation = relation.where(status_id: filtered_status_ids(status_ids)) unless @tree_parent_id
       relation.count
     end
 
@@ -300,7 +333,16 @@ module RedmineKanban
     end
 
     def base_issue_scope(status_ids)
-      Issue.visible(@user).where(project_id: @project_ids, status_id: status_ids)
+      relation = Issue.visible(@user).where(project_id: @project_ids, status_id: status_ids)
+      return relation unless @tree_parent_id
+
+      return Issue.none unless tree_parent_in_scope?
+
+      relation.where(parent_id: @tree_parent_id)
+    end
+
+    def tree_parent_in_scope?
+      @tree_parent_in_scope ||= Issue.visible(@user).where(id: @tree_parent_id, project_id: @project_ids).exists?
     end
 
     def filtered_status_ids(status_ids)
@@ -325,6 +367,11 @@ module RedmineKanban
 
     def normalize_issue_offset(value)
       [value.to_i, 0].max
+    end
+
+    def normalize_optional_id(value)
+      id = value.to_i
+      id.positive? ? id : nil
     end
 
     def sanitize_project_ids(ids)

@@ -18,6 +18,7 @@ module RedmineKanban
       SubtaskLoader.new(
         user: @user,
         project_ids: @project_ids,
+        root_issue_ids: root_issue_ids,
         max_nodes: [@tree_node_limit - Array(root_issue_ids).uniq.size, 0].max
       )
     end

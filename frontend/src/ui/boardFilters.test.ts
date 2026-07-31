@@ -80,7 +80,7 @@ describe('applyBoardDataFilters', () => {
     expect(filtered?.issues.map((issue) => issue.id)).toEqual([1, 2]);
   });
 
-  it('removes subtasks from the top-level issue list when disabled', () => {
+  it('keeps a child root when it is not present in the parent tree', () => {
     const data = makeBoardData([
       makeIssue(1, 1, 'Parent'),
       makeIssue(2, 1, 'Child', { parent_id: 1 }),
@@ -88,7 +88,7 @@ describe('applyBoardDataFilters', () => {
 
     const filtered = applyBoardDataFilters(data, true, []);
 
-    expect(filtered?.issues.map((issue) => issue.id)).toEqual([1]);
+    expect(filtered?.issues.map((issue) => issue.id)).toEqual([1, 2]);
   });
 
   it('keeps a paged child visible until its parent is loaded', () => {
@@ -99,7 +99,42 @@ describe('applyBoardDataFilters', () => {
     expect(filtered?.issues.map((issue) => issue.id)).toEqual([2]);
   });
 
-  it('hides nested subtasks from parent cards when subtasks are shown as separate cards', () => {
+  it('keeps a child root when the loaded parent tree does not contain that child', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Parent', { subtasks: [] }),
+      makeIssue(2, 1, 'Child', { parent_id: 1 }),
+    ]);
+
+    const filtered = applyBoardDataFilters(data, true, []);
+
+    expect(filtered?.issues.map((issue) => issue.id)).toEqual([1, 2]);
+  });
+
+  it('removes only a child root that is present in the loaded parent tree', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Parent', { subtasks: [{ id: 2, subject: 'Child', status_id: 1, is_closed: false }] }),
+      makeIssue(2, 1, 'Child', { parent_id: 1 }),
+    ]);
+
+    const filtered = applyBoardDataFilters(data, true, []);
+
+    expect(filtered?.issues.map((issue) => issue.id)).toEqual([1]);
+  });
+
+  it('keeps the same issue collection when nested display is turned off', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Parent', {
+        subtasks: [{ id: 2, subject: 'Child', status_id: 1, is_closed: false }],
+      }),
+    ]);
+
+    const filtered = applyBoardDataFilters(data, false, []);
+
+    expect(filtered?.issues.map((issue) => issue.id)).toEqual([1, 2]);
+    expect(filtered?.issues[1]).toMatchObject({ id: 2, parent_id: 1, subtasks: [] });
+  });
+
+  it('flattens nested subtasks into cards when subtasks are shown separately', () => {
     const data = makeBoardData([
       makeIssue(1, 1, 'Parent', {
         subtasks: [{ id: 3, subject: 'Nested', status_id: 1, is_closed: false }],
@@ -109,8 +144,8 @@ describe('applyBoardDataFilters', () => {
 
     const filtered = applyBoardDataFilters(data, false, []);
 
-    expect(filtered?.issues.map((issue) => issue.id)).toEqual([1, 2]);
-    expect(filtered?.issues[0]?.subtasks).toEqual([]);
+    expect(filtered?.issues.map((issue) => issue.id)).toEqual([1, 3, 2]);
+    expect(filtered?.issues.every((issue) => issue.subtasks?.length === 0)).toBe(true);
   });
 });
 
