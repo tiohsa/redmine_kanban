@@ -1,6 +1,7 @@
 require File.expand_path('../../../../test/test_helper', File.expand_path(__dir__))
 
 class RedmineKanbanSubtaskLoaderTest < ActiveSupport::TestCase
+  parallelize(workers: 1)
   fixtures :projects, :users, :issues, :issue_statuses, :trackers, :enumerations
 
   def setup
@@ -169,5 +170,72 @@ class RedmineKanbanSubtaskLoaderTest < ActiveSupport::TestCase
     assert_equal [child.id], result.fetch(parent.id).map(&:id)
     assert_equal [], result.fetch(child.id, []).map(&:id)
     assert_equal [child.id], loader.loaded_issue_ids
+  end
+
+  def test_wide_tree_batches_parents_without_parent_count_queries
+    parents = insert_issue_rows(count: 100, subject_prefix: 'Wide parent')
+    parents.each_with_index do |parent, index|
+      insert_issue_rows(count: 1, parent_id: parent.id, subject_prefix: "Wide child #{index}")
+    end
+
+    loader = RedmineKanban::SubtaskLoader.new(user: @user, root_issue_ids: parents.map(&:id), max_nodes: 1_500)
+    result = loader.subtasks_by_parent_id(parents.map(&:id))
+
+    assert_equal 100, result.values.sum(&:size)
+    assert_operator loader.query_count, :<=, RedmineKanban::BoardContext::DEFAULT_TREE_QUERY_LIMIT
+  end
+
+  def test_high_fan_out_is_limited_before_materializing_all_children
+    parent = Issue.create!(project: @project, tracker_id: 1, subject: 'High fan-out gate parent', author: @user, status_id: 1, priority_id: 4)
+    insert_issue_rows(count: 2_000, parent_id: parent.id, subject_prefix: 'High fan-out gate child')
+
+    loader = RedmineKanban::SubtaskLoader.new(user: @user, root_issue_ids: [parent.id], max_nodes: 1_500)
+    result = loader.subtasks_by_parent_id([parent.id])
+
+    assert_equal 1_500, result.fetch(parent.id).size
+    assert_operator loader.fetched_row_count, :<=, 1_501
+    assert_equal true, loader.truncated?
+  end
+
+  def test_deep_tree_stops_at_depth_limit_and_marks_continuation_unexpanded
+    root = Issue.create!(project: @project, tracker_id: 1, subject: 'Deep gate root', author: @user, status_id: 1, priority_id: 4)
+    parent = root
+    40.times do |index|
+      parent = Issue.create!(project: @project, tracker_id: 1, subject: "Deep gate #{index}", author: @user, status_id: 1, priority_id: 4, parent_id: parent.id)
+    end
+
+    loader = RedmineKanban::SubtaskLoader.new(user: @user, root_issue_ids: [root.id], max_nodes: 1_500, max_depth: 32)
+    loader.subtasks_by_parent_id
+
+    assert_operator loader.query_count, :<=, 32
+    assert_equal true, loader.unexpanded_parent_ids.any?
+    assert_equal true, loader.truncated?
+  end
+
+  private
+
+  def insert_issue_rows(count:, subject_prefix:, parent_id: nil)
+    now = Time.current
+    rows = count.times.map do |index|
+      {
+        author_id: @user.id,
+        project_id: @project.id,
+        tracker_id: 1,
+        status_id: 1,
+        priority_id: 4,
+        parent_id: parent_id,
+        subject: "#{subject_prefix} #{index}",
+        description: '',
+        done_ratio: 0,
+        is_private: false,
+        lock_version: 0,
+        created_on: now,
+        updated_on: now
+      }
+    end
+    Issue.insert_all!(rows)
+    Issue.where(project_id: @project.id, parent_id: parent_id)
+         .where(subject: rows.map { |row| row[:subject] })
+         .order(:id).to_a
   end
 end

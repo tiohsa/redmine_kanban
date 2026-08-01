@@ -84,6 +84,7 @@ export type Lists = {
 export type Meta = {
   project_id: number;
   project_ids?: number[];
+  scope_fingerprint?: string;
   current_user_id: number;
   can_move: boolean;
   can_create: boolean;
@@ -101,6 +102,7 @@ export type Meta = {
     next_offset: number;
     has_more_issues: boolean;
     tree_parent_id?: number;
+    next_cursor?: string | null;
   };
 };
 
@@ -112,8 +114,17 @@ export type TreeMeta = {
   duplicate_node_count: number;
   truncated: boolean;
   truncated_parent_ids?: number[];
+  unexpanded_parent_ids?: number[];
   loaded_node_count?: number;
   db_row_count?: number;
+  parent_states?: Record<string, {
+    completeness: 'complete' | 'partial' | 'unexpanded';
+    next_cursor: string | null;
+    loaded_count: number;
+  }>;
+  query_count?: number;
+  parent_batch_count?: number;
+  max_depth?: number;
 };
 
 export type BoardData = {

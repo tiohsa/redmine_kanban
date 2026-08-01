@@ -187,7 +187,7 @@ describe('IframeEditDialog layout variants', () => {
 
     await waitFor(() => {
       expect(onClose).not.toHaveBeenCalled();
-      expect(onSuccess).toHaveBeenCalledWith('保存済み 1');
+    expect(onSuccess).toHaveBeenCalledWith('保存済み 1', 1);
       expect(screen.queryByRole('button', { name: '保存' })).toBeNull();
       expect(screen.getByRole('button', { name: 'チケットを編集' })).toBeTruthy();
     });
@@ -509,7 +509,7 @@ describe('IframeEditDialog layout variants', () => {
 
     await waitFor(() => {
       expect(onClose).not.toHaveBeenCalled();
-      expect(onSuccess).toHaveBeenCalledWith('保存済み 1');
+    expect(onSuccess).toHaveBeenCalledWith('保存済み 1', 1);
       expect(screen.getByRole('button', { name: 'チケットを編集' })).toBeTruthy();
     });
   });

@@ -174,7 +174,8 @@ The `process.env` is replaced at build time for production. In test mode, no sub
 - `BoardData` and all mutation serializers use `BoardContext`; callers preserve the sanitized `meta.project_ids` scope in mutation query parameters.
 - Recursive board responses serialize canonical roots only. A root already reachable from another root on the current page is represented once in `subtasks`.
 - The complete response is bounded to 1,500 unique nodes. Optional `meta.tree` exposes `node_limit`, unique/serialized node counts, duplicate roots eliminated, loaded node/DB row counts, and `truncated_parent_ids` when a subtree is incomplete.
-- A child is removed from the root list only when it is actually present in the serialized parent tree. Truncated or not-yet-loaded children remain reachable as roots. The frontend recovers a truncated parent with `/kanban/issues?tree_parent_id=<id>&offset=<direct-child-count>`; subtree pages use deterministic `lft`/`id` ordering and do not overwrite root pagination metadata.
+- A child is removed from the root list only when it is actually present in the serialized parent tree. Truncated or not-yet-loaded children remain reachable as roots. The frontend recovers a truncated parent with `/kanban/issues?tree_parent_id=<id>&cursor=<signed-cursor>`; subtree pages use deterministic `id ASC` ordering and do not overwrite root pagination metadata. The legacy offset parameter remains backend-compatible but is not used by active frontend paths.
+- Root pages use signed `updated_on DESC, id DESC` cursors. Mutation responses use contract version 2 flat deltas (`issue_updates`, `created_issues`, `deleted_issue_ids`, `tree_changes`, and targeted invalidations), and normal mutation success does not trigger a full-board refresh.
 - Set `REDMINE_KANBAN_PERF_LOG=1` to log SQL count, node counts, JSON bytes, and elapsed time for a board response.
 - `script/benchmark_tree.rb` emits root/unique/serialized nodes, DB rows, SQL count, duplicate count, JSON bytes, elapsed time, node limit, and truncation for a seeded project.
 
@@ -189,8 +190,11 @@ The `process.env` is replaced at build time for production. In test mode, no sub
 | Method | Path | Description |
 |--------|------|-------------|
 | GET    | `/projects/:id/kanban/data` | Board data |
+| GET    | `/projects/:id/kanban/issues/entities` | Flat Issue entity reconciliation |
+| GET    | `/projects/:id/kanban/counts` | Column count reconciliation |
 | PATCH  | `/projects/:id/kanban/issues/:id/move` | Move card |
 | POST   | `/projects/:id/kanban/issues` | Create ticket |
+| POST   | `/projects/:id/kanban/issues/bulk` | Create parent/subtasks atomically |
 | PATCH  | `/projects/:id/kanban/issues/:id` | Update ticket |
 | DELETE | `/projects/:id/kanban/issues/:id` | Delete ticket |
 
@@ -199,7 +203,9 @@ The `process.env` is replaced at build time for production. In test mode, no sub
 Defined in `init.rb`:
 
 - `view_redmine_kanban` — read-only access (kanban#show, api#index, ai_analysis#analyze)
-- `manage_redmine_kanban` — write access (api#move, api#create)
+- `manage_redmine_kanban` — write access (api#move, api#create, api#update, api#destroy, api#bulk_create)
+
+CI also runs frontend state-machine tests, deterministic tree resource gates, full E2E on Redmine 7.0 and 6.1, and a Redmine 6.0 compatibility smoke test.
 
 ---
 

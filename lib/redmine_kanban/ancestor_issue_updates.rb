@@ -3,10 +3,7 @@ module RedmineKanban
     private
 
     def ancestor_updates_for(issue)
-      issue.ancestors.filter_map do |ancestor|
-        next unless ancestor.visible?(@user)
-
-        ancestor.reload
+      ancestor_issues_for(issue).map do |ancestor|
         {
           id: ancestor.id,
           done_ratio: ancestor.done_ratio,
@@ -14,6 +11,14 @@ module RedmineKanban
           updated_on: ancestor.updated_on&.iso8601,
           aging_days: BoardIssuePresenter.aging_days_for(ancestor)
         }
+      end
+    end
+
+    def ancestor_issues_for(issue)
+      issue.ancestors.filter_map do |ancestor|
+        next unless ancestor.visible?(@user)
+
+        ancestor.reload
       end
     end
   end

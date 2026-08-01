@@ -39,7 +39,7 @@ describe('useBulkSubtaskMutation', () => {
     postJsonMock.mockReset();
   });
 
-  it('posts subtasks in order and invalidates query on success', async () => {
+  it('posts subtasks in order and applies the created delta without invalidating the board', async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     });
@@ -58,17 +58,38 @@ describe('useBulkSubtaskMutation', () => {
     ];
 
     await act(async () => {
-      const issues = await result.current.mutateAsync(payloads);
-      expect(issues.map((issue) => issue.id)).toEqual([101, 102]);
+      const response = await result.current.mutateAsync(payloads);
+      expect(response.subtasks?.map((issue) => issue.id)).toEqual([101, 102]);
     });
 
     expect(postJsonMock).toHaveBeenCalledWith(
       '/projects/demo/kanban/issues/bulk',
-      { parent: { parent_issue_id: 1, project_id: undefined }, subtasks: payloads },
+      expect.objectContaining({ parent: { parent_issue_id: 1, project_id: undefined }, subtasks: payloads, operation_id: expect.any(String) }),
       'POST',
       expect.objectContaining({ 'Idempotency-Key': expect.any(String) }),
     );
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['kanban', 'board'] });
+    expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+
+  it('preserves the current project scope on bulk mutation requests', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    postJsonMock.mockResolvedValueOnce({ subtasks: [makeIssue(101)] });
+
+    const { result } = renderHook(
+      () => useBulkSubtaskMutation('/projects/demo/kanban', ['kanban'] as const, [7, 3, 7]),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await act(async () => {
+      await result.current.mutateAsync([{ parent_issue_id: 1, subject: 'Scoped', tracker_id: 2 }]);
+    });
+
+    expect(postJsonMock).toHaveBeenCalledWith(
+      '/projects/demo/kanban/issues/bulk?project_ids%5B%5D=3&project_ids%5B%5D=7',
+      expect.any(Object),
+      'POST',
+      expect.any(Object),
+    );
   });
 
   it('reports the failed row and API validation details', async () => {
@@ -109,8 +130,8 @@ describe('useBulkSubtaskMutation', () => {
     );
     const payload = [{ parent_issue_id: 1, subject: 'A', tracker_id: 2 }];
 
-    let first: Promise<Issue[]>;
-    let second: Promise<Issue[]>;
+    let first: Promise<{ subtasks?: Issue[] }>;
+    let second: Promise<{ subtasks?: Issue[] }>;
     await act(async () => {
       first = result.current.mutateAsync(payload);
       second = result.current.mutateAsync(payload);
@@ -118,8 +139,8 @@ describe('useBulkSubtaskMutation', () => {
     });
     expect(postJsonMock).toHaveBeenCalledTimes(1);
     resolveRequest?.({ subtasks: [makeIssue(101)] });
-    await expect(first!).resolves.toHaveLength(1);
-    await expect(second!).resolves.toHaveLength(1);
+    await expect(first!).resolves.toMatchObject({ subtasks: expect.any(Array) });
+    await expect(second!).resolves.toMatchObject({ subtasks: expect.any(Array) });
   });
 
   it('reuses the key after an unknown failure and removes it after success', async () => {

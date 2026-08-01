@@ -10,11 +10,12 @@ module RedmineKanban
     include AncestorIssueUpdates
     include MutationOutcome
 
-    def initialize(project:, issue:, user:, board_context: nil)
+    def initialize(project:, issue:, user:, board_context: nil, operation_id: nil)
       @project = project
       @issue = issue
       @user = user
       @board_context = board_context || BoardContext.new(project: project, user: user)
+      @operation_id = operation_id
     end
 
     def move(status_id:, assigned_to_id: nil, priority_id: nil, assigned_to_provided: false, priority_provided: false, lock_version: nil)
@@ -91,8 +92,14 @@ module RedmineKanban
         return error_response(reconcile_error) if reconcile_error
       end
 
-      result = { ok: true, issue: issue_presenter(@issue).issue_to_h(@issue) }
       ancestor_updates = ancestor_updates_for(@issue) if ancestor_updates_required
+      ancestor_issues = ancestor_issues_for(@issue) if ancestor_updates_required
+      propagated_issues = priority_id.is_a?(Integer) ? @issue.children.to_a : []
+      issue_updates = [@issue, *(ancestor_issues || []), *propagated_issues].uniq { |item| item.id }
+      result = mutation_result_builder.build(
+        issue_updates: issue_updates,
+        invalidations: { column_counts: true }
+      ).merge(issue: issue_presenter(@issue).issue_to_h(@issue))
       result[:ancestor_updates] = ancestor_updates if ancestor_updates&.any?
       result
     rescue ActiveRecord::StaleObjectError
@@ -130,6 +137,10 @@ module RedmineKanban
 
     def issue_presenter(issue)
       @board_context.presenter([issue.id]).first
+    end
+
+    def mutation_result_builder
+      @mutation_result_builder ||= MutationResultBuilder.new(board_context: @board_context, operation_id: @operation_id)
     end
 
   end

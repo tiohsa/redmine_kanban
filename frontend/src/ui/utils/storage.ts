@@ -15,19 +15,30 @@ function readStorageRaw(key: string): string | null {
   }
 }
 
+export function readScopedValueWithLegacy(scopedKey: string, legacyKey: string): string | null {
+  const scopedValue = readStorageRaw(scopedKey);
+  if (scopedValue !== null) return scopedValue;
+
+  const legacyValue = readStorageRaw(legacyKey);
+  if (legacyValue === null) return null;
+
+  try {
+    localStorage.setItem(scopedKey, legacyValue);
+    localStorage.removeItem(legacyKey);
+  } catch {
+    // Keep the value readable even when storage writes are unavailable.
+  }
+  return legacyValue;
+}
+
 export function readScopedBooleanWithLegacy(
   scopedKey: string,
   legacyKey: string,
   defaultValue: boolean,
 ): boolean {
-  const scopedValue = readStorageRaw(scopedKey);
+  const scopedValue = readScopedValueWithLegacy(scopedKey, legacyKey);
   if (scopedValue !== null) {
     return scopedValue === '1';
-  }
-
-  const legacyValue = readStorageRaw(legacyKey);
-  if (legacyValue !== null) {
-    return legacyValue === '1';
   }
 
   return defaultValue;
@@ -48,14 +59,9 @@ export function readScopedNumberSetWithLegacy(
   legacyKey: string,
   defaultValue: Set<number>,
 ): Set<number> {
-  const scopedValue = readStorageRaw(scopedKey);
+  const scopedValue = readScopedValueWithLegacy(scopedKey, legacyKey);
   if (scopedValue !== null) {
     return parseNumberSet(scopedValue) ?? new Set(defaultValue);
-  }
-
-  const legacyValue = readStorageRaw(legacyKey);
-  if (legacyValue !== null) {
-    return parseNumberSet(legacyValue) ?? new Set(defaultValue);
   }
 
   return new Set(defaultValue);
