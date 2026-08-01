@@ -9,10 +9,12 @@ import { useBulkSubtaskMutation } from './useBulkSubtaskMutation';
 import { HttpError } from '../http';
 
 const postJsonMock = vi.hoisted(() => vi.fn());
+const getJsonMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../http', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../http')>()),
   postJson: postJsonMock,
+  getJson: getJsonMock,
 }));
 
 function createWrapper(client: QueryClient) {
@@ -33,10 +35,37 @@ function makeIssue(id: number): Issue {
   };
 }
 
+function makeBoard() {
+  const child = makeIssue(2);
+  const parent = { ...makeIssue(1), subtasks: [child as never] };
+  return {
+    ok: true,
+    meta: {
+      project_id: 1,
+      project_ids: [1],
+      scope_fingerprint: 'project:1',
+      current_user_id: 1,
+      can_move: true,
+      can_create: true,
+      can_delete: true,
+      lane_type: 'assignee' as const,
+      aging_warn_days: 7,
+      aging_danger_days: 14,
+      aging_exclude_closed: false,
+    },
+    columns: [{ id: 1, name: 'Open', is_closed: false }],
+    lanes: [],
+    lists: { assignees: [], trackers: [], priorities: [], projects: [], viewable_projects: [], creatable_projects: [] },
+    issues: [parent],
+    labels: {},
+  };
+}
+
 describe('useBulkSubtaskMutation', () => {
   beforeEach(() => {
     sessionStorage.clear();
     postJsonMock.mockReset();
+    getJsonMock.mockReset();
   });
 
   it('posts subtasks in order and applies the created delta without invalidating the board', async () => {
@@ -90,6 +119,33 @@ describe('useBulkSubtaskMutation', () => {
       'POST',
       expect.any(Object),
     );
+  });
+
+  it('applies missing IDs from bulk reconciliation to the normalized board state', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    queryClient.setQueryData(['kanban'], makeBoard());
+    postJsonMock.mockResolvedValueOnce({
+      subtasks: [makeIssue(101)],
+      invalidations: { issue_ids: [2] },
+    });
+    getJsonMock.mockResolvedValueOnce({
+      scope_fingerprint: 'project:1',
+      entities: [],
+      missing_issue_ids: [2],
+    });
+
+    const { result } = renderHook(
+      () => useBulkSubtaskMutation('/projects/demo/kanban', ['kanban'] as const),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await act(async () => {
+      await result.current.mutateAsync([{ parent_issue_id: 1, subject: 'A', tracker_id: 2 }]);
+      await Promise.resolve();
+    });
+
+    expect(getJsonMock).toHaveBeenCalledTimes(1);
+    expect(queryClient.getQueryData<ReturnType<typeof makeBoard>>(['kanban'])?.issues[0]?.subtasks).toEqual([]);
   });
 
   it('reports the failed row and API validation details', async () => {
