@@ -5,6 +5,12 @@ import { findIssueInBoard, type AncestorIssueUpdate, type IssueMutationResult } 
 import { mapSubtasksTree, updateSubtasksTree } from './subtasksTree';
 import { applyBoardResponse, createNormalizedBoardState, rollbackLocalIssuePatch, selectBoardData } from './boardState';
 
+export type EntityReconciliationResponse = {
+  scope_fingerprint?: string;
+  entities?: Issue[];
+  missing_issue_ids?: number[];
+};
+
 export function applyMutationResponse(data: BoardData, result: Partial<IssueMutationResult>): BoardData {
   const state = createNormalizedBoardState(data);
   const issueUpdates = result.issue_updates
@@ -19,12 +25,15 @@ export function applyMutationResponse(data: BoardData, result: Partial<IssueMuta
   }));
 }
 
-export function applyMissingIssueIds(data: BoardData, issueIds: number[]): BoardData {
-  if (issueIds.length === 0) return data;
+export function applyEntityReconciliation(data: BoardData, response: EntityReconciliationResponse): BoardData {
+  const state = createNormalizedBoardState(data);
+  if (response.scope_fingerprint && response.scope_fingerprint !== state.scope.fingerprint) return data;
 
-  return selectBoardData(applyBoardResponse(createNormalizedBoardState(data), {
+  return selectBoardData(applyBoardResponse(state, {
     kind: 'mutation',
-    deleted_issue_ids: [...new Set(issueIds)],
+    issue_updates: response.entities ?? [],
+    deleted_issue_ids: [...new Set(response.missing_issue_ids ?? [])],
+    scopeFingerprint: response.scope_fingerprint,
   }));
 }
 

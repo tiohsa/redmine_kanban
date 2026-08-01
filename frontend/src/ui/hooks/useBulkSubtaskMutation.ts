@@ -4,7 +4,7 @@ import { isHttpError, postJson } from '../http';
 import { getJson } from '../http';
 import type { BoardData, Issue } from '../types';
 import { discardBulkIdempotencyKey, getOrCreateBulkIdempotencyKey, stableSerialize } from '../bulkIdempotency';
-import { applyMutationResponse, unresolvedInvalidationIds } from '../useIssueMutation';
+import { applyEntityReconciliation, applyMutationResponse, unresolvedInvalidationIds } from '../useIssueMutation';
 import { buildBoardCountsUrl, buildBoardEntitiesUrl } from '../boardQuery';
 
 export type SubtaskPayload = {
@@ -136,15 +136,12 @@ export function useBulkSubtaskMutation(baseUrl: string, queryKey: readonly unkno
         invalidations: result.invalidations,
       });
       if (reconciliationIds.length > 0) {
-        void getJson<{ scope_fingerprint?: string; entities?: Issue[] }>(
+        void getJson<Parameters<typeof applyEntityReconciliation>[1]>(
           buildBoardEntitiesUrl(baseUrl, projectIds, reconciliationIds),
         ).then((response) => {
           queryClient.setQueryData(queryKey, (current: unknown) => {
             if (!current || !('issues' in (current as object))) return current;
-            return applyMutationResponse(current as Parameters<typeof applyMutationResponse>[0], {
-              scope_fingerprint: response.scope_fingerprint,
-              issue_updates: response.entities,
-            });
+            return applyEntityReconciliation(current as Parameters<typeof applyEntityReconciliation>[0], response);
           });
         }).catch(() => undefined);
       }

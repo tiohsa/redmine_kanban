@@ -8,7 +8,7 @@ import {
   type BoardResponse,
   type NormalizedBoardState,
 } from './boardState';
-import { applyMissingIssueIds, unresolvedInvalidationIds } from './useIssueMutation';
+import { applyEntityReconciliation, unresolvedInvalidationIds } from './useIssueMutation';
 
 function issue(id: number, overrides: Partial<Issue> = {}): Issue {
   return {
@@ -213,11 +213,30 @@ describe('normalized board state', () => {
   it('removes missing entities and their tree edges during reconciliation', () => {
     const current = board([issue(1, { subtasks: [issue(2, { parent_id: 1 }) as never] })]);
 
-    const next = applyMissingIssueIds(current, [2]);
+    const next = applyEntityReconciliation(current, { missing_issue_ids: [2] });
 
     expect(next.issues[0]?.subtasks).toEqual([]);
     expect(next.meta.tree?.truncated_parent_ids ?? []).toEqual([]);
     expect(next).toEqual(expect.objectContaining({ issues: [expect.objectContaining({ id: 1 })] }));
+  });
+
+  it('applies entities and missing IDs only when the response scope matches', () => {
+    const current = board([issue(1, { subtasks: [issue(2, { parent_id: 1 }) as never] })]);
+    current.meta.scope_fingerprint = 'sha256:current';
+
+    const reconciled = applyEntityReconciliation(current, {
+      scope_fingerprint: 'sha256:current',
+      entities: [],
+      missing_issue_ids: [2],
+    });
+    expect(reconciled.issues[0]?.subtasks).toEqual([]);
+
+    const stale = applyEntityReconciliation(current, {
+      scope_fingerprint: 'sha256:other',
+      entities: [],
+      missing_issue_ids: [2],
+    });
+    expect(stale).toEqual(current);
   });
 
   it('keeps invariants through a deterministic response sequence and replay', () => {
