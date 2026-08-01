@@ -71,6 +71,7 @@ module RedmineKanban
         @max_depth_reached = depth
         rows = fetch_children_batch(parents, query_limit)
         rows_by_parent = rows.group_by(&:parent_id)
+        mark_limit_starved_parents(parents, rows_by_parent, query_limit)
         next_parent_ids = []
 
         parents.each do |parent_id|
@@ -132,6 +133,23 @@ module RedmineKanban
       @query_count += 1
       @fetched_row_count += children.size
       children
+    end
+
+    def mark_limit_starved_parents(parent_ids, rows_by_parent, query_limit)
+      return unless query_limit && rows_by_parent.values.sum(&:size) >= query_limit
+
+      missing_parent_ids = parent_ids.reject { |parent_id| rows_by_parent.key?(parent_id) }
+      return if missing_parent_ids.empty?
+
+      recoverable_parent_ids = if @query_count < @max_queries
+                                parents_with_children(missing_parent_ids)
+                              else
+                                missing_parent_ids
+                              end
+      recoverable_parent_ids.each { |parent_id| mark_truncated(parent_id) }
+      if @query_count >= @max_queries && recoverable_parent_ids.empty?
+        missing_parent_ids.each { |parent_id| mark_unexpanded(parent_id) }
+      end
     end
 
     def parents_with_children(parent_ids)

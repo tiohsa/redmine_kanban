@@ -8,7 +8,7 @@ import {
   type BoardResponse,
   type NormalizedBoardState,
 } from './boardState';
-import { unresolvedInvalidationIds } from './useIssueMutation';
+import { applyMissingIssueIds, unresolvedInvalidationIds } from './useIssueMutation';
 
 function issue(id: number, overrides: Partial<Issue> = {}): Issue {
   return {
@@ -208,6 +208,16 @@ describe('normalized board state', () => {
 
     expect(late.entitiesById.has(1)).toBe(false);
     expect(late.deletedIssueIds.has(1)).toBe(true);
+  });
+
+  it('removes missing entities and their tree edges during reconciliation', () => {
+    const current = board([issue(1, { subtasks: [issue(2, { parent_id: 1 }) as never] })]);
+
+    const next = applyMissingIssueIds(current, [2]);
+
+    expect(next.issues[0]?.subtasks).toEqual([]);
+    expect(next.meta.tree?.truncated_parent_ids ?? []).toEqual([]);
+    expect(next).toEqual(expect.objectContaining({ issues: [expect.objectContaining({ id: 1 })] }));
   });
 
   it('keeps invariants through a deterministic response sequence and replay', () => {

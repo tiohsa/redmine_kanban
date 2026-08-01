@@ -393,6 +393,49 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_equal 'Updated subject', json.dig('issue', 'subject')
   end
 
+  def test_update_rejects_invalid_date_without_clearing_existing_date
+    issue = build_issue
+    issue.update_columns(start_date: Date.current - 2, due_date: Date.current + 3)
+    issue.reload
+    original_start_date = issue.start_date
+    original_due_date = issue.due_date
+
+    patch :update, params: {
+      project_id: @project.identifier,
+      id: issue.id,
+      issue: {
+        start_date: 'not-a-date',
+        due_date: 'also-not-a-date',
+        lock_version: issue.lock_version
+      }
+    }
+
+    assert_response :unprocessable_entity
+    json = JSON.parse(@response.body)
+    assert_equal false, json['ok']
+    assert_includes json.fetch('field_errors').fetch('start_date'), '開始日の日付が不正です'
+    refute json.fetch('field_errors').key?('due_date')
+    issue.reload
+    assert_equal original_start_date, issue.start_date
+    assert_equal original_due_date, issue.due_date
+  end
+
+  def test_create_rejects_invalid_date_before_persisting
+    tracker = @project.trackers.first
+
+    assert_no_difference('Issue.count') do
+      post :create, params: {
+        project_id: @project.identifier,
+        issue: { subject: 'Invalid date create', tracker_id: tracker.id, due_date: 'not-a-date' }
+      }
+    end
+
+    assert_response :unprocessable_entity
+    json = JSON.parse(@response.body)
+    assert_equal false, json['ok']
+    assert_includes json.fetch('field_errors').fetch('due_date'), '期日の日付が不正です'
+  end
+
   def test_move_child_status_returns_recalculated_parent_progress
     open_status = IssueStatus.where(is_closed: false).first || IssueStatus.first
     closed_status = IssueStatus.where(is_closed: true).first || IssueStatus.first

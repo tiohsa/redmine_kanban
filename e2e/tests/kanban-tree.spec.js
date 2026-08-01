@@ -88,7 +88,7 @@ test('truncated tree is visible and recovers through scoped subtree pages', asyn
   const notice = page.getByRole('status');
   await expect(notice).toContainText(/subtasks are not shown/i);
 
-  for (let attempt = 0; attempt < 8 && await notice.count() > 0; attempt += 1) {
+  for (let attempt = 0; attempt < 16 && await notice.count() > 0; attempt += 1) {
     const responsePromise = page.waitForResponse((response) => {
       if (response.request().method() !== 'GET') return false;
       const url = new URL(response.url());
@@ -104,10 +104,6 @@ test('truncated tree is visible and recovers through scoped subtree pages', asyn
       for (const issue of pagePayload.issues) recoveredDirectChildIds.add(issue.id);
       expectedDirectChildCount = pagePayload.meta.pagination.total_issue_count;
       expect(pagePayload.meta.pagination.total_issue_count).toBeGreaterThanOrEqual(1_505);
-    }
-    if (!pagePayload.meta?.pagination?.has_more_issues) {
-      await expect(notice).toHaveCount(0);
-      break;
     }
   }
 

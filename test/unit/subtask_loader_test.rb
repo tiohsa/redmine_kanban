@@ -102,6 +102,24 @@ class RedmineKanbanSubtaskLoaderTest < ActiveSupport::TestCase
     assert_equal true, loader.truncated?
   end
 
+  def test_marks_later_parent_recoverable_when_an_earlier_parent_consumes_batch_limit
+    parents = 2.times.map do |index|
+      Issue.create!(project: @project, tracker_id: 1, subject: "Starvation parent #{index}", author: @user, status_id: 1, priority_id: 4)
+    end
+    first_children = 10.times.map do |index|
+      Issue.create!(project: @project, tracker_id: 1, subject: "Starvation first child #{index}", author: @user, status_id: 1, priority_id: 4, parent_id: parents.first.id)
+    end
+    later_child = Issue.create!(project: @project, tracker_id: 1, subject: 'Starvation later child', author: @user, status_id: 1, priority_id: 4, parent_id: parents.last.id)
+
+    loader = RedmineKanban::SubtaskLoader.new(user: @user, root_issue_ids: parents.map(&:id), max_nodes: 4)
+    result = loader.subtasks_by_parent_id(parents.map(&:id))
+
+    assert_equal first_children.first(2).map(&:id), result.fetch(parents.first.id).map(&:id)
+    assert_equal [], result.fetch(parents.last.id, []).map(&:id)
+    assert_includes loader.truncated_parent_ids, parents.last.id
+    assert_not_includes loader.loaded_issue_ids, later_child.id
+  end
+
   def test_applies_budget_before_materializing_a_high_fan_out_parent
     parent = Issue.create!(project: @project, tracker_id: 1, subject: 'High fan-out parent', author: @user, status_id: 1, priority_id: 4)
     children = 20.times.map do |index|

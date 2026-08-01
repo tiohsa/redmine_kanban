@@ -56,6 +56,12 @@ module RedmineKanban
         return error_response('指定されたtrackerは作成先プロジェクトで利用できません', field_errors: { tracker_id: ['作成先プロジェクトで利用可能なtrackerを指定してください'] })
       end
 
+      start_date = normalize_date(params[:start_date])
+      return invalid_date_response(:start_date) if start_date == :invalid
+
+      due_date = normalize_date(params[:due_date])
+      return invalid_date_response(:due_date) if due_date == :invalid
+
       issue = Issue.new
       issue.project = target_project
       issue.author = @user
@@ -67,8 +73,8 @@ module RedmineKanban
         'status_id' => params[:status_id].to_i,
         'assigned_to_id' => normalize_assigned_to_id(params[:assigned_to_id]),
         'priority_id' => normalize_priority_id(params[:priority_id]),
-        'start_date' => normalize_date(params[:start_date]),
-        'due_date' => normalize_date(params[:due_date]),
+        'start_date' => start_date,
+        'due_date' => due_date,
         'tracker_id' => tracker_id.to_i
       }
       attributes['done_ratio'] = normalize_done_ratio(params[:done_ratio]) if param_key_provided?(params, 'done_ratio')
@@ -216,6 +222,11 @@ module RedmineKanban
 
     def normalize_date(value)
       normalize_optional_date(value)
+    end
+
+    def invalid_date_response(field)
+      label = field == :start_date ? '開始日' : '期日'
+      error_response("#{label}の日付が不正です", field_errors: { field => ["#{label}の日付が不正です"] })
     end
 
     def normalize_done_ratio(value)
