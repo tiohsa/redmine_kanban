@@ -15,11 +15,16 @@ import { HelpDialog } from './HelpDialog';
 import { buildDisplayData, payloadFieldError, payloadMessage, resolveMutationError } from './kanbanShared';
 import { mergeIssueTrees } from './boardTree';
 import { applyBoardResponse, createNormalizedBoardState, selectBoardData } from './boardState';
+import { findIssueInBoard } from './kanbanShared';
 import { useKanbanActions } from './useKanbanActions';
 import { useKanbanDialogs } from './useKanbanDialogs';
 import { useKanbanPreferences } from './useKanbanPreferences';
 
 type Props = { dataUrl: string };
+
+export function findIssueForAction(data: BoardData, issueId: number): Issue | null {
+  return findIssueInBoard(data, issueId);
+}
 
 export function normalizeProjectIds(projectIds: number[], allowedProjectIds: Set<number>): number[] {
   return projectIds.filter((projectId) => allowedProjectIds.has(projectId));
@@ -495,7 +500,7 @@ export function App({ dataUrl }: Props) {
             if (isEdit) {
               const issueId = dialogs.modal?.issueId;
               if (!issueId) return;
-              const issue = data.issues.find((item) => item.id === issueId);
+              const issue = findIssueForAction(data, issueId);
               if (!issue || issue.lock_version === undefined || issue.lock_version === null) {
                 throw new Error(data.labels.update_failed);
               }
@@ -631,7 +636,7 @@ export function App({ dataUrl }: Props) {
               await actions.updateIssueMutation.mutateAsync({
                 issueId: popup.issueId,
                 patch: { priority_id: nextPriorityId },
-                lockVersion: data.issues.find((issue) => issue.id === popup.issueId)?.lock_version ?? null,
+                lockVersion: findIssueForAction(data, popup.issueId)?.lock_version ?? null,
               });
             } catch (caught: unknown) {
               setError(resolveMutationError(caught, data.labels, data.labels.update_failed));
@@ -662,7 +667,7 @@ export function App({ dataUrl }: Props) {
               await actions.updateIssueMutation.mutateAsync({
                 issueId: popup.issueId,
                 patch: { due_date: newDate },
-                lockVersion: data.issues.find((issue) => issue.id === popup.issueId)?.lock_version ?? null,
+                lockVersion: findIssueForAction(data, popup.issueId)?.lock_version ?? null,
               });
             } catch (caught: unknown) {
               setError(caught instanceof Error ? caught.message : 'Date update failed');
@@ -688,7 +693,7 @@ export function App({ dataUrl }: Props) {
               await actions.updateIssueMutation.mutateAsync({
                 issueId: popup.issueId,
                 patch: { done_ratio: newDoneRatio },
-                lockVersion: data.issues.find((issue) => issue.id === popup.issueId)?.lock_version ?? null,
+                lockVersion: findIssueForAction(data, popup.issueId)?.lock_version ?? null,
               });
             } catch (caught: unknown) {
               setError(caught instanceof Error ? caught.message : 'Progress update failed');

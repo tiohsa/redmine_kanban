@@ -210,6 +210,19 @@ export function resolveBoardIssue(data: BoardData, issueId: number): ResolvedBoa
   return null;
 }
 
+/** Resolve an Issue-shaped value for both root cards and nested subtask rows. */
+export function findIssueInBoard(data: BoardData, issueId: number): Issue | null {
+  const direct = data.issues.find((issue) => issue.id === issueId);
+  if (direct) return direct;
+
+  for (const issue of data.issues) {
+    const nested = findSubtaskInTree(issue.subtasks, issueId);
+    if (nested) return nested as unknown as Issue;
+  }
+
+  return null;
+}
+
 export function findSubtask(data: BoardData, subtaskId: number): SubtaskInfo | null {
   const resolved = resolveBoardIssue(data, subtaskId);
   if (!resolved) return null;

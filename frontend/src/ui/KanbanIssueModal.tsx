@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import type { BoardData } from './types';
 import { IssueDialogHeader } from './IssueDialogHeader';
 import { buildDefaultIssueCreateUrl, type ModalContext } from './issueDialog';
-import { linkifyText } from './kanbanShared';
+import { findIssueInBoard, linkifyText } from './kanbanShared';
 import { BulkSubtaskEditor } from './BulkSubtaskEditor';
 import type { SubtaskCreateInput } from './bulkSubtasks';
 import { getJson } from './http';
@@ -19,7 +19,7 @@ type Props = {
 export function KanbanIssueModal({ data, baseUrl, ctx, onClose, onSaved, onDeleted }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const issue = ctx.issueId ? data.issues.find((item) => item.id === ctx.issueId) : null;
+  const issue = ctx.issueId ? findIssueInBoard(data, ctx.issueId) : null;
   const isEdit = !!issue;
   const labels = data.labels;
   const modalTitle = isEdit ? `${issue.subject} #${issue.id}` : labels.issue_create_dialog_title ?? 'Create issue';

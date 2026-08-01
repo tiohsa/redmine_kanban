@@ -1,10 +1,9 @@
 import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { useRef } from 'react';
 import type { BoardData, Issue, Subtask } from './types';
-import type { AncestorIssueUpdate } from './kanbanShared';
+import { findIssueInBoard, type AncestorIssueUpdate, type IssueMutationResult } from './kanbanShared';
 import { mapSubtasksTree, updateSubtasksTree } from './subtasksTree';
 import { applyBoardResponse, createNormalizedBoardState, rollbackLocalIssuePatch, selectBoardData } from './boardState';
-import type { IssueMutationResult } from './kanbanShared';
 
 export function applyMutationResponse(data: BoardData, result: Partial<IssueMutationResult>): BoardData {
   const state = createNormalizedBoardState(data);
@@ -165,25 +164,6 @@ export function isIssueFresh(current: Issue, incoming: Issue): boolean {
   if (currentUpdatedOn !== null && incomingUpdatedOn !== null) return incomingUpdatedOn >= currentUpdatedOn;
   if (currentUpdatedOn !== null && incomingUpdatedOn === null) return false;
   return true;
-}
-
-export function findIssueInBoard(data: BoardData, issueId: number): Issue | null {
-  const direct = data.issues.find((issue) => issue.id === issueId);
-  if (direct) return direct;
-  for (const issue of data.issues) {
-    const nested = findSubtask(issue.subtasks, issueId);
-    if (nested) return nested;
-  }
-  return null;
-}
-
-function findSubtask(subtasks: Subtask[] | undefined, issueId: number): Issue | null {
-  for (const subtask of subtasks ?? []) {
-    if (subtask.id === issueId) return subtask as unknown as Issue;
-    const nested = findSubtask(subtask.subtasks, issueId);
-    if (nested) return nested;
-  }
-  return null;
 }
 
 export function updateIssueInBoard(
