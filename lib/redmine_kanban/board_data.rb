@@ -257,11 +257,12 @@ module RedmineKanban
 
       counts = fetch_column_counts(status_ids)
       next_page_cursor = next_cursor(issues, status_ids, total_issue_count)
-      parent_states = loader.truncated_parent_ids.each_with_object({}) do |parent_id, states|
+      recoverable_parent_ids = (loader.truncated_parent_ids + loader.unexpanded_parent_ids).uniq.sort
+      parent_states = recoverable_parent_ids.each_with_object({}) do |parent_id, states|
         last_child_id = loader.last_child_id_by_parent[parent_id]
         states[parent_id.to_s] = {
           completeness: 'partial',
-          next_cursor: cursor_for_tree_parent(parent_id, last_child_id, status_ids),
+          next_cursor: last_child_id ? cursor_for_tree_parent(parent_id, last_child_id, status_ids) : nil,
           loaded_count: loader.loaded_parent_id_by_issue.count { |_issue_id, loaded_parent_id| loaded_parent_id == parent_id }
         }
       end
@@ -295,7 +296,7 @@ module RedmineKanban
             serialized_node_count: serialized_issue_ids.size,
             duplicate_node_count: raw_node_ids.size - raw_node_ids.uniq.size,
             truncated: loader.truncated?,
-            truncated_parent_ids: loader.truncated_parent_ids,
+            truncated_parent_ids: recoverable_parent_ids,
             unexpanded_parent_ids: loader.unexpanded_parent_ids,
             parent_states: parent_states,
             query_count: loader.query_count,

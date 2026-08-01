@@ -292,6 +292,45 @@ describe('mergeIssuePage', () => {
     expect(next.meta.tree?.truncated_parent_ids).toEqual([1]);
   });
 
+  it('keeps an unexpanded parent recoverable while merging root pages', () => {
+    const current = makeBoardData([makeIssue(1)], 1);
+    current.meta.tree = {
+      node_limit: 1500,
+      root_issue_count: 1,
+      unique_node_count: 1,
+      serialized_node_count: 1,
+      duplicate_node_count: 0,
+      truncated: true,
+      truncated_parent_ids: [],
+      unexpanded_parent_ids: [1],
+    };
+    const page = makeBoardData([makeIssue(2)], 1);
+    page.meta.pagination = {
+      issue_limit: 1,
+      offset: 1,
+      issue_count: 1,
+      total_issue_count: 2,
+      next_offset: 2,
+      has_more_issues: false,
+    };
+    page.meta.tree = {
+      node_limit: 1500,
+      root_issue_count: 1,
+      unique_node_count: 1,
+      serialized_node_count: 1,
+      duplicate_node_count: 0,
+      truncated: false,
+      truncated_parent_ids: [],
+      unexpanded_parent_ids: [],
+    };
+
+    const next = mergeIssuePage(current, page);
+
+    expect(next.meta.tree?.truncated).toBe(true);
+    expect(next.meta.tree?.truncated_parent_ids).toEqual([1]);
+    expect(next.meta.tree?.unexpanded_parent_ids).toEqual([1]);
+  });
+
   it('clears a resolved parent after merging its scoped subtree page', () => {
     const current = makeBoardData([makeIssue(1)], 1);
     current.issues[0].subtasks = [{ id: 2, subject: 'Loaded child', status_id: 1, is_closed: false }];

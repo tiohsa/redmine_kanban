@@ -246,6 +246,40 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_operator tree.fetch(:duplicate_node_count), :>=, 1
   end
 
+  def test_board_exposes_unexpanded_parents_as_recoverable_tree_state
+    isolated_project = build_project(name: 'Deep tree contract project', identifier: "deep-tree-contract-#{Time.now.to_i}")
+    open_status = IssueStatus.where(is_closed: false).first || IssueStatus.first
+    closed_status = IssueStatus.where(is_closed: true).first || IssueStatus.where.not(id: open_status.id).first
+    assert_not_nil closed_status
+    root = build_issue(subject: 'Deep contract root', project: isolated_project, status: open_status)
+    parent = root
+    34.times do |index|
+      parent = build_issue(
+        subject: "Deep contract child #{index}",
+        project: isolated_project,
+        status: closed_status,
+        parent_issue_id: parent.id
+      )
+    end
+
+    payload = RedmineKanban::BoardData.new(
+      project: isolated_project,
+      user: @user,
+      issue_status_ids: [open_status.id],
+      issue_limit: 100
+    ).to_h
+    tree = payload.fetch(:meta).fetch(:tree)
+
+    assert_equal true, tree.fetch(:truncated)
+    refute_empty tree.fetch(:unexpanded_parent_ids)
+    assert_operator tree.fetch(:truncated_parent_ids).length, :>=, tree.fetch(:unexpanded_parent_ids).length
+    tree.fetch(:unexpanded_parent_ids).each do |parent_id|
+      state = tree.fetch(:parent_states).fetch(parent_id.to_s)
+      assert_equal 'partial', state.fetch(:completeness)
+      assert state.key?(:next_cursor)
+    end
+  end
+
   def test_tree_parent_page_recovers_direct_children_without_status_filter_loss
     parent = build_issue(subject: 'Tree recovery parent')
     open_status, closed_status = distinct_open_statuses

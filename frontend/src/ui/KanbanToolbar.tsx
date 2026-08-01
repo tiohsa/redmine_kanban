@@ -106,6 +106,10 @@ export function KanbanToolbar({
   const showDueCustomInput = filters.due === 'custom';
   const dueDaysValue = filters.dueDays ?? 7;
   const fullWindowIcon = fullWindow ? 'fullscreen_exit' : 'fullscreen';
+  const incompleteParentIds = [...new Set([
+    ...(data.meta.tree?.truncated_parent_ids ?? []),
+    ...(data.meta.tree?.unexpanded_parent_ids ?? []),
+  ])];
 
   return (
     <div className="rk-toolbar">
@@ -113,7 +117,7 @@ export function KanbanToolbar({
         <div className="rk-tree-truncation" role="status" aria-live="polite">
           <span className="rk-icon" aria-hidden="true">warning</span>
           <span>{labels.tree_truncated ?? 'Some subtasks are not shown yet.'}</span>
-          {data.meta.tree.truncated_parent_ids?.length ? (
+          {incompleteParentIds.length ? (
             <button type="button" className="rk-btn rk-btn-sm" onClick={onLoadMoreTree} disabled={loadingMoreTree}>
               {labels.tree_load_more ?? labels.load_more_issues ?? 'Load more'}
             </button>

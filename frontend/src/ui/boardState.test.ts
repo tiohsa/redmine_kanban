@@ -4,6 +4,7 @@ import {
   applyBoardResponse,
   createNormalizedBoardState,
   selectBoardIssues,
+  selectBoardData,
   type BoardResponse,
   type NormalizedBoardState,
 } from './boardState';
@@ -51,6 +52,31 @@ function root(state: NormalizedBoardState, id: number) {
 }
 
 describe('normalized board state', () => {
+  it('treats unexpanded parents as recoverable incomplete tree state', () => {
+    const current = board([issue(1, { subtasks: [issue(2, { parent_id: 1 }) as never] })]);
+    current.meta.tree = {
+      node_limit: 1500,
+      root_issue_count: 1,
+      unique_node_count: 2,
+      serialized_node_count: 2,
+      duplicate_node_count: 0,
+      truncated: true,
+      truncated_parent_ids: [],
+      unexpanded_parent_ids: [1],
+      parent_states: {
+        '1': { completeness: 'partial', next_cursor: null, loaded_count: 1 },
+      },
+    };
+
+    const state = createNormalizedBoardState(current);
+    expect(state.tree.parentStates.get(1)).toEqual({ completeness: 'partial', nextCursor: null, loadedCount: 1 });
+
+    const selected = selectBoardData(state);
+    expect(selected.meta.tree?.truncated).toBe(true);
+    expect(selected.meta.tree?.truncated_parent_ids).toEqual([1]);
+    expect(selected.meta.tree?.unexpanded_parent_ids).toEqual([1]);
+  });
+
   it('merges an equal-version entity when the response adds fields', () => {
     const current = board([issue(1, { subject: 'Current', description: '' })]);
     const next = applyBoardResponse(createNormalizedBoardState(current), {

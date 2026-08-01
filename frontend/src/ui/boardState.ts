@@ -172,6 +172,13 @@ function scopeFingerprint(data: BoardData): string {
   return data.meta.scope_fingerprint ?? `project:${(data.meta.project_ids ?? [data.meta.project_id]).join(',')}`;
 }
 
+function incompleteParentIds(tree: BoardData['meta']['tree']): Set<number> {
+  return new Set([
+    ...(tree?.truncated_parent_ids ?? []),
+    ...(tree?.unexpanded_parent_ids ?? []),
+  ]);
+}
+
 export function createNormalizedBoardState(data: BoardData): NormalizedBoardState {
   const { issues: _issues, ...board } = data;
   const state: NormalizedBoardState = {
@@ -190,9 +197,10 @@ export function createNormalizedBoardState(data: BoardData): NormalizedBoardStat
     board,
   };
   for (const issue of data.issues) collectIssue(state, issue, undefined, true);
+  const incompleteIds = incompleteParentIds(data.meta.tree);
   for (const parentId of state.tree.childrenByParentId.keys()) {
     state.tree.parentStates.set(parentId, {
-      completeness: data.meta.tree?.truncated_parent_ids?.includes(parentId) ? 'partial' : 'complete',
+      completeness: incompleteIds.has(parentId) ? 'partial' : 'complete',
       nextCursor: null,
       loadedCount: state.tree.childrenByParentId.get(parentId)?.length ?? 0,
     });
@@ -204,7 +212,7 @@ export function createNormalizedBoardState(data: BoardData): NormalizedBoardStat
       loadedCount: parentState.loaded_count,
     });
   }
-  for (const parentId of data.meta.tree?.truncated_parent_ids ?? []) {
+  for (const parentId of incompleteIds) {
     if (!state.tree.parentStates.has(parentId)) {
       state.tree.parentStates.set(parentId, {
         completeness: 'partial',
@@ -312,10 +320,12 @@ export function selectBoardData(state: NormalizedBoardState): BoardData {
     .map(([parentId]) => parentId)
     .sort((left, right) => left - right);
   const tree = state.board.meta.tree
-    ? {
+      ? {
         ...state.board.meta.tree,
         truncated: partialParentIds.length > 0,
         truncated_parent_ids: partialParentIds,
+        unexpanded_parent_ids: (state.board.meta.tree.unexpanded_parent_ids ?? [])
+          .filter((parentId) => partialParentIds.includes(parentId)),
         unique_node_count: state.entitiesById.size,
         serialized_node_count: state.entitiesById.size,
         duplicate_node_count: 0,
