@@ -8,10 +8,11 @@ module RedmineKanban
 
     MAX_BULK_SUBTASKS = 50
 
-    def initialize(project:, user:, board_context: nil)
+    def initialize(project:, user:, board_context: nil, operation_id: nil)
       @project = project
       @user = user
       @board_context = board_context || BoardContext.new(project: project, user: user)
+      @operation_id = operation_id
     end
 
     def create(params:)
@@ -80,7 +81,13 @@ module RedmineKanban
       issue.safe_attributes = attributes
 
       if issue.save
-        { ok: true, issue: issue_presenter(issue).issue_to_h(issue) }
+        legacy_issue = issue_presenter(issue).issue_to_h(issue)
+        mutation = mutation_result_builder.build(
+          created_issues: [issue],
+          tree_changes: issue.parent_id ? [{ type: 'attach', parent_id: issue.parent_id, child_id: issue.id }] : [],
+          invalidations: { column_counts: true }
+        )
+        mutation.merge(issue: legacy_issue)
       else
         error_response(issue.errors.full_messages.join(', '), field_errors: issue.errors.to_hash(true))
       end
@@ -106,6 +113,7 @@ module RedmineKanban
         payload: { parent: normalized_parent, subtasks: normalized_subtasks }
       ) do
         result = nil
+        created_issue_ids = []
         Issue.transaction do
           parent_issue_id = normalized_parent[:parent_issue_id]
           parent_result = if parent_issue_id.present?
@@ -119,6 +127,7 @@ module RedmineKanban
           end
 
           parent_id = parent_result.dig(:issue, :id) || parent_result.dig('issue', 'id')
+          created_issue_ids << parent_id if parent_issue_id.blank?
           created = []
           normalized_subtasks.each_with_index do |subtask_params, index|
             child_result = create(params: subtask_params.merge(parent_issue_id: parent_id))
@@ -131,10 +140,23 @@ module RedmineKanban
               raise ActiveRecord::Rollback
             end
             created << child_result[:issue]
+            created_issue_ids << child_result.dig(:issue, :id)
           end
           result = { ok: true, issue: parent_result[:issue], subtasks: created }
         end
-        result || error_response('一括作成に失敗しました')
+        next result unless result&.dig(:ok)
+
+        created_issues = Issue.where(id: created_issue_ids.compact).to_a
+        mutation = mutation_result_builder.build(
+          created_issues: created_issues,
+          tree_changes: created_issues.filter_map do |created_issue|
+            next unless created_issue.parent_id
+
+            { type: 'attach', parent_id: created_issue.parent_id, child_id: created_issue.id }
+          end,
+          invalidations: { column_counts: true }
+        )
+        result.merge(mutation)
       end
     end
 
@@ -199,6 +221,10 @@ module RedmineKanban
 
     def issue_presenter(issue)
       @board_context.presenter([issue.id]).first
+    end
+
+    def mutation_result_builder
+      @mutation_result_builder ||= MutationResultBuilder.new(board_context: @board_context, operation_id: @operation_id)
     end
 
   end

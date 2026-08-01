@@ -5,7 +5,7 @@ module RedmineKanban
     skip_before_action :authorize, only: [:move, :create, :update, :destroy, :bulk_create]
 
     before_action :find_issue, only: [:move, :update, :destroy]
-    before_action :require_view_permission, only: [:index, :bootstrap, :issues, :counts, :trackers]
+    before_action :require_view_permission, only: [:index, :bootstrap, :issues, :entities, :counts, :trackers]
     before_action :require_move_permission, only: [:move]
     before_action :require_create_permission, only: [:create]
     before_action :require_create_permission, only: [:bulk_create]
@@ -13,30 +13,47 @@ module RedmineKanban
     before_action :require_delete_permission, only: [:destroy]
 
     def index
-      render json: board_payload
+      render_board_payload(board_payload)
     end
 
     def bootstrap
       payload = board_payload
-      render json: payload.except(:issues)
+      render_board_payload(payload.except(:issues))
     end
 
     def issues
       payload = board_payload
-      render json: {
+      render_board_payload({
         ok: payload[:ok],
         meta: payload[:meta],
         issues: payload[:issues]
+      })
+    end
+
+    def entities
+      ids = normalize_integer_array_param(params[:ids])
+      context = mutation_board_context
+      issues = Issue.visible(User.current)
+                     .where(id: ids, project_id: context.project_ids)
+                     .includes(:assigned_to, :priority, :status, :project)
+                     .to_a
+      presenter = IssueEntityPresenter.new(user: User.current, board_project: @project)
+      render json: {
+        ok: true,
+        contract_version: 2,
+        scope_fingerprint: context.scope_fingerprint,
+        entities: presenter.issues_to_h(issues),
+        missing_issue_ids: ids - issues.map(&:id)
       }
     end
 
     def counts
       payload = board_payload
-      render json: {
+      render_board_payload({
         ok: payload[:ok],
         columns: payload[:columns],
         lanes: payload[:lanes]
-      }
+      })
     end
 
     def trackers
@@ -52,7 +69,7 @@ module RedmineKanban
 
     def move
       payload = params[:issue] || params
-      render_service_result(IssueMover.new(project: @project, issue: @issue, user: User.current, board_context: mutation_board_context).move(
+      render_service_result(IssueMover.new(project: @project, issue: @issue, user: User.current, board_context: mutation_board_context, operation_id: payload[:operation_id]).move(
         status_id: payload[:status_id],
         assigned_to_id: payload[:assigned_to_id],
         priority_id: payload[:priority_id],
@@ -64,7 +81,7 @@ module RedmineKanban
 
     def create
       issue_params = params[:issue] || params
-      render_service_result(IssueCreator.new(project: @project, user: User.current, board_context: mutation_board_context).create(params: issue_params))
+      render_service_result(IssueCreator.new(project: @project, user: User.current, board_context: mutation_board_context, operation_id: issue_params[:operation_id]).create(params: issue_params))
     end
 
     def bulk_create
@@ -74,7 +91,7 @@ module RedmineKanban
         return
       end
 
-      result = IssueCreator.new(project: @project, user: User.current, board_context: mutation_board_context).create_with_subtasks(
+      result = IssueCreator.new(project: @project, user: User.current, board_context: mutation_board_context, operation_id: payload[:operation_id]).create_with_subtasks(
         parent_params: payload[:parent] || {},
         subtasks: payload[:subtasks] || [],
         idempotency_key: request.headers['Idempotency-Key']
@@ -84,7 +101,7 @@ module RedmineKanban
 
     def update
       payload = params[:issue] || params
-      render_service_result(IssueUpdater.new(project: @project, user: User.current, board_context: mutation_board_context).update(issue_id: @issue.id, params: payload))
+      render_service_result(IssueUpdater.new(project: @project, user: User.current, board_context: mutation_board_context, operation_id: payload[:operation_id]).update(issue_id: @issue.id, params: payload))
     end
 
     def destroy
@@ -95,6 +112,9 @@ module RedmineKanban
       end
 
       result = nil
+      deleted_issue_id = @issue.id
+      deleted_parent_id = @issue.parent_id
+      affected_ancestor_ids = @issue.ancestors.select { |ancestor| ancestor.visible?(User.current) }.map(&:id)
       Issue.transaction do
         locked_issue = Issue.lock.find_by(id: @issue.id)
         unless locked_issue && locked_issue.lock_version.to_i == lock_version.to_i
@@ -109,6 +129,19 @@ module RedmineKanban
 
         result = locked_issue.destroy ? { ok: true } : { ok: false, message: '削除に失敗しました' }
         raise ActiveRecord::Rollback unless result[:ok]
+      end
+      if result[:ok]
+        operation_id = params[:operation_id] || params.dig(:issue, :operation_id)
+        affected_ancestors = Issue.visible(User.current).where(id: affected_ancestor_ids).to_a
+        result = MutationResultBuilder.new(board_context: mutation_board_context, operation_id: operation_id).build(
+          deleted_issue_ids: [deleted_issue_id],
+          issue_updates: affected_ancestors,
+          invalidations: {
+            issue_ids: affected_ancestor_ids,
+            parent_ids: [deleted_parent_id].compact,
+            column_counts: true
+          }
+        )
       end
       render json: result, status: result[:ok] ? :ok : (result[:message].include?('権限') ? :forbidden : :conflict)
     rescue ActiveRecord::StaleObjectError
@@ -126,8 +159,15 @@ module RedmineKanban
         exclude_status_ids: normalize_integer_array_param(params[:exclude_status_ids]),
         issue_limit: params[:issue_limit],
         issue_offset: params[:offset],
+        issue_cursor: params[:cursor],
         tree_parent_id: params[:tree_parent_id]
       ).to_h
+    rescue CursorCodec::InvalidCursor => error
+      { ok: false, message: 'cursorが不正か、現在のscopeと一致しません', error: error.message, http_status: :unprocessable_entity }
+    end
+
+    def render_board_payload(payload)
+      render json: payload, status: payload[:ok] == false ? (payload[:http_status] || :unprocessable_entity) : :ok
     end
 
     def mutation_board_context

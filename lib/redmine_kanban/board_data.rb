@@ -1,4 +1,6 @@
 require 'set'
+require 'digest'
+require 'json'
 require_relative 'board_context'
 
 module RedmineKanban
@@ -160,7 +162,7 @@ module RedmineKanban
     }.freeze
 
 
-    def initialize(project:, user:, project_ids: nil, issue_status_ids: nil, exclude_status_ids: nil, issue_limit: nil, issue_offset: nil, tree_parent_id: nil, tree_node_limit: BoardContext::DEFAULT_TREE_NODE_LIMIT)
+    def initialize(project:, user:, project_ids: nil, issue_status_ids: nil, exclude_status_ids: nil, issue_limit: nil, issue_offset: nil, issue_cursor: nil, tree_parent_id: nil, tree_node_limit: BoardContext::DEFAULT_TREE_NODE_LIMIT)
       @project = project
       @user = user
       @board_context = BoardContext.new(
@@ -174,6 +176,7 @@ module RedmineKanban
       @exclude_status_ids = normalize_ids(exclude_status_ids)
       @issue_limit = normalize_issue_limit(issue_limit)
       @issue_offset = normalize_issue_offset(issue_offset)
+      @issue_cursor = issue_cursor
       @tree_parent_id = normalize_optional_id(tree_parent_id)
     end
 
@@ -253,12 +256,23 @@ module RedmineKanban
       lanes = build_lanes(lane_assignee_ids)
 
       counts = fetch_column_counts(status_ids)
+      next_page_cursor = next_cursor(issues, status_ids, total_issue_count)
+      parent_states = loader.truncated_parent_ids.each_with_object({}) do |parent_id, states|
+        last_child_id = loader.last_child_id_by_parent[parent_id]
+        states[parent_id.to_s] = {
+          completeness: 'partial',
+          next_cursor: cursor_for_tree_parent(parent_id, last_child_id, status_ids),
+          loaded_count: loader.loaded_parent_id_by_issue.count { |_issue_id, loaded_parent_id| loaded_parent_id == parent_id }
+        }
+      end
 
       {
         ok: true,
         meta: {
           project_id: @project.id,
           project_ids: @project_ids,
+          contract_version: 2,
+          scope_fingerprint: @board_context.scope_fingerprint,
           current_user_id: @user.id,
           can_move: permission_policy.can_move_issue?(@project),
           can_create: permission_policy.can_create_issue?(@project),
@@ -270,7 +284,8 @@ module RedmineKanban
             issue_count: issues.size,
             total_issue_count: total_issue_count,
             next_offset: issues.size + @issue_offset,
-            has_more_issues: @issue_offset + issues.size < total_issue_count,
+            has_more_issues: next_page_cursor.present?,
+            next_cursor: next_page_cursor,
             **(@tree_parent_id ? { tree_parent_id: @tree_parent_id } : {})
           },
           tree: {
@@ -281,6 +296,11 @@ module RedmineKanban
             duplicate_node_count: raw_node_ids.size - raw_node_ids.uniq.size,
             truncated: loader.truncated?,
             truncated_parent_ids: loader.truncated_parent_ids,
+            unexpanded_parent_ids: loader.unexpanded_parent_ids,
+            parent_states: parent_states,
+            query_count: loader.query_count,
+            parent_batch_count: loader.batch_count,
+            max_depth: loader.max_depth_reached,
             loaded_node_count: loader.loaded_issue_ids.size,
             db_row_count: issues.size + loader.fetched_row_count
           }
@@ -301,8 +321,9 @@ module RedmineKanban
       relation = base_issue_scope(status_ids)
       relation = relation.where(status_id: filtered_status_ids(status_ids)) unless @tree_parent_id
       relation = relation.includes(:assigned_to, :priority, :status, :project)
-      order = @tree_parent_id ? { lft: :asc, id: :asc } : { updated_on: :desc, id: :desc }
-      relation.order(order).offset(@issue_offset).limit(@issue_limit).to_a
+      relation = apply_cursor(relation, status_ids)
+      order = @tree_parent_id ? { id: :asc } : { updated_on: :desc, id: :desc }
+      relation.order(order).offset(@issue_cursor.present? ? 0 : @issue_offset).limit(@issue_limit).to_a
     end
 
     def fetch_issues_total_count(status_ids)
@@ -367,6 +388,77 @@ module RedmineKanban
 
     def normalize_issue_offset(value)
       [value.to_i, 0].max
+    end
+
+    def apply_cursor(relation, status_ids)
+      return relation unless @issue_cursor.present?
+
+      expected = {
+        kind: @tree_parent_id ? 'tree' : 'root',
+        scope_fingerprint: @board_context.scope_fingerprint,
+        filter_fingerprint: filter_fingerprint(status_ids),
+        parent_id: @tree_parent_id
+      }
+      payload = cursor_codec.decode(@issue_cursor, expected: expected)
+      key = payload.fetch('key')
+      if @tree_parent_id
+        relation.where('issues.id > ?', key.fetch('id').to_i)
+      else
+        updated_on = key.fetch('updated_on')
+        issue_id = key.fetch('id').to_i
+        relation.where('issues.updated_on < ? OR (issues.updated_on = ? AND issues.id < ?)', updated_on, updated_on, issue_id)
+      end
+    rescue CursorCodec::InvalidCursor => error
+      raise error
+    end
+
+    def next_cursor(issues, status_ids, total_issue_count)
+      return nil if issues.empty?
+      has_more = if @issue_cursor.present?
+                   has_more_after_cursor?(issues.last, status_ids)
+                 else
+                   @issue_offset + issues.size < total_issue_count
+                 end
+      return nil unless has_more
+
+      last = issues.last
+      cursor_codec.encode(
+        kind: @tree_parent_id ? 'tree' : 'root',
+        scope_fingerprint: @board_context.scope_fingerprint,
+        filter_fingerprint: filter_fingerprint(status_ids),
+        parent_id: @tree_parent_id,
+        sort: @tree_parent_id ? 'id_asc' : 'updated_on_desc_id_desc',
+        key: @tree_parent_id ? { id: last.id } : { updated_on: last.updated_on&.iso8601, id: last.id }
+      )
+    end
+
+    def has_more_after_cursor?(last_issue, status_ids)
+      relation = base_issue_scope(status_ids)
+      relation = relation.where(status_id: filtered_status_ids(status_ids)) unless @tree_parent_id
+      if @tree_parent_id
+        relation.where('issues.id > ?', last_issue.id).exists?
+      else
+        relation.where('issues.updated_on < ? OR (issues.updated_on = ? AND issues.id < ?)', last_issue.updated_on, last_issue.updated_on, last_issue.id).exists?
+      end
+    end
+
+    def filter_fingerprint(status_ids, parent_id: @tree_parent_id)
+      "sha256:#{Digest::SHA256.hexdigest({ status_ids: filtered_status_ids(status_ids).sort, excluded_status_ids: @exclude_status_ids.sort, parent_id: parent_id }.to_json)}"
+    end
+
+    def cursor_codec
+      @cursor_codec ||= CursorCodec.new
+    end
+
+    def cursor_for_tree_parent(parent_id, last_child_id, status_ids)
+      cursor_codec.encode(
+        kind: 'tree',
+        scope_fingerprint: @board_context.scope_fingerprint,
+        filter_fingerprint: filter_fingerprint(status_ids, parent_id: parent_id),
+        parent_id: parent_id,
+        sort: 'id_asc',
+        key: { id: last_child_id.to_i }
+      )
     end
 
     def normalize_optional_id(value)

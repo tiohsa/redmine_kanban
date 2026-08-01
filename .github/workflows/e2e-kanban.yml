@@ -186,6 +186,12 @@ jobs:
             env RAILS_ENV=test bundle exec rails test \
             plugins/redmine_kanban/test
 
+      - name: Run deterministic tree resource gates
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+            env RAILS_ENV=test REDMINE_KANBAN_PERF_GATE=1 bundle exec rails test \
+            plugins/redmine_kanban/test/unit/subtask_loader_test.rb
+
       - name: Show container logs on failure
         if: failure()
         run: docker compose -f .github/e2e/docker-compose.yml logs --no-color

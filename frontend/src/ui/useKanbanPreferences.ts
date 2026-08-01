@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import type { SortKey } from './board/sort';
 import type { Filters } from './boardFilters';
-import { buildProjectScopeFromDataUrl, makeScopedStorageKey, readScopedBooleanWithLegacy, readScopedNumberSetWithLegacy } from './utils/storage';
+import { buildProjectScopeFromDataUrl, makeScopedStorageKey, readScopedBooleanWithLegacy, readScopedNumberSetWithLegacy, readScopedValueWithLegacy } from './utils/storage';
 import type { FitMode } from './kanbanShared';
 
 export type LaneType = 'none' | 'assignee' | 'priority';
@@ -43,7 +43,7 @@ function removeStorageValue(key: string) {
 
 function readFilters(storageKey: string | null, legacyKey?: string): Filters {
   try {
-    const value = (storageKey && readStorageValue(storageKey)) || (legacyKey && readStorageValue(legacyKey));
+    const value = storageKey && legacyKey ? readScopedValueWithLegacy(storageKey, legacyKey) : null;
     if (value) {
       const parsed = JSON.parse(value);
       return {
@@ -105,15 +105,20 @@ export function useKanbanPreferences(dataUrl: string) {
   useLayoutEffect(() => {
     if (!userScope) return;
     setFilters(readFilters(filtersStorageKey, makeScopedStorageKey('rk_filters', projectScope)));
-    setFullWindow((readStorageValue(fullWindowStorageKey!) ?? readStorageValue('rk_fullwindow')) === '1');
-    const fitMode = readStorageValue(fitModeStorageKey!) ?? readStorageValue('rk_fit_mode');
-    setFitMode(fitMode === 'width' || (!fitMode && readStorageValue('rk_fit_to_screen') === '1') ? 'width' : 'none');
-    setShowSubtasks((readStorageValue(showSubtasksStorageKey!) ?? readStorageValue('rk_show_subtasks')) !== '0');
-    const sortKey = readStorageValue(sortKeyStorageKey!) ?? readStorageValue('rk_sortkey');
+    setFullWindow(readScopedValueWithLegacy(fullWindowStorageKey!, 'rk_fullwindow') === '1');
+    const fitMode = readScopedValueWithLegacy(fitModeStorageKey!, 'rk_fit_mode');
+    const legacyFitToScreen = readStorageValue('rk_fit_to_screen');
+    if (fitMode === null && legacyFitToScreen === '1') {
+      writeStorageValue(fitModeStorageKey!, 'width');
+      removeStorageValue('rk_fit_to_screen');
+    }
+    setFitMode(fitMode === 'width' || (fitMode === null && legacyFitToScreen === '1') ? 'width' : 'none');
+    setShowSubtasks(readScopedValueWithLegacy(showSubtasksStorageKey!, 'rk_show_subtasks') !== '0');
+    const sortKey = readScopedValueWithLegacy(sortKeyStorageKey!, 'rk_sortkey');
     setSortKey(sortKey === 'updated_asc' || sortKey === 'due_asc' || sortKey === 'due_desc' || sortKey === 'priority_desc' || sortKey === 'priority_asc' ? sortKey : 'updated_desc');
     setHiddenStatusIds(readScopedNumberSetWithLegacy(hiddenStatusStorageKey!, makeScopedStorageKey('rk_hidden_status_ids', projectScope), new Set()));
-    setFontSize(Number(readStorageValue(fontSizeStorageKey!) ?? readStorageValue('rk_font_size')) || 13);
-    setTimeEntryOnClose((readStorageValue(timeEntryStorageKey!) ?? readStorageValue('rk_time_entry_on_close')) === '1');
+    setFontSize(Number(readScopedValueWithLegacy(fontSizeStorageKey!, 'rk_font_size')) || 13);
+    setTimeEntryOnClose(readScopedValueWithLegacy(timeEntryStorageKey!, 'rk_time_entry_on_close') === '1');
     const laneType = readStorageValue(laneTypeStorageKey!);
     const legacyLaneTypeStorageKey = makeScopedStorageKey('rk_lane_type', projectScope);
     const legacyLaneType = laneType === null ? readStorageValue(legacyLaneTypeStorageKey) : null;
@@ -134,9 +139,9 @@ export function useKanbanPreferences(dataUrl: string) {
       // legacy version. Consume it so a later Redmine user does not inherit it.
       removeStorageValue(legacyLaneTypeStorageKey);
     }
-    const warnDays = Math.max(0, Number(readStorageValue(agingWarnDaysStorageKey!) ?? readStorageValue(makeScopedStorageKey('rk_aging_warn_days', projectScope))) || 3);
+    const warnDays = Math.max(0, Number(readScopedValueWithLegacy(agingWarnDaysStorageKey!, makeScopedStorageKey('rk_aging_warn_days', projectScope))) || 3);
     setAgingWarnDays(warnDays);
-    setAgingDangerDays(Math.max(warnDays, Number(readStorageValue(agingDangerDaysStorageKey!) ?? readStorageValue(makeScopedStorageKey('rk_aging_danger_days', projectScope))) || 7));
+    setAgingDangerDays(Math.max(warnDays, Number(readScopedValueWithLegacy(agingDangerDaysStorageKey!, makeScopedStorageKey('rk_aging_danger_days', projectScope))) || 7));
     setAgingExcludeClosed(readScopedBooleanWithLegacy(agingExcludeClosedStorageKey!, makeScopedStorageKey('rk_aging_exclude_closed', projectScope), true));
     setViewableProjectsEnabled(readScopedBooleanWithLegacy(viewableProjectsStorageKey!, makeScopedStorageKey('rk_viewable_projects_enabled', projectScope), false));
   }, [agingDangerDaysStorageKey, agingExcludeClosedStorageKey, agingWarnDaysStorageKey, filtersStorageKey, fitModeStorageKey, fontSizeStorageKey, fullWindowStorageKey, hiddenStatusStorageKey, laneTypeStorageKey, priorityLaneStorageKey, projectScope, showSubtasksStorageKey, sortKeyStorageKey, timeEntryStorageKey, userScope, viewableProjectsStorageKey]);

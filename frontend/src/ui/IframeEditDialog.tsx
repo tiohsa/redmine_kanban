@@ -78,11 +78,12 @@ type Props = {
   labels: Record<string, string>;
   baseUrl: string;
   queryKey: readonly unknown[];
+  projectIds?: number[];
   onClose: () => void;
-  onSuccess: (message: string) => void;
+  onSuccess: (message: string, issueId?: number) => void;
 };
 
-export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = 'edit', labels, baseUrl, queryKey, onClose, onSuccess }: Props) {
+export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = 'edit', labels, baseUrl, queryKey, projectIds = [], onClose, onSuccess }: Props) {
   const [subtasks, setSubtasks] = useState<SubtaskCreateInput[]>([]);
   const [subtaskValidationError, setSubtaskValidationError] = useState<string | null>(null);
   const [trackerOptions, setTrackerOptions] = useState<Array<{ id: number; name: string }>>([]);
@@ -117,7 +118,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
   const parentAttributesRef = useRef<Record<string, number | undefined>>({});
   const parentTrackerChangeCleanupRef = useRef<(() => void) | null>(null);
 
-  const bulkMutation = useBulkSubtaskMutation(baseUrl, queryKey);
+  const bulkMutation = useBulkSubtaskMutation(baseUrl, queryKey, projectIds);
   const hasSubtaskInput = useMemo(
     () => subtasks.some((subtask) => subtask.subject.trim().length > 0),
     [subtasks],
@@ -192,7 +193,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
       saveTargetRef.current = null;
       setDialogMode('issue-show');
       setIsSubmitting(false);
-      onSuccess(labels.saved.replace('%{id}', String(targetIssueId)));
+      onSuccess(labels.saved.replace('%{id}', String(targetIssueId)), targetIssueId);
       return;
     }
 
@@ -201,7 +202,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
       saveTargetRef.current = null;
       setDialogMode('form');
       setIsSubmitting(false);
-      onSuccess(labels.successful_update ?? 'Successful update');
+      onSuccess(labels.successful_update ?? 'Successful update', targetIssueId);
       onClose();
       return;
     }
@@ -232,19 +233,21 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
         onSuccess(
           (mode === 'create' ? labels.created_with_subtasks : labels.updated_with_subtasks)
             .replace('%{id}', String(targetIssueId))
-            .replace('%{count}', String(lines.length))
+            .replace('%{count}', String(lines.length)),
+          targetIssueId,
         );
       } catch (error) {
         const failureMessage = (mode === 'create' ? labels.created_subtask_failed : labels.updated_subtask_failed)
           .replace('%{id}', String(targetIssueId));
         const detailedMessage = formatBulkSubtaskError(error, failureMessage);
         setIframeError(detailedMessage);
-        onSuccess(detailedMessage);
+        onSuccess(detailedMessage, targetIssueId);
       }
     } else {
       onSuccess(
         (mode === 'create' ? labels.created : labels.saved)
-          .replace('%{id}', String(targetIssueId))
+          .replace('%{id}', String(targetIssueId)),
+        targetIssueId,
       );
     }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildBoardDataUrl, buildBoardIssuesUrl, buildBoardQueryKey } from './boardQuery';
+import { buildBoardDataUrl, buildBoardEntitiesUrl, buildBoardIssuesUrl, buildBoardQueryKey } from './boardQuery';
 
 describe('buildBoardQueryKey', () => {
   it('includes sorted status-based filters in the cache key', () => {
@@ -23,6 +23,12 @@ describe('buildBoardIssuesUrl', () => {
       buildBoardIssuesUrl('/projects/demo/kanban', [], [], new Set(), 500, 12, 42),
     ).toBe('/projects/demo/kanban/issues?issue_limit=500&offset=12&tree_parent_id=42');
   });
+});
+
+it('builds a scoped flat entity reconciliation URL', () => {
+  expect(buildBoardEntitiesUrl('/projects/demo/kanban', [4, 2, 4], [12, 7])).toBe(
+    '/projects/demo/kanban/issues/entities?project_ids%5B%5D=2&project_ids%5B%5D=4&ids%5B%5D=7&ids%5B%5D=12',
+  );
 });
 
 describe('buildBoardDataUrl', () => {
