@@ -102,6 +102,8 @@ module RedmineKanban
       normalized_subtasks = normalize_bulk_subtasks(subtasks)
       return normalized_subtasks if normalized_subtasks.is_a?(Hash) && normalized_subtasks[:ok] == false
 
+      parent_issue_id = normalized_parent[:parent_issue_id]
+
       if normalized_subtasks.count { |subtask| subtask[:subject].to_s.strip.present? } > MAX_BULK_SUBTASKS
         return error_response('子チケットは最大50件まで作成できます', field_errors: { subtasks: ['子チケットは最大50件まで作成できます'] })
       end
@@ -115,7 +117,6 @@ module RedmineKanban
         result = nil
         created_issue_ids = []
         Issue.transaction do
-          parent_issue_id = normalized_parent[:parent_issue_id]
           parent_result = if parent_issue_id.present?
                             existing_parent_result(parent_issue_id)
                           else
@@ -147,7 +148,11 @@ module RedmineKanban
         next result unless result&.dig(:ok)
 
         created_issues = Issue.where(id: created_issue_ids.compact).to_a
+        updated_parent = if parent_issue_id.present?
+                           Issue.visible(@user).find_by(id: parent_issue_id)
+                         end
         mutation = mutation_result_builder.build(
+          issue_updates: [updated_parent].compact,
           created_issues: created_issues,
           tree_changes: created_issues.filter_map do |created_issue|
             next unless created_issue.parent_id

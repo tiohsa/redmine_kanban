@@ -19,6 +19,21 @@ export function applyMutationResponse(data: BoardData, result: Partial<IssueMuta
   }));
 }
 
+export function unresolvedInvalidationIds(result: {
+  issue?: Issue;
+  issue_updates?: Issue[];
+  created_issues?: Issue[];
+  invalidations?: { issue_ids?: number[] };
+}): number[] {
+  const synchronizedIds = new Set([
+    ...(result.issue ? [result.issue.id] : []),
+    ...(result.issue_updates ?? []).map((issue) => issue.id),
+    ...(result.created_issues ?? []).map((issue) => issue.id),
+  ]);
+  return [...new Set(result.invalidations?.issue_ids ?? [])]
+    .filter((issueId) => !synchronizedIds.has(issueId));
+}
+
 type MutationContext = {
   prev?: BoardData;
   issueId: number;

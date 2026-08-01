@@ -26,7 +26,11 @@ describe('getJson', () => {
       status: 500,
     } as Response);
 
-    await expect(getJson('/api/board')).rejects.toThrow('GET /api/board failed: 500');
+    await expect(getJson('/api/board')).rejects.toMatchObject({
+      name: 'HttpError',
+      status: 500,
+      payload: null,
+    });
   });
 });
 

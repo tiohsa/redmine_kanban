@@ -8,6 +8,7 @@ import {
   type BoardResponse,
   type NormalizedBoardState,
 } from './boardState';
+import { unresolvedInvalidationIds } from './useIssueMutation';
 
 function issue(id: number, overrides: Partial<Issue> = {}): Issue {
   return {
@@ -52,6 +53,14 @@ function root(state: NormalizedBoardState, id: number) {
 }
 
 describe('normalized board state', () => {
+  it('does not reconcile entities already included in a mutation response', () => {
+    expect(unresolvedInvalidationIds({
+      issue_updates: [issue(1)],
+      created_issues: [issue(2)],
+      invalidations: { issue_ids: [1, 2, 3, 3] },
+    })).toEqual([3]);
+  });
+
   it('treats unexpanded parents as recoverable incomplete tree state', () => {
     const current = board([issue(1, { subtasks: [issue(2, { parent_id: 1 }) as never] })]);
     current.meta.tree = {
