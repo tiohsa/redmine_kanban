@@ -47,7 +47,7 @@ class RedmineKanbanParamNormalizerTest < ActiveSupport::TestCase
     assert_nil @normalizer.optional_date(nil)
     assert_nil @normalizer.optional_date(' ')
     assert_equal Date.new(2026, 2, 23), @normalizer.optional_date('2026-02-23')
-    assert_nil @normalizer.optional_date('not-a-date')
+    assert_equal :invalid, @normalizer.optional_date('not-a-date')
   end
 
   def test_normalize_optional_lock_version

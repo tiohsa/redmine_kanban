@@ -35,8 +35,18 @@ module RedmineKanban
 
         attributes['priority_id'] = priority_id
       end
-      attributes['start_date'] = normalize_date(params[:start_date]) if params.key?(:start_date)
-      attributes['due_date'] = normalize_date(params[:due_date]) if params.key?(:due_date)
+      if params.key?(:start_date)
+        start_date = normalize_date(params[:start_date])
+        return invalid_date_response(:start_date) if start_date == :invalid
+
+        attributes['start_date'] = start_date
+      end
+      if params.key?(:due_date)
+        due_date = normalize_date(params[:due_date])
+        return invalid_date_response(:due_date) if due_date == :invalid
+
+        attributes['due_date'] = due_date
+      end
       attributes['tracker_id'] = normalize_tracker_id(params[:tracker_id]) if params.key?(:tracker_id)
       attributes['done_ratio'] = normalize_done_ratio(params[:done_ratio]) if params.key?(:done_ratio)
 
@@ -118,6 +128,11 @@ module RedmineKanban
 
     def normalize_date(value)
       normalize_optional_date(value)
+    end
+
+    def invalid_date_response(field)
+      label = field == :start_date ? '開始日' : '期日'
+      error_response("#{label}の日付が不正です", field_errors: { field => ["#{label}の日付が不正です"] })
     end
 
     def normalize_done_ratio(value)

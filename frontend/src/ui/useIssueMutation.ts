@@ -19,6 +19,15 @@ export function applyMutationResponse(data: BoardData, result: Partial<IssueMuta
   }));
 }
 
+export function applyMissingIssueIds(data: BoardData, issueIds: number[]): BoardData {
+  if (issueIds.length === 0) return data;
+
+  return selectBoardData(applyBoardResponse(createNormalizedBoardState(data), {
+    kind: 'mutation',
+    deleted_issue_ids: [...new Set(issueIds)],
+  }));
+}
+
 export function unresolvedInvalidationIds(result: {
   issue?: Issue;
   issue_updates?: Issue[];

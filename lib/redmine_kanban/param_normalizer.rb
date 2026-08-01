@@ -21,7 +21,7 @@ module RedmineKanban
 
       Date.parse(v)
     rescue ArgumentError
-      nil
+      :invalid
     end
 
     def normalize_optional_lock_version(value)

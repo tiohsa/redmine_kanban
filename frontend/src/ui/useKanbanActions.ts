@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { QueryKey } from '@tanstack/react-query';
 import type { BoardData, Issue } from './types';
 import { getJson, isHttpError, postJson } from './http';
-import { applyAncestorIssueUpdates, applyMutationResponse, unresolvedInvalidationIds, useIssueMutation } from './useIssueMutation';
+import { applyAncestorIssueUpdates, applyMissingIssueIds, applyMutationResponse, unresolvedInvalidationIds, useIssueMutation } from './useIssueMutation';
 import { findIssueInBoard } from './kanbanShared';
 import { applyLocalIssuePatch, reduceBoardData } from './boardState';
 import { findSubtask, resolveAssigneeName, resolveMutationError, resolvePriorityName, resolveSubtaskStatus, resolveBoardIssue, type IssueMutationResult, type MovePayload, type UpdatePayload } from './kanbanShared';
@@ -105,14 +105,17 @@ export function useKanbanActions({
     const ids = [...new Set(issueIds)];
     if (ids.length === 0) return;
     try {
-      const response = await getJson<{ ok: boolean; scope_fingerprint?: string; entities?: Issue[] }>(
+      const response = await getJson<{ ok: boolean; scope_fingerprint?: string; entities?: Issue[]; missing_issue_ids?: number[] }>(
         buildBoardEntitiesUrl(baseUrl, data?.meta.project_ids ?? [], ids),
       );
       queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
-        current ? applyMutationResponse(current, {
-          scope_fingerprint: response.scope_fingerprint,
-          issue_updates: response.entities ?? [],
-        }) : current
+        current ? applyMissingIssueIds(
+          applyMutationResponse(current, {
+            scope_fingerprint: response.scope_fingerprint,
+            issue_updates: response.entities ?? [],
+          }),
+          response.missing_issue_ids ?? [],
+        ) : current
       ));
     } catch (_error) {
       // Reconciliation is best-effort. The mutation response is authoritative
