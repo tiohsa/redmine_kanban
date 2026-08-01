@@ -4,7 +4,7 @@ import { isHttpError, postJson } from '../http';
 import { getJson } from '../http';
 import type { BoardData, Issue } from '../types';
 import { discardBulkIdempotencyKey, getOrCreateBulkIdempotencyKey, stableSerialize } from '../bulkIdempotency';
-import { applyMutationResponse } from '../useIssueMutation';
+import { applyMutationResponse, unresolvedInvalidationIds } from '../useIssueMutation';
 import { buildBoardCountsUrl, buildBoardEntitiesUrl } from '../boardQuery';
 
 export type SubtaskPayload = {
@@ -27,6 +27,7 @@ type BulkMutationResponse = {
   ok?: boolean;
   contract_version?: number;
   issue?: Issue;
+  issue_updates?: Issue[];
   subtasks?: Issue[];
   created_issues?: Issue[];
   scope_fingerprint?: string;
@@ -122,12 +123,18 @@ export function useBulkSubtaskMutation(baseUrl: string, queryKey: readonly unkno
           scope_fingerprint: result.scope_fingerprint,
           contract_version: result.contract_version,
           issue: result.issue,
+          issue_updates: result.issue_updates,
           created_issues: result.created_issues ?? result.subtasks,
           tree_changes: result.tree_changes,
           invalidations: result.invalidations,
         });
       });
-      const reconciliationIds = [...new Set(result.invalidations?.issue_ids ?? [])];
+      const reconciliationIds = unresolvedInvalidationIds({
+        issue: result.issue,
+        issue_updates: result.issue_updates,
+        created_issues: result.created_issues ?? result.subtasks,
+        invalidations: result.invalidations,
+      });
       if (reconciliationIds.length > 0) {
         void getJson<{ scope_fingerprint?: string; entities?: Issue[] }>(
           buildBoardEntitiesUrl(baseUrl, projectIds, reconciliationIds),
@@ -139,7 +146,7 @@ export function useBulkSubtaskMutation(baseUrl: string, queryKey: readonly unkno
               issue_updates: response.entities,
             });
           });
-        });
+        }).catch(() => undefined);
       }
       if (result.invalidations?.column_counts) {
         void getJson<{ columns?: BoardData['columns'] }>(buildBoardCountsUrl(baseUrl, projectIds))
@@ -149,7 +156,8 @@ export function useBulkSubtaskMutation(baseUrl: string, queryKey: readonly unkno
               if (!current || !('issues' in (current as object))) return current;
               return { ...(current as BoardData), columns: response.columns };
             });
-          });
+          })
+          .catch(() => undefined);
       }
     },
   });

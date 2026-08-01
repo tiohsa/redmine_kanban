@@ -50,6 +50,43 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
       get action, params: { project_id: @project.identifier, issue_limit: 1 }
       assert_response :forbidden, "#{action} should require view_redmine_kanban"
     end
+
+    get :entities, params: { project_id: @project.identifier, ids: [] }
+    assert_response :forbidden, 'entities should require view_redmine_kanban'
+  end
+
+  def test_entities_allows_the_same_project_scope_as_the_board
+    issue = build_issue(subject: 'Entity scope issue')
+
+    board = index_response(project_ids: [@project.id])
+    get :entities, params: {
+      project_id: @project.identifier,
+      project_ids: board.dig('meta', 'project_ids'),
+      ids: [issue.id]
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal board.dig('meta', 'scope_fingerprint'), json['scope_fingerprint']
+    assert_equal [issue.id], json['entities'].map { |entity| entity['id'] }
+    assert_equal [], json['missing_issue_ids']
+  end
+
+  def test_entities_reports_issues_outside_the_requested_scope_as_missing
+    issue = build_issue(subject: 'Out of scope entity')
+    other_project = build_project(name: 'Entity scope other', identifier: "entity-scope-other-#{Time.now.to_i}")
+    other_issue = build_issue(subject: 'Hidden entity', project: other_project)
+
+    get :entities, params: {
+      project_id: @project.identifier,
+      project_ids: [@project.id],
+      ids: [issue.id, other_issue.id]
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal [issue.id], json['entities'].map { |entity| entity['id'] }
+    assert_equal [other_issue.id], json['missing_issue_ids']
   end
 
   def test_all_mutation_endpoints_require_view_permission_without_changing_data
@@ -954,6 +991,30 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     end
     assert_response :success
     assert_equal first_result, JSON.parse(@response.body)
+  end
+
+  def test_bulk_create_returns_existing_parent_as_an_issue_update
+    tracker = @project.trackers.first
+    parent = build_issue(subject: 'Existing bulk parent')
+    key = 'bulk-existing-parent-update'
+    @request.headers['Idempotency-Key'] = key
+
+    post :bulk_create, params: {
+      project_id: @project.identifier,
+      bulk: {
+        parent: { parent_issue_id: parent.id, project_id: @project.id },
+        subtasks: [{ subject: 'Bulk child', tracker_id: tracker.id }]
+      }
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    parent_update = json.fetch('issue_updates').find { |issue| issue['id'] == parent.id }
+
+    assert_equal parent.reload.lock_version, parent_update.fetch('lock_version')
+    assert_equal parent.updated_on.iso8601, parent_update.fetch('updated_on')
+    refute json.fetch('created_issues').any? { |issue| issue['id'] == parent.id }
+    assert_equal 1, json.fetch('created_issues').size
   end
 
   def test_bulk_create_rejects_more_than_fifty_subtasks_before_claim_and_allows_retry
