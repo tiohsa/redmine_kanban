@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergeIssuePage, normalizeAssigneeIds, normalizeProjectIds, normalizeTrackerIds, resolveDefaultCreateProjectId } from './App';
+import { findIssueForAction, mergeIssuePage, normalizeAssigneeIds, normalizeProjectIds, normalizeTrackerIds, resolveDefaultCreateProjectId } from './App';
 import type { BoardData, Issue } from './types';
 import { buildDefaultIssueCreateUrl } from './issueDialog';
 
@@ -56,7 +56,16 @@ describe('project filter helpers', () => {
   });
 });
 
-function makeIssue(id: number): Issue {
+describe('issue action lookup', () => {
+  it('finds a nested issue for mutation lock versions', () => {
+    const child = makeIssue(2, { lock_version: 7 });
+    const parent = makeIssue(1, { subtasks: [child as never] });
+
+    expect(findIssueForAction(makeBoardData([parent]), child.id)).toMatchObject({ lock_version: 7 });
+  });
+});
+
+function makeIssue(id: number, overrides: Partial<Issue> = {}): Issue {
   return {
     id,
     subject: `Issue ${id}`,
@@ -65,6 +74,7 @@ function makeIssue(id: number): Issue {
     description: '',
     assigned_to_id: null,
     urls: { issue: `/issues/${id}`, issue_edit: `/issues/${id}/edit` },
+    ...overrides,
   };
 }
 

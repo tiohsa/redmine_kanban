@@ -105,10 +105,15 @@ module RedmineKanban
         id: issue.id,
         subject: issue.subject,
         status_id: issue.status_id,
+        status_is_closed: issue.status.is_closed?,
         tracker_id: issue.tracker_id,
+        description: issue.respond_to?(:description) ? issue.description : '',
         assigned_to_id: issue.assigned_to_id,
+        assigned_to_name: issue.respond_to?(:assigned_to) && issue.assigned_to ? issue.assigned_to.name : nil,
+        start_date: issue.respond_to?(:start_date) ? issue.start_date&.to_s : nil,
         due_date: issue.due_date&.to_s,
         priority_id: issue.priority_id,
+        priority_name: issue.respond_to?(:priority) && issue.priority ? issue.priority.name : nil,
         is_closed: issue.status.is_closed?,
         lock_version: issue.lock_version,
         updated_on: updated_on_for(issue)&.iso8601,
@@ -117,6 +122,10 @@ module RedmineKanban
         project: { id: issue.project.id, name: issue.project.name },
         permissions: permissions_for(issue),
         allowed_status_ids: allowed_status_ids_for(issue),
+        urls: {
+          issue: Rails.application.routes.url_helpers.issue_path(issue.id),
+          issue_edit: Rails.application.routes.url_helpers.edit_issue_path(issue.id),
+        },
         subtasks: [],
       }
     end

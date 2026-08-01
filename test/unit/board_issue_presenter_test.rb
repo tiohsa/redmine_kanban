@@ -85,6 +85,21 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
     assert_empty tree.first[:subtasks]
   end
 
+  def test_subtask_payload_contains_fields_required_for_editing
+    child = fake_issue(id: 2, parent_id: 1, subject: 'Editable child')
+    child.define_singleton_method(:description) { 'Child description' }
+    child.define_singleton_method(:start_date) { Date.new(2026, 8, 1) }
+    child.define_singleton_method(:assigned_to) { nil }
+    child.define_singleton_method(:priority) { Struct.new(:name).new('Normal') }
+
+    payload = presenter_for(1 => [child]).send(:subtask_to_h, child)
+
+    assert_equal 'Child description', payload[:description]
+    assert_equal '2026-08-01', payload[:start_date]
+    assert_equal '/issues/2', payload.dig(:urls, :issue)
+    assert_equal '/issues/2/edit', payload.dig(:urls, :issue_edit)
+  end
+
   def test_permissions_use_board_project_for_cards_and_subtasks
     board_project = Object.new
     issue_project = FakeProject.new(2, 'Issue project')

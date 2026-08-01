@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDisplayData, findSubtask, resolveBoardIssue } from './kanbanShared';
+import { buildDisplayData, findIssueInBoard, findSubtask, resolveBoardIssue } from './kanbanShared';
 import type { BoardData, Issue } from './types';
 
 function makeIssue(id: number, attrs: Partial<Issue> = {}): Issue {
@@ -133,6 +133,18 @@ describe('findSubtask', () => {
       lockVersion: 11,
       assignedToId: undefined,
     });
+  });
+});
+
+describe('findIssueInBoard', () => {
+  it('returns nested issue data for modal and mutation callers', () => {
+    const data = makeBoardData([
+      makeIssue(10, {
+        subtasks: [{ id: 20, subject: 'Child', status_id: 1, is_closed: false, lock_version: 11 }],
+      }),
+    ]);
+
+    expect(findIssueInBoard(data, 20)).toMatchObject({ id: 20, subject: 'Child', lock_version: 11 });
   });
 });
 

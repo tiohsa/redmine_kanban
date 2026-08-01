@@ -16,10 +16,15 @@ export type Subtask = {
   id: number;
   subject: string;
   status_id: number;
+  status_is_closed?: boolean;
   tracker_id?: number;
+  description?: string;
   assigned_to_id?: number | null;
+  assigned_to_name?: string | null;
+  start_date?: string | null;
   due_date?: string | null;
   priority_id?: number | null;
+  priority_name?: string | null;
   is_closed: boolean;
   lock_version?: number;
   updated_on?: string | null;
@@ -28,6 +33,7 @@ export type Subtask = {
   permissions?: IssuePermissions;
   allowed_status_ids?: number[];
   project?: { id: number; name: string };
+  urls?: { issue: string; issue_edit: string };
   subtasks?: Subtask[];
 };
 
