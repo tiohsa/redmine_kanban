@@ -132,6 +132,8 @@ function mergeTreeMetadata(
   const truncatedParentIdSet = new Set([
     ...(currentTree?.truncated_parent_ids ?? []),
     ...(pageTree?.truncated_parent_ids ?? []),
+    ...(currentTree?.unexpanded_parent_ids ?? []),
+    ...(pageTree?.unexpanded_parent_ids ?? []),
   ]);
   for (const parentId of resolvedTreeParentIds) truncatedParentIdSet.delete(parentId);
   const truncatedParentIds = Array.from(truncatedParentIdSet).sort((left, right) => left - right);
@@ -147,6 +149,10 @@ function mergeTreeMetadata(
     duplicate_node_count: Math.max(currentTree?.duplicate_node_count ?? 0, pageTree?.duplicate_node_count ?? 0),
     truncated,
     truncated_parent_ids: truncatedParentIds,
+    unexpanded_parent_ids: Array.from(new Set([
+      ...(currentTree?.unexpanded_parent_ids ?? []),
+      ...(pageTree?.unexpanded_parent_ids ?? []),
+    ])).filter((parentId) => truncatedParentIdSet.has(parentId)).sort((left, right) => left - right),
     loaded_node_count: Math.max(ids.length - issues.length, 0),
     ...(currentTree?.db_row_count !== undefined || pageTree?.db_row_count !== undefined
       ? { db_row_count: Math.max(currentTree?.db_row_count ?? 0, pageTree?.db_row_count ?? 0) }
@@ -238,7 +244,11 @@ export function App({ dataUrl }: Props) {
   }, [baseUrl, boardQueryKey, data?.labels.load_more_failed, filters.projectIds, filters.statusIds, hiddenStatusIds, pagination, queryClient]);
 
   const handleLoadMoreTree = useCallback(() => {
-    const parentId = data?.meta.tree?.truncated_parent_ids?.[0];
+    const parentIds = [...new Set([
+      ...(data?.meta.tree?.truncated_parent_ids ?? []),
+      ...(data?.meta.tree?.unexpanded_parent_ids ?? []),
+    ])].sort((left, right) => left - right);
+    const parentId = parentIds[0];
     if (!parentId || !pagination) return;
 
     const parentCursor = data.meta.tree?.parent_states?.[String(parentId)]?.next_cursor;

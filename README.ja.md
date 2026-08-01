@@ -84,7 +84,7 @@ pnpm run build
 
 プラグイン全体の設定画面はありません。各ユーザーはボード上でスイムレーン、非表示ステータス、停滞閾値、並び替え、表示幅、文字サイズ、子チケット表示を設定できます。カード移動では、ユーザーが明示したレーン属性とステータスだけを変更し、Redmine の Workflow と権限を正とします。
 
-API はサーバ保護のため、標準で 500 件、最大で 1,000 件まで取得します。再帰レスポンスはcanonical rootと合計1,500 unique nodeのbudgetを使用し、`meta.tree` にbudget、unique/serialized数、重複root数、取得row数、truncationを返します。`meta.tree.truncated` がtrueの場合、`truncated_parent_ids` から追加取得できる親ツリーを特定できます。rootページは署名付きkeyset cursor（`updated_on DESC, id DESC`）、子ツリーページは親単位の署名付き`id ASC` cursorを使用し、cursorはproject/filter scopeと親に束縛されます。運用時に性能ログが必要な場合だけ `REDMINE_KANBAN_PERF_LOG=1` を指定してください。
+API はサーバ保護のため、標準で 500 件、最大で 1,000 件まで取得します。再帰レスポンスはcanonical rootと合計1,500 unique nodeのbudgetを使用し、`meta.tree` にbudget、unique/serialized数、重複root数、取得row数、truncationを返します。`meta.tree.truncated` がtrueの場合、`truncated_parent_ids` から追加取得できる親ツリーを特定できます。node/depth/query budgetで未展開になった親も追加取得対象となり、`unexpanded_parent_ids` は原因の診断情報として返します。rootページは署名付きkeyset cursor（`updated_on DESC, id DESC`）、子ツリーページは親単位の署名付き`id ASC` cursorを使用し、cursorはproject/filter scopeと親に束縛されます。運用時に性能ログが必要な場合だけ `REDMINE_KANBAN_PERF_LOG=1` を指定してください。
 
 ## 技術スタック
 
@@ -174,7 +174,7 @@ REDMINE_BASE_URL=http://127.0.0.1:3002 \
 
 - `issues[].subtasks` は再帰ツリー構造です（`subtasks[].subtasks...`）。
 - Canvas 上の子チケット行はフロントで描画/ヒット判定用にフラット化していますが、API は階層を保持します。
-- 同じIssueはrootまたはnestedのどちらか一方でcanonical化されます。親ツリーへ実際に含まれるまで子チケットをrootから除外しないため、未ロード・truncatedのIssueが表示から消えません。
+- 同じIssueはrootまたはnestedのどちらか一方でcanonical化されます。親ツリーへ実際に含まれるまで子チケットをrootから除外しないため、未ロード・truncated・未展開のIssueが表示から消えません。
 - `GET /projects/:project_id/kanban/issues` は通常のrootページングに加え、`tree_parent_id` と署名付き`cursor`による子ツリーの追加取得を受け付けます。子ツリーは決定的な `id ASC` 順で返され、ページ追加後も通常のrootページング情報を置き換えません。既存の`offset`は互換性のためBackendで受け付ける場合がありますが、新Frontendは使用しません。
 - mutation responseはcontract version 2のflat delta（`issue_updates`、`created_issues`、`deleted_issue_ids`、`tree_changes`、`invalidations`）を返し、FrontendはEntity／Tree共通ReducerとIssue／Parent／Column countのtargeted reconciliationで適用します。通常のmutation成功後にBoard全体をrefreshしません。
 

@@ -81,7 +81,7 @@ function makeFilters(overrides: Partial<Filters> = {}): Filters {
 }
 
 describe('KanbanToolbar', () => {
-  function renderToolbar(filters: Filters, onChange = vi.fn(), data = makeData(), onRefreshTree = vi.fn()) {
+  function renderToolbar(filters: Filters, onChange = vi.fn(), data = makeData(), onRefreshTree = vi.fn(), onLoadMoreTree = vi.fn()) {
     const onChangeSort = vi.fn();
     const rendered = render(
       <KanbanToolbar
@@ -101,6 +101,7 @@ describe('KanbanToolbar', () => {
         canCreate={false}
         onCreate={vi.fn()}
         onScrollToTop={vi.fn()}
+        onLoadMoreTree={onLoadMoreTree}
         onRefreshTree={onRefreshTree}
         timeEntryOnClose={false}
         onToggleTimeEntryOnClose={vi.fn()}
@@ -232,5 +233,25 @@ describe('KanbanToolbar', () => {
     expect(screen.getByRole('status').textContent).toContain('Some subtasks are not shown yet.');
     fireEvent.click(screen.getByRole('button', { name: 'Refresh tree' }));
     expect(onRefreshTree).toHaveBeenCalledOnce();
+  });
+
+  it('exposes recovery for an unexpanded parent', () => {
+    const data = makeData();
+    const onLoadMoreTree = vi.fn();
+    data.meta.tree = {
+      node_limit: 1500,
+      root_issue_count: 1,
+      unique_node_count: 1,
+      serialized_node_count: 1,
+      duplicate_node_count: 0,
+      truncated: true,
+      truncated_parent_ids: [],
+      unexpanded_parent_ids: [7],
+    };
+
+    renderToolbar(makeFilters(), vi.fn(), data, vi.fn(), onLoadMoreTree);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+    expect(onLoadMoreTree).toHaveBeenCalledOnce();
   });
 });
