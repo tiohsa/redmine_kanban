@@ -1,8 +1,70 @@
 import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { useRef } from 'react';
 import type { BoardData, Issue, Subtask } from './types';
-import type { AncestorIssueUpdate } from './kanbanShared';
+import { findIssueInBoard, type AncestorIssueUpdate, type IssueMutationResult } from './kanbanShared';
 import { mapSubtasksTree, updateSubtasksTree } from './subtasksTree';
+import { applyBoardResponse, createNormalizedBoardState, rollbackLocalIssuePatch, selectBoardData } from './boardState';
+
+export type EntityReconciliationResponse = {
+  scope_fingerprint?: string;
+  entities?: Issue[];
+  missing_issue_ids?: number[];
+};
+
+export type EntityReconciliationOptions = {
+  treatAsCreated?: boolean;
+};
+
+export function applyMutationResponse(data: BoardData, result: Partial<IssueMutationResult>): BoardData {
+  const state = createNormalizedBoardState(data);
+  const issueUpdates = result.issue_updates
+    ?? (result.contract_version === 2 ? [] : (result.issue ? [result.issue] : []));
+  return selectBoardData(applyBoardResponse(state, {
+    kind: 'mutation',
+    issue_updates: issueUpdates,
+    created_issues: result.created_issues,
+    deleted_issue_ids: result.deleted_issue_ids,
+    tree_changes: result.tree_changes,
+    scopeFingerprint: result.scope_fingerprint,
+  }));
+}
+
+export function applyEntityReconciliation(
+  data: BoardData,
+  response: EntityReconciliationResponse,
+  options: EntityReconciliationOptions = {},
+): BoardData {
+  const state = createNormalizedBoardState(data);
+  if (response.scope_fingerprint && response.scope_fingerprint !== state.scope.fingerprint) return data;
+
+  return selectBoardData(applyBoardResponse(state, {
+    kind: 'mutation',
+    issue_updates: options.treatAsCreated ? undefined : response.entities ?? [],
+    created_issues: options.treatAsCreated ? response.entities ?? [] : undefined,
+    tree_changes: options.treatAsCreated
+      ? (response.entities ?? []).flatMap((issue) => issue.parent_id == null
+        ? []
+        : [{ type: 'attach' as const, parent_id: issue.parent_id, child_id: issue.id }])
+      : undefined,
+    deleted_issue_ids: [...new Set(response.missing_issue_ids ?? [])],
+    scopeFingerprint: response.scope_fingerprint,
+  }));
+}
+
+export function unresolvedInvalidationIds(result: {
+  issue?: Issue;
+  issue_updates?: Issue[];
+  created_issues?: Issue[];
+  invalidations?: { issue_ids?: number[] };
+}): number[] {
+  const synchronizedIds = new Set([
+    ...(result.issue ? [result.issue.id] : []),
+    ...(result.issue_updates ?? []).map((issue) => issue.id),
+    ...(result.created_issues ?? []).map((issue) => issue.id),
+  ]);
+  return [...new Set(result.invalidations?.issue_ids ?? [])]
+    .filter((issueId) => !synchronizedIds.has(issueId));
+}
 
 type MutationContext = {
   prev?: BoardData;
@@ -71,16 +133,18 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
     onError: (_err, _payload, ctx) => {
       const current = queryClient.getQueryData<BoardData>(queryKey);
       const currentIssue = current && ctx ? findIssueInBoard(current, ctx.issueId) : null;
-      if (ctx?.prev && !ctx.overlapped && currentIssue && mutationRevisions.current.get(ctx.issueId) === ctx.revision && issuesMatch(currentIssue, ctx.optimisticIssue)) {
+      if (ctx?.prev && !ctx.overlapped && currentIssue && ctx.optimisticIssue) {
         queryClient.setQueryData<BoardData>(queryKey, (current) => {
           if (!current) return current;
           const previousIssue = findIssueInBoard(ctx.prev!, ctx.issueId);
           if (!previousIssue) return current;
-          return replaceIssueInBoard(current, previousIssue);
+          return rollbackLocalIssuePatch(current, ctx.issueId, previousIssue, ctx.optimisticIssue!);
         });
-      } else if (ctx?.prev) {
-        // Another mutation may have advanced this issue or an ancestor while this request was pending.
-        // Reconcile with the server instead of applying a stale snapshot.
+      }
+      if (ctx?.overlapped) {
+        // Field-level rollback protects unrelated newer changes; an overlapping
+        // mutation still needs one authoritative reconciliation for server-side
+        // effects that cannot be represented by the local patch.
         void queryClient.invalidateQueries({ queryKey });
       }
       onError?.(_err);
@@ -149,29 +213,6 @@ export function isIssueFresh(current: Issue, incoming: Issue): boolean {
   return true;
 }
 
-function issuesMatch(current: Issue, optimistic: Issue | null | undefined): boolean {
-  return Boolean(optimistic) && JSON.stringify(current) === JSON.stringify(optimistic);
-}
-
-export function findIssueInBoard(data: BoardData, issueId: number): Issue | null {
-  const direct = data.issues.find((issue) => issue.id === issueId);
-  if (direct) return direct;
-  for (const issue of data.issues) {
-    const nested = findSubtask(issue.subtasks, issueId);
-    if (nested) return nested;
-  }
-  return null;
-}
-
-function findSubtask(subtasks: Subtask[] | undefined, issueId: number): Issue | null {
-  for (const subtask of subtasks ?? []) {
-    if (subtask.id === issueId) return subtask as unknown as Issue;
-    const nested = findSubtask(subtask.subtasks, issueId);
-    if (nested) return nested;
-  }
-  return null;
-}
-
 export function updateIssueInBoard(
   data: BoardData,
   issueId: number,
@@ -228,27 +269,17 @@ export function applyAncestorIssueUpdates(
   updates: AncestorIssueUpdate[] | undefined,
 ): BoardData {
   if (!updates?.length) return data;
-
-  const updatesById = new Map(updates.map((update) => [update.id, update]));
+  const state = createNormalizedBoardState(data);
   let changed = false;
-  const issues = data.issues.map((issue) => {
-    const update = updatesById.get(issue.id);
-    let nextIssue = issue;
-    if (update && isIssueFresh(issue, { ...issue, ...update })) {
-      nextIssue = { ...issue, ...update };
-      changed = true;
-    }
-
-    const subtasks = mapSubtasksTree(nextIssue.subtasks, (subtask) => {
-      const nestedUpdate = updatesById.get(subtask.id);
-      if (!nestedUpdate || !isIssueFresh(subtask as unknown as Issue, { ...subtask, ...nestedUpdate } as unknown as Issue)) return subtask;
-      changed = true;
-      return { ...subtask, ...nestedUpdate };
-    });
-    return subtasks === nextIssue.subtasks ? nextIssue : { ...nextIssue, subtasks };
-  });
-
-  return changed ? { ...data, issues } : data;
+  for (const update of updates) {
+    const current = state.entitiesById.get(update.id);
+    if (!current) continue;
+    const incoming = { ...current, ...update } as Issue;
+    if (!isIssueFresh(current as Issue, incoming)) continue;
+    state.entitiesById.set(update.id, { ...current, ...update });
+    changed = true;
+  }
+  return changed ? selectBoardData(state) : data;
 }
 
 function parseDate(value: string | null | undefined): number | null {

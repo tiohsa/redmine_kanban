@@ -20,6 +20,8 @@ import type { BoardState } from './state';
 import { cellKey } from './state';
 import { findSubtaskInTree, flattenSubtasks } from '../subtasksTree';
 import { truncateText, truncateTextLines } from './canvasText';
+import { buildTrackerCatalog, normalizeTrackerId, resolveTrackerName, type TrackerCatalog } from '../kanbanShared';
+import { layoutCardMetadata } from './canvasMetadata';
 
 const dragThreshold = 4;
 const subtaskIndentPx = 14;
@@ -234,6 +236,8 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     [state, data, canCreate, metrics, size.width, fitMode, measureCtx, fontSize]
   );
 
+  const trackerCatalog = useMemo(() => buildTrackerCatalog(data.lists.trackers), [data.lists.trackers]);
+
   const theme = useMemo(() => readTheme(containerRef.current), []);
 
   // Scale calculation is now handled directly in draw() to ensure it's always in sync with the latest layout and size.
@@ -262,7 +266,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   }, []);
   useEffect(() => {
     scheduleRender();
-  }, [size, state, data.meta, canCreate, canMove, theme, fontSize, scheduleRender]);
+  }, [size, state, data.meta, trackerCatalog, canCreate, canMove, theme, fontSize, scheduleRender]);
 
   useEffect(() => {
     const onViewportChange = () => {
@@ -420,6 +424,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       layout,
       state,
       data,
+      trackerCatalog,
       viewRect,
       theme,
       canCreate,
@@ -440,7 +445,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       drawLaneLabels(ctx, layout, state.lanes, theme, canCreate, state.columns[0]?.id, rectMapRef.current, labels, metrics);
     }
 
-    drawDragOverlay(ctx, state, data, theme, dragRef.current, labels, metrics, fontSize, layout);
+    drawDragOverlay(ctx, state, data, trackerCatalog, theme, dragRef.current, labels, metrics, fontSize, layout);
 
     // Draw header last so it appears on top (sticky header)
     ctx.save();
@@ -1072,6 +1077,7 @@ function drawCells(
   layout: ReturnType<typeof computeLayout>,
   state: BoardState,
   data: BoardData,
+  trackerCatalog: TrackerCatalog,
   viewRect: Rect,
   theme: CanvasTheme,
   canCreate: boolean,
@@ -1160,7 +1166,7 @@ function drawCells(
 
           const isUpdating = busyIssueIds?.has(issue.id) ?? false;
           rectMap.cards.set(issue.id, cardRect);
-        drawCard(ctx, cardRect, issue, data, theme, canMove, labels, metrics, fontSize, rectMap, hover, isUpdating, hoveredCardIssueId, hoveredSubtaskKey);
+        drawCard(ctx, cardRect, issue, data, trackerCatalog, theme, canMove, labels, metrics, fontSize, rectMap, hover, isUpdating, hoveredCardIssueId, hoveredSubtaskKey);
       }
     });
   });
@@ -1173,6 +1179,7 @@ function drawCard(
   rect: Rect,
   issue: Issue,
   data: BoardData,
+  trackerCatalog: TrackerCatalog,
   theme: CanvasTheme,
   canMove: boolean,
   labels: Record<string, string>,
@@ -1279,22 +1286,28 @@ function drawCard(
 
   const metaFontSize = Math.max(10, fontSize - 2);
 
-  // 5. Metadata Row 1: ID | Assignee
+  // 5. Metadata Row 1: ID | Tracker | Assignee
   // Adjust rowY based on subject lines
   const row1Y = subjectY + subjectTotalHeight + 6;
   ctx.font = `400 ${metaFontSize}px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif`;
   ctx.fillStyle = theme.textSecondary;
 
-  ctx.fillText(idText, contentX, row1Y);
-  let currentX = contentX + ctx.measureText(idText).width + 12;
-
-  if (issue.assigned_to_name) {
-    drawIcon(ctx, 'person', currentX, row1Y, 14, theme.textSecondary);
-    currentX += 16;
-    const nameText = truncateText(ctx, issue.assigned_to_name, Math.min(80, Math.max(0, x + w - 12 - currentX)));
-    ctx.fillText(nameText, currentX, row1Y);
-    currentX += ctx.measureText(nameText).width + 12;
+  const trackerName = resolveTrackerName(trackerCatalog, issue.tracker_id);
+  const metadata = layoutCardMetadata(ctx, {
+    contentX,
+    rightX: x + w - 12,
+    idText,
+    trackerName,
+    assigneeName: issue.assigned_to_name,
+  });
+  ctx.fillText(metadata.id.text, metadata.id.x, row1Y);
+  if (metadata.tracker) ctx.fillText(metadata.tracker.text, metadata.tracker.x, row1Y);
+  if (metadata.assignee && metadata.assigneeIconX !== undefined) {
+    drawIcon(ctx, 'person', metadata.assigneeIconX, row1Y, 14, theme.textSecondary);
+    ctx.fillText(metadata.assignee.text, metadata.assignee.x, row1Y);
   }
+
+  let currentX = contentX;
 
   const hasExternalProject = !!issue.project && issue.project.id !== data.meta.project_id;
   const row2Y = row1Y + metaFontSize + 7;
@@ -1793,6 +1806,7 @@ function drawDragOverlay(
   ctx: CanvasRenderingContext2D,
   state: BoardState,
   data: BoardData,
+  trackerCatalog: TrackerCatalog,
   theme: CanvasTheme,
   drag: DragState | null,
   labels: Record<string, string>,
@@ -1813,7 +1827,7 @@ function drawDragOverlay(
   };
   ctx.save();
   ctx.globalAlpha = 0.9;
-  drawCard(ctx, rect, issue, data, theme, true, labels, metrics, fontSize, undefined, undefined, false);
+  drawCard(ctx, rect, issue, data, trackerCatalog, theme, true, labels, metrics, fontSize, undefined, undefined, false);
   ctx.restore();
 }
 
@@ -1932,8 +1946,10 @@ function hitTestCell(
   return null;
 }
 
-function getCardColor(trackerId: number, theme: CanvasTheme): string {
-  const index = trackerId % theme.noteColors.length;
+function getCardColor(trackerId: number | null | undefined, theme: CanvasTheme): string {
+  const normalizedTrackerId = normalizeTrackerId(trackerId);
+  if (normalizedTrackerId === null) return theme.borderStrong;
+  const index = normalizedTrackerId % theme.noteColors.length;
   return theme.noteColors[index];
 }
 

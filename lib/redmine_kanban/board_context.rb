@@ -1,9 +1,13 @@
 require_relative 'project_catalog'
 require_relative 'subtask_loader'
+require 'digest'
+require 'json'
 
 module RedmineKanban
   class BoardContext
     DEFAULT_TREE_NODE_LIMIT = 1_500
+    DEFAULT_TREE_MAX_DEPTH = 32
+    DEFAULT_TREE_QUERY_LIMIT = 40
 
     attr_reader :project, :user, :project_ids, :tree_node_limit
 
@@ -19,7 +23,9 @@ module RedmineKanban
         user: @user,
         project_ids: @project_ids,
         root_issue_ids: root_issue_ids,
-        max_nodes: [@tree_node_limit - Array(root_issue_ids).uniq.size, 0].max
+        max_nodes: [@tree_node_limit - Array(root_issue_ids).uniq.size, 0].max,
+        max_depth: DEFAULT_TREE_MAX_DEPTH,
+        max_queries: DEFAULT_TREE_QUERY_LIMIT
       )
     end
 
@@ -33,6 +39,10 @@ module RedmineKanban
         ),
         loader
       ]
+    end
+
+    def scope_fingerprint
+      @scope_fingerprint ||= "sha256:#{Digest::SHA256.hexdigest({ project_ids: @project_ids.sort, user_id: @user.id }.to_json)}"
     end
 
     private

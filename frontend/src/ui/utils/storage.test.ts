@@ -43,6 +43,7 @@ describe('storage utils', () => {
       );
 
       expect(result).toBe(true);
+      expect(localStorage.getItem('rk_priority_lane_enabled')).toBe('0');
     });
 
     it('falls back to legacy key when scoped key is absent', () => {
@@ -55,6 +56,8 @@ describe('storage utils', () => {
       );
 
       expect(result).toBe(true);
+      expect(localStorage.getItem('rk_priority_lane_enabled:/projects/a/kanban')).toBe('1');
+      expect(localStorage.getItem('rk_priority_lane_enabled')).toBeNull();
     });
 
     it('returns default when no value exists', () => {
@@ -92,6 +95,8 @@ describe('storage utils', () => {
       );
 
       expect(Array.from(result).sort((a, b) => a - b)).toEqual([3, 4]);
+      expect(localStorage.getItem('rk_hidden_status_ids:/projects/a/kanban')).toBe(JSON.stringify([3, 4]));
+      expect(localStorage.getItem('rk_hidden_status_ids')).toBeNull();
     });
 
     it('returns default for invalid scoped json', () => {

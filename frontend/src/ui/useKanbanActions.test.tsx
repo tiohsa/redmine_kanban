@@ -73,29 +73,31 @@ afterEach(() => {
 });
 
 describe('useKanbanActions delete flow', () => {
-  it('does not show an error after a successful delete and refresh', async () => {
+  it('does not show an error after a successful delete without a full refresh', async () => {
     const setError = vi.fn();
     const refresh = vi.fn(async () => undefined);
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
     const { result } = renderActions({ refresh, setError });
 
     await act(async () => { result.current.requestDelete(1); });
-    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(result.current.pendingDeleteIssue?.id).toBe(1));
 
     expect(setError).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
   });
 
-  it('keeps Undo available when refresh fails after a successful delete', async () => {
+  it('keeps Undo available after a successful delete without a full refresh', async () => {
     const setError = vi.fn();
     const refresh = vi.fn(async () => { throw new Error('refetch failed'); });
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
     const { result } = renderActions({ refresh, setError });
 
     await act(async () => { result.current.requestDelete(1); });
-    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    await waitFor(() => expect(result.current.pendingDeleteIssue?.id).toBe(1));
 
     expect(result.current.pendingDeleteIssue?.id).toBe(1);
     expect(setError).not.toHaveBeenCalledWith('削除に失敗しました');
+    expect(refresh).not.toHaveBeenCalled();
   });
 
   it('does not issue another DELETE when the delete notice is dismissed', async () => {

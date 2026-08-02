@@ -8,10 +8,11 @@ module RedmineKanban
 
     MAX_BULK_SUBTASKS = 50
 
-    def initialize(project:, user:, board_context: nil)
+    def initialize(project:, user:, board_context: nil, operation_id: nil)
       @project = project
       @user = user
       @board_context = board_context || BoardContext.new(project: project, user: user)
+      @operation_id = operation_id
     end
 
     def create(params:)
@@ -55,6 +56,12 @@ module RedmineKanban
         return error_response('指定されたtrackerは作成先プロジェクトで利用できません', field_errors: { tracker_id: ['作成先プロジェクトで利用可能なtrackerを指定してください'] })
       end
 
+      start_date = normalize_date(params[:start_date])
+      return invalid_date_response(:start_date) if start_date == :invalid
+
+      due_date = normalize_date(params[:due_date])
+      return invalid_date_response(:due_date) if due_date == :invalid
+
       issue = Issue.new
       issue.project = target_project
       issue.author = @user
@@ -66,8 +73,8 @@ module RedmineKanban
         'status_id' => params[:status_id].to_i,
         'assigned_to_id' => normalize_assigned_to_id(params[:assigned_to_id]),
         'priority_id' => normalize_priority_id(params[:priority_id]),
-        'start_date' => normalize_date(params[:start_date]),
-        'due_date' => normalize_date(params[:due_date]),
+        'start_date' => start_date,
+        'due_date' => due_date,
         'tracker_id' => tracker_id.to_i
       }
       attributes['done_ratio'] = normalize_done_ratio(params[:done_ratio]) if param_key_provided?(params, 'done_ratio')
@@ -80,7 +87,13 @@ module RedmineKanban
       issue.safe_attributes = attributes
 
       if issue.save
-        { ok: true, issue: issue_presenter(issue).issue_to_h(issue) }
+        legacy_issue = issue_presenter(issue).issue_to_h(issue)
+        mutation = mutation_result_builder.build(
+          created_issues: [issue],
+          tree_changes: issue.parent_id ? [{ type: 'attach', parent_id: issue.parent_id, child_id: issue.id }] : [],
+          invalidations: { column_counts: true }
+        )
+        mutation.merge(issue: legacy_issue)
       else
         error_response(issue.errors.full_messages.join(', '), field_errors: issue.errors.to_hash(true))
       end
@@ -95,6 +108,8 @@ module RedmineKanban
       normalized_subtasks = normalize_bulk_subtasks(subtasks)
       return normalized_subtasks if normalized_subtasks.is_a?(Hash) && normalized_subtasks[:ok] == false
 
+      parent_issue_id = normalized_parent[:parent_issue_id]
+
       if normalized_subtasks.count { |subtask| subtask[:subject].to_s.strip.present? } > MAX_BULK_SUBTASKS
         return error_response('子チケットは最大50件まで作成できます', field_errors: { subtasks: ['子チケットは最大50件まで作成できます'] })
       end
@@ -106,8 +121,8 @@ module RedmineKanban
         payload: { parent: normalized_parent, subtasks: normalized_subtasks }
       ) do
         result = nil
+        created_issue_ids = []
         Issue.transaction do
-          parent_issue_id = normalized_parent[:parent_issue_id]
           parent_result = if parent_issue_id.present?
                             existing_parent_result(parent_issue_id)
                           else
@@ -119,6 +134,7 @@ module RedmineKanban
           end
 
           parent_id = parent_result.dig(:issue, :id) || parent_result.dig('issue', 'id')
+          created_issue_ids << parent_id if parent_issue_id.blank?
           created = []
           normalized_subtasks.each_with_index do |subtask_params, index|
             child_result = create(params: subtask_params.merge(parent_issue_id: parent_id))
@@ -131,10 +147,27 @@ module RedmineKanban
               raise ActiveRecord::Rollback
             end
             created << child_result[:issue]
+            created_issue_ids << child_result.dig(:issue, :id)
           end
           result = { ok: true, issue: parent_result[:issue], subtasks: created }
         end
-        result || error_response('一括作成に失敗しました')
+        next result unless result&.dig(:ok)
+
+        created_issues = Issue.where(id: created_issue_ids.compact).to_a
+        updated_parent = if parent_issue_id.present?
+                           Issue.visible(@user).find_by(id: parent_issue_id)
+                         end
+        mutation = mutation_result_builder.build(
+          issue_updates: [updated_parent].compact,
+          created_issues: created_issues,
+          tree_changes: created_issues.filter_map do |created_issue|
+            next unless created_issue.parent_id
+
+            { type: 'attach', parent_id: created_issue.parent_id, child_id: created_issue.id }
+          end,
+          invalidations: { column_counts: true }
+        )
+        result.merge(mutation)
       end
     end
 
@@ -191,6 +224,11 @@ module RedmineKanban
       normalize_optional_date(value)
     end
 
+    def invalid_date_response(field)
+      label = field == :start_date ? '開始日' : '期日'
+      error_response("#{label}の日付が不正です", field_errors: { field => ["#{label}の日付が不正です"] })
+    end
+
     def normalize_done_ratio(value)
       return nil if value.nil? || value.to_s.strip.empty?
 
@@ -199,6 +237,10 @@ module RedmineKanban
 
     def issue_presenter(issue)
       @board_context.presenter([issue.id]).first
+    end
+
+    def mutation_result_builder
+      @mutation_result_builder ||= MutationResultBuilder.new(board_context: @board_context, operation_id: @operation_id)
     end
 
   end

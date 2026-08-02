@@ -1,5 +1,5 @@
 import React from 'react';
-import type { BoardData, Issue, Lane } from './types';
+import type { BoardData, Issue, Lane, Subtask } from './types';
 import { findSubtaskInTree } from './subtasksTree';
 import { isHttpError } from './http';
 import type { LaneType } from './useKanbanPreferences';
@@ -16,6 +16,15 @@ export type AncestorIssueUpdate = {
 
 export type IssueMutationResult = {
   issue: Issue;
+  contract_version?: number;
+  operation_id?: string;
+  scope_fingerprint?: string;
+  issue_updates?: Issue[];
+  created_issues?: Issue[];
+  deleted_issue_ids?: number[];
+  tree_changes?: Array<{ type: 'attach' | 'detach'; parent_id: number; child_id: number }>;
+  invalidations?: { issue_ids?: number[]; parent_ids?: number[]; column_counts?: boolean; root_order?: boolean };
+  column_counts?: Record<string, number>;
   warning?: string;
   ancestor_updates?: AncestorIssueUpdate[];
 };
@@ -49,11 +58,57 @@ export type ResolvedBoardIssue = {
   issueUrl: string;
   issueEditUrl: string;
   kind: 'issue' | 'subtask';
-  trackerId?: number;
+  trackerId: number | null;
   parentIssueId?: number;
   projectId?: number;
   boardIssue?: Issue;
 };
+
+export type TrackerCatalog = ReadonlyMap<number, string>;
+
+export function normalizeTrackerId(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) return null;
+  return value;
+}
+
+export function buildTrackerCatalog(trackers: BoardData['lists']['trackers']): TrackerCatalog {
+  const catalog = new Map<number, string>();
+  for (const tracker of trackers ?? []) {
+    if (normalizeTrackerId(tracker.id) === null) continue;
+    if (!tracker.name.trim() || catalog.has(tracker.id)) continue;
+    catalog.set(tracker.id, tracker.name);
+  }
+  return catalog;
+}
+
+export function resolveTrackerName(catalog: TrackerCatalog, trackerId: number | null | undefined): string | null {
+  const normalizedTrackerId = normalizeTrackerId(trackerId);
+  if (normalizedTrackerId === null) return null;
+  return catalog.get(normalizedTrackerId) ?? null;
+}
+
+function normalizeSubtask(subtask: Subtask): Subtask {
+  return {
+    ...subtask,
+    tracker_id: normalizeTrackerId(subtask.tracker_id),
+    ...(subtask.subtasks ? { subtasks: subtask.subtasks.map(normalizeSubtask) } : {}),
+  };
+}
+
+function normalizeIssue(issue: Issue): Issue {
+  return {
+    ...issue,
+    tracker_id: normalizeTrackerId(issue.tracker_id),
+    ...(issue.subtasks ? { subtasks: issue.subtasks.map(normalizeSubtask) } : {}),
+  };
+}
+
+export function normalizeBoardData(data: BoardData): BoardData {
+  return {
+    ...data,
+    issues: data.issues.map(normalizeIssue),
+  };
+}
 
 type FieldErrors = {
   subject?: string[];
@@ -173,7 +228,7 @@ export function resolveBoardIssue(data: BoardData, issueId: number): ResolvedBoa
       issueUrl: issue.urls.issue,
       issueEditUrl: issue.urls.issue_edit,
       kind: 'issue',
-      trackerId: issue.tracker_id,
+      trackerId: normalizeTrackerId(issue.tracker_id),
       parentIssueId: issue.parent_id ?? undefined,
       projectId: issue.project?.id,
       boardIssue: issue,
@@ -192,10 +247,52 @@ export function resolveBoardIssue(data: BoardData, issueId: number): ResolvedBoa
       assignedToId: undefined,
       ...buildIssueUrls(subtask.id),
       kind: 'subtask',
+      trackerId: normalizeTrackerId(subtask.tracker_id),
       parentIssueId: parent.id,
       projectId: subtask.project?.id ?? parent.project?.id,
       allowedStatusIds: subtask.allowed_status_ids,
     };
+  }
+
+  return null;
+}
+
+export function buildIssueTitle(
+  data: BoardData,
+  issueId: number,
+  fallbackIssue?: Pick<Issue, 'id' | 'subject' | 'tracker_id'>,
+): string;
+export function buildIssueTitle(
+  data: BoardData | null,
+  issueId: number,
+  fallbackIssue?: Pick<Issue, 'id' | 'subject' | 'tracker_id'>,
+): string | undefined;
+export function buildIssueTitle(
+  data: BoardData | null,
+  issueId: number,
+  fallbackIssue?: Pick<Issue, 'id' | 'subject' | 'tracker_id'>,
+): string | undefined {
+  if (!data) return undefined;
+
+  const resolved = resolveBoardIssue(data, issueId);
+  const subject = resolved?.subject ?? (fallbackIssue?.id === issueId ? fallbackIssue.subject : undefined);
+  if (subject === undefined) return undefined;
+
+  const trackerId = resolved
+    ? resolved.trackerId
+    : (fallbackIssue?.id === issueId ? fallbackIssue.tracker_id : null);
+  const trackerName = resolveTrackerName(buildTrackerCatalog(data.lists.trackers), trackerId);
+  return `${trackerName ? `${trackerName} ` : ''}#${issueId} ${subject}`.trim();
+}
+
+/** Resolve an Issue-shaped value for both root cards and nested subtask rows. */
+export function findIssueInBoard(data: BoardData, issueId: number): Issue | null {
+  const direct = data.issues.find((issue) => issue.id === issueId);
+  if (direct) return direct;
+
+  for (const issue of data.issues) {
+    const nested = findSubtaskInTree(issue.subtasks, issueId);
+    if (nested) return nested as unknown as Issue;
   }
 
   return null;

@@ -48,15 +48,17 @@ describe('mergeIssueTrees', () => {
 
   it('converges to the same canonical tree when parent and child pages arrive in either order', () => {
     const parent = makeIssue(1, {
-      subtasks: [makeSubtask(2)],
+      subtasks: [makeSubtask(2, { tracker_id: 2 })],
     });
-    const child = makeIssue(2, { parent_id: 1 });
+    const child = makeIssue(2, { parent_id: 1, tracker_id: 2 });
 
     const forward = mergeIssueTrees([parent], [child]);
     const reverse = mergeIssueTrees([child], [parent]);
 
     expect(reverse.map((issue) => issue.id)).toEqual(forward.map((issue) => issue.id));
     expect(reverse[0]?.subtasks?.map((subtask) => subtask.id)).toEqual([2]);
+    expect(forward[0]?.subtasks?.[0]?.tracker_id).toBe(2);
+    expect(reverse[0]?.subtasks?.[0]?.tracker_id).toBe(2);
   });
 
   it('does not duplicate an issue represented in both root and nested form', () => {
@@ -93,5 +95,15 @@ describe('flattenIssueTree', () => {
     expect(flattened.map((issue) => issue.id)).toEqual([1, 2, 3]);
     expect(flattened.map((issue) => issue.parent_id)).toEqual([null, 1, 2]);
     expect(flattened.every((issue) => issue.subtasks?.length === 0)).toBe(true);
+  });
+
+  it('keeps a missing subtask tracker as unknown instead of converting it to a valid id', () => {
+    const tree = [makeIssue(1, {
+      subtasks: [makeSubtask(2)],
+    })];
+
+    const flattened = flattenIssueTree(tree);
+
+    expect(flattened.find((issue) => issue.id === 2)?.tracker_id).toBeNull();
   });
 });

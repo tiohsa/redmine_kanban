@@ -14,4 +14,4 @@ specs/
 docs/
 e2e/test-results/
 .codegraph/
-
+.agents/

@@ -10,10 +10,11 @@ module RedmineKanban
     include AncestorIssueUpdates
     include MutationOutcome
 
-    def initialize(project:, user:, board_context: nil)
+    def initialize(project:, user:, board_context: nil, operation_id: nil)
       @project = project
       @user = user
       @board_context = board_context || BoardContext.new(project: project, user: user)
+      @operation_id = operation_id
     end
 
     def update(issue_id:, params:)
@@ -34,8 +35,18 @@ module RedmineKanban
 
         attributes['priority_id'] = priority_id
       end
-      attributes['start_date'] = normalize_date(params[:start_date]) if params.key?(:start_date)
-      attributes['due_date'] = normalize_date(params[:due_date]) if params.key?(:due_date)
+      if params.key?(:start_date)
+        start_date = normalize_date(params[:start_date])
+        return invalid_date_response(:start_date) if start_date == :invalid
+
+        attributes['start_date'] = start_date
+      end
+      if params.key?(:due_date)
+        due_date = normalize_date(params[:due_date])
+        return invalid_date_response(:due_date) if due_date == :invalid
+
+        attributes['due_date'] = due_date
+      end
       attributes['tracker_id'] = normalize_tracker_id(params[:tracker_id]) if params.key?(:tracker_id)
       attributes['done_ratio'] = normalize_done_ratio(params[:done_ratio]) if params.key?(:done_ratio)
 
@@ -87,8 +98,14 @@ module RedmineKanban
         return error_response(reconcile_error) if reconcile_error
       end
 
-      result = { ok: true, issue: issue_presenter(issue).issue_to_h(issue) }
       ancestor_updates = ancestor_updates_for(issue) if ancestor_updates_required
+      ancestor_issues = ancestor_issues_for(issue) if ancestor_updates_required
+      propagated_issues = priority_id.is_a?(Integer) ? issue.children.to_a : []
+      issue_updates = [issue, *(ancestor_issues || []), *propagated_issues].uniq { |item| item.id }
+      result = mutation_result_builder.build(
+        issue_updates: issue_updates,
+        invalidations: { column_counts: true }
+      ).merge(issue: issue_presenter(issue).issue_to_h(issue))
       result[:ancestor_updates] = ancestor_updates if ancestor_updates&.any?
       result
     rescue ActiveRecord::StaleObjectError
@@ -113,6 +130,11 @@ module RedmineKanban
       normalize_optional_date(value)
     end
 
+    def invalid_date_response(field)
+      label = field == :start_date ? '開始日' : '期日'
+      error_response("#{label}の日付が不正です", field_errors: { field => ["#{label}の日付が不正です"] })
+    end
+
     def normalize_done_ratio(value)
       return nil if value.nil? || value.to_s.strip.empty?
       v = value.to_i
@@ -125,6 +147,10 @@ module RedmineKanban
 
     def issue_presenter(issue)
       @board_context.presenter([issue.id]).first
+    end
+
+    def mutation_result_builder
+      @mutation_result_builder ||= MutationResultBuilder.new(board_context: @board_context, operation_id: @operation_id)
     end
 
   end

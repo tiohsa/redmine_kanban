@@ -21,8 +21,9 @@ export function isHttpError<TPayload = unknown>(error: unknown): error is HttpEr
 
 export async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
-  if (!res.ok) throw new Error(`GET ${url} failed: ${res.status}`);
-  return (await res.json()) as T;
+  const json = typeof res.json === 'function' ? await res.json().catch(() => null) : null;
+  if (!res.ok) throw new HttpError(res.status, json);
+  return json as T;
 }
 
 export async function postJson<T>(url: string, body: Record<string, unknown>, method: 'POST' | 'PATCH' | 'PUT' | 'DELETE' = 'POST', extraHeaders: Record<string, string> = {}): Promise<T> {

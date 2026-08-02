@@ -103,6 +103,8 @@ test('nested child can close and reopen while server column counts return to bas
   let child = parent?.subtasks?.find((subtask) => subtask.subject === 'Kanban E2E nested child');
   expect(parent).toBeTruthy();
   expect(child).toBeTruthy();
+  expect(child.tracker_id).toBeGreaterThan(0);
+  expect(initial.lists.trackers.map((tracker) => tracker.id)).toContain(child.tracker_id);
 
   let openColumn = initial.columns.find((column) =>
     !column.is_closed && child.allowed_status_ids.includes(column.id)
@@ -160,6 +162,7 @@ test('nested child can close and reopen while server column counts return to bas
     id: child.id,
     status_id: closedColumn.id,
     status_is_closed: true,
+    tracker_id: child.tracker_id,
   });
   expect(closed.body.ancestor_updates).toEqual(expect.arrayContaining([
     expect.objectContaining({ id: parent.id, done_ratio: expect.any(Number), lock_version: expect.any(Number) }),
@@ -175,6 +178,7 @@ test('nested child can close and reopen while server column counts return to bas
     id: child.id,
     status_id: openColumn.id,
     status_is_closed: false,
+    tracker_id: child.tracker_id,
   });
 
   const afterReopen = await getBoard();

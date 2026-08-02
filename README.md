@@ -83,7 +83,7 @@ pnpm run build
 
 There is no plugin-wide configuration screen. Each user can set swimlanes, hidden statuses, aging thresholds, sorting, fit mode, font size, and subtask display from the board. Card moves only apply the status and any lane attribute explicitly selected by the user; Redmine workflow and permissions remain authoritative.
 
-The API protects the server with a fixed default page size of 500 issues and a maximum page size of 1,000 issues. Recursive responses use canonical roots and a 1,500-node total budget; optional `meta.tree` reports the budget, unique/serialized counts, duplicate roots, loaded rows, and truncation. When `meta.tree.truncated` is true, `truncated_parent_ids` identifies recoverable parent subtrees. The frontend requests the next direct-child page through `/projects/:project_id/kanban/issues?tree_parent_id=...&offset=...`; this subtree pagination does not replace the board's root pagination. Set `REDMINE_KANBAN_PERF_LOG=1` only when operational performance logging is needed.
+The API protects the server with a fixed default page size of 500 issues and a maximum page size of 1,000 issues. Recursive responses use canonical roots and a 1,500-node total budget; optional `meta.tree` reports the budget, unique/serialized counts, duplicate roots, loaded rows, and truncation. When `meta.tree.truncated` is true, `truncated_parent_ids` identifies recoverable parent subtrees, including parents limited by depth or query budgets; `unexpanded_parent_ids` records those causes diagnostically. Root pages use signed keyset cursors (`updated_on DESC, id DESC`); subtree pages use signed `id ASC` cursors and preserve root pagination metadata. Cursors are scoped to the project/filter fingerprint and are rejected when stale or out of scope. Set `REDMINE_KANBAN_PERF_LOG=1` only when operational performance logging is needed.
 
 ## Technology Stack
 
@@ -175,13 +175,16 @@ REDMINE_BASE_URL=http://127.0.0.1:3002 \
 | POST | `/projects/:project_id/kanban/issues/bulk` | Create a parent with subtasks or subtasks for an existing parent |
 | PATCH | `/projects/:project_id/kanban/issues/:id` | Update ticket |
 | DELETE | `/projects/:project_id/kanban/issues/:id` | Delete ticket |
+| GET | `/projects/:project_id/kanban/issues/entities?ids[]=...` | Reconcile selected flat Issue entities |
 
 Board data notes:
 
 - `issues[].subtasks` is a recursive tree (`subtasks[].subtasks...`) for nested subtasks.
 - Subtask rows shown in the canvas are flattened on the frontend for rendering/hit-testing, but the API preserves hierarchy.
 - A node is canonicalized as either a root or a nested child. A child is removed from roots only after it is actually present in the current parent tree; unloaded or truncated children remain reachable as roots until a page merge attaches them.
-- `GET /projects/:project_id/kanban/issues` supports the normal root `offset` pagination and the optional `tree_parent_id` subtree recovery pagination. Subtree pages use deterministic `lft`/`id` ordering and preserve the recursive shape.
+- `GET /projects/:project_id/kanban/issues` supports signed keyset cursors for normal roots (`updated_on DESC, id DESC`) and optional `tree_parent_id` subtree recovery (`id ASC`). Subtree pages preserve the recursive shape and root pagination metadata; the legacy `offset` parameter remains a backend compatibility fallback but is not sent by the current frontend.
+- Mutation responses use contract version 2 fields (`operation_id`, `scope_fingerprint`, flat `issue_updates`/`created_issues`, `deleted_issue_ids`, `tree_changes`, and invalidations). The frontend applies these deltas to normalized state and uses the entities endpoint for targeted issue/parent reconciliation; it does not require a successful full-board refresh after a normal mutation.
+- Issue responses are accepted only when their `lock_version`/`updated_on` freshness is not older than the cached entity. Optimistic failures roll back only fields still holding that mutation's optimistic values; overlapping mutations trigger targeted server reconciliation.
 - Deleted Issue recreation is available only for domain top-level Issues. It creates a new Issue with the displayed subject, project, description, status, assignee, tracker, priority, dates, and done ratio; it never recreates a child Issue without its parent.
 
 Bulk creation uses `Rails.cache` for idempotency. The cache identity is scoped by user, project, operation, `Idempotency-Key`, and a canonical digest of the request payload; an atomic claim means only the claimant runs creation, while processing and completed entries reject a different payload or return the previous response for the same payload. The client reuses the key for the same logical operation during a browser session. Failed validation or exceptions remove the claim so the same operation can be retried.
@@ -204,6 +207,7 @@ The CI workflow runs:
 - frontend unit tests with Vitest
 - Playwright E2E on Redmine 7.0 and Redmine 6.1
 - Playwright compatibility smoke test on Redmine 6.0
+- deterministic tree resource gates for node, row, depth, and query limits
 
 Both browser jobs start Redmine using `.github/e2e/docker-compose.yml`, run migrations, load default data, seed `ecookbook` via `e2e/setup_redmine.rb`, and upload Playwright reports on completion.
 

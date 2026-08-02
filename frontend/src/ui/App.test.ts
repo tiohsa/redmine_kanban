@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergeIssuePage, normalizeAssigneeIds, normalizeProjectIds, normalizeTrackerIds, resolveDefaultCreateProjectId } from './App';
+import { findIssueForAction, mergeIssuePage, normalizeAssigneeIds, normalizeProjectIds, normalizeTrackerIds, resolveDefaultCreateProjectId } from './App';
 import type { BoardData, Issue } from './types';
 import { buildDefaultIssueCreateUrl } from './issueDialog';
 
@@ -56,7 +56,16 @@ describe('project filter helpers', () => {
   });
 });
 
-function makeIssue(id: number): Issue {
+describe('issue action lookup', () => {
+  it('finds a nested issue for mutation lock versions', () => {
+    const child = makeIssue(2, { lock_version: 7 });
+    const parent = makeIssue(1, { subtasks: [child as never] });
+
+    expect(findIssueForAction(makeBoardData([parent]), child.id)).toMatchObject({ lock_version: 7 });
+  });
+});
+
+function makeIssue(id: number, overrides: Partial<Issue> = {}): Issue {
   return {
     id,
     subject: `Issue ${id}`,
@@ -65,6 +74,7 @@ function makeIssue(id: number): Issue {
     description: '',
     assigned_to_id: null,
     urls: { issue: `/issues/${id}`, issue_edit: `/issues/${id}/edit` },
+    ...overrides,
   };
 }
 
@@ -280,6 +290,45 @@ describe('mergeIssuePage', () => {
 
     expect(next.meta.tree?.truncated).toBe(true);
     expect(next.meta.tree?.truncated_parent_ids).toEqual([1]);
+  });
+
+  it('keeps an unexpanded parent recoverable while merging root pages', () => {
+    const current = makeBoardData([makeIssue(1)], 1);
+    current.meta.tree = {
+      node_limit: 1500,
+      root_issue_count: 1,
+      unique_node_count: 1,
+      serialized_node_count: 1,
+      duplicate_node_count: 0,
+      truncated: true,
+      truncated_parent_ids: [],
+      unexpanded_parent_ids: [1],
+    };
+    const page = makeBoardData([makeIssue(2)], 1);
+    page.meta.pagination = {
+      issue_limit: 1,
+      offset: 1,
+      issue_count: 1,
+      total_issue_count: 2,
+      next_offset: 2,
+      has_more_issues: false,
+    };
+    page.meta.tree = {
+      node_limit: 1500,
+      root_issue_count: 1,
+      unique_node_count: 1,
+      serialized_node_count: 1,
+      duplicate_node_count: 0,
+      truncated: false,
+      truncated_parent_ids: [],
+      unexpanded_parent_ids: [],
+    };
+
+    const next = mergeIssuePage(current, page);
+
+    expect(next.meta.tree?.truncated).toBe(true);
+    expect(next.meta.tree?.truncated_parent_ids).toEqual([1]);
+    expect(next.meta.tree?.unexpanded_parent_ids).toEqual([1]);
   });
 
   it('clears a resolved parent after merging its scoped subtree page', () => {

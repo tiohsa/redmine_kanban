@@ -16,10 +16,15 @@ export type Subtask = {
   id: number;
   subject: string;
   status_id: number;
-  tracker_id?: number;
+  status_is_closed?: boolean;
+  tracker_id?: number | null;
+  description?: string;
   assigned_to_id?: number | null;
+  assigned_to_name?: string | null;
+  start_date?: string | null;
   due_date?: string | null;
   priority_id?: number | null;
+  priority_name?: string | null;
   is_closed: boolean;
   lock_version?: number;
   updated_on?: string | null;
@@ -28,6 +33,7 @@ export type Subtask = {
   permissions?: IssuePermissions;
   allowed_status_ids?: number[];
   project?: { id: number; name: string };
+  urls?: { issue: string; issue_edit: string };
   subtasks?: Subtask[];
 };
 
@@ -51,7 +57,7 @@ export type Issue = {
   status_is_closed?: boolean;
   can_log_time?: boolean;
   lock_version?: number;
-  tracker_id: number;
+  tracker_id: number | null;
   description: string;
   assigned_to_id: number | null;
   assigned_to_name?: string | null;
@@ -84,6 +90,7 @@ export type Lists = {
 export type Meta = {
   project_id: number;
   project_ids?: number[];
+  scope_fingerprint?: string;
   current_user_id: number;
   can_move: boolean;
   can_create: boolean;
@@ -101,6 +108,7 @@ export type Meta = {
     next_offset: number;
     has_more_issues: boolean;
     tree_parent_id?: number;
+    next_cursor?: string | null;
   };
 };
 
@@ -112,8 +120,17 @@ export type TreeMeta = {
   duplicate_node_count: number;
   truncated: boolean;
   truncated_parent_ids?: number[];
+  unexpanded_parent_ids?: number[];
   loaded_node_count?: number;
   db_row_count?: number;
+  parent_states?: Record<string, {
+    completeness: 'complete' | 'partial' | 'unexpanded';
+    next_cursor: string | null;
+    loaded_count: number;
+  }>;
+  query_count?: number;
+  parent_batch_count?: number;
+  max_depth?: number;
 };
 
 export type BoardData = {
