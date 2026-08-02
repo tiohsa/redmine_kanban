@@ -72,6 +72,37 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_equal [], json['missing_issue_ids']
   end
 
+  def test_entity_create_and_update_responses_preserve_tracker_ids
+    tracker = @project.trackers.first
+    issue = build_issue(subject: 'Tracker mutation issue', tracker: tracker)
+
+    get :entities, params: {
+      project_id: @project.identifier,
+      project_ids: [@project.id],
+      ids: [issue.id]
+    }
+
+    assert_response :success
+    entity_json = JSON.parse(@response.body)
+    assert_equal tracker.id, entity_json.fetch('entities').first.fetch('tracker_id')
+
+    patch :update, params: {
+      project_id: @project.identifier,
+      id: issue.id,
+      issue: {
+        subject: 'Updated tracker mutation issue',
+        tracker_id: tracker.id,
+        lock_version: issue.lock_version
+      }
+    }
+
+    assert_response :success
+    update_json = JSON.parse(@response.body)
+    assert_equal tracker.id, update_json.fetch('issue').fetch('tracker_id')
+    updated_entity = update_json.fetch('issue_updates').find { |candidate| candidate['id'] == issue.id }
+    assert_equal tracker.id, updated_entity.fetch('tracker_id')
+  end
+
   def test_entities_reports_issues_outside_the_requested_scope_as_missing
     issue = build_issue(subject: 'Out of scope entity')
     other_project = build_project(name: 'Entity scope other', identifier: "entity-scope-other-#{Time.now.to_i}")
@@ -245,6 +276,26 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     refute_includes root_ids, child.id
     assert_operator json.dig('meta', 'tree', 'duplicate_node_count'), :>=, 1
     assert_equal json.dig('meta', 'tree', 'unique_node_count'), json.dig('meta', 'tree', 'serialized_node_count')
+  end
+
+  def test_board_serializes_tracker_ids_for_root_and_nested_issues
+    parent_tracker = @project.trackers.first
+    child_tracker = Tracker.where.not(id: @project.trackers.select(:id)).first || Tracker.create!(
+      name: "Child tracker #{Time.now.to_i}",
+      default_status_id: IssueStatus.first.id
+    )
+    @project.trackers << child_tracker unless @project.trackers.include?(child_tracker)
+
+    parent = build_issue(subject: 'Tracker parent', tracker: parent_tracker)
+    child = build_issue(subject: 'Tracker child', parent_issue_id: parent.id, tracker: child_tracker)
+
+    json = index_response
+    parent_card = json.fetch('issues').find { |issue| issue['id'] == parent.id }
+    child_card = parent_card.fetch('subtasks').find { |issue| issue['id'] == child.id }
+
+    assert_equal parent_tracker.id, parent_card.fetch('tracker_id')
+    assert_equal child_tracker.id, child_card.fetch('tracker_id')
+    assert_includes json.fetch('lists').fetch('trackers').map { |tracker| tracker['id'] }, child_tracker.id
   end
 
   def test_board_tree_budget_limits_recursive_rows_and_reports_reachable_truncation
@@ -1433,8 +1484,8 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     MemberRole.create!(member_id: member.id, role_id: @role.id)
   end
 
-  def build_issue(subject: 'Test issue', parent_issue_id: nil, status: nil, assigned_to: nil, priority: nil, project: @project)
-    tracker = project.trackers.first || Tracker.first
+  def build_issue(subject: 'Test issue', parent_issue_id: nil, status: nil, assigned_to: nil, priority: nil, tracker: nil, project: @project)
+    tracker ||= project.trackers.first || Tracker.first
     status ||= IssueStatus.first
     priority ||= IssuePriority.active.first
     issue = Issue.new(

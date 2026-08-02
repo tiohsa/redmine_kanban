@@ -1,4 +1,5 @@
 import type { Issue, Subtask } from './types';
+import { normalizeTrackerId } from './kanbanShared';
 
 type TreeNode = Issue | Subtask;
 
@@ -14,7 +15,12 @@ function isIssue(node: TreeNode): node is Issue {
 }
 
 function withoutChildren(node: TreeNode): TreeNode {
-  const copy = { ...node };
+  const copy = { ...node } as TreeNode;
+  if (node.tracker_id === undefined) {
+    delete (copy as { tracker_id?: number | null }).tracker_id;
+  } else {
+    copy.tracker_id = normalizeTrackerId(node.tracker_id);
+  }
   delete copy.subtasks;
   return copy;
 }
@@ -119,7 +125,7 @@ function toSubtask(node: TreeNode, children: Subtask[]): Subtask {
     id: issue.id,
     subject: issue.subject,
     status_id: issue.status_id,
-    tracker_id: issue.tracker_id,
+    tracker_id: normalizeTrackerId(issue.tracker_id),
     assigned_to_id: issue.assigned_to_id,
     due_date: issue.due_date,
     priority_id: issue.priority_id,
@@ -137,7 +143,12 @@ function toSubtask(node: TreeNode, children: Subtask[]): Subtask {
 
 function toRootIssue(node: TreeNode, children: Subtask[], parentId: number | null): Issue {
   if (isIssue(node)) {
-    return { ...node, parent_id: node.parent_id ?? parentId, subtasks: children };
+    return {
+      ...node,
+      parent_id: node.parent_id ?? parentId,
+      tracker_id: normalizeTrackerId(node.tracker_id),
+      subtasks: children,
+    };
   }
 
   const subtask = toSubtask(node, children);
@@ -148,7 +159,7 @@ function toRootIssue(node: TreeNode, children: Subtask[], parentId: number | nul
     status_id: subtask.status_id,
     status_is_closed: subtask.is_closed,
     lock_version: subtask.lock_version,
-    tracker_id: subtask.tracker_id ?? 0,
+    tracker_id: normalizeTrackerId(subtask.tracker_id),
     description: '',
     assigned_to_id: subtask.assigned_to_id ?? null,
     due_date: subtask.due_date,

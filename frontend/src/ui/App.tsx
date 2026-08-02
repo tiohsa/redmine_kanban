@@ -12,7 +12,7 @@ import { KanbanPopupHost } from './KanbanPopupHost';
 import { DatePopup, PriorityPopup, ProgressPopup } from './KanbanPopups';
 import { KanbanToolbar } from './KanbanToolbar';
 import { HelpDialog } from './HelpDialog';
-import { buildDisplayData, payloadFieldError, payloadMessage, resolveMutationError } from './kanbanShared';
+import { buildDisplayData, buildIssueTitle, normalizeBoardData, payloadFieldError, payloadMessage, resolveMutationError } from './kanbanShared';
 import { mergeIssueTrees } from './boardTree';
 import { applyBoardResponse, createNormalizedBoardState, selectBoardData } from './boardState';
 import { findIssueInBoard } from './kanbanShared';
@@ -209,8 +209,9 @@ export function App({ dataUrl }: Props) {
 
   const boardQuery = useQuery({
     queryKey: boardQueryKey,
-    queryFn: async () =>
-      getJson<BoardData>(buildBoardDataUrl(baseUrl, filters.projectIds, filters.statusIds, hiddenStatusIds)),
+    queryFn: async () => normalizeBoardData(
+      await getJson<BoardData>(buildBoardDataUrl(baseUrl, filters.projectIds, filters.statusIds, hiddenStatusIds)),
+    ),
     placeholderData: (previous) => previous,
   });
 
@@ -552,7 +553,7 @@ export function App({ dataUrl }: Props) {
                 dialogs.setIframeEditContext({
                   url: `/issues/${createdIssue.id}`,
                   issueId: createdIssue.id,
-                  issueTitle: `#${createdIssue.id} ${createdIssue.subject ?? ''}`.trim(),
+                  issueTitle: buildIssueTitle(data, createdIssue.id, createdIssue),
                   projectId: createdIssue.project?.id,
                 });
               } else {

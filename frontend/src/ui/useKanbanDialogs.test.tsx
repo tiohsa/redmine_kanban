@@ -79,6 +79,7 @@ describe('useKanbanDialogs issue resolution', () => {
             id: 20,
             subject: 'Closed child',
             status_id: 2,
+            tracker_id: 1,
             is_closed: true,
             lock_version: 6,
           },
@@ -94,7 +95,7 @@ describe('useKanbanDialogs issue resolution', () => {
     expect(result.current.iframeEditContext).toEqual({
       url: '/issues/20',
       issueId: 20,
-      issueTitle: '#20 Closed child',
+      issueTitle: 'Bug #20 Closed child',
       projectId: 3,
     });
 
@@ -105,7 +106,7 @@ describe('useKanbanDialogs issue resolution', () => {
     expect(result.current.iframeEditContext).toEqual({
       url: '/issues/20/edit',
       issueId: 20,
-      issueTitle: '#20 Closed child',
+      issueTitle: 'Bug #20 Closed child',
       projectId: 3,
     });
   });

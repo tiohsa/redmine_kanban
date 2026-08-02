@@ -1,4 +1,5 @@
 import type { BoardData, Issue } from './types';
+import { normalizeTrackerId } from './kanbanShared';
 
 export type IssueEntity = Omit<Issue, 'subtasks'>;
 export type IssueEntityPatch = Partial<IssueEntity> & { is_closed?: boolean };
@@ -61,7 +62,8 @@ export type BoardResponse = {
 
 function entityOf(issue: Issue): IssueEntity {
   const { subtasks: _subtasks, ...entity } = issue;
-  return entity;
+  if (issue.tracker_id === undefined) return entity;
+  return { ...entity, tracker_id: normalizeTrackerId(issue.tracker_id) };
 }
 
 function isFresh(current: IssueEntity | undefined, incoming: IssueEntity): boolean {
@@ -361,7 +363,10 @@ export function applyLocalIssuePatch(
   const state = createNormalizedBoardState(data);
   const current = state.entitiesById.get(issueId);
   if (!current) return data;
-  state.entitiesById.set(issueId, { ...current, ...patch });
+  const normalizedPatch = patch.tracker_id === undefined
+    ? patch
+    : { ...patch, tracker_id: normalizeTrackerId(patch.tracker_id) };
+  state.entitiesById.set(issueId, { ...current, ...normalizedPatch });
 
   if (patch.status_id !== undefined && patch.status_id !== current.status_id) {
     state.board = {

@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { buildDisplayData, findIssueInBoard, findSubtask, resolveBoardIssue } from './kanbanShared';
+import {
+  buildIssueTitle,
+  buildDisplayData,
+  buildTrackerCatalog,
+  findIssueInBoard,
+  findSubtask,
+  normalizeBoardData,
+  normalizeTrackerId,
+  resolveBoardIssue,
+  resolveTrackerName,
+} from './kanbanShared';
 import type { BoardData, Issue } from './types';
 
 function makeIssue(id: number, attrs: Partial<Issue> = {}): Issue {
@@ -85,6 +95,7 @@ describe('resolveBoardIssue', () => {
                 id: 30,
                 subject: 'Grandchild',
                 status_id: 2,
+                tracker_id: 1,
                 is_closed: false,
                 lock_version: 8,
               },
@@ -102,6 +113,7 @@ describe('resolveBoardIssue', () => {
       issueUrl: '/issues/30',
       issueEditUrl: '/issues/30/edit',
       kind: 'subtask',
+      trackerId: 1,
       parentIssueId: 10,
       projectId: 3,
     });
@@ -110,6 +122,74 @@ describe('resolveBoardIssue', () => {
   it('returns null for unknown ids', () => {
     const data = makeBoardData([makeIssue(10)]);
     expect(resolveBoardIssue(data, 99)).toBeNull();
+  });
+});
+
+describe('Tracker catalog projection', () => {
+  it('normalizes only positive integer tracker ids', () => {
+    expect(normalizeTrackerId(1)).toBe(1);
+    expect(normalizeTrackerId(0)).toBeNull();
+    expect(normalizeTrackerId(-1)).toBeNull();
+    expect(normalizeTrackerId(1.5)).toBeNull();
+    expect(normalizeTrackerId(null)).toBeNull();
+    expect(normalizeTrackerId(undefined)).toBeNull();
+  });
+
+  it('resolves the same tracker name for root and nested issue display paths', () => {
+    const catalog = buildTrackerCatalog([
+      { id: 1, name: 'Bug' },
+      { id: 2, name: 'Feature' },
+    ]);
+
+    expect(resolveTrackerName(catalog, 1)).toBe('Bug');
+    expect(resolveTrackerName(catalog, 2)).toBe('Feature');
+  });
+
+  it('builds the same title projection for root, child, and unknown tracker paths', () => {
+    const data = makeBoardData([
+      makeIssue(10, {
+        subject: 'Parent',
+        subtasks: [{ id: 20, subject: 'Child', status_id: 1, tracker_id: 1, is_closed: false }],
+      }),
+    ]);
+
+    expect(buildIssueTitle(data, 10)).toBe('Bug #10 Parent');
+    expect(buildIssueTitle(data, 20)).toBe('Bug #20 Child');
+    expect(buildIssueTitle(data, 99, { id: 99, subject: 'Created', tracker_id: 1 })).toBe('Bug #99 Created');
+
+    const unknownData = {
+      ...data,
+      issues: [makeIssue(30, { subject: 'Unknown', tracker_id: 0 })],
+    };
+    expect(buildIssueTitle(unknownData, 30)).toBe('#30 Unknown');
+    expect(buildIssueTitle(unknownData, 30, { id: 30, subject: 'Fallback', tracker_id: 1 })).toBe('#30 Unknown');
+  });
+
+  it('normalizes invalid tracker values across root and nested board data', () => {
+    const normalized = normalizeBoardData(makeBoardData([
+      makeIssue(40, {
+        tracker_id: 0,
+        subtasks: [{ id: 41, subject: 'Unknown child', status_id: 1, tracker_id: -1, is_closed: false }],
+      }),
+    ]));
+
+    expect(normalized.issues[0]?.tracker_id).toBeNull();
+    expect(normalized.issues[0]?.subtasks?.[0]?.tracker_id).toBeNull();
+  });
+
+  it('does not invent a tracker name for invalid or unknown ids', () => {
+    const catalog = buildTrackerCatalog([
+      { id: 0, name: 'Invalid' },
+      { id: 1, name: '  ' },
+      { id: 2, name: 'Feature' },
+      { id: 2, name: 'Duplicate' },
+    ]);
+
+    expect(resolveTrackerName(catalog, 0)).toBeNull();
+    expect(resolveTrackerName(catalog, null)).toBeNull();
+    expect(resolveTrackerName(catalog, undefined)).toBeNull();
+    expect(resolveTrackerName(catalog, 99)).toBeNull();
+    expect(resolveTrackerName(catalog, 2)).toBe('Feature');
   });
 });
 
