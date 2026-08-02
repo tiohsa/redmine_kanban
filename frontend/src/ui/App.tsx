@@ -598,12 +598,13 @@ export function App({ dataUrl }: Props) {
           baseUrl={baseUrl}
           queryKey={boardQueryKey}
           projectIds={data.meta.project_ids ?? []}
+          onBeforeBulkSubtasks={(parentIssueId) => actions.reconcileIssueIds([parentIssueId], { treatAsCreated: true })}
           onClose={() => {
             dialogs.setIframeCreateUrl(null);
           }}
           onSuccess={(message, issueId) => {
             setNotice(message);
-            if (issueId) void actions.reconcileIssueIds([issueId]);
+            if (issueId) void actions.reconcileIssueIds([issueId], { treatAsCreated: true });
           }}
         />
       ) : null}

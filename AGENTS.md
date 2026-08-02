@@ -107,9 +107,14 @@ pnpm run typecheck
 ### Backend (Ruby) unit/functional tests
 
 ```bash
-# Requires Redmine running in Docker
-docker compose exec redmine bundle exec rails test plugins/redmine_kanban/test
+# Start Redmine and prepare the test dependencies in Docker
+docker compose up -d --wait
+docker compose exec -T redmine bundle config unset without
+docker compose exec -T redmine bundle install --jobs 4 --retry 3
+docker compose exec -T redmine bundle exec rails test plugins/redmine_kanban/test
 ```
+
+The plugin uses Rails' Minitest runner, not RSpec, and does not contain its own `Gemfile`. The container may exclude the `development` and `test` groups through Bundler's `without` setting, so remove that setting and install the test dependencies before running the suite. Repeat the dependency setup after recreating the container.
 
 ### E2E (Playwright) — local
 

@@ -261,7 +261,9 @@ export function applyBoardResponse(previous: NormalizedBoardState, response: Boa
     collectIssue(state, issue, response.kind === 'tree_page' ? response.parentId : undefined, response.kind !== 'tree_page');
   }
   for (const issue of response.issue_updates ?? []) mergeEntity(state, issue);
-  for (const issue of response.created_issues ?? []) collectIssue(state, issue);
+  for (const issue of response.created_issues ?? []) {
+    collectIssue(state, issue, undefined, issue.parent_id == null);
+  }
 
   if (response.kind === 'tree_page' && response.parentId !== undefined && response.completeness === 'complete') {
     const authoritativeChildIds = new Set((response.issues ?? []).map((issue) => issue.id));

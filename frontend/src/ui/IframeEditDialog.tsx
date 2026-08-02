@@ -80,10 +80,11 @@ type Props = {
   queryKey: readonly unknown[];
   projectIds?: number[];
   onClose: () => void;
+  onBeforeBulkSubtasks?: (parentIssueId: number) => Promise<void>;
   onSuccess: (message: string, issueId?: number) => void;
 };
 
-export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = 'edit', labels, baseUrl, queryKey, projectIds = [], onClose, onSuccess }: Props) {
+export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = 'edit', labels, baseUrl, queryKey, projectIds = [], onClose, onBeforeBulkSubtasks, onSuccess }: Props) {
   const [subtasks, setSubtasks] = useState<SubtaskCreateInput[]>([]);
   const [subtaskValidationError, setSubtaskValidationError] = useState<string | null>(null);
   const [trackerOptions, setTrackerOptions] = useState<Array<{ id: number; name: string }>>([]);
@@ -211,6 +212,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
 
     if (lines.length > 0) {
       try {
+        if (mode === 'create') await onBeforeBulkSubtasks?.(targetIssueId);
         await bulkMutation.mutateAsync({
           parent: {
             parent_issue_id: targetIssueId,
@@ -256,7 +258,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
     setSaveTarget(null);
     saveTargetRef.current = null;
     setIsSubmitting(false);
-  }, [bulkMutation, labels, mode, onClose, onSuccess, subtasks]);
+  }, [bulkMutation, labels, mode, onBeforeBulkSubtasks, onClose, onSuccess, subtasks]);
 
   const submitIssueForm = useCallback((form: HTMLFormElement, target: SaveTarget) => {
     const formData = new FormData(form);

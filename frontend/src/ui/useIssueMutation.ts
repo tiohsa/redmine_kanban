@@ -11,6 +11,10 @@ export type EntityReconciliationResponse = {
   missing_issue_ids?: number[];
 };
 
+export type EntityReconciliationOptions = {
+  treatAsCreated?: boolean;
+};
+
 export function applyMutationResponse(data: BoardData, result: Partial<IssueMutationResult>): BoardData {
   const state = createNormalizedBoardState(data);
   const issueUpdates = result.issue_updates
@@ -25,13 +29,23 @@ export function applyMutationResponse(data: BoardData, result: Partial<IssueMuta
   }));
 }
 
-export function applyEntityReconciliation(data: BoardData, response: EntityReconciliationResponse): BoardData {
+export function applyEntityReconciliation(
+  data: BoardData,
+  response: EntityReconciliationResponse,
+  options: EntityReconciliationOptions = {},
+): BoardData {
   const state = createNormalizedBoardState(data);
   if (response.scope_fingerprint && response.scope_fingerprint !== state.scope.fingerprint) return data;
 
   return selectBoardData(applyBoardResponse(state, {
     kind: 'mutation',
-    issue_updates: response.entities ?? [],
+    issue_updates: options.treatAsCreated ? undefined : response.entities ?? [],
+    created_issues: options.treatAsCreated ? response.entities ?? [] : undefined,
+    tree_changes: options.treatAsCreated
+      ? (response.entities ?? []).flatMap((issue) => issue.parent_id == null
+        ? []
+        : [{ type: 'attach' as const, parent_id: issue.parent_id, child_id: issue.id }])
+      : undefined,
     deleted_issue_ids: [...new Set(response.missing_issue_ids ?? [])],
     scopeFingerprint: response.scope_fingerprint,
   }));

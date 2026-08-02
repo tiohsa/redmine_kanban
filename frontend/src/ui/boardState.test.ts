@@ -75,6 +75,21 @@ describe('normalized board state', () => {
     })).toEqual([3]);
   });
 
+  it('projects created top-level issues as roots and created children under their parent', () => {
+    const current = board([issue(1)]);
+    const next = selectBoardData(applyBoardResponse(createNormalizedBoardState(current), {
+      kind: 'mutation',
+      created_issues: [
+        issue(2, { parent_id: null }),
+        issue(3, { parent_id: 1 }),
+      ],
+      tree_changes: [{ type: 'attach', parent_id: 1, child_id: 3 }],
+    }));
+
+    expect(next.issues.map((value) => value.id)).toEqual([1, 2]);
+    expect(next.issues[0]?.subtasks?.map((value) => value.id)).toEqual([3]);
+  });
+
   it('treats unexpanded parents as recoverable incomplete tree state', () => {
     const current = board([issue(1, { subtasks: [issue(2, { parent_id: 1 }) as never] })]);
     current.meta.tree = {
@@ -276,6 +291,17 @@ describe('normalized board state', () => {
       missing_issue_ids: [2],
     });
     expect(stale).toEqual(current);
+  });
+
+  it('projects an iframe-created top-level entity as a root during reconciliation', () => {
+    const current = board([issue(1)]);
+    const created = applyEntityReconciliation(current, {
+      scope_fingerprint: 'project:1',
+      entities: [issue(2, { parent_id: null }), issue(3, { parent_id: 1 })],
+    }, { treatAsCreated: true });
+
+    expect(created.issues.map((value) => value.id)).toEqual([1, 2]);
+    expect(created.issues[0]?.subtasks?.map((value) => value.id)).toEqual([3]);
   });
 
   it('keeps invariants through a deterministic response sequence and replay', () => {

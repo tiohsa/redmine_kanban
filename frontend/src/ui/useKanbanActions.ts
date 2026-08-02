@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { QueryKey } from '@tanstack/react-query';
 import type { BoardData, Issue } from './types';
 import { getJson, isHttpError, postJson } from './http';
-import { applyAncestorIssueUpdates, applyEntityReconciliation, applyMutationResponse, unresolvedInvalidationIds, useIssueMutation } from './useIssueMutation';
+import { applyAncestorIssueUpdates, applyEntityReconciliation, applyMutationResponse, unresolvedInvalidationIds, useIssueMutation, type EntityReconciliationOptions } from './useIssueMutation';
 import { findIssueInBoard } from './kanbanShared';
 import { applyLocalIssuePatch, reduceBoardData } from './boardState';
 import { findSubtask, resolveAssigneeName, resolveMutationError, resolvePriorityName, resolveSubtaskStatus, resolveBoardIssue, type IssueMutationResult, type MovePayload, type UpdatePayload } from './kanbanShared';
@@ -101,7 +101,7 @@ export function useKanbanActions({
     setIssueBusy(issueId, false);
   }, [setIssueBusy]);
 
-  const reconcileIssueIds = useCallback(async (issueIds: number[]) => {
+  const reconcileIssueIds = useCallback(async (issueIds: number[], options: EntityReconciliationOptions = {}) => {
     const ids = [...new Set(issueIds)];
     if (ids.length === 0) return;
     try {
@@ -109,7 +109,7 @@ export function useKanbanActions({
         buildBoardEntitiesUrl(baseUrl, data?.meta.project_ids ?? [], ids),
       );
       queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
-        current ? applyEntityReconciliation(current, response) : current
+        current ? applyEntityReconciliation(current, response, options) : current
       ));
     } catch (_error) {
       // Reconciliation is best-effort. The mutation response is authoritative
