@@ -18,6 +18,7 @@ export function ToolbarDropdown<T extends string>({
   closeOnSelect = true,
   labels,
   showDot,
+  active,
   showTriggerLabel,
 }: {
   label: string;
@@ -30,6 +31,7 @@ export function ToolbarDropdown<T extends string>({
   closeOnSelect?: boolean;
   labels: Record<string, string>;
   showDot?: boolean;
+  active?: boolean;
   showTriggerLabel?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -86,6 +88,7 @@ export function ToolbarMultiSelect({
   includeAllOption = false,
   allLabel,
   showDot,
+  active,
   showTriggerLabel,
   extraContent,
 }: {
@@ -100,6 +103,7 @@ export function ToolbarMultiSelect({
   includeAllOption?: boolean;
   allLabel?: string;
   showDot?: boolean;
+  active?: boolean;
   showTriggerLabel?: boolean;
   extraContent?: ReactNode;
 }) {
@@ -118,7 +122,7 @@ export function ToolbarMultiSelect({
 
   return (
     <div className="rk-dropdown-container">
-      <div ref={triggerRef} className={triggerClass(showTriggerLabel, open, Boolean(showDot))} onClick={() => setOpen(!open)} title={title}>
+      <div ref={triggerRef} className={triggerClass(showTriggerLabel, open, active ?? Boolean(showDot))} onClick={() => setOpen(!open)} title={title}>
         <span className="rk-icon">{icon}</span>
         {showTriggerLabel ? <span>{selectedCount > 0 ? `${label} (${selectedCount})` : label}</span> : null}
         {showDot ? <span className="rk-indicator-dot" /> : null}

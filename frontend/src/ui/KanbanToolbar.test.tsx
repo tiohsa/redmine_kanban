@@ -177,6 +177,30 @@ describe('KanbanToolbar', () => {
     expect(screen.getByText('Not set')).toBeTruthy();
   });
 
+  it('shows the priority trigger as active when the priority filter is selected', () => {
+    const { container } = renderToolbar(makeFilters({ priority: ['1'], priorityFilterEnabled: true }));
+    const priorityTrigger = Array.from(container.querySelectorAll('.rk-dropdown-trigger'))
+      .find((element) => element.textContent?.includes('Priority'));
+
+    expect(priorityTrigger?.classList.contains('rk-active-soft')).toBe(true);
+  });
+
+  it('does not show the priority trigger as active when the priority filter is unselected (empty)', () => {
+    const { container } = renderToolbar(makeFilters({ priority: [], priorityFilterEnabled: true }));
+    const priorityTrigger = Array.from(container.querySelectorAll('.rk-dropdown-trigger'))
+      .find((element) => element.textContent?.includes('Priority'));
+
+    expect(priorityTrigger?.classList.contains('rk-active-soft')).toBe(false);
+  });
+
+  it('shows the priority trigger as active when the priority filter is in all-selected state (disabled filter)', () => {
+    const { container } = renderToolbar(makeFilters({ priority: [], priorityFilterEnabled: false }));
+    const priorityTrigger = Array.from(container.querySelectorAll('.rk-dropdown-trigger'))
+      .find((element) => element.textContent?.includes('Priority'));
+
+    expect(priorityTrigger?.classList.contains('rk-active-soft')).toBe(true);
+  });
+
   it('opens a single sort menu and changes the selected direction', () => {
     const { onChangeSort } = renderToolbar(makeFilters());
 

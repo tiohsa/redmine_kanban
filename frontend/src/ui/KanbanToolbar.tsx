@@ -243,7 +243,8 @@ export function KanbanToolbar({
           labels={labels}
           includeAllOption
           allLabel={labels.all}
-          showDot={filters.priorityFilterEnabled}
+          active={!filters.priorityFilterEnabled || filters.priority.length > 0}
+          showDot={!filters.priorityFilterEnabled || filters.priority.length > 0}
           showTriggerLabel
         />
 
