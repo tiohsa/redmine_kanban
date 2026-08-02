@@ -5,6 +5,7 @@ import { fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BoardData, Issue } from '../types';
 import { CanvasBoard, makeSubtaskSignature, measureCardHeightCached } from './CanvasBoard';
+import { layoutCardMetadata } from './canvasMetadata';
 import { getMetrics } from './metrics';
 import { buildBoardState } from './state';
 
@@ -189,6 +190,60 @@ describe('CanvasBoard cursor lifecycle', () => {
     vi.restoreAllMocks();
   });
 
+  it('keeps a visible assignee representation when a long tracker consumes narrow-card width', () => {
+    const layout = layoutCardMetadata(createCanvasContext(), {
+      contentX: 13,
+      rightX: 164,
+      idText: '#12',
+      trackerName: 'Very long tracker name',
+      assigneeName: '担当者名',
+    });
+
+    expect(layout.tracker?.text).toBeTruthy();
+    expect(layout.assignee?.text).toBeTruthy();
+    expect(layout.assignee?.text).not.toBe('...');
+    expect(layout.assignee?.text).toContain('担');
+
+    for (const segment of [layout.id, layout.tracker, layout.assignee].filter(Boolean)) {
+      expect(segment!.x + segment!.width).toBeLessThanOrEqual(164);
+    }
+    expect(layout.assignee!.x).toBeGreaterThan(layout.tracker!.x + layout.tracker!.width);
+  });
+
+  it('does not collapse the assignee to an ellipsis on a fit-to-width card', async () => {
+    const issue = makeIssue(13, { assigned_to_name: '担当者名' });
+    const baseData = makeBoardData(issue);
+    const data = {
+      ...baseData,
+      lists: { ...baseData.lists, trackers: [{ id: 1, name: 'Very long tracker name' }] },
+    };
+    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const context = createCanvasContextWithSpies();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+
+    render(
+      <CanvasBoard
+        data={data}
+        state={state}
+        fitMode="width"
+        canMove
+        canCreate
+        onCommand={vi.fn()}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onView={vi.fn()}
+        onDelete={vi.fn()}
+        onEditClick={vi.fn()}
+        labels={data.labels}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(context.fillText).toHaveBeenCalledWith(expect.stringContaining('担'), expect.any(Number), expect.any(Number));
+    });
+    expect(context.fillText).not.toHaveBeenCalledWith('...', expect.any(Number), expect.any(Number));
+  });
+
   it('resets cursor after pointercancel and keeps pending drop cursor default after lost capture', async () => {
     const issue = makeIssue(1, { due_date: '2026-03-20' });
     const data = makeBoardData(issue);
@@ -352,6 +407,45 @@ describe('CanvasBoard cursor lifecycle', () => {
     expect(assigneeCall).toBeTruthy();
     expect(projectCall).toBeTruthy();
     expect((projectCall as [string, number, number])[2]).toBeGreaterThan((assigneeCall as [string, number, number])[2]);
+  });
+
+  it('draws the tracker name next to the issue id', async () => {
+    const issue = makeIssue(12);
+    const baseData = makeBoardData(issue);
+    const data = {
+      ...baseData,
+      lists: { ...baseData.lists, trackers: [{ id: 1, name: 'Bug' }] },
+    };
+    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const context = createCanvasContextWithSpies();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+
+    render(
+      <CanvasBoard
+        data={data}
+        state={state}
+        canMove
+        canCreate
+        onCommand={vi.fn()}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onView={vi.fn()}
+        onDelete={vi.fn()}
+        onEditClick={vi.fn()}
+        labels={data.labels}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(context.fillText).toHaveBeenCalledWith('Bug', expect.any(Number), expect.any(Number));
+    });
+
+    const idCall = context.fillText.mock.calls.find(([text]) => text === '#12');
+    const trackerCall = context.fillText.mock.calls.find(([text]) => text === 'Bug');
+    expect(idCall).toBeTruthy();
+    expect(trackerCall).toBeTruthy();
+    expect((trackerCall as [string, number, number])[1]).toBeGreaterThan((idCall as [string, number, number])[1]);
+    expect((trackerCall as [string, number, number])[2]).toBe((idCall as [string, number, number])[2]);
   });
 
   it('keeps the due-date row compact when the project is current or absent', () => {

@@ -113,7 +113,9 @@ function assertInvariants(state: NormalizedBoardState, reference: Reference): vo
 
 describe('normalized board state state-machine', () => {
   it('preserves entity, edge, deletion, freshness, and pagination invariants across an operation sequence', () => {
-    let state = createNormalizedBoardState(board([issue(1, { subtasks: [issue(2, { parent_id: 1 }) as never] })]));
+    let state = createNormalizedBoardState(board([issue(1, {
+      subtasks: [issue(2, { parent_id: 1, tracker_id: 2 }) as never],
+    })]));
     state.tree.parentStates.set(1, { completeness: 'partial', nextCursor: 'tree-0', loadedCount: 1 });
     const reference = referenceFromState(state);
     const scopeFingerprint = state.scope.fingerprint;
@@ -130,6 +132,7 @@ describe('normalized board state state-machine', () => {
       state = applyBoardResponse(state, response);
       applyReference(reference, response);
       assertInvariants(state, reference);
+      expect(state.entitiesById.get(2)?.tracker_id).toBe(2);
     }
 
     const afterSequence = state;

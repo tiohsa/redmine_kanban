@@ -100,6 +100,14 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
     assert_equal '/issues/2/edit', payload.dig(:urls, :issue_edit)
   end
 
+  def test_subtask_payload_preserves_tracker_id
+    child = fake_issue(id: 2, parent_id: 1, subject: 'Tracker child', tracker_id: 7)
+
+    payload = presenter_for(1 => [child]).send(:subtask_to_h, child)
+
+    assert_equal 7, payload[:tracker_id]
+  end
+
   def test_permissions_use_board_project_for_cards_and_subtasks
     board_project = Object.new
     issue_project = FakeProject.new(2, 'Issue project')
@@ -141,13 +149,13 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
 
   private
 
-  def fake_issue(id:, subject:, parent_id: nil, project: FakeProject.new(1, 'Project'))
+  def fake_issue(id:, subject:, parent_id: nil, tracker_id: 1, project: FakeProject.new(1, 'Project'))
     FakeIssue.new(
       id: id,
       parent_id: parent_id,
       subject: subject,
       status_id: 1,
-      tracker_id: 1,
+      tracker_id: tracker_id,
       status: FakeStatus.new(1, false),
       lock_version: 1,
       project: project,

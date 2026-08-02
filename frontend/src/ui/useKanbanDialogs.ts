@@ -1,26 +1,12 @@
 import { useCallback, useState } from 'react';
 import type { BoardData } from './types';
 import { buildDefaultIssueCreateUrl, type ModalContext } from './issueDialog';
-import { resolveBoardIssue } from './kanbanShared';
+import { buildIssueTitle, resolveBoardIssue } from './kanbanShared';
 
 type IframeEditContext = { url: string; issueId: number; issueTitle?: string; projectId?: number };
 type PriorityPopupState = { issueId: number; currentId: number; x: number; y: number };
 type DatePopupState = { issueId: number; currentDate: string | null; x: number; y: number };
 type ProgressPopupState = { issueId: number; currentDoneRatio: number; x: number; y: number };
-
-function buildIssueTitle(data: BoardData | null, issueId: number): string | undefined {
-  if (!data) return undefined;
-
-  const issue = resolveBoardIssue(data, issueId);
-  if (!issue) return undefined;
-
-  if (issue.kind === 'subtask') {
-    return `#${issueId} ${issue.subject}`.trim();
-  }
-
-  const trackerName = data.lists.trackers.find((tracker) => tracker.id === issue.trackerId)?.name ?? '';
-  return `${trackerName} #${issueId} ${issue.subject}`.trim();
-}
 
 export function useKanbanDialogs(
   baseUrl: string,

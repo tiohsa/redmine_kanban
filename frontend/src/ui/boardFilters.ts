@@ -123,7 +123,7 @@ function matchesIssue(issue: Issue, _data: BoardData | null, filters: Filters, q
       }
     }
 
-    if (filters.trackerIds.length > 0 && !filters.trackerIds.includes(issue.tracker_id)) return false;
+    if (filters.trackerIds.length > 0 && (issue.tracker_id === null || !filters.trackerIds.includes(issue.tracker_id))) return false;
 
     if (filters.priorityFilterEnabled) {
       if (filters.priority.length === 0) return false;

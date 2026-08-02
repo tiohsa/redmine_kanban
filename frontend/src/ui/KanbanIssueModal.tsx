@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import type { BoardData } from './types';
 import { IssueDialogHeader } from './IssueDialogHeader';
 import { buildDefaultIssueCreateUrl, type ModalContext } from './issueDialog';
-import { findIssueInBoard, linkifyText } from './kanbanShared';
+import { buildIssueTitle, findIssueInBoard, linkifyText } from './kanbanShared';
 import { BulkSubtaskEditor } from './BulkSubtaskEditor';
 import type { SubtaskCreateInput } from './bulkSubtasks';
 import { getJson } from './http';
@@ -22,7 +22,9 @@ export function KanbanIssueModal({ data, baseUrl, ctx, onClose, onSaved, onDelet
   const issue = ctx.issueId ? findIssueInBoard(data, ctx.issueId) : null;
   const isEdit = !!issue;
   const labels = data.labels;
-  const modalTitle = isEdit ? `${issue.subject} #${issue.id}` : labels.issue_create_dialog_title ?? 'Create issue';
+  const modalTitle = isEdit
+    ? buildIssueTitle(data, issue.id, issue)
+    : labels.issue_create_dialog_title ?? 'Create issue';
   const defaultLinkUrl = isEdit
     ? issue?.urls.issue_edit
     : buildDefaultIssueCreateUrl(baseUrl, data.meta.project_id, data.meta.lane_type, ctx);
@@ -40,7 +42,9 @@ export function KanbanIssueModal({ data, baseUrl, ctx, onClose, onSaved, onDelet
       ? String(issue.project.id)
       : String(ctx.projectId ?? data.meta.project_id),
   );
-  const [trackerId, setTrackerId] = useState(issue?.tracker_id ? String(issue.tracker_id) : String(defaultTracker));
+  const [trackerId, setTrackerId] = useState(
+    issue?.tracker_id ? String(issue.tracker_id) : (isEdit ? '' : String(defaultTracker)),
+  );
   const [availableTrackers, setAvailableTrackers] = useState(data.lists.trackers);
   const [assigneeId, setAssigneeId] = useState(issue?.assigned_to_id ? String(issue.assigned_to_id) : defaultAssignee);
   const [dueDate, setDueDate] = useState(issue?.due_date ?? '');
@@ -156,6 +160,7 @@ export function KanbanIssueModal({ data, baseUrl, ctx, onClose, onSaved, onDelet
             <label className="rk-field">
               <span className="rk-label">{labels.issue_tracker}</span>
               <select value={trackerId} onChange={(event) => setTrackerId(event.target.value)}>
+                {trackerId === '' ? <option value="">{labels.select_tracker}</option> : null}
                 {availableTrackers.map((tracker) => (
                   <option key={tracker.id} value={tracker.id}>{tracker.name}</option>
                 ))}

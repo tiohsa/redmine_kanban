@@ -8,7 +8,7 @@ import {
   type BoardResponse,
   type NormalizedBoardState,
 } from './boardState';
-import { applyEntityReconciliation, unresolvedInvalidationIds } from './useIssueMutation';
+import { applyEntityReconciliation, applyMutationResponse, unresolvedInvalidationIds } from './useIssueMutation';
 
 function issue(id: number, overrides: Partial<Issue> = {}): Issue {
   return {
@@ -53,6 +53,20 @@ function root(state: NormalizedBoardState, id: number) {
 }
 
 describe('normalized board state', () => {
+  it('normalizes invalid tracker ids at mutation and entity reconciliation boundaries', () => {
+    const current = board([issue(1, { tracker_id: 1 })]);
+
+    const mutation = applyMutationResponse(current, {
+      issue_updates: [issue(1, { tracker_id: 0, lock_version: 2 })],
+    });
+    expect(root(createNormalizedBoardState(mutation), 1)?.tracker_id).toBeNull();
+
+    const reconciliation = applyEntityReconciliation(current, {
+      entities: [issue(1, { tracker_id: 2, lock_version: 2 })],
+    });
+    expect(root(createNormalizedBoardState(reconciliation), 1)?.tracker_id).toBe(2);
+  });
+
   it('does not reconcile entities already included in a mutation response', () => {
     expect(unresolvedInvalidationIds({
       issue_updates: [issue(1)],
@@ -115,7 +129,7 @@ describe('normalized board state', () => {
 
   it('merges a partial response without replacing an existing complete subtree', () => {
     const initial = createNormalizedBoardState(board([
-      issue(1, { subtasks: [issue(2, { parent_id: 1 }) as never] }),
+      issue(1, { subtasks: [issue(2, { parent_id: 1, tracker_id: 2 }) as never] }),
     ]));
     initial.tree.parentStates.set(1, { completeness: 'complete', nextCursor: null, loadedCount: 1 });
 
@@ -130,19 +144,44 @@ describe('normalized board state', () => {
     const next = applyBoardResponse(initial, partial);
     expect(next.tree.childrenByParentId.get(1)).toEqual([2]);
     expect(next.tree.parentStates.get(1)).toEqual({ completeness: 'complete', nextCursor: null, loadedCount: 1 });
+    expect(root(next, 2)?.tracker_id).toBe(2);
+  });
+
+  it('does not let a partial entity without tracker_id erase a valid tracker', () => {
+    const initial = createNormalizedBoardState(board([issue(1, { tracker_id: 2, lock_version: 4 })]));
+    const partial = issue(1, { lock_version: 4 });
+    delete (partial as Partial<Issue>).tracker_id;
+
+    const next = applyBoardResponse(initial, {
+      kind: 'mutation',
+      issue_updates: [partial],
+      scopeFingerprint: initial.scope.fingerprint,
+    });
+
+    expect(root(next, 1)?.tracker_id).toBe(2);
   });
 
   it('rejects stale scalar entities and stale tree pages', () => {
-    const initial = createNormalizedBoardState(board([issue(1, { lock_version: 4, updated_on: '2026-08-01T00:00:00Z' })]));
+    const initial = createNormalizedBoardState(board([issue(1, {
+      lock_version: 4,
+      tracker_id: 2,
+      updated_on: '2026-08-01T00:00:00Z',
+    })]));
     const response: BoardResponse = {
       kind: 'mutation',
-      issue_updates: [issue(1, { subject: 'Old', lock_version: 3, updated_on: '2026-07-31T00:00:00Z' })],
+      issue_updates: [issue(1, {
+        subject: 'Old',
+        tracker_id: 1,
+        lock_version: 3,
+        updated_on: '2026-07-31T00:00:00Z',
+      })],
       operationId: 'older-operation',
       scopeFingerprint: initial.scope.fingerprint,
     };
 
     const next = applyBoardResponse(initial, response);
     expect(root(next, 1)?.subject).toBe('Issue 1');
+    expect(root(next, 1)?.tracker_id).toBe(2);
   });
 
   it('is idempotent and does not let the root cursor move backwards', () => {

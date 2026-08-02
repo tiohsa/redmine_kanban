@@ -128,8 +128,14 @@ test('truncated tree is visible and recovers through scoped subtree pages', asyn
   const assertFlatMutation = (result) => {
     expect(result.status).toBe(200);
     expect(result.body.contract_version).toBe(2);
-    for (const issue of result.body.issue_updates || []) expect(issue.subtasks).toBeUndefined();
-    for (const issue of result.body.created_issues || []) expect(issue.subtasks).toBeUndefined();
+    for (const issue of result.body.issue_updates || []) {
+      expect(issue.subtasks).toBeUndefined();
+      expect(issue.tracker_id).toBeGreaterThan(0);
+    }
+    for (const issue of result.body.created_issues || []) {
+      expect(issue.subtasks).toBeUndefined();
+      expect(issue.tracker_id).toBeGreaterThan(0);
+    }
   };
 
   const parentAfterTree = findIssue(initial.issues, parent.id);
