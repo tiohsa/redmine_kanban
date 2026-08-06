@@ -82,9 +82,9 @@ pnpm run build
 
 ## 表示設定
 
-プラグイン全体の設定画面はありません。各ユーザーはボード上でスイムレーン、非表示ステータス、停滞閾値、並び替え、表示幅、文字サイズ、子チケット表示を設定できます。カード移動では、ユーザーが明示したレーン属性とステータスだけを変更し、Redmine の Workflow と権限を正とします。
+プラグイン全体の設定画面はありません。各ユーザーはボード上でスイムレーン、非表示ステータス、停滞閾値、並び替え、表示幅、文字サイズ、子チケット表示、最大表示件数を設定できます。最大表示件数のデフォルトは1,500件です。カード移動では、ユーザーが明示したレーン属性とステータスだけを変更し、Redmine の Workflow と権限を正とします。
 
-API はサーバ保護のため、標準で 500 件、最大で 1,000 件まで取得します。再帰レスポンスはcanonical rootと合計1,500 unique nodeのbudgetを使用し、`meta.tree` にbudget、unique/serialized数、重複root数、取得row数、truncationを返します。`meta.tree.truncated` がtrueの場合、`truncated_parent_ids` から追加取得できる親ツリーを特定できます。node/depth/query budgetで未展開になった親も追加取得対象となり、`unexpanded_parent_ids` は原因の診断情報として返します。rootページは署名付きkeyset cursor（`updated_on DESC, id DESC`）、子ツリーページは親単位の署名付き`id ASC` cursorを使用し、cursorはproject/filter scopeと親に束縛されます。運用時に性能ログが必要な場合だけ `REDMINE_KANBAN_PERF_LOG=1` を指定してください。
+APIは対象scopeを完全な単一snapshotとして返します。最大表示件数はページサイズではなくAdmission Controlであり、対象が上限を超える場合は一部Issueを返さず、構造化422エラーを返します。サーバーは `REDMINE_KANBAN_MAX_BOARD_ENTITIES`（デフォルト5,000）、`REDMINE_KANBAN_MAX_RESPONSE_BYTES`（デフォルト8 MiB）、`REDMINE_KANBAN_MAX_BOARD_QUERIES`（デフォルト20）で資源を制限します。cursor、offset、子ツリーの追加取得、Load more操作はありません。運用時に性能ログが必要な場合だけ `REDMINE_KANBAN_PERF_LOG=1` を指定してください。
 
 ## 技術スタック
 
@@ -149,10 +149,6 @@ docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
 docker compose -f .github/e2e/docker-compose.yml exec -T --user redmine redmine \
 bundle exec rails runner -e production plugins/redmine_kanban/e2e/setup_redmine.rb
 
-# truncation E2E 用の高fan-outツリーfixture（任意）
-docker compose -f .github/e2e/docker-compose.yml exec -T --user redmine redmine \
-  env REDMINE_KANBAN_E2E_TREE_FIXTURE=1 bundle exec rails runner -e production plugins/redmine_kanban/e2e/setup_redmine.rb
-
 # E2E 実行
 REDMINE_BASE_URL=http://127.0.0.1:3002 \
   npx --prefix e2e playwright test -c e2e/playwright.config.js
@@ -172,11 +168,9 @@ REDMINE_BASE_URL=http://127.0.0.1:3002 \
 
 ボードデータ補足:
 
-- `issues[].subtasks` は再帰ツリー構造です（`subtasks[].subtasks...`）。
-- Canvas 上の子チケット行はフロントで描画/ヒット判定用にフラット化していますが、API は階層を保持します。
-- 同じIssueはrootまたはnestedのどちらか一方でcanonical化されます。親ツリーへ実際に含まれるまで子チケットをrootから除外しないため、未ロード・truncated・未展開のIssueが表示から消えません。
-- `GET /projects/:project_id/kanban/issues` は通常のrootページングに加え、`tree_parent_id` と署名付き`cursor`による子ツリーの追加取得を受け付けます。子ツリーは決定的な `id ASC` 順で返され、ページ追加後も通常のrootページング情報を置き換えません。既存の`offset`は互換性のためBackendで受け付ける場合がありますが、新Frontendは使用しません。
-- mutation responseはcontract version 2のflat delta（`issue_updates`、`created_issues`、`deleted_issue_ids`、`tree_changes`、`invalidations`）を返し、FrontendはEntity／Tree共通ReducerとIssue／Parent／Column countのtargeted reconciliationで適用します。通常のmutation成功後にBoard全体をrefreshしません。
+- contract version 3は `entities` にIssueを一意に返し、`tree.root_ids` と `tree.children_by_parent_id` から関係を表現します。Frontendはnormalized stateからCanvas用の行を派生します。
+- Requestの件数パラメータは `board_entity_limit` です。`issue_limit`、`offset`、`cursor`、`tree_parent_id` は400で拒否されます。
+- mutation responseはcontract version 3のflat delta（`issue_updates`、`created_issues`、`deleted_issue_ids`、`tree_changes`、`invalidations`）を返し、FrontendはEntity／Tree共通Reducerで適用します。
 
 一括作成の冪等性は `Rails.cache` で管理します。cache identity はユーザー・プロジェクト・操作・`Idempotency-Key`・canonical request payload digest で識別されます。atomicなclaimに成功した処理だけが作成処理を実行し、同じキーでも異なるpayloadは409、同一payloadのcompletedは以前のresponseを返します。クライアントは同一ブラウザセッション中の同一論理操作で同じキーを再利用し、入力検証失敗または例外時はclaimを削除して再試行できます。
 

@@ -2,10 +2,12 @@ require 'set'
 
 module RedmineKanban
   class BoardIssuePresenter
-    def initialize(user:, subtasks_by_parent_id: {}, board_project: nil)
+    def initialize(user:, subtasks_by_parent_id: {}, board_project: nil, workflow_status_resolver: nil, permission_policy: nil)
       @user = user
       @subtasks_by_parent_id = subtasks_by_parent_id
       @board_project = board_project
+      @workflow_status_resolver = workflow_status_resolver
+      @permission_policy = permission_policy || PermissionPolicy.new(user: user)
       @serialized_ids = Set.new
     end
 
@@ -60,6 +62,10 @@ module RedmineKanban
     end
 
     private
+
+    def permission_policy
+      @permission_policy
+    end
 
     def subtask_tree(issue, visited_ids)
       result = []
@@ -140,12 +146,14 @@ module RedmineKanban
     end
 
     def allowed_status_ids_for(issue)
-      statuses = issue.respond_to?(:new_statuses_allowed_to) ? issue.new_statuses_allowed_to(@user) : []
+      statuses = if @workflow_status_resolver
+                   @workflow_status_resolver.call(issue)
+                 elsif issue.respond_to?(:new_statuses_allowed_to)
+                   issue.new_statuses_allowed_to(@user)
+                 else
+                   []
+                 end
       ([issue.status] + statuses).compact.map(&:id).uniq
-    end
-
-    def permission_policy
-      @permission_policy ||= PermissionPolicy.new(user: @user)
     end
 
     def updated_on_for(issue)

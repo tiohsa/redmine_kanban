@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { BoardData, Issue } from './types';
-import { getJson } from './http';
+import type { BoardApiResponse, BoardData, Issue } from './types';
+import { getJson, isHttpError } from './http';
 import { CanvasBoard, type CanvasBoardHandle } from './board/CanvasBoard';
 import { buildBoardState } from './board/state';
 import { applyBoardDataFilters, buildVisibleIssues } from './boardFilters';
-import { buildBoardDataUrl, buildBoardIssuesCursorUrl, buildBoardQueryKey, buildBoardTreeUrl } from './boardQuery';
+import { buildBoardDataUrl, buildBoardQueryKey } from './boardQuery';
 import { IframeEditDialog } from './IframeEditDialog';
 import { KanbanIssueModal } from './KanbanIssueModal';
 import { KanbanPopupHost } from './KanbanPopupHost';
@@ -13,8 +13,6 @@ import { DatePopup, PriorityPopup, ProgressPopup } from './KanbanPopups';
 import { KanbanToolbar } from './KanbanToolbar';
 import { HelpDialog } from './HelpDialog';
 import { buildDisplayData, buildIssueTitle, normalizeBoardData, payloadFieldError, payloadMessage, resolveMutationError } from './kanbanShared';
-import { mergeIssueTrees } from './boardTree';
-import { applyBoardResponse, createNormalizedBoardState, selectBoardData } from './boardState';
 import { findIssueInBoard } from './kanbanShared';
 import { useKanbanActions } from './useKanbanActions';
 import { useKanbanDialogs } from './useKanbanDialogs';
@@ -49,122 +47,9 @@ export function resolveDefaultCreateProjectId(
   return null;
 }
 
-export function mergeIssuePage(
-  current: BoardData,
-  page: Pick<BoardData, 'meta' | 'issues'>,
-  resolvedTreeParentIds: number[] = [],
-  attachTreeParentIds: number[] = resolvedTreeParentIds,
-  requestCursor?: string | null,
-): BoardData {
-  const currentState = createNormalizedBoardState(current);
-  const normalizedIsTreePage = page.meta.pagination?.tree_parent_id !== undefined;
-  const normalizedPagePagination = page.meta.pagination;
-  const normalized = applyBoardResponse(currentState, {
-    kind: normalizedIsTreePage ? 'tree_page' : 'root_page',
-    issues: page.issues,
-    parentId: normalizedPagePagination?.tree_parent_id,
-    completeness: normalizedPagePagination?.has_more_issues ? 'partial' : 'complete',
-    nextCursor: normalizedPagePagination?.next_cursor,
-    hasMore: normalizedPagePagination?.has_more_issues,
-    requestCursor: requestCursor ?? undefined,
-    scopeFingerprint: page.meta.scope_fingerprint,
-  });
-  if (page.meta.scope_fingerprint || normalizedPagePagination?.next_cursor !== undefined) return selectBoardData(normalized);
-
-  const issues = mergeIssueTrees(current.issues, page.issues, attachTreeParentIds);
-  const currentPagination = current.meta.pagination;
-  const pagePagination = page.meta.pagination;
-  const totalIssueCount = pagePagination?.total_issue_count ?? currentPagination?.total_issue_count ?? issues.length;
-  const nextOffset = Math.min(
-    totalIssueCount,
-    Math.max(
-      currentPagination?.next_offset ?? currentPagination?.issue_count ?? 0,
-      pagePagination?.next_offset ?? pagePagination?.issue_count ?? 0,
-      issues.length,
-    ),
-  );
-  const isTreePage = pagePagination?.tree_parent_id !== undefined;
-  const pagination = isTreePage
-    ? currentPagination
-    : (
-        pagePagination || currentPagination
-          ? {
-              ...(currentPagination ?? pagePagination!),
-              ...(pagePagination ?? {}),
-              offset: 0,
-              issue_count: issues.length,
-              total_issue_count: totalIssueCount,
-              next_offset: nextOffset,
-              has_more_issues: nextOffset < totalIssueCount,
-            }
-          : undefined
-      );
-  const tree = mergeTreeMetadata(current.meta.tree, page.meta.tree, issues, resolvedTreeParentIds);
-
-  return {
-    ...current,
-    meta: {
-      ...current.meta,
-      ...(pagination ? { pagination } : {}),
-      ...(tree ? { tree } : {}),
-    },
-    issues,
-  };
-}
-
-function mergeTreeMetadata(
-  currentTree: BoardData['meta']['tree'],
-  pageTree: BoardData['meta']['tree'],
-  issues: Issue[],
-  resolvedTreeParentIds: number[] = [],
-): BoardData['meta']['tree'] {
-  if (!currentTree && !pageTree) return undefined;
-
-  const ids: number[] = [];
-  const pending = [...issues].reverse();
-  while (pending.length > 0) {
-    const node = pending.pop();
-    if (!node) continue;
-    ids.push(node.id);
-    pending.push(...[...(node.subtasks ?? [])].reverse() as unknown as Issue[]);
-  }
-
-  const truncatedParentIdSet = new Set([
-    ...(currentTree?.truncated_parent_ids ?? []),
-    ...(pageTree?.truncated_parent_ids ?? []),
-    ...(currentTree?.unexpanded_parent_ids ?? []),
-    ...(pageTree?.unexpanded_parent_ids ?? []),
-  ]);
-  for (const parentId of resolvedTreeParentIds) truncatedParentIdSet.delete(parentId);
-  const truncatedParentIds = Array.from(truncatedParentIdSet).sort((left, right) => left - right);
-  const legacyTruncation = Boolean(currentTree?.truncated && !(currentTree.truncated_parent_ids?.length) && resolvedTreeParentIds.length === 0);
-  const truncated = truncatedParentIds.length > 0 || Boolean(pageTree?.truncated && !(pageTree.truncated_parent_ids?.length)) || legacyTruncation;
-  const base = pageTree ?? currentTree!;
-
-  return {
-    ...base,
-    root_issue_count: issues.length,
-    unique_node_count: new Set(ids).size,
-    serialized_node_count: ids.length,
-    duplicate_node_count: Math.max(currentTree?.duplicate_node_count ?? 0, pageTree?.duplicate_node_count ?? 0),
-    truncated,
-    truncated_parent_ids: truncatedParentIds,
-    unexpanded_parent_ids: Array.from(new Set([
-      ...(currentTree?.unexpanded_parent_ids ?? []),
-      ...(pageTree?.unexpanded_parent_ids ?? []),
-    ])).filter((parentId) => truncatedParentIdSet.has(parentId)).sort((left, right) => left - right),
-    loaded_node_count: Math.max(ids.length - issues.length, 0),
-    ...(currentTree?.db_row_count !== undefined || pageTree?.db_row_count !== undefined
-      ? { db_row_count: Math.max(currentTree?.db_row_count ?? 0, pageTree?.db_row_count ?? 0) }
-      : {}),
-  };
-}
-
 export function App({ dataUrl }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loadingMoreIssues, setLoadingMoreIssues] = useState(false);
-  const [loadingMoreTree, setLoadingMoreTree] = useState(false);
   const queryClient = useQueryClient();
   const boardRef = useRef<CanvasBoardHandle>(null);
   const dismissNotice = useCallback(() => setNotice(null), []);
@@ -198,21 +83,23 @@ export function App({ dataUrl }: Props) {
     setAgingExcludeClosed,
     viewableProjectsEnabled,
     setViewableProjectsEnabled,
+    maximumBoardEntityCount,
+    setMaximumBoardEntityCount,
     setCurrentUserId,
   } = useKanbanPreferences(dataUrl);
 
   const baseUrl = useMemo(() => projectScope, [projectScope]);
   const boardQueryKey = useMemo(
-    () => buildBoardQueryKey(baseUrl, filters.projectIds, filters.statusIds, hiddenStatusIds),
-    [baseUrl, filters.projectIds, filters.statusIds, hiddenStatusIds],
+    () => buildBoardQueryKey(baseUrl, filters.projectIds, filters.statusIds, hiddenStatusIds, maximumBoardEntityCount),
+    [baseUrl, filters.projectIds, filters.statusIds, hiddenStatusIds, maximumBoardEntityCount],
   );
 
   const boardQuery = useQuery({
     queryKey: boardQueryKey,
     queryFn: async () => normalizeBoardData(
-      await getJson<BoardData>(buildBoardDataUrl(baseUrl, filters.projectIds, filters.statusIds, hiddenStatusIds)),
+      await getJson<BoardApiResponse>(buildBoardDataUrl(baseUrl, filters.projectIds, filters.statusIds, hiddenStatusIds, maximumBoardEntityCount)),
     ),
-    placeholderData: (previous) => previous,
+    retry: false,
   });
 
   const data = boardQuery.data ?? null;
@@ -222,58 +109,42 @@ export function App({ dataUrl }: Props) {
   }, [data, setCurrentUserId]);
   const loading = boardQuery.isLoading;
   const labels = data?.labels;
-  const pagination = data?.meta.pagination;
-  const canLoadMoreIssues = Boolean(pagination?.has_more_issues && pagination.next_cursor);
-  const handleLoadMoreIssues = useCallback(() => {
-    if (!pagination?.has_more_issues || !pagination.next_cursor) return;
-
-    setLoadingMoreIssues(true);
-    getJson<Pick<BoardData, 'ok' | 'meta' | 'issues'>>(
-      buildBoardIssuesCursorUrl(baseUrl, filters.projectIds, filters.statusIds, hiddenStatusIds, pagination.issue_limit, pagination.next_cursor)
-    )
-      .then((page) => {
-        queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
-          current ? mergeIssuePage(current, page, [], [], pagination.next_cursor) : current
-        ));
-      })
-      .catch((caught) => {
-        setError(caught instanceof Error ? caught.message : data?.labels.load_more_failed ?? null);
-      })
-      .finally(() => {
-        setLoadingMoreIssues(false);
-      });
-  }, [baseUrl, boardQueryKey, data?.labels.load_more_failed, filters.projectIds, filters.statusIds, hiddenStatusIds, pagination, queryClient]);
-
-  const handleLoadMoreTree = useCallback(() => {
-    const parentIds = [...new Set([
-      ...(data?.meta.tree?.truncated_parent_ids ?? []),
-      ...(data?.meta.tree?.unexpanded_parent_ids ?? []),
-    ])].sort((left, right) => left - right);
-    const parentId = parentIds[0];
-    if (!parentId || !pagination) return;
-
-    const parentCursor = data.meta.tree?.parent_states?.[String(parentId)]?.next_cursor;
-    setLoadingMoreTree(true);
-    getJson<Pick<BoardData, 'ok' | 'meta' | 'issues'>>(
-      parentCursor
-        ? buildBoardIssuesCursorUrl(baseUrl, filters.projectIds, filters.statusIds, hiddenStatusIds, pagination.issue_limit, parentCursor, parentId)
-        : buildBoardTreeUrl(baseUrl, filters.projectIds, filters.statusIds, hiddenStatusIds, pagination.issue_limit, parentId),
-      )
-      .then((page) => {
-        const hasMore = Boolean(page.meta.pagination?.has_more_issues);
-        const resolvedParentIds = hasMore ? [] : [parentId];
-        queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
-          current ? mergeIssuePage(current, page, resolvedParentIds, [parentId], parentCursor) : current
-        ));
-      })
-      .catch((caught) => {
-        setError(caught instanceof Error ? caught.message : data?.labels.load_more_failed ?? null);
-      })
-      .finally(() => {
-        setLoadingMoreTree(false);
-      });
-  }, [baseUrl, boardQueryKey, data, filters.projectIds, filters.statusIds, hiddenStatusIds, pagination, queryClient]);
-
+  const emptyBoardData = useMemo<BoardData>(() => ({
+    ok: true,
+    contract_version: 3,
+    scope_fingerprint: `pending:${baseUrl}`,
+    meta: {
+      project_id: 0,
+      project_ids: [],
+      current_user_id: 0,
+      can_move: false,
+      can_create: false,
+      can_delete: false,
+      lane_type: 'assignee',
+      aging_warn_days: agingWarnDays,
+      aging_danger_days: agingDangerDays,
+      aging_exclude_closed: agingExcludeClosed,
+      complete: false,
+      entity_count: 0,
+      requested_entity_limit: maximumBoardEntityCount,
+      effective_entity_limit: maximumBoardEntityCount,
+      server_entity_limit: 5000,
+    },
+    columns: [],
+    lanes: [],
+    lists: { assignees: [], trackers: [], priorities: [], projects: [], viewable_projects: [], creatable_projects: [] },
+    issues: [],
+    labels: {
+      fetching_data: 'Fetching board data…',
+      display_settings: 'Display settings',
+      maximum_board_entity_count: 'Maximum display count',
+      maximum_board_entity_count_help: 'Issues loaded in one complete board snapshot.',
+      maximum_board_entity_count_invalid: 'Enter a positive integer.',
+      save: 'Save',
+      reset: 'Reset',
+    },
+  }), [agingDangerDays, agingExcludeClosed, agingWarnDays, baseUrl, maximumBoardEntityCount]);
+  const toolbarData = data ?? emptyBoardData;
   const suppressNextBoardErrorRef = useRef(false);
 
   useEffect(() => {
@@ -285,8 +156,22 @@ export function App({ dataUrl }: Props) {
       suppressNextBoardErrorRef.current = false;
       return;
     }
-    setError(data?.labels.load_failed ?? null);
-  }, [boardQuery.data, boardQuery.error, data?.labels.load_failed]);
+    const payload = isHttpError<{ error?: { code?: string; requested_entity_limit?: number; effective_entity_limit?: number; server_entity_limit?: number; count_at_least?: number; maximum_response_bytes?: number } }>(boardQuery.error)
+      ? boardQuery.error.payload
+      : null;
+    const boardError = payload?.error;
+    if (boardError?.code === 'BOARD_SCOPE_TOO_LARGE') {
+      const limit = boardError.effective_entity_limit ?? boardError.requested_entity_limit ?? maximumBoardEntityCount;
+      const serverSuffix = boardError.server_entity_limit && boardError.requested_entity_limit && boardError.requested_entity_limit > boardError.server_entity_limit
+        ? ` サーバーの安全上限は${boardError.server_entity_limit.toLocaleString()}件です。`
+        : '';
+      setError(`対象のIssueが最大表示件数の${limit.toLocaleString()}件を超えています。フィルタを絞るか、最大表示件数を変更してください。${serverSuffix}`);
+    } else if (boardError?.code === 'BOARD_RESPONSE_TOO_LARGE') {
+      setError(`ボードのレスポンスが安全上限（${(boardError.maximum_response_bytes ?? 0).toLocaleString()} bytes）を超えています。`);
+    } else {
+      setError(data?.labels.load_failed ?? 'Board data could not be loaded.');
+    }
+  }, [boardQuery.data, boardQuery.error, data?.labels.load_failed, maximumBoardEntityCount]);
 
   const refresh = useCallback(async (options: { suppressError?: boolean } = {}) => {
     if (options.suppressError) suppressNextBoardErrorRef.current = true;
@@ -404,9 +289,9 @@ export function App({ dataUrl }: Props) {
         onUndoDelete={() => { void actions.handleUndo(); }}
       />
 
-      {data ? (
+      {toolbarData ? (
         <KanbanToolbar
-          data={data}
+          data={toolbarData}
           filters={filters}
           onChange={setFilters}
           sortKey={sortKey}
@@ -419,16 +304,13 @@ export function App({ dataUrl }: Props) {
           onToggleShowSubtasks={() => setShowSubtasks((value) => !value)}
           fontSize={fontSize}
           onChangeFontSize={setFontSize}
+          maximumBoardEntityCount={maximumBoardEntityCount}
+          onChangeMaximumBoardEntityCount={setMaximumBoardEntityCount}
+          serverEntityLimit={data?.meta.server_entity_limit}
           canCreate={canCreate}
-          pagination={pagination}
-          onLoadMoreIssues={handleLoadMoreIssues}
-          onLoadMoreTree={handleLoadMoreTree}
-          onRefreshTree={() => { void refresh(); }}
-          loadingMoreIssues={loadingMoreIssues}
-          loadingMoreTree={loadingMoreTree}
           onCreate={() => {
             if (defaultCreateProjectId === null) return;
-            const defaultStatus = data.columns.find((column) => !column.is_closed)?.id ?? data.columns[0]?.id ?? 1;
+            const defaultStatus = toolbarData.columns.find((column) => !column.is_closed)?.id ?? toolbarData.columns[0]?.id ?? 1;
             dialogs.openCreate({ statusId: defaultStatus, projectId: defaultCreateProjectId });
           }}
           onScrollToTop={() => boardRef.current?.scrollToTop()}
@@ -446,9 +328,7 @@ export function App({ dataUrl }: Props) {
           onToggleViewableProjects={() => setViewableProjectsEnabled((value) => !value)}
           onOpenHelp={() => dialogs.setHelpOpen(true)}
         />
-      ) : (
-        <div className="rk-empty">{labels?.fetching_data}</div>
-      )}
+      ) : null}
 
       <div className="rk-board">
         {filteredData && boardState ? (

@@ -5,11 +5,11 @@ import type { BoardData, Issue } from './types';
 import { getJson, isHttpError, postJson } from './http';
 import { applyAncestorIssueUpdates, applyEntityReconciliation, applyMutationResponse, unresolvedInvalidationIds, useIssueMutation, type EntityReconciliationOptions } from './useIssueMutation';
 import { findIssueInBoard } from './kanbanShared';
-import { applyLocalIssuePatch, reduceBoardData } from './boardState';
+import { applyLocalIssuePatch } from './boardState';
 import { findSubtask, resolveAssigneeName, resolveMutationError, resolvePriorityName, resolveSubtaskStatus, resolveBoardIssue, type IssueMutationResult, type MovePayload, type UpdatePayload } from './kanbanShared';
 import { discardBulkIdempotencyKey, getOrCreateBulkIdempotencyKey, stableSerialize, storageKeyForBulkSignature } from './bulkIdempotency';
 import { buildBulkCreateRequest, buildRestoreIssuePayload, isBulkCreateInput } from './kanbanActionPayloads';
-import { buildBoardCountsUrl, buildBoardEntitiesUrl, buildBoardTreeUrl } from './boardQuery';
+import { buildBoardCountsUrl, buildBoardEntitiesUrl } from './boardQuery';
 
 type Args = {
   baseUrl: string;
@@ -117,40 +117,6 @@ export function useKanbanActions({
     }
   }, [baseUrl, boardQueryKey, data?.meta.project_ids, queryClient]);
 
-  const reconcileParentIds = useCallback(async (parentIds: number[]) => {
-    const ids = [...new Set(parentIds)];
-    if (ids.length === 0 || !data) return;
-    await Promise.all(ids.map(async (parentId) => {
-      try {
-        const response = await getJson<Pick<BoardData, 'meta' | 'issues'>>(
-          buildBoardTreeUrl(
-            baseUrl,
-            data.meta.project_ids ?? [],
-            data.columns.map((column) => column.id),
-            [],
-            data.meta.pagination?.issue_limit ?? 500,
-            parentId,
-          ),
-        );
-        queryClient.setQueryData<BoardData>(boardQueryKey, (current) => {
-          if (!current) return current;
-          const pagination = response.meta.pagination;
-          return reduceBoardData(current, {
-            kind: 'tree_page',
-            parentId,
-            issues: response.issues,
-            completeness: pagination?.has_more_issues ? 'partial' : 'complete',
-            nextCursor: pagination?.next_cursor ?? null,
-            hasMore: pagination?.has_more_issues ?? false,
-            scopeFingerprint: response.meta.scope_fingerprint,
-          });
-        });
-      } catch (_error) {
-        // Tree reconciliation is best-effort after a successful mutation.
-      }
-    }));
-  }, [baseUrl, boardQueryKey, data, queryClient]);
-
   const reconcileColumnCounts = useCallback(async (required: boolean) => {
     if (!required || !data) return;
     try {
@@ -208,7 +174,7 @@ export function useKanbanActions({
     onSuccess: (result) => {
       if (result.warning) setNotice(result.warning);
       void reconcileIssueIds(unresolvedInvalidationIds(result));
-      void reconcileParentIds(result.invalidations?.parent_ids ?? []);
+      void reconcileIssueIds(result.invalidations?.parent_ids ?? []);
       void reconcileColumnCounts(Boolean(result.invalidations?.column_counts));
       if (timeEntryOnClose && data?.columns.find((column) => column.id === result.issue.status_id)?.is_closed) {
         if (result.issue.can_log_time) {
@@ -245,7 +211,7 @@ export function useKanbanActions({
     onSuccess: (result) => {
       if (result.warning) setNotice(result.warning);
       void reconcileIssueIds(unresolvedInvalidationIds(result));
-      void reconcileParentIds(result.invalidations?.parent_ids ?? []);
+      void reconcileIssueIds(result.invalidations?.parent_ids ?? []);
       void reconcileColumnCounts(Boolean(result.invalidations?.column_counts));
     },
     onMutateIssue: beginIssueMutation,
@@ -289,7 +255,7 @@ export function useKanbanActions({
         current ? applyMutationResponse(current, result) : current
       ));
       void reconcileIssueIds(unresolvedInvalidationIds(result));
-      void reconcileParentIds(result.invalidations?.parent_ids ?? []);
+      void reconcileIssueIds(result.invalidations?.parent_ids ?? []);
       void reconcileColumnCounts(Boolean(result.invalidations?.column_counts));
       if (isBulkCreateInput(payload)) {
         const requestPayload = buildBulkCreateRequest(payload);
@@ -322,7 +288,7 @@ export function useKanbanActions({
         current ? applyMutationResponse(current, response) : current
       ));
       void reconcileIssueIds(unresolvedInvalidationIds(response));
-      void reconcileParentIds(response.invalidations?.parent_ids ?? []);
+      void reconcileIssueIds(response.invalidations?.parent_ids ?? []);
       void reconcileColumnCounts(Boolean(response.invalidations?.column_counts));
       setPendingDeleteIssue(undoIssue);
       // Deletion succeeded. A failed refetch is a board-loading problem, not a deletion failure;
@@ -337,7 +303,7 @@ export function useKanbanActions({
       deletingIssueIdsRef.current.delete(issueId);
       endIssueMutation(issueId);
     }
-  }, [beginIssueMutation, boardQueryKey, data, endIssueMutation, queryClient, reconcileColumnCounts, reconcileIssueIds, reconcileParentIds, scopedUrl, setError]);
+  }, [beginIssueMutation, boardQueryKey, data, endIssueMutation, queryClient, reconcileColumnCounts, reconcileIssueIds, scopedUrl, setError]);
 
   const moveIssue = useCallback((issueId: number, statusId: number, assignedToId?: number | null, priorityId?: number | null) => {
     if (!data || isIssueBusy(issueId)) return;
@@ -406,7 +372,7 @@ export function useKanbanActions({
           current ? applyMutationResponse(current, response) : current
         ));
         void reconcileIssueIds(unresolvedInvalidationIds(response));
-        void reconcileParentIds(response.invalidations?.parent_ids ?? []);
+        void reconcileIssueIds(response.invalidations?.parent_ids ?? []);
         void reconcileColumnCounts(Boolean(response.invalidations?.column_counts));
         setNotice(null);
         setPendingDeleteIssue(null);
@@ -418,7 +384,7 @@ export function useKanbanActions({
     } finally {
       setIsRestoring(false);
     }
-  }, [boardQueryKey, data, isRestoring, pendingDeleteIssue, queryClient, reconcileColumnCounts, reconcileIssueIds, reconcileParentIds, scopedUrl, setError, setNotice]);
+  }, [boardQueryKey, data, isRestoring, pendingDeleteIssue, queryClient, reconcileColumnCounts, reconcileIssueIds, scopedUrl, setError, setNotice]);
 
   return {
     busyIssueIds,

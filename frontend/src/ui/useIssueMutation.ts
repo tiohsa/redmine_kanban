@@ -17,8 +17,7 @@ export type EntityReconciliationOptions = {
 
 export function applyMutationResponse(data: BoardData, result: Partial<IssueMutationResult>): BoardData {
   const state = createNormalizedBoardState(data);
-  const issueUpdates = result.issue_updates
-    ?? (result.contract_version === 2 ? [] : (result.issue ? [result.issue] : []));
+  const issueUpdates = result.issue_updates ?? (result.issue ? [result.issue] : []);
   return selectBoardData(applyBoardResponse(state, {
     kind: 'mutation',
     issue_updates: issueUpdates,

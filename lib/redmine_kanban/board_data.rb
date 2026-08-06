@@ -1,12 +1,13 @@
 require 'set'
-require 'digest'
 require 'json'
 require_relative 'board_context'
+require_relative 'board_workflow_status_resolver'
+require_relative 'snapshot_limits'
 
 module RedmineKanban
   class BoardData
-    DEFAULT_ISSUE_LIMIT = 500
-    MAX_ISSUE_LIMIT = 1_000
+    CONTRACT_VERSION = 3
+    DEFAULT_BOARD_ENTITY_LIMIT = SnapshotLimits::DEFAULT_BOARD_ENTITY_LIMIT
     LABEL_TRANSLATION_KEYS = {
       all: "redmine_kanban.label_all",
       me: "redmine_kanban.label_me",
@@ -57,11 +58,10 @@ module RedmineKanban
       delete_failed: "redmine_kanban.label_delete_failed",
       move_failed: "redmine_kanban.label_move_failed",
       load_failed: "redmine_kanban.label_load_failed",
-      load_more_issues: "redmine_kanban.label_load_more_issues",
-      load_more_failed: "redmine_kanban.label_load_more_failed",
-      tree_truncated: "redmine_kanban.label_tree_truncated",
-      tree_load_more: "redmine_kanban.label_tree_load_more",
-      tree_refresh: "redmine_kanban.label_tree_refresh",
+      maximum_board_entity_count: "redmine_kanban.label_maximum_board_entity_count",
+      maximum_board_entity_count_help: "redmine_kanban.label_maximum_board_entity_count_help",
+      maximum_board_entity_count_invalid: "redmine_kanban.label_maximum_board_entity_count_invalid",
+      server_entity_limit_notice: "redmine_kanban.label_server_entity_limit_notice",
       no_result: "redmine_kanban.label_no_result",
       reset: "redmine_kanban.label_reset",
       undo: "redmine_kanban.label_undo",
@@ -131,7 +131,7 @@ module RedmineKanban
       help_fullscreen: "redmine_kanban.label_help_fullscreen",
       help_scroll_top: "redmine_kanban.label_help_scroll_top",
       help_font_size: "redmine_kanban.label_help_font_size",
-      help_load_more_issues: "redmine_kanban.label_help_load_more_issues",
+      help_maximum_board_entity_count: "redmine_kanban.label_help_maximum_board_entity_count",
       within_1_day: "redmine_kanban.label_within_1_day",
       within_specified_days: "redmine_kanban.label_within_specified_days",
       sort_by: "redmine_kanban.label_sort_by",
@@ -162,22 +162,17 @@ module RedmineKanban
     }.freeze
 
 
-    def initialize(project:, user:, project_ids: nil, issue_status_ids: nil, exclude_status_ids: nil, issue_limit: nil, issue_offset: nil, issue_cursor: nil, tree_parent_id: nil, tree_node_limit: BoardContext::DEFAULT_TREE_NODE_LIMIT)
+    def initialize(project:, user:, project_ids: nil, issue_status_ids: nil, exclude_status_ids: nil, board_entity_limit: nil)
       @project = project
       @user = user
-      @board_context = BoardContext.new(
-        project: @project,
-        user: @user,
-        project_ids: normalize_ids(project_ids),
-        tree_node_limit: tree_node_limit
-      )
-      @project_ids = @board_context.project_ids
+      @requested_project_ids = normalize_ids(project_ids)
       @issue_status_ids = normalize_ids(issue_status_ids)
       @exclude_status_ids = normalize_ids(exclude_status_ids)
-      @issue_limit = normalize_issue_limit(issue_limit)
-      @issue_offset = normalize_issue_offset(issue_offset)
-      @issue_cursor = issue_cursor
-      @tree_parent_id = normalize_optional_id(tree_parent_id)
+      @requested_entity_limit = SnapshotLimits.requested(board_entity_limit)
+      @server_entity_limit = SnapshotLimits.server_entity_limit
+      @effective_entity_limit = SnapshotLimits.effective(@requested_entity_limit)
+      @response_byte_limit = SnapshotLimits.response_bytes
+      @query_limit = SnapshotLimits.query_limit
     end
 
     def to_h
@@ -187,54 +182,83 @@ module RedmineKanban
     private
 
     def with_performance_metrics
-      return yield unless ENV['REDMINE_KANBAN_PERF_LOG'] == '1'
-
       started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       sql_count = 0
+      snapshot_thread_id = Thread.current.object_id
       callback = lambda do |_name, _start, _finish, _id, payload|
-        next if payload[:cached] || payload[:name] == 'SCHEMA'
+        next if Thread.current.object_id != snapshot_thread_id || payload[:cached] || payload[:name] == 'SCHEMA' || !@count_snapshot_queries
 
         sql_count += 1
       end
 
       result = nil
       ActiveSupport::Notifications.subscribed(callback, 'sql.active_record') do
+        prepare_context!
         result = yield
       end
 
+      result[:meta][:query_count] = sql_count if result[:ok] && result[:meta]
+      if sql_count > @query_limit && result[:ok]
+        result = resource_error(
+          'BOARD_QUERY_LIMIT_EXCEEDED',
+          query_count: sql_count,
+          maximum_queries: @query_limit
+        )
+      end
+
+      if result[:ok]
+        bytes = response_bytes_including_metadata(result)
+        if bytes > @response_byte_limit
+          result = resource_error(
+            'BOARD_RESPONSE_TOO_LARGE',
+            entity_count: result.dig(:meta, :entity_count),
+            maximum_response_bytes: @response_byte_limit
+          )
+        else
+          result[:meta][:response_bytes] = bytes
+        end
+      end
+
       elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round(1)
+      if ENV['REDMINE_KANBAN_PERF_LOG'] == '1'
       Rails.logger.info(
         '[redmine_kanban] board_data_perf ' \
         "project_id=#{@project.id} sql_count=#{sql_count} " \
-        "root_issue_count=#{result.dig(:meta, :tree, :root_issue_count)} " \
-        "unique_node_count=#{result.dig(:meta, :tree, :unique_node_count)} " \
-        "serialized_node_count=#{result.dig(:meta, :tree, :serialized_node_count)} " \
-        "duplicate_node_count=#{result.dig(:meta, :tree, :duplicate_node_count)} " \
-        "db_row_count=#{result.dig(:meta, :tree, :db_row_count)} " \
+        "entity_count=#{result.dig(:meta, :entity_count)} " \
+        "id_probe_count=#{result.dig(:meta, :id_probe_count)} " \
+        "materialized_row_count=#{result.dig(:meta, :materialized_row_count)} " \
         "json_bytes=#{result.to_json.bytesize} elapsed_ms=#{elapsed_ms}"
-      )
+        )
+      end
       result
     end
 
-    def count_subtasks(issues)
-      issues.sum { |issue| count_subtask_nodes(issue[:subtasks]) }
+    def prepare_context!
+      return if @board_context
+
+      @board_context = BoardContext.new(
+        project: @project,
+        user: @user,
+        project_ids: @requested_project_ids
+      )
+      @user.groups.load
+      @user.builtin_role
+      @project_ids = @board_context.project_ids
     end
 
-    def count_subtask_nodes(subtasks)
-      Array(subtasks).sum { |subtask| 1 + count_subtask_nodes(subtask[:subtasks]) }
-    end
+    def response_bytes_including_metadata(result)
+      previous_bytes = nil
+      bytes = nil
 
-    def serialized_node_ids(issues)
-      ids = []
-      pending = Array(issues).reverse
+      10.times do
+        bytes = result.to_json.bytesize
+        break if bytes == previous_bytes
 
-      until pending.empty?
-        node = pending.pop
-        ids << node[:id]
-        pending.concat(Array(node[:subtasks]).reverse)
+        result[:meta][:response_bytes] = bytes
+        previous_bytes = bytes
       end
 
-      ids
+      result.to_json.bytesize
     end
 
     def build_payload
@@ -244,99 +268,108 @@ module RedmineKanban
       end
 
       status_ids = columns.map { |c| c[:id] }
-      issues = fetch_issues(status_ids)
-      total_issue_count = fetch_issues_total_count(status_ids)
-      presenter, loader = @board_context.presenter(issues.map(&:id))
-      nested_issue_ids = loader.loaded_issue_ids.to_set
-      canonical_issues = issues.reject { |issue| nested_issue_ids.include?(issue.id) }
-      serialized_issues = presenter.issues_to_h(canonical_issues)
-      serialized_issue_ids = serialized_node_ids(serialized_issues)
-      raw_node_ids = issues.map(&:id) + loader.loaded_issue_ids
-      lane_assignee_ids = fetch_lane_assignee_ids(status_ids)
-      lanes = build_lanes(lane_assignee_ids)
+      @count_snapshot_queries = true
+      begin
+        issue_ids = fetch_issue_ids(status_ids)
+        return too_large_error(issue_ids.size) if issue_ids.size > @effective_entity_limit
 
-      counts = fetch_column_counts(status_ids)
-      next_page_cursor = next_cursor(issues, status_ids, total_issue_count)
-      recoverable_parent_ids = (loader.truncated_parent_ids + loader.unexpanded_parent_ids).uniq.sort
-      parent_states = recoverable_parent_ids.each_with_object({}) do |parent_id, states|
-        last_child_id = loader.last_child_id_by_parent[parent_id]
-        states[parent_id.to_s] = {
-          completeness: 'partial',
-          next_cursor: last_child_id ? cursor_for_tree_parent(parent_id, last_child_id, status_ids) : nil,
-          loaded_count: loader.loaded_parent_id_by_issue.count { |_issue_id, loaded_parent_id| loaded_parent_id == parent_id }
-        }
+        issues = fetch_issues(issue_ids)
+        presenter = IssueEntityPresenter.new(
+          user: @user,
+          board_project: @project,
+          workflow_status_resolver: BoardWorkflowStatusResolver.new(user: @user, issues: issues),
+          permission_policy: permission_policy
+        )
+        warm_permission_cache(issues)
+        entities = presenter.issues_to_h(issues)
+        tree = build_tree(issues)
+        lane_assignee_ids = fetch_lane_assignee_ids(status_ids)
+        lanes = build_lanes(lane_assignee_ids)
+
+        counts = fetch_column_counts(status_ids)
+        lists = without_snapshot_query_count { cached_lists }
+        labels = without_snapshot_query_count { cached_labels }
+      ensure
+        @count_snapshot_queries = false
       end
 
       {
         ok: true,
+        contract_version: CONTRACT_VERSION,
+        scope_fingerprint: @board_context.scope_fingerprint,
         meta: {
           project_id: @project.id,
           project_ids: @project_ids,
-          contract_version: 2,
           scope_fingerprint: @board_context.scope_fingerprint,
           current_user_id: @user.id,
           can_move: permission_policy.can_move_issue?(@project),
           can_create: permission_policy.can_create_issue?(@project),
           can_delete: permission_policy.can_delete_issue?(@project),
           lane_type: 'assignee',
-          pagination: {
-            issue_limit: @issue_limit,
-            offset: @issue_offset,
-            issue_count: issues.size,
-            total_issue_count: total_issue_count,
-            next_offset: issues.size + @issue_offset,
-            has_more_issues: next_page_cursor.present?,
-            next_cursor: next_page_cursor,
-            **(@tree_parent_id ? { tree_parent_id: @tree_parent_id } : {})
-          },
-          tree: {
-            node_limit: @board_context.tree_node_limit,
-            root_issue_count: canonical_issues.size,
-            unique_node_count: serialized_issue_ids.uniq.size,
-            serialized_node_count: serialized_issue_ids.size,
-            duplicate_node_count: raw_node_ids.size - raw_node_ids.uniq.size,
-            truncated: loader.truncated?,
-            truncated_parent_ids: recoverable_parent_ids,
-            unexpanded_parent_ids: loader.unexpanded_parent_ids,
-            parent_states: parent_states,
-            query_count: loader.query_count,
-            parent_batch_count: loader.batch_count,
-            max_depth: loader.max_depth_reached,
-            loaded_node_count: loader.loaded_issue_ids.size,
-            db_row_count: issues.size + loader.fetched_row_count
-          }
+          complete: true,
+          entity_count: entities.size,
+          requested_entity_limit: @requested_entity_limit,
+          effective_entity_limit: @effective_entity_limit,
+          server_entity_limit: @server_entity_limit,
+          response_byte_limit: @response_byte_limit,
+          id_probe_count: issue_ids.size,
+          materialized_row_count: issues.size
         },
         columns: columns.map { |c| c.merge(count: counts[c[:id]].to_i) },
         lanes: lanes,
-        lists: cached_lists,
-        issues: serialized_issues,
-        labels: cached_labels
+        lists: lists,
+        entities: entities,
+        tree: tree,
+        labels: labels
       }
+    end
+
+    def without_snapshot_query_count
+      previous = @count_snapshot_queries
+      @count_snapshot_queries = false
+      yield
+    ensure
+      @count_snapshot_queries = previous
+    end
+
+    def warm_permission_cache(issues)
+      without_snapshot_query_count do
+        permission_policy.can_move_issue?(@project)
+        permission_policy.can_create_issue?(@project)
+        permission_policy.can_delete_issue?(@project)
+        issues.each do |issue|
+          permission_policy.can_log_time?(issue.project)
+          permission_policy.can_move_issue?(issue, @project)
+          permission_policy.can_update_issue?(issue, @project)
+          permission_policy.can_delete_issue?(issue, @project)
+        end
+      end
     end
 
     def permission_policy
       @permission_policy ||= PermissionPolicy.new(user: @user)
     end
 
-    def fetch_issues(status_ids)
-      relation = base_issue_scope(status_ids)
-      relation = relation.where(status_id: filtered_status_ids(status_ids)) unless @tree_parent_id
-      relation = relation.includes(:assigned_to, :priority, :status, :project)
-      relation = apply_cursor(relation, status_ids)
-      order = @tree_parent_id ? { id: :asc } : { updated_on: :desc, id: :desc }
-      relation.order(order).offset(@issue_cursor.present? ? 0 : @issue_offset).limit(@issue_limit).to_a
+    def fetch_issue_ids(status_ids)
+      base_issue_scope(status_ids)
+        .where(status_id: filtered_status_ids(status_ids))
+        .order(updated_on: :desc, id: :desc)
+        .limit(@effective_entity_limit + 1)
+        .pluck(:id)
     end
 
-    def fetch_issues_total_count(status_ids)
-      relation = base_issue_scope(status_ids)
-      relation = relation.where(status_id: filtered_status_ids(status_ids)) unless @tree_parent_id
-      relation.count
+    def fetch_issues(issue_ids)
+      Issue.visible(@user)
+           .where(id: issue_ids, project_id: @project_ids)
+           .includes(:assigned_to, :author, :priority, :status, :project, :tracker)
+           .order(updated_on: :desc, id: :desc)
+           .to_a
     end
 
     def fetch_lane_assignee_ids(status_ids)
       base_issue_scope(status_ids)
         .order(updated_on: :desc)
-        .limit(@issue_limit)
+        .limit(@effective_entity_limit)
         .pluck(:assigned_to_id)
         .compact
         .uniq
@@ -355,16 +388,7 @@ module RedmineKanban
     end
 
     def base_issue_scope(status_ids)
-      relation = Issue.visible(@user).where(project_id: @project_ids, status_id: status_ids)
-      return relation unless @tree_parent_id
-
-      return Issue.none unless tree_parent_in_scope?
-
-      relation.where(parent_id: @tree_parent_id)
-    end
-
-    def tree_parent_in_scope?
-      @tree_parent_in_scope ||= Issue.visible(@user).where(id: @tree_parent_id, project_id: @project_ids).exists?
+      Issue.visible(@user).where(project_id: @project_ids, status_id: status_ids)
     end
 
     def filtered_status_ids(status_ids)
@@ -381,95 +405,67 @@ module RedmineKanban
       end.uniq
     end
 
-    def normalize_issue_limit(value)
-      return DEFAULT_ISSUE_LIMIT unless value.to_i.positive?
-
-      [value.to_i, MAX_ISSUE_LIMIT].min
+    def too_large_error(count_at_least)
+      resource_error(
+        'BOARD_SCOPE_TOO_LARGE',
+        requested_entity_limit: @requested_entity_limit,
+        effective_entity_limit: @effective_entity_limit,
+        server_entity_limit: @server_entity_limit,
+        count_at_least: count_at_least
+      )
     end
 
-    def normalize_issue_offset(value)
-      [value.to_i, 0].max
-    end
-
-    def apply_cursor(relation, status_ids)
-      return relation unless @issue_cursor.present?
-
-      expected = {
-        kind: @tree_parent_id ? 'tree' : 'root',
+    def resource_error(code, **details)
+      {
+        ok: false,
+        contract_version: CONTRACT_VERSION,
         scope_fingerprint: @board_context.scope_fingerprint,
-        filter_fingerprint: filter_fingerprint(status_ids),
-        parent_id: @tree_parent_id
+        error: { code: code, **details }
       }
-      payload = cursor_codec.decode(@issue_cursor, expected: expected)
-      key = payload.fetch('key')
-      if @tree_parent_id
-        relation.where('issues.id > ?', key.fetch('id').to_i)
-      else
-        updated_on = key.fetch('updated_on')
-        issue_id = key.fetch('id').to_i
-        relation.where('issues.updated_on < ? OR (issues.updated_on = ? AND issues.id < ?)', updated_on, updated_on, issue_id)
+    end
+
+    def build_tree(issues)
+      issue_ids = issues.map(&:id).to_set
+      children_by_parent_id = Hash.new { |hash, key| hash[key] = [] }
+      roots = []
+      parent_by_id = {}
+
+      issues.each do |issue|
+        parent_id = issue.parent_id.to_i if issue.parent_id.present?
+        if parent_id && issue_ids.include?(parent_id) && parent_id != issue.id
+          parent_by_id[issue.id] = parent_id
+          children_by_parent_id[parent_id] << issue.id
+        else
+          roots << issue.id
+        end
       end
-    rescue CursorCodec::InvalidCursor => error
-      raise error
-    end
 
-    def next_cursor(issues, status_ids, total_issue_count)
-      return nil if issues.empty?
-      has_more = if @issue_cursor.present?
-                   has_more_after_cursor?(issues.last, status_ids)
-                 else
-                   @issue_offset + issues.size < total_issue_count
-                 end
-      return nil unless has_more
-
-      last = issues.last
-      cursor_codec.encode(
-        kind: @tree_parent_id ? 'tree' : 'root',
-        scope_fingerprint: @board_context.scope_fingerprint,
-        filter_fingerprint: filter_fingerprint(status_ids),
-        parent_id: @tree_parent_id,
-        sort: @tree_parent_id ? 'id_asc' : 'updated_on_desc_id_desc',
-        key: @tree_parent_id ? { id: last.id } : { updated_on: last.updated_on&.iso8601, id: last.id }
-      )
-    end
-
-    def has_more_after_cursor?(last_issue, status_ids)
-      relation = base_issue_scope(status_ids)
-      relation = relation.where(status_id: filtered_status_ids(status_ids)) unless @tree_parent_id
-      if @tree_parent_id
-        relation.where('issues.id > ?', last_issue.id).exists?
-      else
-        relation.where('issues.updated_on < ? OR (issues.updated_on = ? AND issues.id < ?)', last_issue.updated_on, last_issue.updated_on, last_issue.id).exists?
+      parent_by_id.to_a.each do |child_id, parent_id|
+        seen = Set.new([child_id])
+        current = parent_id
+        while current
+          if seen.include?(current)
+            children_by_parent_id[parent_id].delete(child_id)
+            parent_by_id.delete(child_id)
+            roots << child_id
+            break
+          end
+          seen.add(current)
+          current = parent_by_id[current]
+        end
       end
-    end
 
-    def filter_fingerprint(status_ids, parent_id: @tree_parent_id)
-      "sha256:#{Digest::SHA256.hexdigest({ status_ids: filtered_status_ids(status_ids).sort, excluded_status_ids: @exclude_status_ids.sort, parent_id: parent_id }.to_json)}"
-    end
-
-    def cursor_codec
-      @cursor_codec ||= CursorCodec.new
-    end
-
-    def cursor_for_tree_parent(parent_id, last_child_id, status_ids)
-      cursor_codec.encode(
-        kind: 'tree',
-        scope_fingerprint: @board_context.scope_fingerprint,
-        filter_fingerprint: filter_fingerprint(status_ids, parent_id: parent_id),
-        parent_id: parent_id,
-        sort: 'id_asc',
-        key: { id: last_child_id.to_i }
-      )
-    end
-
-    def normalize_optional_id(value)
-      id = value.to_i
-      id.positive? ? id : nil
-    end
-
-    def sanitize_project_ids(ids)
-      allowed_ids = @project_catalog.viewable_project_ids
-      ids.select { |id| allowed_ids.include?(id) }
+      issues_by_id = issues.index_by(&:id)
+      children_by_parent_id.each_value do |ids|
+        ids.sort_by! do |id|
+          updated_on = issues_by_id.fetch(id).updated_on
+          [updated_on ? -updated_on.to_i : 0, id]
+        end
+      end
+      {
+        root_ids: roots.uniq,
+        children_by_parent_id: children_by_parent_id.each_with_object({}) { |(parent_id, child_ids), tree| tree[parent_id.to_s] = child_ids }
+      }
     end
 
     def labels

@@ -27,12 +27,6 @@ type ToolbarProps = {
   canCreate: boolean;
   onCreate: () => void;
   onScrollToTop: () => void;
-  pagination?: BoardData['meta']['pagination'];
-  onLoadMoreIssues?: () => void;
-  onLoadMoreTree?: () => void;
-  onRefreshTree?: () => void;
-  loadingMoreIssues?: boolean;
-  loadingMoreTree?: boolean;
   timeEntryOnClose: boolean;
   onToggleTimeEntryOnClose: () => void;
   laneType?: LaneType;
@@ -43,6 +37,9 @@ type ToolbarProps = {
   onChangeAgingDangerDays?: (value: number) => void;
   agingExcludeClosed?: boolean;
   onToggleAgingExcludeClosed?: () => void;
+  maximumBoardEntityCount?: number;
+  onChangeMaximumBoardEntityCount?: (value: number) => void;
+  serverEntityLimit?: number;
   viewableProjectsEnabled: boolean;
   onToggleViewableProjects: () => void;
   onOpenHelp: () => void;
@@ -65,12 +62,6 @@ export function KanbanToolbar({
   canCreate,
   onCreate,
   onScrollToTop,
-  pagination,
-  onLoadMoreIssues = () => {},
-  onLoadMoreTree = () => {},
-  onRefreshTree = () => {},
-  loadingMoreIssues,
-  loadingMoreTree,
   timeEntryOnClose,
   onToggleTimeEntryOnClose,
   laneType = 'assignee',
@@ -81,6 +72,9 @@ export function KanbanToolbar({
   onChangeAgingDangerDays = () => {},
   agingExcludeClosed = true,
   onToggleAgingExcludeClosed = () => {},
+  maximumBoardEntityCount = 1500,
+  onChangeMaximumBoardEntityCount = () => {},
+  serverEntityLimit,
   viewableProjectsEnabled,
   onToggleViewableProjects,
   onOpenHelp,
@@ -106,27 +100,8 @@ export function KanbanToolbar({
   const showDueCustomInput = filters.due === 'custom';
   const dueDaysValue = filters.dueDays ?? 7;
   const fullWindowIcon = fullWindow ? 'fullscreen_exit' : 'fullscreen';
-  const incompleteParentIds = [...new Set([
-    ...(data.meta.tree?.truncated_parent_ids ?? []),
-    ...(data.meta.tree?.unexpanded_parent_ids ?? []),
-  ])];
-
   return (
     <div className="rk-toolbar">
-      {data.meta.tree?.truncated ? (
-        <div className="rk-tree-truncation" role="status" aria-live="polite">
-          <span className="rk-icon" aria-hidden="true">warning</span>
-          <span>{labels.tree_truncated ?? 'Some subtasks are not shown yet.'}</span>
-          {incompleteParentIds.length ? (
-            <button type="button" className="rk-btn rk-btn-sm" onClick={onLoadMoreTree} disabled={loadingMoreTree}>
-              {labels.tree_load_more ?? labels.load_more_issues ?? 'Load more'}
-            </button>
-          ) : null}
-          <button type="button" className="rk-btn rk-btn-sm" onClick={onRefreshTree}>
-            {labels.tree_refresh ?? 'Refresh tree'}
-          </button>
-        </div>
-      ) : null}
       {canCreate ? (
         <>
           <div className="rk-toolbar-group">
@@ -302,27 +277,15 @@ export function KanbanToolbar({
           onToggleFitMode={onToggleFitMode}
           fontSize={fontSize}
           onChangeFontSize={onChangeFontSize}
+          maximumBoardEntityCount={maximumBoardEntityCount}
+          onChangeMaximumBoardEntityCount={onChangeMaximumBoardEntityCount}
+          serverEntityLimit={serverEntityLimit}
         />
 
         <button type="button" className={`rk-btn ${fullWindow ? 'rk-btn-toggle-active' : ''}`} onClick={onToggleFullWindow} title={fullWindow ? labels.normal_view : labels.fullscreen_view}>
           <span className="rk-icon">{fullWindowIcon}</span>
           {fullWindow ? <span className="rk-indicator-dot" /> : null}
         </button>
-
-        {pagination ? (
-          <button
-            type="button"
-            className="rk-btn rk-btn-labeled"
-            onClick={onLoadMoreIssues}
-            disabled={!pagination.has_more_issues || loadingMoreIssues}
-            title={labels.load_more_issues ?? 'Load more issues'}
-          >
-            <span className="rk-icon">playlist_add</span>
-            <span className="rk-btn-label">
-              {pagination.issue_count}/{pagination.total_issue_count}
-            </span>
-          </button>
-        ) : null}
 
         <button type="button" className="rk-btn" onClick={onScrollToTop} title={labels.scroll_top}>
           <span className="rk-icon">vertical_align_top</span>

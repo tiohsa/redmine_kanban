@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FitMode } from '../kanbanShared';
-import type { LaneType } from '../useKanbanPreferences';
+import { DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT, parseMaximumBoardEntityCount, type LaneType } from '../useKanbanPreferences';
 import { useDropdownDismiss } from './useDropdownDismiss';
 
 const FONT_SIZE_OPTIONS = ['10', '12', '14', '16', '18', '20', '22', '24', '26', '28', '30'] as const;
@@ -45,6 +45,9 @@ export function DisplaySettingsPopover({
   onToggleFitMode,
   fontSize,
   onChangeFontSize,
+  maximumBoardEntityCount = DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT,
+  onChangeMaximumBoardEntityCount = () => {},
+  serverEntityLimit,
 }: {
   labels: Record<string, string>;
   showSubtasks: boolean;
@@ -63,9 +66,17 @@ export function DisplaySettingsPopover({
   onToggleFitMode: () => void;
   fontSize: number;
   onChangeFontSize: (size: number) => void;
+  maximumBoardEntityCount?: number;
+  onChangeMaximumBoardEntityCount?: (value: number) => void;
+  serverEntityLimit?: number;
 }) {
   const [open, setOpen] = useState(false);
+  const [maximumEntityCountDraft, setMaximumEntityCountDraft] = useState(String(maximumBoardEntityCount));
+  const [maximumEntityCountError, setMaximumEntityCountError] = useState<string | null>(null);
   const { triggerRef, menuRef } = useDropdownDismiss(open, () => setOpen(false));
+  useEffect(() => {
+    setMaximumEntityCountDraft(String(maximumBoardEntityCount));
+  }, [maximumBoardEntityCount]);
   const title = labels.display_settings ?? 'Display settings';
   const widthOptions = [
     { id: 'none', name: labels.fit_none ?? 'Original size' },
@@ -92,6 +103,45 @@ export function DisplaySettingsPopover({
           <SettingsSelect label={labels.aging_danger_days ?? 'Aging danger days'} value={String(agingDangerDays)} options={[1, 3, 5, 7, 14, 30, 60].map((value) => ({ id: String(value), name: String(value) }))} onChange={(value) => onChangeAgingDangerDays(Number(value))} selectClassName="rk-settings-aging-days-select" />
           <SettingsToggle label={labels.aging_exclude_closed ?? 'Exclude closed issues from aging'} checked={agingExcludeClosed} onChange={onToggleAgingExcludeClosed} />
           <SettingsToggle label={labels.time_entry_short ?? 'Time entry on close'} checked={timeEntryOnClose} onChange={onToggleTimeEntryOnClose} />
+          <label className="rk-settings-select-row">
+            <span>{labels.maximum_board_entity_count ?? 'Maximum display count'}</span>
+            <input
+              className="rk-input"
+              type="text"
+              inputMode="numeric"
+              value={maximumEntityCountDraft}
+              onChange={(event) => {
+                setMaximumEntityCountDraft(event.target.value);
+                setMaximumEntityCountError(null);
+              }}
+              aria-invalid={maximumEntityCountError ? 'true' : 'false'}
+            />
+          </label>
+          <div className="rk-settings-help">
+            {labels.maximum_board_entity_count_help ?? 'Issues loaded in one complete board snapshot.'}
+          </div>
+          {maximumEntityCountError ? <div className="rk-settings-error" role="alert">{maximumEntityCountError}</div> : null}
+          {serverEntityLimit && maximumBoardEntityCount > serverEntityLimit ? (
+            <div className="rk-settings-help" role="status">
+              {(labels.server_entity_limit_notice ?? 'The server safety limit is %{count} issues.').replace('%{count}', String(serverEntityLimit))}
+            </div>
+          ) : null}
+          <div className="rk-settings-actions">
+            <button type="button" className="rk-btn rk-btn-sm" onClick={() => {
+              const parsed = parseMaximumBoardEntityCount(maximumEntityCountDraft);
+              if (parsed === null) {
+                setMaximumEntityCountError(labels.maximum_board_entity_count_invalid ?? 'Enter a positive integer.');
+                return;
+              }
+              onChangeMaximumBoardEntityCount(parsed);
+              setMaximumEntityCountError(null);
+            }}>{labels.save ?? 'Save'}</button>
+            <button type="button" className="rk-btn rk-btn-sm" onClick={() => {
+              setMaximumEntityCountDraft(String(DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT));
+              onChangeMaximumBoardEntityCount(DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT);
+              setMaximumEntityCountError(null);
+            }}>{labels.reset ?? 'Reset'}</button>
+          </div>
           <SettingsSelect label={labels.display_width ?? 'Display width'} value={fitMode} options={widthOptions} onChange={(value) => { if (value !== fitMode) onToggleFitMode(); }} />
           <SettingsSelect label={labels.font_size ?? 'Font size'} value={String(fontSize)} options={fontSizeOptions} onChange={(value) => onChangeFontSize(Number(value))} />
         </div>

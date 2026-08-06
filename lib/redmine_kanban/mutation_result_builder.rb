@@ -12,7 +12,7 @@ module RedmineKanban
     def build(issue_updates: [], created_issues: [], deleted_issue_ids: [], tree_changes: [], invalidations: {}, column_counts: {})
       {
         ok: true,
-        contract_version: 2,
+        contract_version: 3,
         operation_id: @operation_id,
         scope_fingerprint: @board_context.scope_fingerprint,
         issue_updates: @presenter.issues_to_h(issue_updates),

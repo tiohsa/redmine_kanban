@@ -1,5 +1,5 @@
 import React from 'react';
-import type { BoardData, Issue, Lane, Subtask } from './types';
+import type { BoardApiResponse, BoardData, BoardIssueEntity, Issue, Lane, Subtask } from './types';
 import { findSubtaskInTree } from './subtasksTree';
 import { isHttpError } from './http';
 import type { LaneType } from './useKanbanPreferences';
@@ -103,10 +103,36 @@ function normalizeIssue(issue: Issue): Issue {
   };
 }
 
-export function normalizeBoardData(data: BoardData): BoardData {
+function snapshotIssues(data: BoardApiResponse): Issue[] {
+  const entities = new Map<number, BoardIssueEntity>(data.entities.map((entity) => [entity.id, entity]));
+  const childrenByParentId = new Map<number, number[]>(
+    Object.entries(data.tree.children_by_parent_id).map(([parentId, childIds]) => [Number(parentId), childIds]),
+  );
+  const building = new Set<number>();
+  const toIssue = (id: number, parentId: number | null): Issue | null => {
+    const entity = entities.get(id);
+    if (!entity || building.has(id)) return null;
+    building.add(id);
+    const subtasks = (childrenByParentId.get(id) ?? [])
+      .map((childId) => toIssue(childId, id))
+      .filter((child): child is Issue => child !== null)
+      .map((child) => child as unknown as Subtask);
+    building.delete(id);
+    return { ...entity, parent_id: entity.parent_id ?? parentId, subtasks };
+  };
+
+  return data.tree.root_ids
+    .map((id) => toIssue(id, null))
+    .filter((issue): issue is Issue => issue !== null);
+}
+
+export function normalizeBoardData(data: BoardApiResponse | BoardData): BoardData {
+  const issues = 'entities' in data && data.entities && data.tree
+    ? snapshotIssues(data as BoardApiResponse)
+    : (data.issues ?? []);
   return {
     ...data,
-    issues: data.issues.map(normalizeIssue),
+    issues: issues.map(normalizeIssue),
   };
 }
 

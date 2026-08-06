@@ -81,9 +81,9 @@ pnpm run build
 
 ## Display preferences
 
-There is no plugin-wide configuration screen. Each user can set swimlanes, hidden statuses, aging thresholds, sorting, fit mode, font size, and subtask display from the board. Card moves only apply the status and any lane attribute explicitly selected by the user; Redmine workflow and permissions remain authoritative.
+There is no plugin-wide configuration screen. Each user can set swimlanes, hidden statuses, aging thresholds, sorting, fit mode, font size, subtask display, and the maximum board entity count from the board. The default maximum is 1,500 unique Issue entities; blank or invalid values return to 1,500. Card moves only apply the status and any lane attribute explicitly selected by the user; Redmine workflow and permissions remain authoritative.
 
-The API protects the server with a fixed default page size of 500 issues and a maximum page size of 1,000 issues. Recursive responses use canonical roots and a 1,500-node total budget; optional `meta.tree` reports the budget, unique/serialized counts, duplicate roots, loaded rows, and truncation. When `meta.tree.truncated` is true, `truncated_parent_ids` identifies recoverable parent subtrees, including parents limited by depth or query budgets; `unexpanded_parent_ids` records those causes diagnostically. Root pages use signed keyset cursors (`updated_on DESC, id DESC`); subtree pages use signed `id ASC` cursors and preserve root pagination metadata. Cursors are scoped to the project/filter fingerprint and are rejected when stale or out of scope. Set `REDMINE_KANBAN_PERF_LOG=1` only when operational performance logging is needed.
+Board data is one complete snapshot for the requested project/status scope. The configured count is an admission limit, not a page size: if the complete scope exceeds it, the API returns a structured 422 error and no Issue entities. The server applies the lower of the requested limit and `REDMINE_KANBAN_MAX_BOARD_ENTITIES` (default 5,000), and also enforces `REDMINE_KANBAN_MAX_RESPONSE_BYTES` (default 8 MiB) and `REDMINE_KANBAN_MAX_BOARD_QUERIES` (default 20). Set `REDMINE_KANBAN_PERF_LOG=1` to log snapshot resource measurements. There is no Load more, cursor, offset, or subtree recovery operation.
 
 ## Technology Stack
 
@@ -156,10 +156,6 @@ docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
 docker compose -f .github/e2e/docker-compose.yml exec -T --user redmine redmine \
   bundle exec rails runner -e production plugins/redmine_kanban/e2e/setup_redmine.rb
 
-# Optional high-fan-out tree fixture used by the truncation E2E
-docker compose -f .github/e2e/docker-compose.yml exec -T --user redmine redmine \
-  env REDMINE_KANBAN_E2E_TREE_FIXTURE=1 bundle exec rails runner -e production plugins/redmine_kanban/e2e/setup_redmine.rb
-
 # Run E2E
 REDMINE_BASE_URL=http://127.0.0.1:3002 \
   npx --prefix e2e playwright test -c e2e/playwright.config.js
@@ -179,11 +175,9 @@ REDMINE_BASE_URL=http://127.0.0.1:3002 \
 
 Board data notes:
 
-- `issues[].subtasks` is a recursive tree (`subtasks[].subtasks...`) for nested subtasks.
-- Subtask rows shown in the canvas are flattened on the frontend for rendering/hit-testing, but the API preserves hierarchy.
-- A node is canonicalized as either a root or a nested child. A child is removed from roots only after it is actually present in the current parent tree; unloaded or truncated children remain reachable as roots until a page merge attaches them.
-- `GET /projects/:project_id/kanban/issues` supports signed keyset cursors for normal roots (`updated_on DESC, id DESC`) and optional `tree_parent_id` subtree recovery (`id ASC`). Subtree pages preserve the recursive shape and root pagination metadata; the legacy `offset` parameter remains a backend compatibility fallback but is not sent by the current frontend.
-- Mutation responses use contract version 2 fields (`operation_id`, `scope_fingerprint`, flat `issue_updates`/`created_issues`, `deleted_issue_ids`, `tree_changes`, and invalidations). The frontend applies these deltas to normalized state and uses the entities endpoint for targeted issue/parent reconciliation; it does not require a successful full-board refresh after a normal mutation.
+- Contract version 3 returns flat `entities` exactly once per Issue plus `tree.root_ids` and `tree.children_by_parent_id`; the frontend derives recursive Canvas rows from normalized state.
+- `board_entity_limit` is the only board size request parameter. `offset`, `cursor`, `tree_parent_id`, and `issue_limit` are rejected; no partial snapshot is successful.
+- Mutation responses use contract version 3 fields (`operation_id`, `scope_fingerprint`, flat `issue_updates`/`created_issues`, `deleted_issue_ids`, `tree_changes`, and invalidations). The frontend applies these deltas to normalized state and uses the entities endpoint for targeted reconciliation.
 - Issue responses are accepted only when their `lock_version`/`updated_on` freshness is not older than the cached entity. Optimistic failures roll back only fields still holding that mutation's optimistic values; overlapping mutations trigger targeted server reconciliation.
 - Deleted Issue recreation is available only for domain top-level Issues. It creates a new Issue with the displayed subject, project, description, status, assignee, tracker, priority, dates, and done ratio; it never recreates a child Issue without its parent.
 

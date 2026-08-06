@@ -1,8 +1,5 @@
 function serializeNumberSelection(values: Iterable<number>): string {
-  return Array.from(new Set(values))
-    .filter((value) => Number.isFinite(value))
-    .sort((a, b) => a - b)
-    .join(',');
+  return Array.from(new Set(values)).filter(Number.isFinite).sort((a, b) => a - b).join(',');
 }
 
 export function buildBoardQueryKey(
@@ -10,7 +7,7 @@ export function buildBoardQueryKey(
   projectIds: number[],
   issueStatusIds: number[],
   excludeStatusIds: Iterable<number>,
-  issueLimit?: number,
+  maximumBoardEntityCount = 1500,
 ) {
   return [
     'kanban',
@@ -19,7 +16,7 @@ export function buildBoardQueryKey(
     serializeNumberSelection(projectIds),
     serializeNumberSelection(issueStatusIds),
     serializeNumberSelection(excludeStatusIds),
-    issueLimit ?? 'default',
+    maximumBoardEntityCount,
   ] as const;
 }
 
@@ -28,82 +25,14 @@ export function buildBoardDataUrl(
   projectIds: number[],
   issueStatusIds: number[],
   excludeStatusIds: Iterable<number>,
-  issueLimit?: number,
-): string {
-  const params = new URLSearchParams();
-
-  appendNumberParams(params, 'project_ids[]', projectIds);
-  appendNumberParams(params, 'issue_status_ids[]', issueStatusIds);
-  appendNumberParams(params, 'exclude_status_ids[]', excludeStatusIds);
-  if (issueLimit && Number.isFinite(issueLimit) && issueLimit > 0) {
-    params.append('issue_limit', String(issueLimit));
-  }
-
-  const query = params.toString();
-  return `${baseUrl}/data${query ? `?${query}` : ''}`;
-}
-
-export function buildBoardIssuesUrl(
-  baseUrl: string,
-  projectIds: number[],
-  issueStatusIds: number[],
-  excludeStatusIds: Iterable<number>,
-  issueLimit: number,
-  offset: number,
-  treeParentId?: number,
-): string {
-  const params = new URLSearchParams();
-
-  appendNumberParams(params, 'project_ids[]', projectIds);
-  appendNumberParams(params, 'issue_status_ids[]', issueStatusIds);
-  appendNumberParams(params, 'exclude_status_ids[]', excludeStatusIds);
-  params.append('issue_limit', String(issueLimit));
-  params.append('offset', String(Math.max(0, offset)));
-  if (treeParentId && Number.isFinite(treeParentId) && treeParentId > 0) {
-    params.append('tree_parent_id', String(treeParentId));
-  }
-
-  return `${baseUrl}/issues?${params.toString()}`;
-}
-
-export function buildBoardIssuesCursorUrl(
-  baseUrl: string,
-  projectIds: number[],
-  issueStatusIds: number[],
-  excludeStatusIds: Iterable<number>,
-  issueLimit: number,
-  cursor: string,
-  treeParentId?: number,
-): string {
-  const params = new URLSearchParams();
-
-  appendNumberParams(params, 'project_ids[]', projectIds);
-  appendNumberParams(params, 'issue_status_ids[]', issueStatusIds);
-  appendNumberParams(params, 'exclude_status_ids[]', excludeStatusIds);
-  params.append('issue_limit', String(issueLimit));
-  params.append('cursor', cursor);
-  if (treeParentId && Number.isFinite(treeParentId) && treeParentId > 0) {
-    params.append('tree_parent_id', String(treeParentId));
-  }
-
-  return `${baseUrl}/issues?${params.toString()}`;
-}
-
-export function buildBoardTreeUrl(
-  baseUrl: string,
-  projectIds: number[],
-  issueStatusIds: number[],
-  excludeStatusIds: Iterable<number>,
-  issueLimit: number,
-  parentId: number,
+  maximumBoardEntityCount = 1500,
 ): string {
   const params = new URLSearchParams();
   appendNumberParams(params, 'project_ids[]', projectIds);
   appendNumberParams(params, 'issue_status_ids[]', issueStatusIds);
   appendNumberParams(params, 'exclude_status_ids[]', excludeStatusIds);
-  params.append('issue_limit', String(issueLimit));
-  params.append('tree_parent_id', String(parentId));
-  return `${baseUrl}/issues?${params.toString()}`;
+  params.append('board_entity_limit', String(maximumBoardEntityCount));
+  return `${baseUrl}/data?${params.toString()}`;
 }
 
 export function buildBoardCountsUrl(baseUrl: string, projectIds: number[]): string {

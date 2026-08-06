@@ -186,11 +186,12 @@ jobs:
             env RAILS_ENV=test bundle exec rails test \
             plugins/redmine_kanban/test
 
-      - name: Run deterministic tree resource gates
+      - name: Run snapshot resource gates
         run: |
           docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
-            env RAILS_ENV=test REDMINE_KANBAN_PERF_GATE=1 bundle exec rails test \
-            plugins/redmine_kanban/test/unit/subtask_loader_test.rb
+            env RAILS_ENV=test bundle exec rails test \
+            plugins/redmine_kanban/test/unit/board_data_test.rb \
+            plugins/redmine_kanban/test/unit/snapshot_limits_test.rb
 
       - name: Show container logs on failure
         if: failure()
@@ -215,7 +216,6 @@ jobs:
         redmine_version: ['7.0', '6.1']
     env:
       REDMINE_IMAGE: redmine:${{ matrix.redmine_version }}
-      REDMINE_KANBAN_E2E_TREE_FIXTURE: '1'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -272,7 +272,7 @@ jobs:
       - name: Seed project/module for E2E
         run: |
           docker compose -f .github/e2e/docker-compose.yml exec -T --user redmine \
-            -e REDMINE_KANBAN_E2E_TREE_FIXTURE=1 redmine \
+            redmine \
             bundle exec rails runner -e production plugins/redmine_kanban/e2e/setup_redmine.rb
 
       - name: Run Playwright E2E

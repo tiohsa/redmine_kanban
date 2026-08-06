@@ -5,6 +5,21 @@ import { buildProjectScopeFromDataUrl, makeScopedStorageKey, readScopedBooleanWi
 import type { FitMode } from './kanbanShared';
 
 export type LaneType = 'none' | 'assignee' | 'priority';
+export const DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT = 1500;
+
+export function parseMaximumBoardEntityCount(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined) return DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT;
+  const raw = String(value).trim();
+  if (raw === '') return DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT;
+  if (!/^[1-9][0-9]*$/.test(raw)) return null;
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
+export function normalizeMaximumBoardEntityCount(value: string | number | null | undefined): number {
+  return parseMaximumBoardEntityCount(value) ?? DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT;
+}
 
 const DEFAULT_FILTERS: Filters = {
   assigneeIds: [],
@@ -81,6 +96,7 @@ export function useKanbanPreferences(dataUrl: string) {
   const agingDangerDaysStorageKey = projectKey('rk_aging_danger_days');
   const agingExcludeClosedStorageKey = projectKey('rk_aging_exclude_closed');
   const viewableProjectsStorageKey = projectKey('rk_viewable_projects_enabled');
+  const maximumBoardEntityCountStorageKey = projectKey('rk_maximum_board_entity_count');
   const fullWindowStorageKey = userKey('rk_fullwindow');
   const fitModeStorageKey = userKey('rk_fit_mode');
   const showSubtasksStorageKey = userKey('rk_show_subtasks');
@@ -101,6 +117,7 @@ export function useKanbanPreferences(dataUrl: string) {
   const [agingDangerDays, setAgingDangerDays] = useState(7);
   const [agingExcludeClosed, setAgingExcludeClosed] = useState(true);
   const [viewableProjectsEnabled, setViewableProjectsEnabled] = useState(false);
+  const [maximumBoardEntityCount, setMaximumBoardEntityCount] = useState(DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT);
 
   useLayoutEffect(() => {
     if (!userScope) return;
@@ -144,7 +161,8 @@ export function useKanbanPreferences(dataUrl: string) {
     setAgingDangerDays(Math.max(warnDays, Number(readScopedValueWithLegacy(agingDangerDaysStorageKey!, makeScopedStorageKey('rk_aging_danger_days', projectScope))) || 7));
     setAgingExcludeClosed(readScopedBooleanWithLegacy(agingExcludeClosedStorageKey!, makeScopedStorageKey('rk_aging_exclude_closed', projectScope), true));
     setViewableProjectsEnabled(readScopedBooleanWithLegacy(viewableProjectsStorageKey!, makeScopedStorageKey('rk_viewable_projects_enabled', projectScope), false));
-  }, [agingDangerDaysStorageKey, agingExcludeClosedStorageKey, agingWarnDaysStorageKey, filtersStorageKey, fitModeStorageKey, fontSizeStorageKey, fullWindowStorageKey, hiddenStatusStorageKey, laneTypeStorageKey, priorityLaneStorageKey, projectScope, showSubtasksStorageKey, sortKeyStorageKey, timeEntryStorageKey, userScope, viewableProjectsStorageKey]);
+    setMaximumBoardEntityCount(normalizeMaximumBoardEntityCount(readStorageValue(maximumBoardEntityCountStorageKey!)));
+  }, [agingDangerDaysStorageKey, agingExcludeClosedStorageKey, agingWarnDaysStorageKey, filtersStorageKey, fitModeStorageKey, fontSizeStorageKey, fullWindowStorageKey, hiddenStatusStorageKey, laneTypeStorageKey, maximumBoardEntityCountStorageKey, laneTypeStorageKey, priorityLaneStorageKey, projectScope, showSubtasksStorageKey, sortKeyStorageKey, timeEntryStorageKey, userScope, viewableProjectsStorageKey]);
 
   useEffect(() => {
     const className = 'rk-kanban-fullwindow';
@@ -209,6 +227,10 @@ export function useKanbanPreferences(dataUrl: string) {
     if (viewableProjectsStorageKey) writeStorageValue(viewableProjectsStorageKey, viewableProjectsEnabled ? '1' : '0');
   }, [viewableProjectsEnabled, viewableProjectsStorageKey]);
 
+  useEffect(() => {
+    if (maximumBoardEntityCountStorageKey) writeStorageValue(maximumBoardEntityCountStorageKey, String(maximumBoardEntityCount));
+  }, [maximumBoardEntityCount, maximumBoardEntityCountStorageKey]);
+
   return {
     projectScope,
     setCurrentUserId,
@@ -238,5 +260,7 @@ export function useKanbanPreferences(dataUrl: string) {
     setAgingExcludeClosed,
     viewableProjectsEnabled,
     setViewableProjectsEnabled,
+    maximumBoardEntityCount,
+    setMaximumBoardEntityCount,
   };
 }
