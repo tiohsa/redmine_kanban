@@ -5,7 +5,7 @@ import { getJson, isHttpError } from './http';
 import { CanvasBoard, type CanvasBoardHandle } from './board/CanvasBoard';
 import { buildBoardState } from './board/state';
 import { applyBoardDataFilters, buildVisibleIssues } from './boardFilters';
-import { buildBoardDataUrl, buildBoardQueryKey } from './boardQuery';
+import { buildBoardDataUrl, buildBoardQueryKey, effectiveDependencyStatusIds, effectiveScopeStatusIds } from './boardQuery';
 import { IframeEditDialog } from './IframeEditDialog';
 import { KanbanIssueModal } from './KanbanIssueModal';
 import { KanbanPopupHost } from './KanbanPopupHost';
@@ -458,8 +458,8 @@ export function App({ dataUrl, initialCurrentUserId }: Props) {
           baseUrl={baseUrl}
           queryKey={boardQueryKey}
           projectIds={data.meta.project_ids ?? []}
-          scopeStatusIds={data.meta.scope_status_ids ?? []}
-          dependencyStatusIds={data.meta.dependency_status_ids ?? data.meta.scope_status_ids ?? []}
+          scopeStatusIds={effectiveScopeStatusIds(data)}
+          dependencyStatusIds={effectiveDependencyStatusIds(data)}
           onClose={() => {
             dialogs.setIframeEditContext(null);
           }}
@@ -479,8 +479,8 @@ export function App({ dataUrl, initialCurrentUserId }: Props) {
           baseUrl={baseUrl}
           queryKey={boardQueryKey}
           projectIds={data.meta.project_ids ?? []}
-          scopeStatusIds={data.meta.scope_status_ids ?? []}
-          dependencyStatusIds={data.meta.dependency_status_ids ?? data.meta.scope_status_ids ?? []}
+          scopeStatusIds={effectiveScopeStatusIds(data)}
+          dependencyStatusIds={effectiveDependencyStatusIds(data)}
           onBeforeBulkSubtasks={(parentIssueId) => actions.reconcileIssueIds([parentIssueId], { treatAsCreated: true })}
           onClose={() => {
             dialogs.setIframeCreateUrl(null);
@@ -501,8 +501,8 @@ export function App({ dataUrl, initialCurrentUserId }: Props) {
           baseUrl={baseUrl}
           queryKey={boardQueryKey}
           projectIds={data.meta.project_ids ?? []}
-          scopeStatusIds={data.meta.scope_status_ids ?? []}
-          dependencyStatusIds={data.meta.dependency_status_ids ?? data.meta.scope_status_ids ?? []}
+          scopeStatusIds={effectiveScopeStatusIds(data)}
+          dependencyStatusIds={effectiveDependencyStatusIds(data)}
           onClose={() => dialogs.setIframeTimeEntryUrl(null)}
           onSuccess={(message) => {
             setNotice(message);

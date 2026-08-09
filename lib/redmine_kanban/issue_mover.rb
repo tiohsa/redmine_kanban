@@ -96,8 +96,14 @@ module RedmineKanban
       ancestor_issues = ancestor_issues_for(@issue) if ancestor_updates_required
       propagated_issues = priority_id.is_a?(Integer) ? @issue.children.to_a : []
       issue_updates = [@issue, *(ancestor_issues || []), *propagated_issues].uniq { |item| item.id }
+      membership_recheck_ids = if mutation_outcome[:status_changed]
+        BoardMembershipResolver.new(board_context: @board_context).membership_candidate_ids([@issue.id])
+      else
+        []
+      end
       result = mutation_result_builder.build(
         issue_updates: issue_updates,
+        membership_recheck_ids: membership_recheck_ids,
         invalidations: { column_counts: true }
       ).merge(issue: issue_presenter(@issue).issue_to_h(@issue))
       result[:ancestor_updates] = ancestor_updates if ancestor_updates&.any?

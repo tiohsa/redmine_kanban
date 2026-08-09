@@ -11,16 +11,19 @@ module RedmineKanban
       @presenter = IssueEntityPresenter.new(user: board_context.user, board_project: board_context.project)
     end
 
-    def build(issue_updates: [], created_issues: [], deleted_issue_ids: [], tree_changes: [], invalidations: {}, column_counts: {})
-      candidates = [*issue_updates, *created_issues].compact.uniq { |issue| issue.id }
-      member_id_set = BoardMembershipResolver.new(board_context: @board_context).member_ids(candidates)
+    def build(issue_updates: [], created_issues: [], membership_recheck_ids: [], deleted_issue_ids: [], tree_changes: [], invalidations: {}, column_counts: {})
+      resolver = BoardMembershipResolver.new(board_context: @board_context)
+      recheck_issues = resolver.membership_candidate_issues(membership_recheck_ids)
+      candidates = [*issue_updates, *created_issues, *recheck_issues].compact.uniq { |issue| issue.id }
+      member_id_set = resolver.member_ids(candidates)
       evicted_issue_ids = candidates.map(&:id) - member_id_set.to_a
+      update_candidates = [*issue_updates, *recheck_issues].compact.uniq { |issue| issue.id }
       {
         ok: true,
         contract_version: 3,
         operation_id: @operation_id,
         scope_fingerprint: @board_context.scope_fingerprint,
-        issue_updates: @presenter.issues_to_h(issue_updates.select { |issue| member_id_set.include?(issue.id) }),
+        issue_updates: @presenter.issues_to_h(update_candidates.select { |issue| member_id_set.include?(issue.id) }),
         created_issues: @presenter.issues_to_h(created_issues.select { |issue| member_id_set.include?(issue.id) }),
         dependency_status_ids: @board_context.dependency_status_ids,
         deleted_issue_ids: Array(deleted_issue_ids).map(&:to_i).uniq,

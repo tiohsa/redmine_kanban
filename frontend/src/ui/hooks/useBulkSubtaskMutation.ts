@@ -5,7 +5,7 @@ import { getJson } from '../http';
 import type { BoardData, Issue } from '../types';
 import { discardBulkIdempotencyKey, getOrCreateBulkIdempotencyKey, stableSerialize } from '../bulkIdempotency';
 import { applyEntityReconciliation, applyMutationResponse, unresolvedInvalidationIds } from '../useIssueMutation';
-import { buildBoardCountsUrl, buildBoardEntitiesUrl } from '../boardQuery';
+import { appendDependencyStatusParams, appendScopeStatusParams, buildBoardCountsUrl, buildBoardEntitiesUrl } from '../boardQuery';
 
 export type SubtaskPayload = {
   parent_issue_id: number;
@@ -164,10 +164,8 @@ function scopedPath(baseUrl: string, path: string, projectIds: number[], scopeSt
   const params = new URLSearchParams();
   [...new Set(projectIds)].filter((id) => Number.isFinite(id) && id > 0).sort((a, b) => a - b)
     .forEach((id) => params.append('project_ids[]', String(id)));
-  params.append('scope_status_ids_present', '1');
-  [...new Set(scopeStatusIds)].sort((a, b) => a - b).forEach((id) => params.append('scope_status_ids[]', String(id)));
-  params.append('dependency_status_ids_present', '1');
-  [...new Set(dependencyStatusIds)].sort((a, b) => a - b).forEach((id) => params.append('dependency_status_ids[]', String(id)));
+  appendScopeStatusParams(params, scopeStatusIds);
+  appendDependencyStatusParams(params, dependencyStatusIds);
   const query = params.toString();
   return `${baseUrl}${path}${query ? `?${query}` : ''}`;
 }

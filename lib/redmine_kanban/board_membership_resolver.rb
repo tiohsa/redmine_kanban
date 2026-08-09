@@ -34,6 +34,20 @@ module RedmineKanban
       Set.new(primary_ids + dependency_ids)
     end
 
+    def membership_candidate_ids(anchor_ids)
+      ids = Array(anchor_ids).map(&:to_i).select(&:positive?).uniq
+      return [] if ids.empty?
+
+      descendant_scope_for_anchors(ids).distinct.pluck(:id)
+    end
+
+    def membership_candidate_issues(ids)
+      candidate_ids = Array(ids).map(&:to_i).select(&:positive?).uniq
+      return [] if candidate_ids.empty?
+
+      visible_scope.where(id: candidate_ids).to_a
+    end
+
     private
 
     def primary_scope
@@ -49,25 +63,28 @@ module RedmineKanban
     end
 
     def descendant_scope(primary_ids)
-      dependency_scope.joins(<<~SQL.squish)
-        INNER JOIN issues board_primary_ancestors
-          ON board_primary_ancestors.id IN (#{primary_ids.map(&:to_i).join(',')})
-         AND board_primary_ancestors.lft < issues.lft
-         AND board_primary_ancestors.rgt > issues.rgt
-      SQL
+      dependency_scope.joins(primary_ancestor_join(primary_scope.where(id: primary_ids)))
     end
 
     def descendant_scope_for_candidates(candidate_ids)
       return Issue.none if @context.scope_status_ids.empty? || @context.dependency_status_ids.empty?
 
-      dependency_scope.where(id: candidate_ids).joins(<<~SQL.squish)
-        INNER JOIN issues board_primary_ancestors
-          ON board_primary_ancestors.project_id IN (#{@context.project_ids.map(&:to_i).join(',')})
-         AND board_primary_ancestors.status_id IN (#{@context.scope_status_ids.map(&:to_i).join(',')})
+      dependency_scope.where(id: candidate_ids)
+        .joins(primary_ancestor_join(primary_scope.where(id: candidate_ids)))
+        .distinct
+    end
+
+    def descendant_scope_for_anchors(anchor_ids)
+      visible_scope.joins(primary_ancestor_join(visible_scope.where(id: anchor_ids)))
+    end
+
+    def primary_ancestor_join(scope)
+      <<~SQL.squish
+        INNER JOIN (#{scope.select(:id, :root_id, :lft, :rgt).to_sql}) board_primary_ancestors
+          ON board_primary_ancestors.root_id = issues.root_id
          AND board_primary_ancestors.lft < issues.lft
          AND board_primary_ancestors.rgt > issues.rgt
       SQL
-        .distinct
     end
   end
 end
