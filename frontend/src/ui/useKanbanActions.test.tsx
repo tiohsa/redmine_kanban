@@ -48,24 +48,33 @@ function createWrapper(client: QueryClient) {
   };
 }
 
-function renderActions(options: { data?: BoardData; refresh?: () => Promise<void>; setError?: (value: string | null) => void } = {}) {
+function renderActions(options: {
+  data?: BoardData;
+  refresh?: () => Promise<void>;
+  setError?: (value: string | null) => void;
+  timeEntryOnClose?: boolean;
+  setIframeTimeEntryUrl?: (value: string | null) => void;
+} = {}) {
   const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   const setError = options.setError ?? vi.fn();
   const refresh = options.refresh ?? vi.fn(async () => undefined);
+  const setIframeTimeEntryUrl = options.setIframeTimeEntryUrl ?? vi.fn();
+  const data = options.data ?? makeBoardData();
+  queryClient.setQueryData(['kanban', 'board'], data);
   const hook = renderHook(
     () => useKanbanActions({
       baseUrl: '/projects/demo/kanban',
       boardQueryKey: ['kanban', 'board'],
-      data: options.data ?? makeBoardData(),
+      data,
       refresh,
-      timeEntryOnClose: false,
+      timeEntryOnClose: options.timeEntryOnClose ?? false,
       setNotice: vi.fn(),
       setError,
-      setIframeTimeEntryUrl: vi.fn(),
+      setIframeTimeEntryUrl,
     }),
     { wrapper: createWrapper(queryClient) },
   );
-  return { ...hook, setError, refresh };
+  return { ...hook, setError, refresh, queryClient, setIframeTimeEntryUrl };
 }
 
 afterEach(() => {
@@ -335,5 +344,49 @@ describe('useKanbanActions nested toggle flow', () => {
       });
     });
     expect(queryClient.getQueryData<BoardData>(queryKey)?.columns.map((column) => column.count)).toEqual([100, 20]);
+  });
+});
+
+describe('useKanbanActions snapshot-invalidated success', () => {
+  it('skips entity side effects and time entry UI when Move succeeds without an issue DTO', async () => {
+    const board = makeBoardData(makeIssue(1));
+    board.columns = [
+      { id: 1, name: 'Open', is_closed: false, count: 1 },
+      { id: 2, name: 'Closed', is_closed: true, count: 0 },
+    ];
+    const setIframeTimeEntryUrl = vi.fn();
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      ok: true,
+      contract_version: 3,
+      invalidations: { board_snapshot: true },
+    }), { status: 200 }));
+    const { result, queryClient } = renderActions({ data: board, timeEntryOnClose: true, setIframeTimeEntryUrl });
+    const resetQueries = vi.spyOn(queryClient, 'resetQueries');
+
+    await act(async () => { result.current.moveIssue(1, 2); });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    expect(resetQueries).toHaveBeenCalledWith({ queryKey: ['kanban', 'board'] });
+    expect(setIframeTimeEntryUrl).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls[0][0]).toContain('/issues/1/move');
+  });
+
+  it('keeps the normal close time entry flow when the issue DTO is present', async () => {
+    const board = makeBoardData(makeIssue(1));
+    board.columns = [
+      { id: 1, name: 'Open', is_closed: false, count: 1 },
+      { id: 2, name: 'Closed', is_closed: true, count: 0 },
+    ];
+    const setIframeTimeEntryUrl = vi.fn();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      ok: true,
+      contract_version: 3,
+      issue: { ...makeIssue(1), status_id: 2, can_log_time: true, lock_version: 4 },
+      invalidations: { board_snapshot: false },
+    }), { status: 200 }));
+    const { result } = renderActions({ data: board, timeEntryOnClose: true, setIframeTimeEntryUrl });
+
+    await act(async () => { result.current.moveIssue(1, 2); });
+    await waitFor(() => expect(setIframeTimeEntryUrl).toHaveBeenCalledWith('/issues/1/time_entries/new'));
   });
 });

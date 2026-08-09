@@ -15,7 +15,7 @@ export type AncestorIssueUpdate = {
 };
 
 export type IssueMutationResult = {
-  issue: Issue;
+  issue?: Issue;
   contract_version?: number;
   operation_id?: string;
   scope_fingerprint?: string;

@@ -174,12 +174,15 @@ export function useKanbanActions({
     },
     onSuccess: (result) => {
       if (result.warning) setNotice(result.warning);
+      if (isBoardSnapshotInvalidated(result)) return;
+
       void reconcileIssueIds(unresolvedInvalidationIds(result));
       void reconcileIssueIds(result.invalidations?.parent_ids ?? []);
       void reconcileColumnCounts(Boolean(result.invalidations?.column_counts));
-      if (timeEntryOnClose && data?.columns.find((column) => column.id === result.issue.status_id)?.is_closed) {
-        if (result.issue.can_log_time) {
-          setIframeTimeEntryUrl(`/issues/${result.issue.id}/time_entries/new`);
+      const issue = result.issue;
+      if (timeEntryOnClose && issue && data?.columns.find((column) => column.id === issue.status_id)?.is_closed) {
+        if (issue.can_log_time) {
+          setIframeTimeEntryUrl(`/issues/${issue.id}/time_entries/new`);
         } else {
           setNotice(data?.labels.time_entry_permission_required ?? 'You do not have permission to log time for this issue');
         }
@@ -211,6 +214,8 @@ export function useKanbanActions({
     },
     onSuccess: (result) => {
       if (result.warning) setNotice(result.warning);
+      if (isBoardSnapshotInvalidated(result)) return;
+
       void reconcileIssueIds(unresolvedInvalidationIds(result));
       void reconcileIssueIds(result.invalidations?.parent_ids ?? []);
       void reconcileColumnCounts(Boolean(result.invalidations?.column_counts));
@@ -252,16 +257,19 @@ export function useKanbanActions({
       }>(scopedUrl('/issues'), { issue: { ...payload, operation_id: clientOperationId() } }, 'POST');
     },
     onSuccess: (result, payload) => {
-      if (isBoardSnapshotInvalidated(result)) {
+      const snapshotInvalidated = isBoardSnapshotInvalidated(result);
+      if (snapshotInvalidated) {
         invalidateBoardSnapshot(queryClient, boardQueryKey);
       } else {
         queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
           current ? applyMutationResponse(current, result) : current
         ));
       }
-      void reconcileIssueIds(unresolvedInvalidationIds(result));
-      void reconcileIssueIds(result.invalidations?.parent_ids ?? []);
-      void reconcileColumnCounts(Boolean(result.invalidations?.column_counts));
+      if (!snapshotInvalidated) {
+        void reconcileIssueIds(unresolvedInvalidationIds(result));
+        void reconcileIssueIds(result.invalidations?.parent_ids ?? []);
+        void reconcileColumnCounts(Boolean(result.invalidations?.column_counts));
+      }
       if (isBulkCreateInput(payload)) {
         const requestPayload = buildBulkCreateRequest(payload);
         discardBulkIdempotencyKey(storageKeyForBulkSignature(stableSerialize(requestPayload)));
@@ -289,16 +297,19 @@ export function useKanbanActions({
         return;
       }
       deleted = true;
-      if (isBoardSnapshotInvalidated(response)) {
+      const snapshotInvalidated = isBoardSnapshotInvalidated(response);
+      if (snapshotInvalidated) {
         invalidateBoardSnapshot(queryClient, boardQueryKey);
       } else {
         queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
           current ? applyMutationResponse(current, response) : current
         ));
       }
-      void reconcileIssueIds(unresolvedInvalidationIds(response));
-      void reconcileIssueIds(response.invalidations?.parent_ids ?? []);
-      void reconcileColumnCounts(Boolean(response.invalidations?.column_counts));
+      if (!snapshotInvalidated) {
+        void reconcileIssueIds(unresolvedInvalidationIds(response));
+        void reconcileIssueIds(response.invalidations?.parent_ids ?? []);
+        void reconcileColumnCounts(Boolean(response.invalidations?.column_counts));
+      }
       setPendingDeleteIssue(undoIssue);
       // Deletion succeeded. A failed refetch is a board-loading problem, not a deletion failure;
       // keep the deleted issue available so the user can still use Undo.
@@ -377,16 +388,19 @@ export function useKanbanActions({
       );
 
       if (response.ok) {
-        if (isBoardSnapshotInvalidated(response)) {
+        const snapshotInvalidated = isBoardSnapshotInvalidated(response);
+        if (snapshotInvalidated) {
           invalidateBoardSnapshot(queryClient, boardQueryKey);
         } else {
           queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
             current ? applyMutationResponse(current, response) : current
           ));
         }
-        void reconcileIssueIds(unresolvedInvalidationIds(response));
-        void reconcileIssueIds(response.invalidations?.parent_ids ?? []);
-        void reconcileColumnCounts(Boolean(response.invalidations?.column_counts));
+        if (!snapshotInvalidated) {
+          void reconcileIssueIds(unresolvedInvalidationIds(response));
+          void reconcileIssueIds(response.invalidations?.parent_ids ?? []);
+          void reconcileColumnCounts(Boolean(response.invalidations?.column_counts));
+        }
         setNotice(null);
         setPendingDeleteIssue(null);
       } else {

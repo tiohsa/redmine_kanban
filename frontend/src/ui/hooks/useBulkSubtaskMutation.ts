@@ -4,7 +4,7 @@ import { isHttpError, postJson } from '../http';
 import { getJson } from '../http';
 import type { BoardData, Issue } from '../types';
 import { discardBulkIdempotencyKey, getOrCreateBulkIdempotencyKey, stableSerialize } from '../bulkIdempotency';
-import { applyEntityReconciliation, applyMutationResponse, unresolvedInvalidationIds } from '../useIssueMutation';
+import { applyEntityReconciliation, applyMutationResponse, invalidateBoardSnapshot, isBoardSnapshotInvalidated, unresolvedInvalidationIds } from '../useIssueMutation';
 import { appendDependencyStatusParams, appendScopeStatusParams, buildBoardCountsUrl, buildBoardEntitiesUrl } from '../boardQuery';
 
 export type SubtaskPayload = {
@@ -32,7 +32,7 @@ type BulkMutationResponse = {
   created_issues?: Issue[];
   scope_fingerprint?: string;
   tree_changes?: Array<{ type: 'attach' | 'detach'; parent_id: number; child_id: number }>;
-  invalidations?: { issue_ids?: number[]; parent_ids?: number[]; column_counts?: boolean; root_order?: boolean };
+  invalidations?: { issue_ids?: number[]; parent_ids?: number[]; column_counts?: boolean; root_order?: boolean; board_snapshot?: boolean };
 };
 
 export type BulkSubtaskErrorDetails = {
@@ -117,6 +117,11 @@ export function useBulkSubtaskMutation(baseUrl: string, queryKey: readonly unkno
         : payload;
       const storageKey = getOrCreateBulkIdempotencyKey(stableSerialize(normalized)).storageKey;
       discardBulkIdempotencyKey(storageKey);
+      if (isBoardSnapshotInvalidated(result)) {
+        invalidateBoardSnapshot(queryClient, queryKey);
+        return;
+      }
+
       queryClient.setQueryData(queryKey, (current: unknown) => {
         if (!current || !('issues' in (current as object))) return current;
         return applyMutationResponse(current as Parameters<typeof applyMutationResponse>[0], {

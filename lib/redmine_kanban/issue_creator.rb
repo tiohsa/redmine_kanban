@@ -16,8 +16,102 @@ module RedmineKanban
     end
 
     def create(params:)
+      issue, error = persist_issue(params: params)
+      return error if error
+
+      mutation = mutation_result_builder.build(
+        created_issues: [issue],
+        tree_changes: issue.parent_id ? [{ type: 'attach', parent_id: issue.parent_id, child_id: issue.id }] : [],
+        invalidations: { column_counts: true }
+      )
+      return mutation if snapshot_invalidated_result?(mutation)
+
+      mutation.merge(issue: issue_presenter(issue).issue_to_h(issue))
+    end
+
+    def create_with_subtasks(parent_params:, subtasks:, idempotency_key:)
+      return error_response('Idempotency-Keyが必要です', status: :unprocessable_entity) if idempotency_key.blank?
+
+      normalized_parent = normalize_bulk_parent(parent_params)
+      return normalized_parent if normalized_parent.is_a?(Hash) && normalized_parent[:ok] == false
+
+      normalized_subtasks = normalize_bulk_subtasks(subtasks)
+      return normalized_subtasks if normalized_subtasks.is_a?(Hash) && normalized_subtasks[:ok] == false
+
+      parent_issue_id = normalized_parent[:parent_issue_id]
+
+      if normalized_subtasks.count { |subtask| subtask[:subject].to_s.strip.present? } > MAX_BULK_SUBTASKS
+        return error_response('子チケットは最大50件まで作成できます', field_errors: { subtasks: ['子チケットは最大50件まで作成できます'] })
+      end
+
+      RedmineKanban::BulkIdempotency.with_request(
+        user_id: @user.id,
+        project_id: @project.id,
+        idempotency_key: idempotency_key,
+        payload: { parent: normalized_parent, subtasks: normalized_subtasks }
+      ) do
+        result = nil
+        created_issue_ids = []
+        parent_issue = nil
+        created = []
+        Issue.transaction do
+          parent_issue, parent_error = if parent_issue_id.present?
+            existing_parent_issue(parent_issue_id)
+          else
+            persist_issue(params: normalized_parent)
+          end
+          if parent_error
+            result = parent_error
+            raise ActiveRecord::Rollback
+          end
+
+          parent_id = parent_issue.id
+          created_issue_ids << parent_id if parent_issue_id.blank?
+          normalized_subtasks.each_with_index do |subtask_params, index|
+            child, child_error = persist_issue(params: subtask_params.merge(parent_issue_id: parent_id))
+            if child_error
+              result = child_error.merge(
+                row_index: index,
+                row_number: index + 1,
+                subject: subtask_params[:subject] || subtask_params['subject']
+              )
+              raise ActiveRecord::Rollback
+            end
+            created << child
+            created_issue_ids << child.id
+          end
+          result = { ok: true, issue: parent_issue, subtasks: created }
+        end
+        next result unless result&.dig(:ok)
+
+        created_issues = Issue.where(id: created_issue_ids.compact).to_a
+        updated_parent = if parent_issue_id.present?
+                           Issue.visible(@user).find_by(id: parent_issue_id)
+                         end
+        mutation = mutation_result_builder.build(
+          issue_updates: [updated_parent].compact,
+          created_issues: created_issues,
+          tree_changes: created_issues.filter_map do |created_issue|
+            next unless created_issue.parent_id
+
+            { type: 'attach', parent_id: created_issue.parent_id, child_id: created_issue.id }
+          end,
+          invalidations: { column_counts: true }
+        )
+        next mutation if snapshot_invalidated_result?(mutation)
+
+        mutation.merge(
+          issue: issue_presenter(parent_issue).issue_to_h(parent_issue),
+          subtasks: created.map { |child| issue_presenter(child).issue_to_h(child) }
+        )
+      end
+    end
+
+    private
+
+    def persist_issue(params:)
       subject = params[:subject].to_s.strip
-      return error_response(nil, field_errors: { subject: ['件名を入力してください'] }) if subject.empty?
+      return [nil, error_response(nil, field_errors: { subject: ['件名を入力してください'] })] if subject.empty?
 
       target_project_id = params[:project_id].to_i
       target_project = if target_project_id > 0
@@ -26,20 +120,20 @@ module RedmineKanban
                          @project
                        end
       unless target_project
-        return error_response('指定されたプロジェクトが見つからないか、表示する権限がありません', field_errors: { project_id: ['指定されたプロジェクトを利用できません'] })
+        return [nil, error_response('指定されたプロジェクトが見つからないか、表示する権限がありません', field_errors: { project_id: ['指定されたプロジェクトを利用できません'] })]
       end
 
       unless PermissionPolicy.new(user: @user).can_create_issue?(target_project, @project)
-        return error_response('指定されたプロジェクトでチケットを作成する権限がありません', status: :forbidden)
+        return [nil, error_response('指定されたプロジェクトでチケットを作成する権限がありません', status: :forbidden)]
       end
 
       parent_issue = find_visible_parent_issue(params[:parent_issue_id])
       if params[:parent_issue_id].present? && !parent_issue
-        return error_response('親チケットが見つからないか、表示する権限がありません', field_errors: { parent_issue_id: ['親チケットを利用できません'] }, status: :not_found)
+        return [nil, error_response('親チケットが見つからないか、表示する権限がありません', field_errors: { parent_issue_id: ['親チケットを利用できません'] }, status: :not_found)]
       end
 
       if parent_issue && parent_issue.project_id != target_project.id
-        return error_response('親チケットと作成先プロジェクトが一致しません', field_errors: { project_id: ['親チケットと同じプロジェクトを指定してください'] })
+        return [nil, error_response('親チケットと作成先プロジェクトが一致しません', field_errors: { project_id: ['親チケットと同じプロジェクトを指定してください'] })]
       end
 
       tracker_id = params[:tracker_id].to_s.strip
@@ -53,14 +147,14 @@ module RedmineKanban
 
       tracker = target_project.trackers.find_by(id: tracker_id.to_i)
       unless tracker
-        return error_response('指定されたtrackerは作成先プロジェクトで利用できません', field_errors: { tracker_id: ['作成先プロジェクトで利用可能なtrackerを指定してください'] })
+        return [nil, error_response('指定されたtrackerは作成先プロジェクトで利用できません', field_errors: { tracker_id: ['作成先プロジェクトで利用可能なtrackerを指定してください'] })]
       end
 
       start_date = normalize_date(params[:start_date])
-      return invalid_date_response(:start_date) if start_date == :invalid
+      return [nil, invalid_date_response(:start_date)] if start_date == :invalid
 
       due_date = normalize_date(params[:due_date])
-      return invalid_date_response(:due_date) if due_date == :invalid
+      return [nil, invalid_date_response(:due_date)] if due_date == :invalid
 
       issue = Issue.new
       issue.project = target_project
@@ -87,98 +181,22 @@ module RedmineKanban
       issue.safe_attributes = attributes
 
       if issue.save
-        legacy_issue = issue_presenter(issue).issue_to_h(issue)
-        mutation = mutation_result_builder.build(
-          created_issues: [issue],
-          tree_changes: issue.parent_id ? [{ type: 'attach', parent_id: issue.parent_id, child_id: issue.id }] : [],
-          invalidations: { column_counts: true }
-        )
-        mutation.merge(issue: legacy_issue)
+        [issue, nil]
       else
-        error_response(issue.errors.full_messages.join(', '), field_errors: issue.errors.to_hash(true))
+        [nil, error_response(issue.errors.full_messages.join(', '), field_errors: issue.errors.to_hash(true))]
       end
     end
 
-    def create_with_subtasks(parent_params:, subtasks:, idempotency_key:)
-      return error_response('Idempotency-Keyが必要です', status: :unprocessable_entity) if idempotency_key.blank?
-
-      normalized_parent = normalize_bulk_parent(parent_params)
-      return normalized_parent if normalized_parent.is_a?(Hash) && normalized_parent[:ok] == false
-
-      normalized_subtasks = normalize_bulk_subtasks(subtasks)
-      return normalized_subtasks if normalized_subtasks.is_a?(Hash) && normalized_subtasks[:ok] == false
-
-      parent_issue_id = normalized_parent[:parent_issue_id]
-
-      if normalized_subtasks.count { |subtask| subtask[:subject].to_s.strip.present? } > MAX_BULK_SUBTASKS
-        return error_response('子チケットは最大50件まで作成できます', field_errors: { subtasks: ['子チケットは最大50件まで作成できます'] })
-      end
-
-      RedmineKanban::BulkIdempotency.with_request(
-        user_id: @user.id,
-        project_id: @project.id,
-        idempotency_key: idempotency_key,
-        payload: { parent: normalized_parent, subtasks: normalized_subtasks }
-      ) do
-        result = nil
-        created_issue_ids = []
-        Issue.transaction do
-          parent_result = if parent_issue_id.present?
-                            existing_parent_result(parent_issue_id)
-                          else
-                            create(params: normalized_parent)
-                          end
-          unless parent_result[:ok]
-            result = parent_result
-            raise ActiveRecord::Rollback
-          end
-
-          parent_id = parent_result.dig(:issue, :id) || parent_result.dig('issue', 'id')
-          created_issue_ids << parent_id if parent_issue_id.blank?
-          created = []
-          normalized_subtasks.each_with_index do |subtask_params, index|
-            child_result = create(params: subtask_params.merge(parent_issue_id: parent_id))
-            unless child_result[:ok]
-              result = child_result.merge(
-                row_index: index,
-                row_number: index + 1,
-                subject: subtask_params[:subject] || subtask_params['subject']
-              )
-              raise ActiveRecord::Rollback
-            end
-            created << child_result[:issue]
-            created_issue_ids << child_result.dig(:issue, :id)
-          end
-          result = { ok: true, issue: parent_result[:issue], subtasks: created }
-        end
-        next result unless result&.dig(:ok)
-
-        created_issues = Issue.where(id: created_issue_ids.compact).to_a
-        updated_parent = if parent_issue_id.present?
-                           Issue.visible(@user).find_by(id: parent_issue_id)
-                         end
-        mutation = mutation_result_builder.build(
-          issue_updates: [updated_parent].compact,
-          created_issues: created_issues,
-          tree_changes: created_issues.filter_map do |created_issue|
-            next unless created_issue.parent_id
-
-            { type: 'attach', parent_id: created_issue.parent_id, child_id: created_issue.id }
-          end,
-          invalidations: { column_counts: true }
-        )
-        result.merge(mutation)
-      end
-    end
-
-    private
-
-    def existing_parent_result(parent_issue_id)
+    def existing_parent_issue(parent_issue_id)
       parent = find_visible_parent_issue(parent_issue_id)
-      return error_response('親チケットが見つからないか、表示する権限がありません', status: :not_found) unless parent
-      return error_response('親チケットに子チケットを追加する権限がありません', status: :forbidden) unless PermissionPolicy.new(user: @user).can_create_issue?(parent.project, @project)
+      return [nil, error_response('親チケットが見つからないか、表示する権限がありません', status: :not_found)] unless parent
+      return [nil, error_response('親チケットに子チケットを追加する権限がありません', status: :forbidden)] unless PermissionPolicy.new(user: @user).can_create_issue?(parent.project, @project)
 
-      { ok: true, issue: issue_presenter(parent).issue_to_h(parent) }
+      [parent, nil]
+    end
+
+    def snapshot_invalidated_result?(result)
+      result.dig(:invalidations, :board_snapshot) == true
     end
 
     def normalize_bulk_parent(parent_params)

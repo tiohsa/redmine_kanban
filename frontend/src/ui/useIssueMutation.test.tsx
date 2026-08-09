@@ -473,17 +473,18 @@ describe('useIssueMutation', () => {
     const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     queryClient.setQueryData(queryKey, makeBoardData([makeIssue(1, { subject: 'Before' })]));
     const resetQueries = vi.spyOn(queryClient, 'resetQueries');
+    const onSuccess = vi.fn();
 
     const { result } = renderHook(
       () => useIssueMutation({
         queryKey,
         mutationFn: async () => ({
-          issue: makeIssue(1, { subject: 'Persisted domain mutation' }),
           issue_updates: [],
           invalidations: { board_snapshot: true },
         }),
         applyOptimistic: (data) => updateIssueInBoard(data, 1, (issue) => ({ ...issue, subject: 'Optimistic' })),
-        applyServer: (data, response: { issue: Issue }) => replaceIssueInBoard(data, response.issue),
+        applyServer: (data, response: { issue?: Issue; issue_updates?: Issue[]; invalidations?: { board_snapshot?: boolean } }) => response.issue ? replaceIssueInBoard(data, response.issue) : data,
+        onSuccess,
       }),
       { wrapper: createWrapper(queryClient) },
     );
@@ -493,6 +494,7 @@ describe('useIssueMutation', () => {
     expect(isBoardSnapshotInvalidated({ invalidations: { board_snapshot: true } })).toBe(true);
     expect(queryClient.getQueryData<BoardData>(queryKey)).toBeUndefined();
     expect(resetQueries).toHaveBeenCalledWith({ queryKey });
+    expect(onSuccess).toHaveBeenCalledTimes(1);
   });
 
   it('does not replace a newer cached issue with a late normal success response', async () => {

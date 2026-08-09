@@ -303,6 +303,7 @@ module RedmineKanban
         column_counts: {}
       )
       overflow.delete(:ancestor_updates)
+      overflow.delete(:subtasks)
       overflow.delete(:issue) if overflow.to_json.bytesize > SnapshotLimits.response_bytes
       overflow
     end

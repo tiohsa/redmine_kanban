@@ -333,7 +333,46 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     json = JSON.parse(@response.body)
     assert_equal true, json.dig('invalidations', 'board_snapshot')
     assert_equal [], json.fetch('created_issues')
+    refute json.key?('issue')
     assert Issue.find_by(subject: 'Created over board admission limit')
+  end
+
+  def test_bulk_create_overflow_persists_rows_without_legacy_entity_dtos
+    tracker = @project.trackers.first || Tracker.first
+    status = IssueStatus.first
+    priority = IssuePriority.active.first
+    build_issue(subject: 'Existing bulk admission entity', status: status)
+
+    post :bulk_create, params: {
+      project_id: @project.identifier,
+      project_ids: [@project.id],
+      board_entity_limit: 1,
+      scope_status_ids_present: '1',
+      scope_status_ids: [status.id],
+      bulk: {
+        parent: {
+          subject: 'Bulk parent over admission limit',
+          tracker_id: tracker.id,
+          status_id: status.id,
+          priority_id: priority.id
+        },
+        subtasks: [{
+          subject: 'Bulk child over admission limit',
+          tracker_id: tracker.id,
+          status_id: status.id,
+          priority_id: priority.id
+        }]
+      }
+    }.tap { |params| @request.headers['Idempotency-Key'] = 'bulk-overflow-legacy-dtos' }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal true, json.dig('invalidations', 'board_snapshot')
+    assert_equal [], json.fetch('created_issues')
+    refute json.key?('issue')
+    refute json.key?('subtasks')
+    assert Issue.find_by(subject: 'Bulk parent over admission limit')
+    assert Issue.find_by(subject: 'Bulk child over admission limit')
   end
 
   def test_mutation_response_byte_overflow_returns_snapshot_invalidation
@@ -354,6 +393,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     json = JSON.parse(@response.body)
     assert_equal true, json.dig('invalidations', 'board_snapshot')
     assert_equal [], json.fetch('issue_updates')
+    refute json.key?('issue')
   ensure
     ENV['REDMINE_KANBAN_MAX_RESPONSE_BYTES'] = previous
   end

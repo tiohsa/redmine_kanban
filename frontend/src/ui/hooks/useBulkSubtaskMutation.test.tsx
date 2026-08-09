@@ -148,6 +148,29 @@ describe('useBulkSubtaskMutation', () => {
     expect(queryClient.getQueryData<ReturnType<typeof makeBoard>>(['kanban'])?.issues[0]?.subtasks).toEqual([]);
   });
 
+  it('resets the board and skips reconciliation for snapshot-invalidated success without issue DTOs', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    queryClient.setQueryData(['kanban'], makeBoard());
+    const resetQueries = vi.spyOn(queryClient, 'resetQueries');
+    postJsonMock.mockResolvedValueOnce({
+      ok: true,
+      contract_version: 3,
+      invalidations: { board_snapshot: true },
+    });
+
+    const { result } = renderHook(
+      () => useBulkSubtaskMutation('/projects/demo/kanban', ['kanban'] as const),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await act(async () => {
+      await result.current.mutateAsync([{ parent_issue_id: 1, subject: 'Overflow', tracker_id: 2 }]);
+    });
+
+    expect(resetQueries).toHaveBeenCalledWith({ queryKey: ['kanban'] });
+    expect(getJsonMock).not.toHaveBeenCalled();
+  });
+
   it('reports the failed row and API validation details', async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
