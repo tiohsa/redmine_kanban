@@ -9,7 +9,7 @@ import { applyLocalIssuePatch } from './boardState';
 import { findSubtask, resolveAssigneeName, resolveMutationError, resolvePriorityName, resolveSubtaskStatus, resolveBoardIssue, type IssueMutationResult, type MovePayload, type UpdatePayload } from './kanbanShared';
 import { discardBulkIdempotencyKey, getOrCreateBulkIdempotencyKey, stableSerialize, storageKeyForBulkSignature } from './bulkIdempotency';
 import { buildBulkCreateRequest, buildRestoreIssuePayload, isBulkCreateInput } from './kanbanActionPayloads';
-import { appendScopeStatusParams, buildBoardCountsUrl, buildBoardEntitiesUrl, effectiveScopeStatusIds } from './boardQuery';
+import { appendDependencyStatusParams, appendScopeStatusParams, buildBoardCountsUrl, buildBoardEntitiesUrl, effectiveDependencyStatusIds, effectiveScopeStatusIds } from './boardQuery';
 
 type Args = {
   baseUrl: string;
@@ -66,6 +66,7 @@ export function useKanbanActions({
     const params = new URLSearchParams();
     projectIds.forEach((projectId) => params.append('project_ids[]', String(projectId)));
     appendScopeStatusParams(params, data ? effectiveScopeStatusIds(data) : []);
+    appendDependencyStatusParams(params, data ? effectiveDependencyStatusIds(data) : []);
     return `${baseUrl}${path}?${params.toString()}`;
   }, [baseUrl, data]);
 
@@ -105,7 +106,7 @@ export function useKanbanActions({
     if (ids.length === 0) return;
     try {
       const response = await getJson<{ ok: boolean } & Parameters<typeof applyEntityReconciliation>[1]>(
-        buildBoardEntitiesUrl(baseUrl, data?.meta.project_ids ?? [], ids, data ? effectiveScopeStatusIds(data) : []),
+        buildBoardEntitiesUrl(baseUrl, data?.meta.project_ids ?? [], ids, data ? effectiveScopeStatusIds(data) : [], data ? effectiveDependencyStatusIds(data) : []),
       );
       queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
         current ? applyEntityReconciliation(current, response, options) : current

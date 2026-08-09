@@ -92,7 +92,7 @@ describe('useBulkSubtaskMutation', () => {
     });
 
     expect(postJsonMock).toHaveBeenCalledWith(
-      '/projects/demo/kanban/issues/bulk',
+      '/projects/demo/kanban/issues/bulk?scope_status_ids_present=1&dependency_status_ids_present=1',
       expect.objectContaining({ parent: { parent_issue_id: 1, project_id: undefined }, subtasks: payloads, operation_id: expect.any(String) }),
       'POST',
       expect.objectContaining({ 'Idempotency-Key': expect.any(String) }),
@@ -114,7 +114,7 @@ describe('useBulkSubtaskMutation', () => {
     });
 
     expect(postJsonMock).toHaveBeenCalledWith(
-      '/projects/demo/kanban/issues/bulk?project_ids%5B%5D=3&project_ids%5B%5D=7',
+      '/projects/demo/kanban/issues/bulk?project_ids%5B%5D=3&project_ids%5B%5D=7&scope_status_ids_present=1&dependency_status_ids_present=1',
       expect.any(Object),
       'POST',
       expect.any(Object),

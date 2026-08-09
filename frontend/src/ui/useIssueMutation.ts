@@ -1,12 +1,14 @@
 import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { useRef } from 'react';
 import type { BoardData, Issue, Subtask } from './types';
-import { findIssueInBoard, type AncestorIssueUpdate, type IssueMutationResult } from './kanbanShared';
+import { findIssueInBoard, resolveClosedState, type AncestorIssueUpdate, type IssueMutationResult } from './kanbanShared';
 import { mapSubtasksTree, updateSubtasksTree } from './subtasksTree';
 import { applyBoardResponse, createNormalizedBoardState, rollbackLocalIssuePatch, selectBoardData } from './boardState';
 
 export type EntityReconciliationResponse = {
   scope_fingerprint?: string;
+  scope_status_ids?: number[];
+  dependency_status_ids?: number[];
   entities?: Issue[];
   missing_issue_ids?: number[];
   evicted_issue_ids?: number[];
@@ -335,9 +337,7 @@ function issueResponseToSubtask(current: Subtask, nextIssue: Issue, data: BoardD
 }
 
 function subtaskPatchFromIssue(nextIssue: Issue, data: BoardData, fallback?: Subtask, fallbackIsClosed?: boolean): Partial<Subtask> {
-  const isClosed = nextIssue.status_is_closed
-    ?? fallbackIsClosed
-    ?? data.columns.find((column) => column.id === nextIssue.status_id)?.is_closed;
+  const isClosed = fallbackIsClosed ?? resolveClosedState(nextIssue, data.columns);
 
   return {
     subject: nextIssue.subject,

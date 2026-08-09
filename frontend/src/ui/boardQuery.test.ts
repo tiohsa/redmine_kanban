@@ -34,11 +34,11 @@ describe('snapshot board query', () => {
   });
 
   it('encodes nonempty entity reconciliation scope explicitly', () => {
-    expect(buildBoardEntitiesUrl('/projects/demo/kanban', [2, 1], [9], [3, 2])).toBe('/projects/demo/kanban/issues/entities?project_ids%5B%5D=1&project_ids%5B%5D=2&ids%5B%5D=9&scope_status_ids_present=1&scope_status_ids%5B%5D=2&scope_status_ids%5B%5D=3');
+    expect(buildBoardEntitiesUrl('/projects/demo/kanban', [2, 1], [9], [3, 2])).toBe('/projects/demo/kanban/issues/entities?project_ids%5B%5D=1&project_ids%5B%5D=2&ids%5B%5D=9&scope_status_ids_present=1&scope_status_ids%5B%5D=2&scope_status_ids%5B%5D=3&dependency_status_ids_present=1&dependency_status_ids%5B%5D=2&dependency_status_ids%5B%5D=3');
   });
 
   it('preserves explicit empty scope in entity reconciliation', () => {
-    expect(buildBoardEntitiesUrl('/projects/demo/kanban', [2, 1], [9], [])).toBe('/projects/demo/kanban/issues/entities?project_ids%5B%5D=1&project_ids%5B%5D=2&ids%5B%5D=9&scope_status_ids_present=1');
+    expect(buildBoardEntitiesUrl('/projects/demo/kanban', [2, 1], [9], [])).toBe('/projects/demo/kanban/issues/entities?project_ids%5B%5D=1&project_ids%5B%5D=2&ids%5B%5D=9&scope_status_ids_present=1&dependency_status_ids_present=1');
     const params = new URLSearchParams();
     appendScopeStatusParams(params, []);
     expect(params.toString()).toBe('scope_status_ids_present=1');

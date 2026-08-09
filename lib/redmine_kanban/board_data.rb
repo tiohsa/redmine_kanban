@@ -3,6 +3,7 @@ require 'json'
 require_relative 'board_context'
 require_relative 'board_workflow_status_resolver'
 require_relative 'snapshot_limits'
+require_relative 'board_membership_resolver'
 
 module RedmineKanban
   class BoardData
@@ -272,8 +273,9 @@ module RedmineKanban
       status_ids = columns.map { |c| c[:id] }
       @count_snapshot_queries = true
       begin
-        issue_ids = fetch_issue_ids(@board_context.scope_status_ids)
-        return too_large_error(issue_ids.size) if issue_ids.size > @effective_entity_limit
+        snapshot = BoardMembershipResolver.new(board_context: @board_context).snapshot_issue_ids(limit: @effective_entity_limit)
+        return too_large_error(snapshot[:count_at_least]) if snapshot[:count_at_least]
+        issue_ids = snapshot[:ids]
 
         issues = fetch_issues(issue_ids)
         presenter = IssueEntityPresenter.new(
@@ -303,6 +305,7 @@ module RedmineKanban
           project_id: @project.id,
           project_ids: @project_ids,
           scope_status_ids: @board_context.scope_status_ids,
+          dependency_status_ids: @board_context.dependency_status_ids,
           scope_fingerprint: @board_context.scope_fingerprint,
           current_user_id: @user.id,
           can_move: permission_policy.can_move_issue?(@project),
@@ -351,13 +354,6 @@ module RedmineKanban
 
     def permission_policy
       @permission_policy ||= PermissionPolicy.new(user: @user)
-    end
-
-    def fetch_issue_ids(status_ids)
-      base_issue_scope(status_ids)
-        .order(updated_on: :desc, id: :desc)
-        .limit(@effective_entity_limit + 1)
-        .pluck(:id)
     end
 
     def fetch_issues(issue_ids)

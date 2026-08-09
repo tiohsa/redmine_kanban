@@ -130,6 +130,57 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     refute_includes ids, dropped.id
   end
 
+  def test_hidden_closed_child_remains_a_tree_dependency
+    open_status = IssueStatus.where(is_closed: false).first
+    closed_status = IssueStatus.where(is_closed: true).first
+    skip 'requires both open and closed statuses' unless open_status && closed_status
+    parent = build_issue(subject: 'Visible parent', status: open_status)
+    child = build_issue(subject: 'Hidden closed child', parent_issue_id: parent.id, status: closed_status)
+
+    json = index_response(issue_status_ids: IssueStatus.pluck(:id), exclude_status_ids: [closed_status.id])
+    ids = json.fetch('entities').map { |entity| entity['id'] }
+    assert_includes ids, parent.id
+    assert_includes ids, child.id
+    assert_includes json.dig('tree', 'root_ids'), parent.id
+    assert_includes json.dig('tree', 'children_by_parent_id', parent.id.to_s), child.id
+    assert_equal [open_status.id], json.dig('meta', 'scope_status_ids')
+    assert_includes json.dig('meta', 'dependency_status_ids'), closed_status.id
+  end
+
+  def test_standalone_hidden_closed_issue_is_not_a_dependency
+    open_status = IssueStatus.where(is_closed: false).first
+    closed_status = IssueStatus.where(is_closed: true).first
+    skip 'requires both open and closed statuses' unless open_status && closed_status
+    issue = build_issue(subject: 'Standalone hidden closed', status: closed_status)
+
+    json = index_response(issue_status_ids: IssueStatus.pluck(:id), exclude_status_ids: [closed_status.id])
+    refute_includes json.fetch('entities').map { |entity| entity['id'] }, issue.id
+  end
+
+  def test_mutation_keeps_hidden_closed_child_when_parent_is_in_primary_scope
+    open_status = IssueStatus.where(is_closed: false).first
+    closed_status = IssueStatus.where(is_closed: true).first
+    skip 'requires both open and closed statuses' unless open_status && closed_status
+    parent = build_issue(subject: 'Mutation parent', status: open_status)
+    child = build_issue(subject: 'Mutation closed child', parent_issue_id: parent.id, status: closed_status)
+
+    patch :update, params: {
+      project_id: @project.identifier,
+      id: child.id,
+      project_ids: [@project.id],
+      scope_status_ids_present: '1',
+      scope_status_ids: [open_status.id],
+      dependency_status_ids_present: '1',
+      dependency_status_ids: IssueStatus.pluck(:id),
+      issue: { subject: 'Mutation closed child updated', lock_version: child.lock_version }
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_includes json.fetch('issue_updates').map { |issue| issue['id'] }, child.id
+    refute_includes json.fetch('evicted_issue_ids'), child.id
+  end
+
   def test_entity_reconciliation_and_mutations_use_contract_version_three
     issue = build_issue(subject: 'Flat entity')
     get :entities, params: { project_id: @project.identifier, project_ids: [@project.id], ids: [issue.id] }

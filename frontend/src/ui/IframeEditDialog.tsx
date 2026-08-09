@@ -79,12 +79,14 @@ type Props = {
   baseUrl: string;
   queryKey: readonly unknown[];
   projectIds?: number[];
+  scopeStatusIds?: number[];
+  dependencyStatusIds?: number[];
   onClose: () => void;
   onBeforeBulkSubtasks?: (parentIssueId: number) => Promise<void>;
   onSuccess: (message: string, issueId?: number) => void;
 };
 
-export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = 'edit', labels, baseUrl, queryKey, projectIds = [], onClose, onBeforeBulkSubtasks, onSuccess }: Props) {
+export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = 'edit', labels, baseUrl, queryKey, projectIds = [], scopeStatusIds = [], dependencyStatusIds = scopeStatusIds, onClose, onBeforeBulkSubtasks, onSuccess }: Props) {
   const [subtasks, setSubtasks] = useState<SubtaskCreateInput[]>([]);
   const [subtaskValidationError, setSubtaskValidationError] = useState<string | null>(null);
   const [trackerOptions, setTrackerOptions] = useState<Array<{ id: number; name: string }>>([]);
@@ -119,7 +121,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
   const parentAttributesRef = useRef<Record<string, number | undefined>>({});
   const parentTrackerChangeCleanupRef = useRef<(() => void) | null>(null);
 
-  const bulkMutation = useBulkSubtaskMutation(baseUrl, queryKey, projectIds);
+  const bulkMutation = useBulkSubtaskMutation(baseUrl, queryKey, projectIds, scopeStatusIds, dependencyStatusIds);
   const hasSubtaskInput = useMemo(
     () => subtasks.some((subtask) => subtask.subject.trim().length > 0),
     [subtasks],

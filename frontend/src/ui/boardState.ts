@@ -1,5 +1,5 @@
 import type { BoardData, Issue } from './types';
-import { normalizeTrackerId } from './kanbanShared';
+import { normalizeTrackerId, resolveClosedState } from './kanbanShared';
 import { effectiveScopeStatusIds } from './boardQuery';
 
 export type IssueEntity = Omit<Issue, 'subtasks'>;
@@ -38,11 +38,13 @@ export type BoardResponse = {
   scopeFingerprint?: string;
 };
 
-function entityOf(issue: Issue): IssueEntity {
+function entityOf(issue: Issue, columns?: BoardData['columns']): IssueEntity {
   const { subtasks: _subtasks, ...entity } = issue;
-  return issue.tracker_id === undefined
-    ? entity
-    : { ...entity, tracker_id: normalizeTrackerId(issue.tracker_id) };
+  return {
+    ...entity,
+    is_closed: resolveClosedState(issue, columns),
+    ...(issue.tracker_id === undefined ? {} : { tracker_id: normalizeTrackerId(issue.tracker_id) }),
+  };
 }
 
 function isFresh(current: IssueEntity | undefined, incoming: IssueEntity): boolean {
@@ -98,7 +100,7 @@ function detachEdge(state: NormalizedBoardState, parentId: number, childId: numb
 }
 
 function mergeEntity(state: NormalizedBoardState, issue: Issue): boolean {
-  const incoming = entityOf(issue);
+  const incoming = entityOf(issue, state.board.columns);
   if (state.deletedIssueIds.has(incoming.id) || !isFresh(state.entitiesById.get(incoming.id), incoming)) return false;
   const current = state.entitiesById.get(incoming.id);
   if (!current || !sameRevision(current, incoming)) {
@@ -178,13 +180,6 @@ function evictEntity(state: NormalizedBoardState, id: number, tombstone = false)
   state.tree.childrenByParentId.delete(id);
 }
 
-function outsideScope(state: NormalizedBoardState, issue: Issue): boolean {
-  const projectIds = state.scope.projectIds;
-  const statusIds = state.scope.statusIds;
-  return (issue.project?.id !== undefined && !projectIds.includes(issue.project.id))
-    || !statusIds.includes(issue.status_id);
-}
-
 function reconcileParent(state: NormalizedBoardState, issue: Issue): void {
   if (!Object.prototype.hasOwnProperty.call(issue, 'parent_id')) return;
   const oldParentId = state.tree.parentByChildId.get(issue.id);
@@ -194,16 +189,20 @@ function reconcileParent(state: NormalizedBoardState, issue: Issue): void {
   else if (!state.tree.rootCandidateIds.includes(issue.id)) state.tree.rootCandidateIds.push(issue.id);
 }
 
+function outsideProjectScope(state: NormalizedBoardState, issue: Issue): boolean {
+  return issue.project?.id !== undefined && !state.scope.projectIds.includes(issue.project.id);
+}
+
 export function applyBoardResponse(previous: NormalizedBoardState, response: BoardResponse): NormalizedBoardState {
   if (!shouldAcceptResponse(previous, response)) return previous;
   const state = copyState(previous);
 
   for (const issue of response.issue_updates ?? []) {
-    if (outsideScope(state, issue)) evictEntity(state, issue.id);
+    if (outsideProjectScope(state, issue)) evictEntity(state, issue.id);
     else if (mergeEntity(state, issue)) reconcileParent(state, issue);
   }
   for (const issue of response.created_issues ?? []) {
-    if (outsideScope(state, issue)) evictEntity(state, issue.id);
+    if (outsideProjectScope(state, issue)) evictEntity(state, issue.id);
     else if (mergeEntity(state, issue)) {
       const parentId = issue.parent_id ?? undefined;
       if (parentId !== undefined && state.entitiesById.has(parentId)) attachEdge(state, parentId, issue.id);

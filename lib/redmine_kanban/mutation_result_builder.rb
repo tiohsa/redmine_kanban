@@ -1,6 +1,7 @@
 require 'securerandom'
 require 'set'
 require_relative 'issue_entity_presenter'
+require_relative 'board_membership_resolver'
 
 module RedmineKanban
   class MutationResultBuilder
@@ -12,18 +13,16 @@ module RedmineKanban
 
     def build(issue_updates: [], created_issues: [], deleted_issue_ids: [], tree_changes: [], invalidations: {}, column_counts: {})
       candidates = [*issue_updates, *created_issues].compact.uniq { |issue| issue.id }
-      visible_ids = Issue.visible(@board_context.user)
-        .where(id: candidates.map(&:id), project_id: @board_context.project_ids, status_id: @board_context.scope_status_ids)
-        .pluck(:id)
-      visible_id_set = visible_ids.to_set
-      evicted_issue_ids = candidates.map(&:id) - visible_ids
+      member_id_set = BoardMembershipResolver.new(board_context: @board_context).member_ids(candidates)
+      evicted_issue_ids = candidates.map(&:id) - member_id_set.to_a
       {
         ok: true,
         contract_version: 3,
         operation_id: @operation_id,
         scope_fingerprint: @board_context.scope_fingerprint,
-        issue_updates: @presenter.issues_to_h(issue_updates.select { |issue| visible_id_set.include?(issue.id) }),
-        created_issues: @presenter.issues_to_h(created_issues.select { |issue| visible_id_set.include?(issue.id) }),
+        issue_updates: @presenter.issues_to_h(issue_updates.select { |issue| member_id_set.include?(issue.id) }),
+        created_issues: @presenter.issues_to_h(created_issues.select { |issue| member_id_set.include?(issue.id) }),
+        dependency_status_ids: @board_context.dependency_status_ids,
         deleted_issue_ids: Array(deleted_issue_ids).map(&:to_i).uniq,
         evicted_issue_ids: evicted_issue_ids.uniq,
         tree_changes: Array(tree_changes),

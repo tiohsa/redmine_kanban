@@ -43,11 +43,12 @@ export function buildBoardCountsUrl(baseUrl: string, projectIds: number[]): stri
   return `${baseUrl}/counts?${params.toString()}`;
 }
 
-export function buildBoardEntitiesUrl(baseUrl: string, projectIds: number[], issueIds: number[], scopeStatusIds: number[] = []): string {
+export function buildBoardEntitiesUrl(baseUrl: string, projectIds: number[], issueIds: number[], scopeStatusIds: number[] = [], dependencyStatusIds = scopeStatusIds): string {
   const params = new URLSearchParams();
   appendNumberParams(params, 'project_ids[]', projectIds);
   appendNumberParams(params, 'ids[]', issueIds);
   appendScopeStatusParams(params, scopeStatusIds);
+  appendDependencyStatusParams(params, dependencyStatusIds);
   return `${baseUrl}/issues/entities?${params.toString()}`;
 }
 
@@ -55,9 +56,18 @@ export function effectiveScopeStatusIds(data: BoardData): number[] {
   return data.meta.scope_status_ids ?? data.columns.map((column) => column.id);
 }
 
+export function effectiveDependencyStatusIds(data: BoardData): number[] {
+  return data.meta.dependency_status_ids ?? effectiveScopeStatusIds(data);
+}
+
 export function appendScopeStatusParams(params: URLSearchParams, scopeStatusIds: Iterable<number>): void {
   params.append('scope_status_ids_present', '1');
   appendNumberParams(params, 'scope_status_ids[]', scopeStatusIds);
+}
+
+export function appendDependencyStatusParams(params: URLSearchParams, dependencyStatusIds: Iterable<number>): void {
+  params.append('dependency_status_ids_present', '1');
+  appendNumberParams(params, 'dependency_status_ids[]', dependencyStatusIds);
 }
 
 function appendNumberParams(params: URLSearchParams, key: string, values: Iterable<number>) {

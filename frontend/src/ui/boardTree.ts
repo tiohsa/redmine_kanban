@@ -1,5 +1,5 @@
 import type { Issue, Subtask } from './types';
-import { normalizeTrackerId } from './kanbanShared';
+import { normalizeTrackerId, resolveClosedState } from './kanbanShared';
 
 type TreeNode = Issue | Subtask;
 
@@ -129,7 +129,7 @@ function toSubtask(node: TreeNode, children: Subtask[]): Subtask {
     assigned_to_id: issue.assigned_to_id,
     due_date: issue.due_date,
     priority_id: issue.priority_id,
-    is_closed: issue.is_closed ?? issue.status_is_closed ?? false,
+    is_closed: resolveClosedState(issue),
     lock_version: issue.lock_version,
     updated_on: issue.updated_on,
     aging_days: issue.aging_days,
@@ -157,7 +157,8 @@ function toRootIssue(node: TreeNode, children: Subtask[], parentId: number | nul
     parent_id: parentId,
     subject: subtask.subject,
     status_id: subtask.status_id,
-    status_is_closed: subtask.is_closed,
+    status_is_closed: resolveClosedState(subtask),
+    is_closed: resolveClosedState(subtask),
     lock_version: subtask.lock_version,
     tracker_id: normalizeTrackerId(subtask.tracker_id),
     description: '',

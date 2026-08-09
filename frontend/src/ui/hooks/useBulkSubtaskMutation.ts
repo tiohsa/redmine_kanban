@@ -70,7 +70,7 @@ function errorDetails(error: unknown, payload: SubtaskPayload, rowIndex: number)
   };
 }
 
-export function useBulkSubtaskMutation(baseUrl: string, queryKey: readonly unknown[], projectIds: number[] = []) {
+export function useBulkSubtaskMutation(baseUrl: string, queryKey: readonly unknown[], projectIds: number[] = [], scopeStatusIds: number[] = [], dependencyStatusIds = scopeStatusIds) {
   const queryClient = useQueryClient();
   const inFlight = useRef(new Map<string, Promise<BulkMutationResponse>>());
 
@@ -93,7 +93,7 @@ export function useBulkSubtaskMutation(baseUrl: string, queryKey: readonly unkno
         const { key: idempotencyKey } = getOrCreateBulkIdempotencyKey(signature);
         try {
           const res = await postJson<BulkMutationResponse>(
-            scopedPath(baseUrl, '/issues/bulk', projectIds), { ...normalized, operation_id: clientOperationId() }, 'POST', { 'Idempotency-Key': idempotencyKey },
+            scopedPath(baseUrl, '/issues/bulk', projectIds, scopeStatusIds, dependencyStatusIds), { ...normalized, operation_id: clientOperationId() }, 'POST', { 'Idempotency-Key': idempotencyKey },
           );
           return res;
         } catch (error) {
@@ -137,7 +137,7 @@ export function useBulkSubtaskMutation(baseUrl: string, queryKey: readonly unkno
       });
       if (reconciliationIds.length > 0) {
         void getJson<Parameters<typeof applyEntityReconciliation>[1]>(
-          buildBoardEntitiesUrl(baseUrl, projectIds, reconciliationIds),
+          buildBoardEntitiesUrl(baseUrl, projectIds, reconciliationIds, scopeStatusIds, dependencyStatusIds),
         ).then((response) => {
           queryClient.setQueryData(queryKey, (current: unknown) => {
             if (!current || !('issues' in (current as object))) return current;
@@ -160,10 +160,14 @@ export function useBulkSubtaskMutation(baseUrl: string, queryKey: readonly unkno
   });
 }
 
-function scopedPath(baseUrl: string, path: string, projectIds: number[]): string {
+function scopedPath(baseUrl: string, path: string, projectIds: number[], scopeStatusIds: number[] = [], dependencyStatusIds = scopeStatusIds): string {
   const params = new URLSearchParams();
   [...new Set(projectIds)].filter((id) => Number.isFinite(id) && id > 0).sort((a, b) => a - b)
     .forEach((id) => params.append('project_ids[]', String(id)));
+  params.append('scope_status_ids_present', '1');
+  [...new Set(scopeStatusIds)].sort((a, b) => a - b).forEach((id) => params.append('scope_status_ids[]', String(id)));
+  params.append('dependency_status_ids_present', '1');
+  [...new Set(dependencyStatusIds)].sort((a, b) => a - b).forEach((id) => params.append('dependency_status_ids[]', String(id)));
   const query = params.toString();
   return `${baseUrl}${path}${query ? `?${query}` : ''}`;
 }

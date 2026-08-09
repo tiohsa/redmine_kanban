@@ -458,6 +458,8 @@ export function App({ dataUrl, initialCurrentUserId }: Props) {
           baseUrl={baseUrl}
           queryKey={boardQueryKey}
           projectIds={data.meta.project_ids ?? []}
+          scopeStatusIds={data.meta.scope_status_ids ?? []}
+          dependencyStatusIds={data.meta.dependency_status_ids ?? data.meta.scope_status_ids ?? []}
           onClose={() => {
             dialogs.setIframeEditContext(null);
           }}
@@ -477,6 +479,8 @@ export function App({ dataUrl, initialCurrentUserId }: Props) {
           baseUrl={baseUrl}
           queryKey={boardQueryKey}
           projectIds={data.meta.project_ids ?? []}
+          scopeStatusIds={data.meta.scope_status_ids ?? []}
+          dependencyStatusIds={data.meta.dependency_status_ids ?? data.meta.scope_status_ids ?? []}
           onBeforeBulkSubtasks={(parentIssueId) => actions.reconcileIssueIds([parentIssueId], { treatAsCreated: true })}
           onClose={() => {
             dialogs.setIframeCreateUrl(null);
@@ -497,6 +501,8 @@ export function App({ dataUrl, initialCurrentUserId }: Props) {
           baseUrl={baseUrl}
           queryKey={boardQueryKey}
           projectIds={data.meta.project_ids ?? []}
+          scopeStatusIds={data.meta.scope_status_ids ?? []}
+          dependencyStatusIds={data.meta.dependency_status_ids ?? data.meta.scope_status_ids ?? []}
           onClose={() => dialogs.setIframeTimeEntryUrl(null)}
           onSuccess={(message) => {
             setNotice(message);

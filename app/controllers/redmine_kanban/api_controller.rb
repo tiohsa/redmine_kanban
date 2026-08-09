@@ -24,8 +24,9 @@ module RedmineKanban
     def entities
       ids = normalize_integer_array_param(params[:ids])
       context = mutation_board_context
+      member_ids = RedmineKanban::BoardMembershipResolver.new(board_context: context).member_ids(ids)
       issues = Issue.visible(User.current)
-                     .where(id: ids, project_id: context.project_ids, status_id: context.scope_status_ids)
+                     .where(id: member_ids.to_a, project_id: context.project_ids)
                      .includes(:assigned_to, :priority, :status, :project)
                      .to_a
       presenter = IssueEntityPresenter.new(user: User.current, board_project: @project)
@@ -34,6 +35,7 @@ module RedmineKanban
         contract_version: 3,
         scope_fingerprint: context.scope_fingerprint,
         scope_status_ids: context.scope_status_ids,
+        dependency_status_ids: context.dependency_status_ids,
         entities: presenter.issues_to_h(issues),
         missing_issue_ids: ids - issues.map(&:id)
       }
@@ -188,16 +190,24 @@ module RedmineKanban
       scope_status_ids = if scope_status_ids_present?
         normalize_integer_array_param(params[:scope_status_ids])
       end
+      dependency_status_ids = if dependency_status_ids_present?
+        normalize_integer_array_param(params[:dependency_status_ids])
+      end
       BoardContext.new(
         project: @project,
         user: User.current,
         project_ids: normalize_integer_array_param(params[:project_ids]),
-        scope_status_ids: scope_status_ids
+        scope_status_ids: scope_status_ids,
+        dependency_status_ids: dependency_status_ids
       )
     end
 
     def scope_status_ids_present?
       %w[1 true].include?(params[:scope_status_ids_present].to_s.downcase)
+    end
+
+    def dependency_status_ids_present?
+      %w[1 true].include?(params[:dependency_status_ids_present].to_s.downcase)
     end
 
     def require_move_permission

@@ -55,6 +55,7 @@ export type Issue = {
   subject: string;
   status_id: number;
   status_is_closed?: boolean;
+  is_closed?: boolean;
   can_log_time?: boolean;
   lock_version?: number;
   tracker_id: number | null;
@@ -91,6 +92,7 @@ export type Meta = {
   project_id: number;
   project_ids?: number[];
   scope_status_ids?: number[];
+  dependency_status_ids?: number[];
   scope_fingerprint?: string;
   current_user_id: number;
   can_move: boolean;

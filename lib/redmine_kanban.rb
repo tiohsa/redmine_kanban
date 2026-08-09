@@ -7,6 +7,7 @@ end
 require_relative 'redmine_kanban/permission_policy'
 require_relative 'redmine_kanban/project_catalog'
 require_relative 'redmine_kanban/board_context'
+require_relative 'redmine_kanban/board_membership_resolver'
 require_relative 'redmine_kanban/board_workflow_status_resolver'
 require_relative 'redmine_kanban/board_data'
 require_relative 'redmine_kanban/board_issue_presenter'

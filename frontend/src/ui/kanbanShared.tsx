@@ -19,6 +19,7 @@ export type IssueMutationResult = {
   contract_version?: number;
   operation_id?: string;
   scope_fingerprint?: string;
+  dependency_status_ids?: number[];
   issue_updates?: Issue[];
   created_issues?: Issue[];
   deleted_issue_ids?: number[];
@@ -88,19 +89,25 @@ export function resolveTrackerName(catalog: TrackerCatalog, trackerId: number | 
   return catalog.get(normalizedTrackerId) ?? null;
 }
 
-function normalizeSubtask(subtask: Subtask): Subtask {
+export function resolveClosedState(issue: Pick<Issue, 'is_closed' | 'status_is_closed' | 'status_id'> | Pick<Subtask, 'is_closed' | 'status_is_closed' | 'status_id'>, columns?: BoardData['columns']): boolean {
+  return issue.is_closed ?? issue.status_is_closed ?? columns?.find((column) => column.id === issue.status_id)?.is_closed ?? false;
+}
+
+function normalizeSubtask(subtask: Subtask, columns?: BoardData['columns']): Subtask {
   return {
     ...subtask,
+    is_closed: resolveClosedState(subtask, columns),
     tracker_id: normalizeTrackerId(subtask.tracker_id),
-    ...(subtask.subtasks ? { subtasks: subtask.subtasks.map(normalizeSubtask) } : {}),
+    ...(subtask.subtasks ? { subtasks: subtask.subtasks.map((child) => normalizeSubtask(child, columns)) } : {}),
   };
 }
 
-function normalizeIssue(issue: Issue): Issue {
+function normalizeIssue(issue: Issue, columns?: BoardData['columns']): Issue {
   return {
     ...issue,
+    is_closed: resolveClosedState(issue, columns),
     tracker_id: normalizeTrackerId(issue.tracker_id),
-    ...(issue.subtasks ? { subtasks: issue.subtasks.map(normalizeSubtask) } : {}),
+    ...(issue.subtasks ? { subtasks: issue.subtasks.map((child) => normalizeSubtask(child, columns)) } : {}),
   };
 }
 
@@ -133,7 +140,7 @@ export function normalizeBoardData(data: BoardApiResponse | BoardData): BoardDat
     : (data.issues ?? []);
   return {
     ...data,
-    issues: issues.map(normalizeIssue),
+    issues: issues.map((issue) => normalizeIssue(issue, data.columns)),
   };
 }
 

@@ -24,4 +24,17 @@ class RedmineKanbanBoardContextTest < ActiveSupport::TestCase
     context = RedmineKanban::BoardContext.new(project: @project, user: @user, scope_status_ids: [])
     assert_equal [], context.scope_status_ids
   end
+
+  def test_dependency_scope_preserves_explicit_statuses_when_primary_scope_is_narrower
+    statuses = IssueStatus.sorted.pluck(:id)
+    context = RedmineKanban::BoardContext.new(
+      project: @project,
+      user: @user,
+      scope_status_ids: [statuses.first],
+      dependency_status_ids: statuses
+    )
+
+    assert_equal [statuses.first], context.scope_status_ids
+    assert_equal statuses, context.dependency_status_ids
+  end
 end

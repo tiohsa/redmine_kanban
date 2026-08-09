@@ -77,14 +77,29 @@ describe('normalized snapshot state', () => {
     expect(next.deletedIssueIds.has(1)).toBe(false);
   });
 
-  it('does not retain mutation entities in an explicit empty status scope', () => {
+  it('does not status-evict mutation entities in an explicit empty status scope', () => {
     const initial = createNormalizedBoardState(board([], []));
     const next = applyBoardResponse(initial, { kind: 'mutation', issue_updates: [issue(1)], created_issues: [issue(2)] });
-    expect(selectBoardData(next).entities).toEqual([]);
+    expect(selectBoardData(next).entities?.map((entity) => entity.id)).toEqual([1, 2]);
     expect(next.deletedIssueIds.size).toBe(0);
   });
 
   it('falls back to column ids only for legacy snapshots without scope metadata', () => {
     expect(createNormalizedBoardState(board([])).scope.statusIds).toEqual([1]);
+  });
+
+  it('keeps a hidden closed dependency and its canonical completion state', () => {
+    const parent = issue(1);
+    parent.subtasks = [{ ...issue(2, 1), status_id: 2, status_is_closed: true } as never];
+    const initial = board([parent], [1]);
+    initial.columns.push({ id: 2, name: 'Closed', is_closed: true, count: 1 });
+    const next = applyBoardResponse(createNormalizedBoardState(initial), {
+      kind: 'mutation',
+      issue_updates: [{ ...issue(2, 1), status_id: 2, status_is_closed: true, lock_version: 2 }],
+    });
+
+    expect(selectBoardData(next).issues[0].subtasks?.[0].id).toBe(2);
+    expect(selectBoardData(next).issues[0].subtasks?.[0].is_closed).toBe(true);
+    expect(next.deletedIssueIds.has(2)).toBe(false);
   });
 });
