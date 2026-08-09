@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildBoardDataUrl, buildBoardEntitiesUrl, buildBoardQueryKey } from './boardQuery';
+import { appendScopeStatusParams, buildBoardDataUrl, buildBoardEntitiesUrl, buildBoardQueryKey } from './boardQuery';
 
 describe('snapshot board query', () => {
   it('sends the entity admission limit and never sends page parameters', () => {
@@ -17,7 +17,14 @@ describe('snapshot board query', () => {
     );
   });
 
-  it('keeps entity reconciliation scoped to project ids', () => {
-    expect(buildBoardEntitiesUrl('/projects/demo/kanban', [2, 1], [9])).toBe('/projects/demo/kanban/issues/entities?project_ids%5B%5D=1&project_ids%5B%5D=2&ids%5B%5D=9');
+  it('encodes nonempty entity reconciliation scope explicitly', () => {
+    expect(buildBoardEntitiesUrl('/projects/demo/kanban', [2, 1], [9], [3, 2])).toBe('/projects/demo/kanban/issues/entities?project_ids%5B%5D=1&project_ids%5B%5D=2&ids%5B%5D=9&scope_status_ids_present=1&scope_status_ids%5B%5D=2&scope_status_ids%5B%5D=3');
+  });
+
+  it('preserves explicit empty scope in entity reconciliation', () => {
+    expect(buildBoardEntitiesUrl('/projects/demo/kanban', [2, 1], [9], [])).toBe('/projects/demo/kanban/issues/entities?project_ids%5B%5D=1&project_ids%5B%5D=2&ids%5B%5D=9&scope_status_ids_present=1');
+    const params = new URLSearchParams();
+    appendScopeStatusParams(params, []);
+    expect(params.toString()).toBe('scope_status_ids_present=1');
   });
 });

@@ -25,7 +25,7 @@ module RedmineKanban
       ids = normalize_integer_array_param(params[:ids])
       context = mutation_board_context
       issues = Issue.visible(User.current)
-                     .where(id: ids, project_id: context.project_ids)
+                     .where(id: ids, project_id: context.project_ids, status_id: context.scope_status_ids)
                      .includes(:assigned_to, :priority, :status, :project)
                      .to_a
       presenter = IssueEntityPresenter.new(user: User.current, board_project: @project)
@@ -185,12 +185,19 @@ module RedmineKanban
     end
 
     def mutation_board_context
+      scope_status_ids = if scope_status_ids_present?
+        normalize_integer_array_param(params[:scope_status_ids])
+      end
       BoardContext.new(
         project: @project,
         user: User.current,
         project_ids: normalize_integer_array_param(params[:project_ids]),
-        scope_status_ids: normalize_integer_array_param(params[:scope_status_ids])
+        scope_status_ids: scope_status_ids
       )
+    end
+
+    def scope_status_ids_present?
+      %w[1 true].include?(params[:scope_status_ids_present].to_s.downcase)
     end
 
     def require_move_permission

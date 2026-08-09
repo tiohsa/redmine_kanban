@@ -45,8 +45,13 @@ export function buildBoardEntitiesUrl(baseUrl: string, projectIds: number[], iss
   const params = new URLSearchParams();
   appendNumberParams(params, 'project_ids[]', projectIds);
   appendNumberParams(params, 'ids[]', issueIds);
-  appendNumberParams(params, 'scope_status_ids[]', scopeStatusIds);
+  appendScopeStatusParams(params, scopeStatusIds);
   return `${baseUrl}/issues/entities?${params.toString()}`;
+}
+
+export function appendScopeStatusParams(params: URLSearchParams, scopeStatusIds: Iterable<number>): void {
+  params.append('scope_status_ids_present', '1');
+  appendNumberParams(params, 'scope_status_ids[]', scopeStatusIds);
 }
 
 function appendNumberParams(params: URLSearchParams, key: string, values: Iterable<number>) {

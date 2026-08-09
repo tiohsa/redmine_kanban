@@ -9,7 +9,7 @@ import { applyLocalIssuePatch } from './boardState';
 import { findSubtask, resolveAssigneeName, resolveMutationError, resolvePriorityName, resolveSubtaskStatus, resolveBoardIssue, type IssueMutationResult, type MovePayload, type UpdatePayload } from './kanbanShared';
 import { discardBulkIdempotencyKey, getOrCreateBulkIdempotencyKey, stableSerialize, storageKeyForBulkSignature } from './bulkIdempotency';
 import { buildBulkCreateRequest, buildRestoreIssuePayload, isBulkCreateInput } from './kanbanActionPayloads';
-import { buildBoardCountsUrl, buildBoardEntitiesUrl } from './boardQuery';
+import { appendScopeStatusParams, buildBoardCountsUrl, buildBoardEntitiesUrl } from './boardQuery';
 
 type Args = {
   baseUrl: string;
@@ -63,11 +63,9 @@ export function useKanbanActions({
 
   const scopedUrl = useCallback((path: string) => {
     const projectIds = data?.meta.project_ids ?? [];
-    if (projectIds.length === 0) return `${baseUrl}${path}`;
-
     const params = new URLSearchParams();
     projectIds.forEach((projectId) => params.append('project_ids[]', String(projectId)));
-    (data?.meta.scope_status_ids ?? []).forEach((statusId) => params.append('scope_status_ids[]', String(statusId)));
+    appendScopeStatusParams(params, data?.meta.scope_status_ids ?? []);
     return `${baseUrl}${path}?${params.toString()}`;
   }, [baseUrl, data?.meta.project_ids, data?.meta.scope_status_ids]);
 

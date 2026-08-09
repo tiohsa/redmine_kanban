@@ -151,7 +151,7 @@ export function createNormalizedBoardState(data: BoardData): NormalizedBoardStat
     scope: {
       fingerprint: scopeFingerprint(data),
       projectIds: [...(data.meta.project_ids ?? [data.meta.project_id])],
-      statusIds: [...(data.meta.scope_status_ids ?? [])],
+      statusIds: [...(data.meta.scope_status_ids ?? data.columns.map((column) => column.id))],
     },
     board,
   };
@@ -181,7 +181,7 @@ function outsideScope(state: NormalizedBoardState, issue: Issue): boolean {
   const projectIds = state.scope.projectIds;
   const statusIds = state.scope.statusIds;
   return (issue.project?.id !== undefined && !projectIds.includes(issue.project.id))
-    || (statusIds.length > 0 && !statusIds.includes(issue.status_id));
+    || !statusIds.includes(issue.status_id);
 }
 
 function reconcileParent(state: NormalizedBoardState, issue: Issue): void {

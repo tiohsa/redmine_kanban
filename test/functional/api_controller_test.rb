@@ -144,6 +144,78 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_equal 'Updated', json.fetch('issue_updates').find { |candidate| candidate['id'] == issue.id }['subject']
   end
 
+  def test_entity_reconciliation_applies_status_scope
+    status_a, status_b = distinct_open_statuses
+    issue = build_issue(subject: 'Scoped entity', status: status_a)
+
+    get :entities, params: {
+      project_id: @project.identifier,
+      project_ids: [@project.id],
+      ids: [issue.id],
+      scope_status_ids_present: '1',
+      scope_status_ids: [status_b.id]
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal [], json['entities']
+    assert_equal [issue.id], json['missing_issue_ids']
+    assert_equal [status_b.id], json['scope_status_ids']
+  end
+
+  def test_entity_reconciliation_applies_explicit_empty_status_scope
+    issue = build_issue(subject: 'Empty scoped entity')
+
+    get :entities, params: {
+      project_id: @project.identifier,
+      project_ids: [@project.id],
+      ids: [issue.id],
+      scope_status_ids_present: '1'
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal [], json['entities']
+    assert_equal [issue.id], json['missing_issue_ids']
+    assert_equal [], json['scope_status_ids']
+  end
+
+  def test_update_in_explicit_empty_status_scope_returns_eviction
+    issue = build_issue(subject: 'Empty scope update')
+
+    patch :update, params: {
+      project_id: @project.identifier,
+      id: issue.id,
+      project_ids: [@project.id],
+      scope_status_ids_present: '1',
+      issue: { subject: 'Updated outside empty scope', lock_version: issue.lock_version }
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal [issue.id], json['evicted_issue_ids']
+    assert_equal [], json['issue_updates']
+    assert_equal [], json['created_issues']
+  end
+
+  def test_physical_delete_returns_tombstone_not_eviction
+    issue = build_issue(subject: 'Physical delete')
+
+    delete :destroy, params: {
+      project_id: @project.identifier,
+      id: issue.id,
+      project_ids: [@project.id],
+      scope_status_ids_present: '1',
+      scope_status_ids: [issue.status_id],
+      lock_version: issue.lock_version
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal [issue.id], json['deleted_issue_ids']
+    assert_equal [], json['evicted_issue_ids']
+  end
+
   def test_read_endpoints_still_require_view_permission
     @role.remove_permission!(:view_redmine_kanban)
     get :index, params: { project_id: @project.identifier, board_entity_limit: 1500 }

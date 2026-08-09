@@ -7,9 +7,9 @@ const issue = (id: number, parent_id: number | null = null): Issue => ({
   urls: { issue: `/issues/${id}`, issue_edit: `/issues/${id}/edit` }, subtasks: [], lock_version: 1,
 });
 
-const board = (issues: Issue[]): BoardData => ({
+const board = (issues: Issue[], scope_status_ids?: number[]): BoardData => ({
   ok: true, contract_version: 3, scope_fingerprint: 'sha256:test',
-  meta: { project_id: 1, project_ids: [1], scope_fingerprint: 'sha256:test', current_user_id: 1, can_move: true, can_create: true, can_delete: true, lane_type: 'none', aging_warn_days: 7, aging_danger_days: 14, aging_exclude_closed: false, complete: true, entity_count: issues.length, requested_entity_limit: 1500, effective_entity_limit: 1500, server_entity_limit: 5000 },
+  meta: { project_id: 1, project_ids: [1], scope_status_ids, scope_fingerprint: 'sha256:test', current_user_id: 1, can_move: true, can_create: true, can_delete: true, lane_type: 'none', aging_warn_days: 7, aging_danger_days: 14, aging_exclude_closed: false, complete: true, entity_count: issues.length, requested_entity_limit: 1500, effective_entity_limit: 1500, server_entity_limit: 5000 },
   columns: [{ id: 1, name: 'Open', is_closed: false, count: issues.length }], lanes: [],
   lists: { assignees: [], trackers: [], priorities: [], projects: [], viewable_projects: [], creatable_projects: [] }, issues, labels: {},
 });
@@ -75,5 +75,16 @@ describe('normalized snapshot state', () => {
     });
     expect(selectBoardData(next).entities).toEqual([]);
     expect(next.deletedIssueIds.has(1)).toBe(false);
+  });
+
+  it('does not retain mutation entities in an explicit empty status scope', () => {
+    const initial = createNormalizedBoardState(board([], []));
+    const next = applyBoardResponse(initial, { kind: 'mutation', issue_updates: [issue(1)], created_issues: [issue(2)] });
+    expect(selectBoardData(next).entities).toEqual([]);
+    expect(next.deletedIssueIds.size).toBe(0);
+  });
+
+  it('falls back to column ids only for legacy snapshots without scope metadata', () => {
+    expect(createNormalizedBoardState(board([])).scope.statusIds).toEqual([1]);
   });
 });
