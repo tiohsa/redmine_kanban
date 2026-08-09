@@ -70,12 +70,13 @@ module RedmineKanban
       return Issue.none if @context.scope_status_ids.empty? || @context.dependency_status_ids.empty?
 
       dependency_scope.where(id: candidate_ids)
-        .joins(primary_ancestor_join(primary_scope.where(id: candidate_ids)))
+        .joins(primary_ancestor_join(primary_scope))
         .distinct
     end
 
     def descendant_scope_for_anchors(anchor_ids)
-      visible_scope.joins(primary_ancestor_join(visible_scope.where(id: anchor_ids)))
+      candidate_scope = Issue.where(project_id: @context.project_ids)
+      candidate_scope.joins(primary_ancestor_join(candidate_scope.where(id: anchor_ids)))
     end
 
     def primary_ancestor_join(scope)

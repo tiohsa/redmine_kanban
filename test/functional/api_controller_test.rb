@@ -147,6 +147,151 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_includes json.dig('meta', 'dependency_status_ids'), closed_status.id
   end
 
+  def test_member_ids_treats_hidden_closed_child_as_dependency
+    open_status = IssueStatus.where(is_closed: false).first
+    closed_status = IssueStatus.where(is_closed: true).first
+    skip 'requires both open and closed statuses' unless open_status && closed_status
+    parent = build_issue(subject: 'Resolver parent', status: open_status)
+    child = build_issue(subject: 'Resolver hidden child', parent_issue_id: parent.id, status: closed_status)
+    context = RedmineKanban::BoardContext.new(
+      project: @project,
+      user: @user,
+      project_ids: [@project.id],
+      scope_status_ids: [open_status.id],
+      dependency_status_ids: [open_status.id, closed_status.id]
+    )
+
+    member_ids = RedmineKanban::BoardMembershipResolver.new(board_context: context).member_ids([child.id])
+
+    assert_includes member_ids, child.id
+  end
+
+  def test_member_ids_does_not_cross_independent_nested_set_roots
+    open_status = IssueStatus.where(is_closed: false).first
+    closed_status = IssueStatus.where(is_closed: true).first
+    skip 'requires both open and closed statuses' unless open_status && closed_status
+    primary_parent = build_issue(subject: 'Primary root', status: open_status)
+    build_issue(subject: 'Primary root child', parent_issue_id: primary_parent.id, status: open_status)
+    other_parent = build_issue(subject: 'Other root', status: closed_status)
+    other_child = build_issue(subject: 'Other root child', parent_issue_id: other_parent.id, status: closed_status)
+    context = RedmineKanban::BoardContext.new(
+      project: @project,
+      user: @user,
+      project_ids: [@project.id],
+      scope_status_ids: [open_status.id],
+      dependency_status_ids: [open_status.id, closed_status.id]
+    )
+
+    member_ids = RedmineKanban::BoardMembershipResolver.new(board_context: context).member_ids([other_child.id])
+
+    refute_includes member_ids, other_child.id
+  end
+
+  def test_status_loss_evicts_descendant_closure_in_one_mutation_result
+    open_status = IssueStatus.where(is_closed: false).first
+    closed_status = IssueStatus.where(is_closed: true).first
+    skip 'requires both open and closed statuses' unless open_status && closed_status
+    parent = build_issue(subject: 'Status loss parent', status: open_status)
+    child = build_issue(subject: 'Status loss child', parent_issue_id: parent.id, status: closed_status)
+
+    patch :update, params: {
+      project_id: @project.identifier,
+      id: parent.id,
+      project_ids: [@project.id],
+      scope_status_ids_present: '1',
+      scope_status_ids: [open_status.id],
+      dependency_status_ids_present: '1',
+      dependency_status_ids: [open_status.id, closed_status.id],
+      issue: { status_id: closed_status.id, lock_version: parent.lock_version }
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_includes json.fetch('evicted_issue_ids'), parent.id
+    assert_includes json.fetch('evicted_issue_ids'), child.id
+    refute_includes json.fetch('issue_updates').map { |issue| issue['id'] }, child.id
+  end
+
+  def test_status_gain_adds_descendant_closure_in_one_mutation_result
+    open_status = IssueStatus.where(is_closed: false).first
+    closed_status = IssueStatus.where(is_closed: true).first
+    skip 'requires both open and closed statuses' unless open_status && closed_status
+    parent = build_issue(subject: 'Status gain parent', status: closed_status)
+    child = build_issue(subject: 'Status gain child', parent_issue_id: parent.id, status: closed_status)
+
+    patch :update, params: {
+      project_id: @project.identifier,
+      id: parent.id,
+      project_ids: [@project.id],
+      scope_status_ids_present: '1',
+      scope_status_ids: [open_status.id],
+      dependency_status_ids_present: '1',
+      dependency_status_ids: [open_status.id, closed_status.id],
+      issue: { status_id: open_status.id, lock_version: parent.lock_version }
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    update_ids = json.fetch('issue_updates').map { |issue| issue['id'] }
+    assert_includes update_ids, parent.id
+    assert_includes update_ids, child.id
+    refute_includes json.fetch('evicted_issue_ids'), child.id
+  end
+
+  def test_visibility_loss_discovers_descendants_after_anchor_is_invisible
+    previous_visibility = @role.issues_visibility
+    @role.update!(issues_visibility: 'own')
+    other_user = users(:users_001)
+    ensure_member!(other_user)
+    open_status = IssueStatus.where(is_closed: false).first
+    closed_status = IssueStatus.where(is_closed: true).first
+    skip 'requires both open and closed statuses' unless open_status && closed_status
+    parent = build_issue(subject: 'Visibility parent', status: open_status, assigned_to: @user)
+    child = build_issue(subject: 'Visibility child', parent_issue_id: parent.id, status: closed_status, assigned_to: @user)
+
+    patch :update, params: {
+      project_id: @project.identifier,
+      id: parent.id,
+      project_ids: [@project.id],
+      scope_status_ids_present: '1',
+      scope_status_ids: [open_status.id],
+      dependency_status_ids_present: '1',
+      dependency_status_ids: [open_status.id, closed_status.id],
+      issue: { assigned_to_id: other_user.id, lock_version: parent.lock_version }
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_includes json.fetch('evicted_issue_ids'), parent.id
+    assert_includes json.fetch('evicted_issue_ids'), child.id
+  ensure
+    @role.update!(issues_visibility: previous_visibility) if previous_visibility
+  end
+
+  def test_primary_child_survives_parent_status_loss
+    open_status = IssueStatus.where(is_closed: false).first
+    closed_status = IssueStatus.where(is_closed: true).first
+    skip 'requires both open and closed statuses' unless open_status && closed_status
+    parent = build_issue(subject: 'Independent primary parent', status: open_status)
+    child = build_issue(subject: 'Independent primary child', parent_issue_id: parent.id, status: open_status)
+
+    patch :update, params: {
+      project_id: @project.identifier,
+      id: parent.id,
+      project_ids: [@project.id],
+      scope_status_ids_present: '1',
+      scope_status_ids: [open_status.id],
+      dependency_status_ids_present: '1',
+      dependency_status_ids: [open_status.id, closed_status.id],
+      issue: { status_id: closed_status.id, lock_version: parent.lock_version }
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_includes json.fetch('issue_updates').map { |issue| issue['id'] }, child.id
+    refute_includes json.fetch('evicted_issue_ids'), child.id
+  end
+
   def test_standalone_hidden_closed_issue_is_not_a_dependency
     open_status = IssueStatus.where(is_closed: false).first
     closed_status = IssueStatus.where(is_closed: true).first
