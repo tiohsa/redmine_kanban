@@ -68,6 +68,7 @@ pnpm run build
 ```
 
 Build output:
+
 - JS  → `assets/javascripts/redmine_kanban_spa.js`
 - CSS → `assets/stylesheets/redmine_kanban_spa.css`
 
@@ -221,6 +222,7 @@ GitHub Actions: `.github/workflows/e2e-kanban.yml`
 Triggered on push/PR to `main`/`master`.
 
 Steps:
+
 1. Frontend unit tests (`npm --prefix frontend run test -- --run`)
 2. Start Redmine via Docker Compose
 3. Migrate DB and load default data
@@ -235,7 +237,6 @@ Steps:
 - **`User#name` requires full attributes** — avoid `.select(:id, :firstname, :lastname)` on User queries; load the full object instead (see known bug with `ActiveModel::MissingAttributeError`).
 - **pnpm is preferred** but `npm` also works (both `package-lock.json` and `pnpm-lock.yaml` are committed).
 
-
 <!-- headroom:rtk-instructions -->
 # RTK (Rust Token Killer) - Token-Optimized Commands
 
@@ -244,6 +245,7 @@ usage by 60-90% with zero behavior change. If rtk has no filter for a command,
 it passes through unchanged — so it is always safe to use.
 
 ## Key Commands
+
 ```bash
 # Git (59-80% savings)
 rtk git status          rtk git diff            rtk git log
@@ -274,6 +276,7 @@ rtk pip list            rtk pnpm install        rtk npm run <script>
 ```
 
 ## Rules
+
 - In command chains, prefix each segment: `rtk git add . && rtk git commit -m "msg"`
 - For debugging, use raw command without rtk prefix
 - `rtk proxy <cmd>` runs command without filtering but tracks usage

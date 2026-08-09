@@ -37,6 +37,26 @@ export function buildBoardDataUrl(
   return `${baseUrl}/data?${params.toString()}`;
 }
 
+export type BoardMutationScope = {
+  projectIds: Iterable<number>;
+  scopeStatusIds?: Iterable<number>;
+  dependencyStatusIds?: Iterable<number>;
+  boardEntityLimit?: number;
+};
+
+export function buildBoardMutationUrl(baseUrl: string, path: string, scope: BoardMutationScope): string {
+  const params = new URLSearchParams();
+  appendBoardMutationScopeParams(params, scope);
+  return `${baseUrl}${path}?${params.toString()}`;
+}
+
+export function appendBoardMutationScopeParams(params: URLSearchParams, scope: BoardMutationScope): void {
+  appendNumberParams(params, 'project_ids[]', scope.projectIds);
+  params.append('board_entity_limit', String(scope.boardEntityLimit ?? 1500));
+  appendScopeStatusParams(params, scope.scopeStatusIds ?? []);
+  appendDependencyStatusParams(params, scope.dependencyStatusIds ?? scope.scopeStatusIds ?? []);
+}
+
 export function buildBoardCountsUrl(baseUrl: string, projectIds: number[]): string {
   const params = new URLSearchParams();
   appendNumberParams(params, 'project_ids[]', projectIds);

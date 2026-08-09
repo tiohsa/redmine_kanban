@@ -9,7 +9,7 @@ import { applyLocalIssuePatch } from './boardState';
 import { findSubtask, resolveAssigneeName, resolveMutationError, resolvePriorityName, resolveSubtaskStatus, resolveBoardIssue, type IssueMutationResult, type MovePayload, type UpdatePayload } from './kanbanShared';
 import { discardBulkIdempotencyKey, getOrCreateBulkIdempotencyKey, stableSerialize, storageKeyForBulkSignature } from './bulkIdempotency';
 import { buildBulkCreateRequest, buildRestoreIssuePayload, isBulkCreateInput } from './kanbanActionPayloads';
-import { appendDependencyStatusParams, appendScopeStatusParams, buildBoardCountsUrl, buildBoardEntitiesUrl, effectiveDependencyStatusIds, effectiveScopeStatusIds } from './boardQuery';
+import { buildBoardCountsUrl, buildBoardEntitiesUrl, buildBoardMutationUrl, effectiveDependencyStatusIds, effectiveScopeStatusIds } from './boardQuery';
 
 type Args = {
   baseUrl: string;
@@ -63,12 +63,12 @@ export function useKanbanActions({
 
   const scopedUrl = useCallback((path: string) => {
     const projectIds = data?.meta.project_ids ?? [];
-    const params = new URLSearchParams();
-    projectIds.forEach((projectId) => params.append('project_ids[]', String(projectId)));
-    params.append('board_entity_limit', String(data?.meta.requested_entity_limit ?? data?.meta.effective_entity_limit ?? 1500));
-    appendScopeStatusParams(params, data ? effectiveScopeStatusIds(data) : []);
-    appendDependencyStatusParams(params, data ? effectiveDependencyStatusIds(data) : []);
-    return `${baseUrl}${path}?${params.toString()}`;
+    return buildBoardMutationUrl(baseUrl, path, {
+      projectIds,
+      boardEntityLimit: data?.meta.requested_entity_limit ?? data?.meta.effective_entity_limit ?? 1500,
+      scopeStatusIds: data ? effectiveScopeStatusIds(data) : [],
+      dependencyStatusIds: data ? effectiveDependencyStatusIds(data) : [],
+    });
   }, [baseUrl, data]);
 
   const setIssueBusy = useCallback((issueId: number, busy: boolean) => {

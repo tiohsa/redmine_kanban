@@ -60,6 +60,47 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     refute json.key?('entities')
   end
 
+  def test_primary_at_limit_with_dependency_descendant_returns_structured_overflow
+    primary_status, dependency_status = create_boundary_statuses
+    parent = build_issue(subject: 'Exact primary boundary parent', status: primary_status)
+    build_issue(subject: 'Exact primary boundary dependency', parent_issue_id: parent.id, status: dependency_status)
+
+    get :index, params: {
+      project_id: @project.identifier,
+      board_entity_limit: 1,
+      issue_status_ids: [primary_status.id, dependency_status.id],
+      exclude_status_ids: [dependency_status.id]
+    }
+
+    assert_response :unprocessable_entity
+    json = JSON.parse(@response.body)
+    assert_equal 'BOARD_SCOPE_TOO_LARGE', json.dig('error', 'code')
+    refute json.key?('entities')
+  end
+
+  def test_dependency_admission_uses_remaining_plus_one_probe
+    primary_status, dependency_status = create_boundary_statuses
+    parent = build_issue(subject: 'Remaining boundary parent', status: primary_status)
+    first_child = build_issue(subject: 'Remaining boundary child one', parent_issue_id: parent.id, status: dependency_status)
+
+    params = {
+      project_id: @project.identifier,
+      board_entity_limit: 2,
+      issue_status_ids: [primary_status.id, dependency_status.id],
+      exclude_status_ids: [dependency_status.id]
+    }
+    get :index, params: params
+    assert_response :success
+    assert_equal 2, JSON.parse(@response.body).dig('meta', 'entity_count')
+
+    build_issue(subject: 'Remaining boundary child two', parent_issue_id: parent.id, status: dependency_status)
+    get :index, params: params
+    assert_response :unprocessable_entity
+    assert_equal 'BOARD_SCOPE_TOO_LARGE', JSON.parse(@response.body).dig('error', 'code')
+    refute JSON.parse(@response.body).key?('entities')
+    assert first_child.persisted?
+  end
+
   def test_invalid_and_pagination_parameters_are_rejected
     ['0', '-1', '1.5', '1e5', 'Infinity'].each do |value|
       get :index, params: { project_id: @project.identifier, board_entity_limit: value }
@@ -675,6 +716,14 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     issue = Issue.new(project: project, tracker: tracker, author: author, status: status, subject: subject, parent_issue_id: parent_issue_id, priority: priority, assigned_to: assigned_to)
     issue.save!
     issue.reload
+  end
+
+  def create_boundary_statuses
+    position = IssueStatus.maximum(:position).to_i + 1
+    [
+      IssueStatus.create!(name: "Kanban boundary primary #{position}", is_closed: false, position: position),
+      IssueStatus.create!(name: "Kanban boundary dependency #{position}", is_closed: true, position: position + 1)
+    ]
   end
 
   def distinct_open_statuses

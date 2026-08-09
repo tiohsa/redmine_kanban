@@ -169,11 +169,7 @@ module RedmineKanban
       @requested_project_ids = normalize_ids(project_ids)
       @issue_status_ids = normalize_ids(issue_status_ids)
       @exclude_status_ids = normalize_ids(exclude_status_ids)
-      @requested_entity_limit = SnapshotLimits.requested(board_entity_limit)
-      @server_entity_limit = SnapshotLimits.server_entity_limit
-      @effective_entity_limit = SnapshotLimits.effective(@requested_entity_limit)
-      @response_byte_limit = SnapshotLimits.response_bytes
-      @query_limit = SnapshotLimits.query_limit
+      @board_entity_limit = board_entity_limit
     end
 
     def to_h
@@ -199,21 +195,21 @@ module RedmineKanban
       end
 
       result[:meta][:query_count] = sql_count if result[:ok] && result[:meta]
-      if sql_count > @query_limit && result[:ok]
+      if sql_count > @board_context.query_limit && result[:ok]
         result = resource_error(
           'BOARD_QUERY_LIMIT_EXCEEDED',
           query_count: sql_count,
-          maximum_queries: @query_limit
+          maximum_queries: @board_context.query_limit
         )
       end
 
       if result[:ok]
         bytes = response_bytes_including_metadata(result)
-        if bytes > @response_byte_limit
+        if bytes > @board_context.response_byte_limit
           result = resource_error(
             'BOARD_RESPONSE_TOO_LARGE',
             entity_count: result.dig(:meta, :entity_count),
-            maximum_response_bytes: @response_byte_limit
+            maximum_response_bytes: @board_context.response_byte_limit
           )
         else
           result[:meta][:response_bytes] = bytes
@@ -242,7 +238,8 @@ module RedmineKanban
         user: @user,
         project_ids: @requested_project_ids,
         issue_status_ids: @issue_status_ids,
-        exclude_status_ids: @exclude_status_ids
+        exclude_status_ids: @exclude_status_ids,
+        board_entity_limit: @board_entity_limit
       )
       @user.groups.load
       @user.builtin_role
@@ -273,7 +270,7 @@ module RedmineKanban
       status_ids = columns.map { |c| c[:id] }
       @count_snapshot_queries = true
       begin
-        snapshot = BoardMembershipResolver.new(board_context: @board_context).snapshot_issue_ids(limit: @effective_entity_limit)
+        snapshot = BoardMembershipResolver.new(board_context: @board_context).snapshot_issue_ids(limit: @board_context.effective_entity_limit)
         return too_large_error(snapshot[:count_at_least]) if snapshot[:count_at_least]
         issue_ids = snapshot[:ids]
 
@@ -314,10 +311,10 @@ module RedmineKanban
           lane_type: 'assignee',
           complete: true,
           entity_count: entities.size,
-          requested_entity_limit: @requested_entity_limit,
-          effective_entity_limit: @effective_entity_limit,
-          server_entity_limit: @server_entity_limit,
-          response_byte_limit: @response_byte_limit,
+          requested_entity_limit: @board_context.requested_entity_limit,
+          effective_entity_limit: @board_context.effective_entity_limit,
+          server_entity_limit: @board_context.server_entity_limit,
+          response_byte_limit: @board_context.response_byte_limit,
           id_probe_count: issue_ids.size,
           materialized_row_count: issues.size
         },
@@ -367,7 +364,7 @@ module RedmineKanban
     def fetch_lane_assignee_ids(status_ids)
       base_issue_scope(status_ids)
         .order(updated_on: :desc)
-        .limit(@effective_entity_limit)
+        .limit(@board_context.effective_entity_limit)
         .pluck(:assigned_to_id)
         .compact
         .uniq
@@ -406,9 +403,9 @@ module RedmineKanban
     def too_large_error(count_at_least)
       resource_error(
         'BOARD_SCOPE_TOO_LARGE',
-        requested_entity_limit: @requested_entity_limit,
-        effective_entity_limit: @effective_entity_limit,
-        server_entity_limit: @server_entity_limit,
+        requested_entity_limit: @board_context.requested_entity_limit,
+        effective_entity_limit: @board_context.effective_entity_limit,
+        server_entity_limit: @board_context.server_entity_limit,
         count_at_least: count_at_least
       )
     end

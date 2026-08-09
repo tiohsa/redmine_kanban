@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendScopeStatusParams, buildBoardDataUrl, buildBoardEntitiesUrl, buildBoardQueryKey, effectiveScopeStatusIds } from './boardQuery';
+import { appendScopeStatusParams, buildBoardDataUrl, buildBoardEntitiesUrl, buildBoardMutationUrl, buildBoardQueryKey, effectiveScopeStatusIds } from './boardQuery';
 import type { BoardData } from './types';
 
 const snapshot = (scope_status_ids?: number[]): BoardData => ({
@@ -31,6 +31,15 @@ describe('snapshot board query', () => {
     expect(buildBoardQueryKey('/projects/demo/kanban', [], [], [], 1500)).not.toEqual(
       buildBoardQueryKey('/projects/demo/kanban', [], [], [], 3000),
     );
+  });
+
+  it('builds the complete mutation scope including the configured entity limit', () => {
+    expect(buildBoardMutationUrl('/projects/demo/kanban', '/issues/bulk', {
+      projectIds: [7, 3, 7],
+      scopeStatusIds: [4, 2],
+      dependencyStatusIds: [5, 2],
+      boardEntityLimit: 3000,
+    })).toBe('/projects/demo/kanban/issues/bulk?project_ids%5B%5D=3&project_ids%5B%5D=7&board_entity_limit=3000&scope_status_ids_present=1&scope_status_ids%5B%5D=2&scope_status_ids%5B%5D=4&dependency_status_ids_present=1&dependency_status_ids%5B%5D=2&dependency_status_ids%5B%5D=5');
   });
 
   it('encodes nonempty entity reconciliation scope explicitly', () => {

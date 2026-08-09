@@ -15,6 +15,7 @@ import { HelpDialog } from './HelpDialog';
 import { buildDisplayData, buildIssueTitle, normalizeBoardData, payloadFieldError, payloadMessage, resolveMutationError } from './kanbanShared';
 import { findIssueInBoard } from './kanbanShared';
 import { useKanbanActions } from './useKanbanActions';
+import { invalidateBoardSnapshot } from './useIssueMutation';
 import { useKanbanDialogs } from './useKanbanDialogs';
 import { useKanbanPreferences } from './useKanbanPreferences';
 
@@ -460,12 +461,15 @@ export function App({ dataUrl, initialCurrentUserId }: Props) {
           projectIds={data.meta.project_ids ?? []}
           scopeStatusIds={effectiveScopeStatusIds(data)}
           dependencyStatusIds={effectiveDependencyStatusIds(data)}
+          boardEntityLimit={data.meta.requested_entity_limit ?? data.meta.effective_entity_limit}
           onClose={() => {
             dialogs.setIframeEditContext(null);
           }}
-          onSuccess={(message, issueId) => {
+          onSuccess={(message) => {
             setNotice(message);
-            if (issueId) void actions.reconcileIssueIds([issueId]);
+          }}
+          onNativeWriteComplete={() => {
+            invalidateBoardSnapshot(queryClient, boardQueryKey);
           }}
         />
       ) : null}
@@ -481,13 +485,15 @@ export function App({ dataUrl, initialCurrentUserId }: Props) {
           projectIds={data.meta.project_ids ?? []}
           scopeStatusIds={effectiveScopeStatusIds(data)}
           dependencyStatusIds={effectiveDependencyStatusIds(data)}
-          onBeforeBulkSubtasks={(parentIssueId) => actions.reconcileIssueIds([parentIssueId], { treatAsCreated: true })}
+          boardEntityLimit={data.meta.requested_entity_limit ?? data.meta.effective_entity_limit}
           onClose={() => {
             dialogs.setIframeCreateUrl(null);
           }}
-          onSuccess={(message, issueId) => {
+          onSuccess={(message) => {
             setNotice(message);
-            if (issueId) void actions.reconcileIssueIds([issueId], { treatAsCreated: true });
+          }}
+          onNativeWriteComplete={() => {
+            invalidateBoardSnapshot(queryClient, boardQueryKey);
           }}
         />
       ) : null}

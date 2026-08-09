@@ -37,4 +37,40 @@ class RedmineKanbanBoardContextTest < ActiveSupport::TestCase
     assert_equal [statuses.first], context.scope_status_ids
     assert_equal statuses, context.dependency_status_ids
   end
+
+  def test_scope_fingerprint_includes_board_and_status_scopes_but_normalizes_order
+    statuses = IssueStatus.sorted.limit(3).pluck(:id)
+    first = RedmineKanban::BoardContext.new(
+      project: @project,
+      user: @user,
+      project_ids: [@project.id, @project.id],
+      scope_status_ids: statuses.first(2),
+      dependency_status_ids: statuses
+    )
+    reordered = RedmineKanban::BoardContext.new(
+      project: @project,
+      user: @user,
+      project_ids: [@project.id],
+      scope_status_ids: statuses.first(2).reverse,
+      dependency_status_ids: statuses.reverse
+    )
+    different_primary_scope = RedmineKanban::BoardContext.new(
+      project: @project,
+      user: @user,
+      project_ids: [@project.id],
+      scope_status_ids: [statuses.first],
+      dependency_status_ids: statuses
+    )
+    different_dependency_scope = RedmineKanban::BoardContext.new(
+      project: @project,
+      user: @user,
+      project_ids: [@project.id],
+      scope_status_ids: statuses.first(2),
+      dependency_status_ids: statuses.first(2)
+    )
+
+    assert_equal first.scope_fingerprint, reordered.scope_fingerprint
+    refute_equal first.scope_fingerprint, different_primary_scope.scope_fingerprint
+    refute_equal first.scope_fingerprint, different_dependency_scope.scope_fingerprint
+  end
 end

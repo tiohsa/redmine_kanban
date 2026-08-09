@@ -83,7 +83,7 @@ pnpm run build
 
 There is no plugin-wide configuration screen. Each user can set swimlanes, hidden statuses, aging thresholds, sorting, fit mode, font size, subtask display, and the maximum board entity count from the board. The default maximum is 1,500 unique Issue entities; blank or invalid values return to 1,500. Card moves only apply the status and any lane attribute explicitly selected by the user; Redmine workflow and permissions remain authoritative.
 
-Board data is one complete snapshot for the requested project/status scope. The configured count is an admission limit, not a page size: if the complete scope exceeds it, the API returns a structured 422 error and no Issue entities. The server applies the lower of the requested limit and `REDMINE_KANBAN_MAX_BOARD_ENTITIES` (default 5,000), and also enforces `REDMINE_KANBAN_MAX_RESPONSE_BYTES` (default 8 MiB) and `REDMINE_KANBAN_MAX_BOARD_QUERIES` (default 20). Set `REDMINE_KANBAN_PERF_LOG=1` to log snapshot resource measurements. There is no Load more, cursor, offset, or subtree recovery operation.
+Board data is one complete snapshot for the requested project/status scope. Membership is the unique union of primary Issues and dependency-only descendants needed to represent those primaries; even an exact primary-limit boundary probes for descendants. The configured count is an admission limit, not a page size: if the complete scope exceeds it, the API returns a structured 422 error and no Issue entities. The server applies the lower of the requested limit and `REDMINE_KANBAN_MAX_BOARD_ENTITIES` (default 5,000), and also enforces `REDMINE_KANBAN_MAX_RESPONSE_BYTES` (default 8 MiB) and `REDMINE_KANBAN_MAX_BOARD_QUERIES` (default 20). Set `REDMINE_KANBAN_PERF_LOG=1` to log snapshot resource measurements. There is no Load more, cursor, offset, or subtree recovery operation.
 
 ## Technology Stack
 
@@ -178,6 +178,7 @@ Board data notes:
 - Contract version 3 returns flat `entities` exactly once per Issue plus `tree.root_ids` and `tree.children_by_parent_id`; the frontend derives recursive Canvas rows from normalized state.
 - `board_entity_limit` is the only board size request parameter. `offset`, `cursor`, `tree_parent_id`, and `issue_limit` are rejected; no partial snapshot is successful.
 - Mutation responses use contract version 3 fields (`operation_id`, `scope_fingerprint`, flat `issue_updates`/`created_issues`, `deleted_issue_ids`, `tree_changes`, and invalidations). The frontend applies these deltas to normalized state and uses the entities endpoint for targeted reconciliation.
+- `scope_fingerprint` is an opaque identity for board project, current user, sanitized project scope, primary status scope, and dependency status scope; its exact hash value is not a public compatibility contract. Plugin mutations use the same scope and admission parameters. Native Redmine iframe writes cannot produce a trusted delta, so successful issue/journal saves (including composite bulk-subtask operations) reset the current board query to one complete snapshot; a refresh failure is reported as a board loading problem, not a save failure.
 - Issue responses are accepted only when their `lock_version`/`updated_on` freshness is not older than the cached entity. Optimistic failures roll back only fields still holding that mutation's optimistic values; overlapping mutations trigger targeted server reconciliation.
 - Deleted Issue recreation is available only for domain top-level Issues. It creates a new Issue with the displayed subject, project, description, status, assignee, tracker, priority, dates, and done ratio; it never recreates a child Issue without its parent.
 
@@ -201,9 +202,10 @@ The CI workflow runs:
 - frontend unit tests with Vitest
 - Playwright E2E on Redmine 7.0 and Redmine 6.1
 - Playwright compatibility smoke test on Redmine 6.0
-- deterministic tree resource gates for node, row, depth, and query limits
+- deterministic snapshot resource/admission gates for node/deep-tree, high-fan-out rows, exact-limit dependency membership, response bytes, and query limits (`board_data_test.rb`, `snapshot_limits_test.rb`, and `api_controller_test.rb`)
+- PostgreSQL membership/admission integration tests in addition to the MariaDB-based Redmine browser/test stack
 
-Both browser jobs start Redmine using `.github/e2e/docker-compose.yml`, run migrations, load default data, seed `ecookbook` via `e2e/setup_redmine.rb`, and upload Playwright reports on completion.
+The main Redmine test and browser jobs use MariaDB 10 via `.github/e2e/docker-compose.yml`; the PostgreSQL membership job uses `.github/e2e/docker-compose.postgres.yml` and runs the resolver/admission integration suite. Browser jobs run migrations, load default data, seed `ecookbook` via `e2e/setup_redmine.rb`, and upload Playwright reports on completion.
 
 ## License
 

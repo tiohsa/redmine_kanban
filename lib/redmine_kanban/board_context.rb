@@ -6,7 +6,8 @@ require 'json'
 module RedmineKanban
   class BoardContext
     attr_reader :project, :user, :project_ids, :scope_status_ids, :dependency_status_ids,
-                :requested_entity_limit, :effective_entity_limit, :response_byte_limit
+                :requested_entity_limit, :effective_entity_limit, :server_entity_limit,
+                :response_byte_limit, :query_limit
 
     def initialize(project:, user:, project_ids: nil, scope_status_ids: nil, issue_status_ids: nil, exclude_status_ids: nil, dependency_status_ids: nil, board_entity_limit: nil)
       @project = project
@@ -28,7 +29,9 @@ module RedmineKanban
       end
       @requested_entity_limit = SnapshotLimits.requested(board_entity_limit)
       @effective_entity_limit = SnapshotLimits.effective(@requested_entity_limit)
+      @server_entity_limit = SnapshotLimits.server_entity_limit
       @response_byte_limit = SnapshotLimits.response_bytes
+      @query_limit = SnapshotLimits.query_limit
     end
 
     def presenter(_root_issue_ids = [])
@@ -42,7 +45,13 @@ module RedmineKanban
     end
 
     def scope_fingerprint
-      @scope_fingerprint ||= "sha256:#{Digest::SHA256.hexdigest({ project_ids: @project_ids.sort, user_id: @user.id }.to_json)}"
+      @scope_fingerprint ||= "sha256:#{Digest::SHA256.hexdigest({
+        board_project_id: @project.id,
+        user_id: @user.id,
+        project_ids: @project_ids.sort,
+        scope_status_ids: @scope_status_ids.sort,
+        dependency_status_ids: @dependency_status_ids.sort
+      }.to_json)}"
     end
 
     private

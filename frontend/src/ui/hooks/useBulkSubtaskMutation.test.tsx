@@ -92,7 +92,7 @@ describe('useBulkSubtaskMutation', () => {
     });
 
     expect(postJsonMock).toHaveBeenCalledWith(
-      '/projects/demo/kanban/issues/bulk?scope_status_ids_present=1&dependency_status_ids_present=1',
+      '/projects/demo/kanban/issues/bulk?board_entity_limit=1500&scope_status_ids_present=1&dependency_status_ids_present=1',
       expect.objectContaining({ parent: { parent_issue_id: 1, project_id: undefined }, subtasks: payloads, operation_id: expect.any(String) }),
       'POST',
       expect.objectContaining({ 'Idempotency-Key': expect.any(String) }),
@@ -114,7 +114,28 @@ describe('useBulkSubtaskMutation', () => {
     });
 
     expect(postJsonMock).toHaveBeenCalledWith(
-      '/projects/demo/kanban/issues/bulk?project_ids%5B%5D=3&project_ids%5B%5D=7&scope_status_ids_present=1&dependency_status_ids_present=1',
+      '/projects/demo/kanban/issues/bulk?project_ids%5B%5D=3&project_ids%5B%5D=7&board_entity_limit=1500&scope_status_ids_present=1&dependency_status_ids_present=1',
+      expect.any(Object),
+      'POST',
+      expect.any(Object),
+    );
+  });
+
+  it('forwards the configured board entity limit to bulk mutation', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    postJsonMock.mockResolvedValueOnce({ subtasks: [makeIssue(101)] });
+
+    const { result } = renderHook(
+      () => useBulkSubtaskMutation('/projects/demo/kanban', ['kanban'] as const, [7], [2], [2, 3], 3000),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await act(async () => {
+      await result.current.mutateAsync([{ parent_issue_id: 1, subject: 'Configured', tracker_id: 2 }]);
+    });
+
+    expect(postJsonMock).toHaveBeenCalledWith(
+      '/projects/demo/kanban/issues/bulk?project_ids%5B%5D=7&board_entity_limit=3000&scope_status_ids_present=1&scope_status_ids%5B%5D=2&dependency_status_ids_present=1&dependency_status_ids%5B%5D=2&dependency_status_ids%5B%5D=3',
       expect.any(Object),
       'POST',
       expect.any(Object),
@@ -169,6 +190,30 @@ describe('useBulkSubtaskMutation', () => {
 
     expect(resetQueries).toHaveBeenCalledWith({ queryKey: ['kanban'] });
     expect(getJsonMock).not.toHaveBeenCalled();
+  });
+
+  it('can defer all board reconciliation for a native composite operation', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    queryClient.setQueryData(['kanban'], makeBoard());
+    const resetQueries = vi.spyOn(queryClient, 'resetQueries');
+    postJsonMock.mockResolvedValueOnce({
+      ok: true,
+      contract_version: 3,
+      created_issues: [makeIssue(101)],
+      invalidations: { board_snapshot: true },
+    });
+
+    const { result } = renderHook(
+      () => useBulkSubtaskMutation('/projects/demo/kanban', ['kanban'] as const, [], [], [], 3000, true),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await act(async () => {
+      await result.current.mutateAsync([{ parent_issue_id: 1, subject: 'Deferred', tracker_id: 2 }]);
+    });
+
+    expect(resetQueries).not.toHaveBeenCalled();
+    expect(queryClient.getQueryData<ReturnType<typeof makeBoard>>(['kanban'])?.issues[0]?.subtasks).toHaveLength(1);
   });
 
   it('reports the failed row and API validation details', async () => {

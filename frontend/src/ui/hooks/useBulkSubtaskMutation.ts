@@ -5,7 +5,7 @@ import { getJson } from '../http';
 import type { BoardData, Issue } from '../types';
 import { discardBulkIdempotencyKey, getOrCreateBulkIdempotencyKey, stableSerialize } from '../bulkIdempotency';
 import { applyEntityReconciliation, applyMutationResponse, invalidateBoardSnapshot, isBoardSnapshotInvalidated, unresolvedInvalidationIds } from '../useIssueMutation';
-import { appendDependencyStatusParams, appendScopeStatusParams, buildBoardCountsUrl, buildBoardEntitiesUrl } from '../boardQuery';
+import { buildBoardCountsUrl, buildBoardEntitiesUrl, buildBoardMutationUrl } from '../boardQuery';
 
 export type SubtaskPayload = {
   parent_issue_id: number;
@@ -70,7 +70,15 @@ function errorDetails(error: unknown, payload: SubtaskPayload, rowIndex: number)
   };
 }
 
-export function useBulkSubtaskMutation(baseUrl: string, queryKey: readonly unknown[], projectIds: number[] = [], scopeStatusIds: number[] = [], dependencyStatusIds = scopeStatusIds) {
+export function useBulkSubtaskMutation(
+  baseUrl: string,
+  queryKey: readonly unknown[],
+  projectIds: number[] = [],
+  scopeStatusIds: number[] = [],
+  dependencyStatusIds = scopeStatusIds,
+  boardEntityLimit = 1500,
+  deferBoardRefresh = false,
+) {
   const queryClient = useQueryClient();
   const inFlight = useRef(new Map<string, Promise<BulkMutationResponse>>());
 
@@ -93,7 +101,7 @@ export function useBulkSubtaskMutation(baseUrl: string, queryKey: readonly unkno
         const { key: idempotencyKey } = getOrCreateBulkIdempotencyKey(signature);
         try {
           const res = await postJson<BulkMutationResponse>(
-            scopedPath(baseUrl, '/issues/bulk', projectIds, scopeStatusIds, dependencyStatusIds), { ...normalized, operation_id: clientOperationId() }, 'POST', { 'Idempotency-Key': idempotencyKey },
+            scopedPath(baseUrl, '/issues/bulk', projectIds, scopeStatusIds, dependencyStatusIds, boardEntityLimit), { ...normalized, operation_id: clientOperationId() }, 'POST', { 'Idempotency-Key': idempotencyKey },
           );
           return res;
         } catch (error) {
@@ -117,6 +125,7 @@ export function useBulkSubtaskMutation(baseUrl: string, queryKey: readonly unkno
         : payload;
       const storageKey = getOrCreateBulkIdempotencyKey(stableSerialize(normalized)).storageKey;
       discardBulkIdempotencyKey(storageKey);
+      if (deferBoardRefresh) return;
       if (isBoardSnapshotInvalidated(result)) {
         invalidateBoardSnapshot(queryClient, queryKey);
         return;
@@ -165,14 +174,20 @@ export function useBulkSubtaskMutation(baseUrl: string, queryKey: readonly unkno
   });
 }
 
-function scopedPath(baseUrl: string, path: string, projectIds: number[], scopeStatusIds: number[] = [], dependencyStatusIds = scopeStatusIds): string {
-  const params = new URLSearchParams();
-  [...new Set(projectIds)].filter((id) => Number.isFinite(id) && id > 0).sort((a, b) => a - b)
-    .forEach((id) => params.append('project_ids[]', String(id)));
-  appendScopeStatusParams(params, scopeStatusIds);
-  appendDependencyStatusParams(params, dependencyStatusIds);
-  const query = params.toString();
-  return `${baseUrl}${path}${query ? `?${query}` : ''}`;
+function scopedPath(
+  baseUrl: string,
+  path: string,
+  projectIds: number[],
+  scopeStatusIds: number[] = [],
+  dependencyStatusIds = scopeStatusIds,
+  boardEntityLimit = 1500,
+): string {
+  return buildBoardMutationUrl(baseUrl, path, {
+    projectIds,
+    scopeStatusIds,
+    dependencyStatusIds,
+    boardEntityLimit,
+  });
 }
 
 function clientOperationId(): string {

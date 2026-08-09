@@ -191,7 +191,8 @@ jobs:
           docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
             env RAILS_ENV=test bundle exec rails test \
             plugins/redmine_kanban/test/unit/board_data_test.rb \
-            plugins/redmine_kanban/test/unit/snapshot_limits_test.rb
+            plugins/redmine_kanban/test/unit/snapshot_limits_test.rb \
+            plugins/redmine_kanban/test/functional/api_controller_test.rb
 
       - name: Show container logs on failure
         if: failure()
@@ -200,6 +201,69 @@ jobs:
       - name: Stop Redmine test stack
         if: always()
         run: docker compose -f .github/e2e/docker-compose.yml down -v
+
+  ruby-test-postgresql:
+    name: PostgreSQL membership integration
+    needs: init
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      REDMINE_IMAGE: redmine:7.0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start PostgreSQL Redmine test stack
+        run: docker compose -f .github/e2e/docker-compose.yml -f .github/e2e/docker-compose.postgres.yml up -d --wait --wait-timeout 600
+
+      - name: Install Redmine PostgreSQL test dependencies
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml -f .github/e2e/docker-compose.postgres.yml exec -T redmine \
+            sh -lc 'apt-get update && apt-get install -y --no-install-recommends build-essential libpq-dev && bundle config set --local without development && bundle install'
+
+      - name: Configure PostgreSQL database.yml
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml -f .github/e2e/docker-compose.postgres.yml exec -T redmine sh -lc \
+            "printf '%s\n' \
+            'production:' \
+            '  adapter: postgresql' \
+            '  database: redmine' \
+            '  host: db' \
+            '  username: redmine' \
+            '  password: password' \
+            'test:' \
+            '  adapter: postgresql' \
+            '  database: redmine' \
+            '  host: db' \
+            '  username: redmine' \
+            '  password: password' \
+            > /usr/src/redmine/config/database.yml"
+
+      - name: Migrate PostgreSQL Redmine and plugin
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml -f .github/e2e/docker-compose.postgres.yml exec -T redmine \
+            env RAILS_ENV=production bundle exec rake db:migrate redmine:plugins:migrate
+          docker compose -f .github/e2e/docker-compose.yml -f .github/e2e/docker-compose.postgres.yml exec -T redmine \
+            env RAILS_ENV=test bundle exec rake db:migrate redmine:plugins:migrate
+
+      - name: Run PostgreSQL membership and admission tests
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml -f .github/e2e/docker-compose.postgres.yml exec -T redmine \
+            env RAILS_ENV=test bundle exec rails test \
+            plugins/redmine_kanban/test/unit/board_context_test.rb \
+            plugins/redmine_kanban/test/unit/board_membership_resolver_test.rb \
+            plugins/redmine_kanban/test/unit/board_data_test.rb \
+            plugins/redmine_kanban/test/unit/snapshot_limits_test.rb \
+            plugins/redmine_kanban/test/functional/api_controller_test.rb \
+            -i '/(index_returns_a_complete_flat_snapshot_and_tree_relation|primary_at_limit_with_dependency_descendant_returns_structured_overflow|dependency_admission_uses_remaining_plus_one_probe|scope_over_limit_returns_no_partial_entities|status_filter_limits_the_snapshot_entities)/'
+
+      - name: Show PostgreSQL container logs on failure
+        if: failure()
+        run: docker compose -f .github/e2e/docker-compose.yml -f .github/e2e/docker-compose.postgres.yml logs --no-color
+
+      - name: Stop PostgreSQL test stack
+        if: always()
+        run: docker compose -f .github/e2e/docker-compose.yml -f .github/e2e/docker-compose.postgres.yml down -v
 
   e2e-full:
     name: Redmine ${{ matrix.redmine_version }} Full E2E

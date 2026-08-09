@@ -11,9 +11,14 @@ module RedmineKanban
       return { ids: [], count_at_least: primary_ids.size } if primary_ids.size > limit
 
       remaining = limit - primary_ids.size
-      dependency_ids = if remaining.positive? && primary_ids.any?
-        descendant_scope(primary_ids).where.not(id: primary_ids)
-          .order(updated_on: :desc, id: :desc).limit(remaining + 1).distinct.pluck(:id)
+      dependency_ids = if primary_ids.any?
+        dependency_rows = descendant_scope(primary_ids).where.not(id: primary_ids)
+          .select(:id, :updated_on)
+          .distinct
+          .order(updated_on: :desc, id: :desc)
+          .limit(remaining + 1)
+          .pluck(:id, :updated_on)
+        dependency_rows.map(&:first)
       else
         []
       end
@@ -64,7 +69,11 @@ module RedmineKanban
     end
 
     def visible_scope
-      Issue.visible(@context.user).where(project_id: @context.project_ids)
+      Issue.where(id: visible_issue_ids, project_id: @context.project_ids)
+    end
+
+    def visible_issue_ids
+      Issue.visible(@context.user).select(:id)
     end
 
     def descendant_scope(primary_ids)

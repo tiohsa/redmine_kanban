@@ -84,7 +84,7 @@ pnpm run build
 
 プラグイン全体の設定画面はありません。各ユーザーはボード上でスイムレーン、非表示ステータス、停滞閾値、並び替え、表示幅、文字サイズ、子チケット表示、最大表示件数を設定できます。最大表示件数のデフォルトは1,500件です。カード移動では、ユーザーが明示したレーン属性とステータスだけを変更し、Redmine の Workflow と権限を正とします。
 
-APIは対象scopeを完全な単一snapshotとして返します。最大表示件数はページサイズではなくAdmission Controlであり、対象が上限を超える場合は一部Issueを返さず、構造化422エラーを返します。サーバーは `REDMINE_KANBAN_MAX_BOARD_ENTITIES`（デフォルト5,000）、`REDMINE_KANBAN_MAX_RESPONSE_BYTES`（デフォルト8 MiB）、`REDMINE_KANBAN_MAX_BOARD_QUERIES`（デフォルト20）で資源を制限します。cursor、offset、子ツリーの追加取得、Load more操作はありません。運用時に性能ログが必要な場合だけ `REDMINE_KANBAN_PERF_LOG=1` を指定してください。
+APIは対象scopeを完全な単一snapshotとして返します。membershipはprimary Issueと、そのprimaryを表示するために必要なdependency-only descendantのunique unionです。primaryがちょうど上限に達した場合もdescendantの存在をprobeし、対象が上限を超える場合は一部Issueを返さず、構造化422エラーを返します。最大表示件数はページサイズではなくAdmission Controlです。サーバーは `REDMINE_KANBAN_MAX_BOARD_ENTITIES`（デフォルト5,000）、`REDMINE_KANBAN_MAX_RESPONSE_BYTES`（デフォルト8 MiB）、`REDMINE_KANBAN_MAX_BOARD_QUERIES`（デフォルト20）で資源を制限します。cursor、offset、子ツリーの追加取得、Load more操作はありません。運用時に性能ログが必要な場合だけ `REDMINE_KANBAN_PERF_LOG=1` を指定してください。
 
 ## 技術スタック
 
@@ -171,6 +171,7 @@ REDMINE_BASE_URL=http://127.0.0.1:3002 \
 - contract version 3は `entities` にIssueを一意に返し、`tree.root_ids` と `tree.children_by_parent_id` から関係を表現します。Frontendはnormalized stateからCanvas用の行を派生します。
 - Requestの件数パラメータは `board_entity_limit` です。`issue_limit`、`offset`、`cursor`、`tree_parent_id` は400で拒否されます。
 - mutation responseはcontract version 3のflat delta（`issue_updates`、`created_issues`、`deleted_issue_ids`、`tree_changes`、`invalidations`）を返し、FrontendはEntity／Tree共通Reducerで適用します。
+- `scope_fingerprint` はboard project、current user、sanitized project scope、primary status scope、dependency status scopeを表すopaqueな識別子です。plugin mutationは同じscope/admissionパラメータを使います。Redmine標準iframeのIssue/journal保存はtrusted deltaを生成できないため、bulk子チケットを含む成功操作の最後に現在のboard queryを一度だけresetし、完全snapshotへ収束させます。保存後のrefresh失敗は保存失敗ではなくBoard読み込みエラーとして扱います。
 
 一括作成の冪等性は `Rails.cache` で管理します。cache identity はユーザー・プロジェクト・操作・`Idempotency-Key`・canonical request payload digest で識別されます。atomicなclaimに成功した処理だけが作成処理を実行し、同じキーでも異なるpayloadは409、同一payloadのcompletedは以前のresponseを返します。クライアントは同一ブラウザセッション中の同一論理操作で同じキーを再利用し、入力検証失敗または例外時はclaimを削除して再試行できます。
 
@@ -199,8 +200,10 @@ CI では以下を実行します。
 - Vitest による frontend unit test
 - Redmine 7.0 および Redmine 6.1 上での Playwright E2E
 - Redmine 6.0 上での Playwright 互換 smoke test
+- `board_data_test.rb`、`snapshot_limits_test.rb`、`api_controller_test.rb` によるnode/deep-tree、high fan-out、exact-limit dependency、response byte、queryのdeterministic gate
+- PostgreSQL上のmembership/admission integration test（通常のMariaDB 10 stackとは別job）
 
-ブラウザ系 job はどちらも `.github/e2e/docker-compose.yml` で Redmine を起動し、migration、初期データ投入、`e2e/setup_redmine.rb` による `ecookbook` シード、Playwright レポートの upload まで実行します。
+通常のRedmine test/browser jobは `.github/e2e/docker-compose.yml` のMariaDB 10を使い、PostgreSQL gateは `.github/e2e/docker-compose.postgres.yml` を使います。ブラウザ系jobはmigration、初期データ投入、`e2e/setup_redmine.rb` による `ecookbook` シード、Playwrightレポートのuploadまで実行します。
 
 ## ライセンス
 
