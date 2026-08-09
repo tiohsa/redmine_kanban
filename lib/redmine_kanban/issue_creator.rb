@@ -178,7 +178,7 @@ module RedmineKanban
         apply_parent_defaults!(attributes, params, parent_issue)
       end
 
-      issue.safe_attributes = attributes
+      issue.send(:safe_attributes=, attributes, @user)
 
       if issue.save
         [issue, nil]

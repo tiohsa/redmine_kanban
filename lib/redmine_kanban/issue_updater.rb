@@ -73,7 +73,7 @@ module RedmineKanban
       mutation_outcome = nil
 
       Issue.transaction do
-        issue.safe_attributes = attributes
+        issue.send(:safe_attributes=, attributes, @user)
 
         unless issue.save
           error_result = error_response(issue.errors.full_messages.join(', '), field_errors: issue.errors.to_hash(true))

@@ -184,7 +184,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_includes ids, child.id
     assert_includes json.dig('tree', 'root_ids'), parent.id
     assert_includes json.dig('tree', 'children_by_parent_id', parent.id.to_s), child.id
-    assert_equal [open_status.id], json.dig('meta', 'scope_status_ids')
+    assert_equal IssueStatus.sorted.pluck(:id) - [closed_status.id], json.dig('meta', 'scope_status_ids')
     assert_includes json.dig('meta', 'dependency_status_ids'), closed_status.id
   end
 
@@ -234,6 +234,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     skip 'requires both open and closed statuses' unless open_status && closed_status
     parent = build_issue(subject: 'Status loss parent', status: open_status)
     child = build_issue(subject: 'Status loss child', parent_issue_id: parent.id, status: closed_status)
+    parent = Issue.find(parent.id)
 
     patch :update, params: {
       project_id: @project.identifier,
@@ -259,6 +260,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     skip 'requires both open and closed statuses' unless open_status && closed_status
     parent = build_issue(subject: 'Status gain parent', status: closed_status)
     child = build_issue(subject: 'Status gain child', parent_issue_id: parent.id, status: closed_status)
+    parent = Issue.find(parent.id)
 
     patch :update, params: {
       project_id: @project.identifier,
@@ -282,11 +284,16 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
   def test_primary_membership_gain_does_not_evict_dependency_scope_outside_child
     open_status = IssueStatus.where(is_closed: false).first
     closed_status = IssueStatus.where(is_closed: true).first
-    outside_status = IssueStatus.where.not(id: [open_status&.id, closed_status&.id]).first
-    skip 'requires three statuses' unless open_status && closed_status && outside_status
+    skip 'requires both open and closed statuses' unless open_status && closed_status
+    outside_status = IssueStatus.create!(
+      name: 'Kanban outside scope',
+      is_closed: true,
+      position: IssueStatus.maximum(:position).to_i + 1
+    )
     parent = build_issue(subject: 'Bounded candidate parent', status: closed_status)
     dependency_child = build_issue(subject: 'Bounded dependency child', parent_issue_id: parent.id, status: closed_status)
     outside_child = build_issue(subject: 'Out of dependency scope child', parent_issue_id: parent.id, status: outside_status)
+    parent = Issue.find(parent.id)
 
     patch :update, params: {
       project_id: @project.identifier,
@@ -312,6 +319,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     skip 'requires two open and one closed status' unless first_open && second_open && closed_status
     parent = build_issue(subject: 'Stable primary parent', status: first_open)
     child = build_issue(subject: 'Stable dependency child', parent_issue_id: parent.id, status: closed_status)
+    parent = Issue.find(parent.id)
 
     patch :update, params: {
       project_id: @project.identifier,
@@ -447,8 +455,9 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     open_status = IssueStatus.where(is_closed: false).first
     closed_status = IssueStatus.where(is_closed: true).first
     skip 'requires both open and closed statuses' unless open_status && closed_status
-    parent = build_issue(subject: 'Visibility parent', status: open_status, assigned_to: @user)
-    child = build_issue(subject: 'Visibility child', parent_issue_id: parent.id, status: closed_status, assigned_to: @user)
+    parent = build_issue(subject: 'Visibility parent', status: open_status, assigned_to: @user, author: other_user)
+    child = build_issue(subject: 'Visibility child', parent_issue_id: parent.id, status: closed_status, assigned_to: @user, author: other_user)
+    parent = Issue.find(parent.id)
 
     patch :update, params: {
       project_id: @project.identifier,
@@ -472,9 +481,11 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
   def test_primary_child_survives_parent_status_loss
     open_status = IssueStatus.where(is_closed: false).first
     closed_status = IssueStatus.where(is_closed: true).first
-    skip 'requires both open and closed statuses' unless open_status && closed_status
+    loss_status = IssueStatus.where(is_closed: false).where.not(id: open_status&.id).first
+    skip 'requires two open and one closed status' unless open_status && closed_status && loss_status
     parent = build_issue(subject: 'Independent primary parent', status: open_status)
     child = build_issue(subject: 'Independent primary child', parent_issue_id: parent.id, status: open_status)
+    parent = Issue.find(parent.id)
 
     patch :update, params: {
       project_id: @project.identifier,
@@ -484,7 +495,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
       scope_status_ids: [open_status.id],
       dependency_status_ids_present: '1',
       dependency_status_ids: [open_status.id, closed_status.id],
-      issue: { status_id: closed_status.id, lock_version: parent.lock_version }
+      issue: { status_id: loss_status.id, lock_version: parent.lock_version }
     }
 
     assert_response :success
@@ -715,7 +726,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     priority ||= IssuePriority.active.first
     issue = Issue.new(project: project, tracker: tracker, author: author, status: status, subject: subject, parent_issue_id: parent_issue_id, priority: priority, assigned_to: assigned_to)
     issue.save!
-    issue.reload
+    Issue.find(issue.id)
   end
 
   def create_boundary_statuses

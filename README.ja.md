@@ -198,12 +198,16 @@ CI では以下を実行します。
 - frontend の `lint`
 - frontend の `typecheck`
 - Vitest による frontend unit test
-- Redmine 7.0 および Redmine 6.1 上での Playwright E2E
+- Redmine 7.0/MariaDB 上でのRuby/API全体テストとsnapshot contract gate
+- PostgreSQL 16上のmembership/admission integration（unit suiteとfocused API suiteをRails test selectorごとに分離）
+- Redmine 7.0 および Redmine 6.1 上でのPlaywright E2E（Redmine標準iframe保存、snapshot reset、再取得を含む）
 - Redmine 6.0 上での Playwright 互換 smoke test
-- `board_data_test.rb`、`snapshot_limits_test.rb`、`api_controller_test.rb` によるnode/deep-tree、high fan-out、exact-limit dependency、response byte、queryのdeterministic gate
-- PostgreSQL上のmembership/admission integration test（通常のMariaDB 10 stackとは別job）
+- `board_data_test.rb`、`snapshot_limits_test.rb`、`api_controller_test.rb` によるdeep-tree、exact-limit dependency、response byte、queryのdeterministic gate
+- Redmine 7.0の実DBに1,505件の子Issueを生成するlarge-data gate。limit/over-limit admission、Issue一意性、materialized row、query数、response bytes、partial entitiesなしを検証
 
-通常のRedmine test/browser jobは `.github/e2e/docker-compose.yml` のMariaDB 10を使い、PostgreSQL gateは `.github/e2e/docker-compose.postgres.yml` を使います。ブラウザ系jobはmigration、初期データ投入、`e2e/setup_redmine.rb` による `ecookbook` シード、Playwrightレポートのuploadまで実行します。
+通常のRedmine test/browser jobは `.github/e2e/docker-compose.yml` のMariaDB 10を使い、PostgreSQL gateは `.github/e2e/docker-compose.postgres.yml` を使います。ブラウザ系jobはmigration、初期データ投入、`e2e/setup_redmine.rb` による `ecookbook` とnative専用 `kanban-native` のシード、Playwrightレポートのuploadまで実行します。
+
+検証entry pointは `script/ci/` に集約しています。`ruby-full.sh`、`snapshot-contract.sh`、`postgres-unit.sh`、`postgres-api.sh`、`e2e-full.sh`、`native-mutation-e2e.sh`、`large-data-e2e.sh`、`compatibility-smoke.sh`を、ローカルのRedmineコンテナ実行とCIで共通利用します。
 
 ## ライセンス
 

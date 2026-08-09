@@ -21,19 +21,13 @@ admin.must_change_passwd = false if admin.respond_to?(:must_change_passwd=)
 admin.save!
 
 project = Project.find_or_initialize_by(identifier: 'ecookbook')
+required_modules = ['issue_tracking', 'redmine_kanban']
 if project.new_record?
   project.name = 'eCookbook'
   project.is_public = true
-  project.enabled_module_names = ['issue_tracking', 'redmine_kanban']
-  project.save!
-else
-  names = project.enabled_module_names
-  required_modules = ['issue_tracking', 'redmine_kanban']
-  unless (required_modules - names).empty?
-    project.enabled_module_names = names | required_modules
-    project.save!
-  end
 end
+project.enabled_module_names = project.enabled_module_names | required_modules
+project.save!
 
 tracker = Tracker.first
 status = IssueStatus.first
@@ -41,6 +35,32 @@ raise 'tracker not found' unless tracker
 raise 'issue status not found' unless status
 
 project.trackers << tracker unless project.trackers.exists?(tracker.id)
+
+native_project = Project.find_or_initialize_by(identifier: 'kanban-native')
+native_project.name = 'Kanban Native E2E'
+native_project.is_public = true
+native_project.enabled_module_names = required_modules
+native_project.save!
+native_project.trackers << tracker unless native_project.trackers.exists?(tracker.id)
+
+native_parent_issue = Issue.find_or_create_by!(
+  project: native_project,
+  subject: 'Kanban E2E parent issue'
+) do |issue|
+  issue.author = admin
+  issue.tracker = tracker
+  issue.status = status
+end
+
+Issue.find_or_create_by!(
+  project: native_project,
+  subject: 'Kanban E2E nested child',
+  parent: native_parent_issue
+) do |issue|
+  issue.author = admin
+  issue.tracker = tracker
+  issue.status = status
+end
 
 parent_issue = Issue.find_or_create_by!(
   project: project,

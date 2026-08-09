@@ -200,12 +200,16 @@ The CI workflow runs:
 - frontend `lint`
 - frontend `typecheck`
 - frontend unit tests with Vitest
-- Playwright E2E on Redmine 7.0 and Redmine 6.1
+- Redmine 7.0 MariaDB full Ruby/API tests and the snapshot contract gate
+- PostgreSQL 16 membership/admission integration, with unit and focused API suites using separate Rails test selectors
+- Playwright E2E on Redmine 7.0 and Redmine 6.1, including the native Redmine iframe save/reset lifecycle
 - Playwright compatibility smoke test on Redmine 6.0
-- deterministic snapshot resource/admission gates for node/deep-tree, high-fan-out rows, exact-limit dependency membership, response bytes, and query limits (`board_data_test.rb`, `snapshot_limits_test.rb`, and `api_controller_test.rb`)
-- PostgreSQL membership/admission integration tests in addition to the MariaDB-based Redmine browser/test stack
+- deterministic snapshot admission gates for deep-tree, exact-limit dependency membership, response bytes, and query limits (`board_data_test.rb`, `snapshot_limits_test.rb`, and `api_controller_test.rb`)
+- a Redmine 7.0 actual-DB large-data gate using the 1,505-child high-fan-out fixture; it checks limit/over-limit admission, unique entities, materialized rows, query count, response bytes, and the absence of partial entities
 
-The main Redmine test and browser jobs use MariaDB 10 via `.github/e2e/docker-compose.yml`; the PostgreSQL membership job uses `.github/e2e/docker-compose.postgres.yml` and runs the resolver/admission integration suite. Browser jobs run migrations, load default data, seed `ecookbook` via `e2e/setup_redmine.rb`, and upload Playwright reports on completion.
+The main Redmine test and browser jobs use MariaDB 10 via `.github/e2e/docker-compose.yml`; the PostgreSQL membership job uses `.github/e2e/docker-compose.postgres.yml` and runs the resolver/admission integration suite. Browser jobs run migrations, load default data, seed `ecookbook` and the isolated `kanban-native` project via `e2e/setup_redmine.rb`, and upload Playwright reports on completion.
+
+The verification entry points live under `script/ci/` so local container runs and CI use the same suite boundaries: `ruby-full.sh`, `snapshot-contract.sh`, `postgres-unit.sh`, `postgres-api.sh`, `e2e-full.sh`, `native-mutation-e2e.sh`, `large-data-e2e.sh`, and `compatibility-smoke.sh`.
 
 ## License
 

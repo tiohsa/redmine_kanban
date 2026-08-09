@@ -61,7 +61,7 @@ jobs:
         run: npm ci --prefix frontend
 
       - name: Build frontend assets
-        run: npm --prefix frontend run build
+        run: bash script/ci/frontend-static.sh build
 
   lint:
     name: lint
@@ -82,7 +82,7 @@ jobs:
         run: npm ci --prefix frontend
 
       - name: Lint frontend
-        run: npm --prefix frontend run lint
+        run: bash script/ci/frontend-static.sh lint
 
   typecheck:
     name: typecheck
@@ -103,7 +103,7 @@ jobs:
         run: npm ci --prefix frontend
 
       - name: Typecheck frontend
-        run: npm --prefix frontend run typecheck
+        run: bash script/ci/frontend-static.sh typecheck
 
   test:
     name: test
@@ -124,7 +124,7 @@ jobs:
         run: npm ci --prefix frontend
 
       - name: Run frontend unit tests
-        run: npm --prefix frontend run test -- --run
+        run: bash script/ci/frontend-static.sh test
 
   ruby-test-redmine-70:
     name: Redmine 7.0 Ruby unit and API tests
@@ -183,16 +183,14 @@ jobs:
       - name: Run Ruby unit and API tests
         run: |
           docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
-            env RAILS_ENV=test bundle exec rails test \
-            plugins/redmine_kanban/test
+            env RAILS_ENV=test bash \
+            /usr/src/redmine/plugins/redmine_kanban/script/ci/ruby-full.sh
 
       - name: Run snapshot resource gates
         run: |
           docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
-            env RAILS_ENV=test bundle exec rails test \
-            plugins/redmine_kanban/test/unit/board_data_test.rb \
-            plugins/redmine_kanban/test/unit/snapshot_limits_test.rb \
-            plugins/redmine_kanban/test/functional/api_controller_test.rb
+            env RAILS_ENV=test bash \
+            /usr/src/redmine/plugins/redmine_kanban/script/ci/snapshot-contract.sh
 
       - name: Show container logs on failure
         if: failure()
@@ -246,16 +244,17 @@ jobs:
           docker compose -f .github/e2e/docker-compose.yml -f .github/e2e/docker-compose.postgres.yml exec -T redmine \
             env RAILS_ENV=test bundle exec rake db:migrate redmine:plugins:migrate
 
-      - name: Run PostgreSQL membership and admission tests
+      - name: Run PostgreSQL unit suite without API selector
         run: |
           docker compose -f .github/e2e/docker-compose.yml -f .github/e2e/docker-compose.postgres.yml exec -T redmine \
-            env RAILS_ENV=test bundle exec rails test \
-            plugins/redmine_kanban/test/unit/board_context_test.rb \
-            plugins/redmine_kanban/test/unit/board_membership_resolver_test.rb \
-            plugins/redmine_kanban/test/unit/board_data_test.rb \
-            plugins/redmine_kanban/test/unit/snapshot_limits_test.rb \
-            plugins/redmine_kanban/test/functional/api_controller_test.rb \
-            -i '/(index_returns_a_complete_flat_snapshot_and_tree_relation|primary_at_limit_with_dependency_descendant_returns_structured_overflow|dependency_admission_uses_remaining_plus_one_probe|scope_over_limit_returns_no_partial_entities|status_filter_limits_the_snapshot_entities)/'
+            env RAILS_ENV=test bash \
+            /usr/src/redmine/plugins/redmine_kanban/script/ci/postgres-unit.sh
+
+      - name: Run PostgreSQL focused API suite with Rails include selector
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml -f .github/e2e/docker-compose.postgres.yml exec -T redmine \
+            env RAILS_ENV=test bash \
+            /usr/src/redmine/plugins/redmine_kanban/script/ci/postgres-api.sh
 
       - name: Show PostgreSQL container logs on failure
         if: failure()
@@ -297,7 +296,7 @@ jobs:
         run: npm ci --prefix frontend
 
       - name: Build frontend assets
-        run: npm --prefix frontend run build
+        run: bash script/ci/frontend-static.sh build
 
       - name: Install E2E dependencies
         run: npm ci --prefix e2e
@@ -343,7 +342,13 @@ jobs:
         env:
           REDMINE_BASE_URL: http://127.0.0.1:3002
           CI: true
-        run: npx --prefix e2e playwright test -c e2e/playwright.config.js
+        run: bash script/ci/e2e-full.sh --grep-invert 'native iframe|native create|actual DB high-fan-out'
+
+      - name: Run native mutation lifecycle E2E
+        env:
+          REDMINE_BASE_URL: http://127.0.0.1:3002
+          CI: true
+        run: bash script/ci/native-mutation-e2e.sh
 
       - name: Upload Playwright report
         if: always()
@@ -352,6 +357,86 @@ jobs:
           name: playwright-report-redmine-${{ matrix.redmine_version }}
           path: e2e/playwright-report
           if-no-files-found: ignore
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose -f .github/e2e/docker-compose.yml logs --no-color
+
+      - name: Stop Redmine stack
+        if: always()
+        run: docker compose -f .github/e2e/docker-compose.yml down -v
+
+  e2e-large-data:
+    name: Redmine 7.0 Large snapshot resource gate
+    needs:
+      - build
+      - lint
+      - typecheck
+      - test
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      REDMINE_IMAGE: redmine:7.0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            e2e/package-lock.json
+
+      - name: Install and build frontend
+        run: |
+          npm ci --prefix frontend
+          bash script/ci/frontend-static.sh build
+
+      - name: Install E2E dependencies and browser
+        run: |
+          npm ci --prefix e2e
+          npx --prefix e2e playwright install --with-deps chromium
+
+      - name: Start Redmine stack and wait for health
+        run: docker compose -f .github/e2e/docker-compose.yml up -d --wait --wait-timeout 600
+
+      - name: Configure Redmine database.yml for production
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T redmine sh -lc \
+            "printf '%s\n' \
+            'production:' \
+            '  adapter: mysql2' \
+            '  database: redmine' \
+            '  host: db' \
+            '  username: redmine' \
+            '  password: password' \
+            '  encoding: utf8mb4' \
+            > /usr/src/redmine/config/database.yml"
+
+      - name: Migrate Redmine and plugin
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+            env RAILS_ENV=production bundle exec rake db:migrate redmine:plugins:migrate
+
+      - name: Load default data
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+            env REDMINE_LANG=en RAILS_ENV=production bundle exec rake redmine:load_default_data
+
+      - name: Seed 1,505-child actual DB fixture
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T --user redmine redmine \
+            env REDMINE_KANBAN_E2E_TREE_FIXTURE=1 \
+            bundle exec rails runner -e production plugins/redmine_kanban/e2e/setup_redmine.rb
+
+      - name: Run actual DB large-data gate
+        env:
+          REDMINE_BASE_URL: http://127.0.0.1:3002
+          CI: true
+        run: bash script/ci/large-data-e2e.sh
 
       - name: Show container logs on failure
         if: failure()
@@ -389,7 +474,7 @@ jobs:
         run: npm ci --prefix frontend
 
       - name: Build frontend assets
-        run: npm --prefix frontend run build
+        run: bash script/ci/frontend-static.sh build
 
       - name: Install E2E dependencies
         run: npm ci --prefix e2e
@@ -434,7 +519,7 @@ jobs:
         env:
           REDMINE_BASE_URL: http://127.0.0.1:3002
           CI: true
-        run: npx --prefix e2e playwright test -c e2e/playwright.config.js e2e/tests/kanban-smoke.spec.js
+        run: bash script/ci/compatibility-smoke.sh
 
       - name: Upload Playwright report
         if: always()
