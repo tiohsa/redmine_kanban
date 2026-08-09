@@ -1,3 +1,5 @@
+import type { BoardData } from './types';
+
 function serializeNumberSelection(values: Iterable<number>): string {
   return Array.from(new Set(values)).filter(Number.isFinite).sort((a, b) => a - b).join(',');
 }
@@ -47,6 +49,10 @@ export function buildBoardEntitiesUrl(baseUrl: string, projectIds: number[], iss
   appendNumberParams(params, 'ids[]', issueIds);
   appendScopeStatusParams(params, scopeStatusIds);
   return `${baseUrl}/issues/entities?${params.toString()}`;
+}
+
+export function effectiveScopeStatusIds(data: BoardData): number[] {
+  return data.meta.scope_status_ids ?? data.columns.map((column) => column.id);
 }
 
 export function appendScopeStatusParams(params: URLSearchParams, scopeStatusIds: Iterable<number>): void {

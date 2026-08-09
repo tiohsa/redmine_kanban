@@ -9,7 +9,7 @@ import { applyLocalIssuePatch } from './boardState';
 import { findSubtask, resolveAssigneeName, resolveMutationError, resolvePriorityName, resolveSubtaskStatus, resolveBoardIssue, type IssueMutationResult, type MovePayload, type UpdatePayload } from './kanbanShared';
 import { discardBulkIdempotencyKey, getOrCreateBulkIdempotencyKey, stableSerialize, storageKeyForBulkSignature } from './bulkIdempotency';
 import { buildBulkCreateRequest, buildRestoreIssuePayload, isBulkCreateInput } from './kanbanActionPayloads';
-import { appendScopeStatusParams, buildBoardCountsUrl, buildBoardEntitiesUrl } from './boardQuery';
+import { appendScopeStatusParams, buildBoardCountsUrl, buildBoardEntitiesUrl, effectiveScopeStatusIds } from './boardQuery';
 
 type Args = {
   baseUrl: string;
@@ -65,9 +65,9 @@ export function useKanbanActions({
     const projectIds = data?.meta.project_ids ?? [];
     const params = new URLSearchParams();
     projectIds.forEach((projectId) => params.append('project_ids[]', String(projectId)));
-    appendScopeStatusParams(params, data?.meta.scope_status_ids ?? []);
+    appendScopeStatusParams(params, data ? effectiveScopeStatusIds(data) : []);
     return `${baseUrl}${path}?${params.toString()}`;
-  }, [baseUrl, data?.meta.project_ids, data?.meta.scope_status_ids]);
+  }, [baseUrl, data]);
 
   const setIssueBusy = useCallback((issueId: number, busy: boolean) => {
     const nextRef = new Set(busyIssueIdsRef.current);
@@ -105,7 +105,7 @@ export function useKanbanActions({
     if (ids.length === 0) return;
     try {
       const response = await getJson<{ ok: boolean } & Parameters<typeof applyEntityReconciliation>[1]>(
-        buildBoardEntitiesUrl(baseUrl, data?.meta.project_ids ?? [], ids, data?.meta.scope_status_ids ?? []),
+        buildBoardEntitiesUrl(baseUrl, data?.meta.project_ids ?? [], ids, data ? effectiveScopeStatusIds(data) : []),
       );
       queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
         current ? applyEntityReconciliation(current, response, options) : current
@@ -114,7 +114,7 @@ export function useKanbanActions({
       // Reconciliation is best-effort. The mutation response is authoritative
       // and must remain visible when this follow-up request is forbidden or unavailable.
     }
-  }, [baseUrl, boardQueryKey, data?.meta.project_ids, data?.meta.scope_status_ids, queryClient]);
+  }, [baseUrl, boardQueryKey, data, queryClient]);
 
   const reconcileColumnCounts = useCallback(async (required: boolean) => {
     if (!required || !data) return;

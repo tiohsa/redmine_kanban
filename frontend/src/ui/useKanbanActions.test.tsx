@@ -111,7 +111,7 @@ describe('useKanbanActions delete flow', () => {
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      '/projects/demo/kanban/issues/1?scope_status_ids_present=1',
+      '/projects/demo/kanban/issues/1?scope_status_ids_present=1&scope_status_ids%5B%5D=1',
       expect.objectContaining({ method: 'DELETE' }),
     );
     expect(result.current.pendingDeleteIssue).toBeNull();
@@ -148,7 +148,7 @@ describe('useKanbanActions delete flow', () => {
     await act(async () => { result.current.requestDelete(2); });
     await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
 
-    expect(globalThis.fetch).toHaveBeenCalledWith('/projects/demo/kanban/issues/2?scope_status_ids_present=1', expect.objectContaining({ method: 'DELETE' }));
+    expect(globalThis.fetch).toHaveBeenCalledWith('/projects/demo/kanban/issues/2?scope_status_ids_present=1&scope_status_ids%5B%5D=1', expect.objectContaining({ method: 'DELETE' }));
     expect(result.current.pendingDeleteIssue).toBeNull();
   });
 
@@ -175,7 +175,25 @@ describe('useKanbanActions delete flow', () => {
     await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      '/projects/demo/kanban/issues/1?project_ids%5B%5D=3&project_ids%5B%5D=7&scope_status_ids_present=1',
+      '/projects/demo/kanban/issues/1?project_ids%5B%5D=3&project_ids%5B%5D=7&scope_status_ids_present=1&scope_status_ids%5B%5D=1',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+  });
+
+  it('uses legacy column ids as the mutation status scope when metadata is absent', async () => {
+    const board = makeBoardData();
+    board.columns = [
+      { id: 1, name: 'Open', is_closed: false, count: 1 },
+      { id: 2, name: 'Closed', is_closed: true, count: 0 },
+    ];
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const { result } = renderActions({ data: board });
+
+    await act(async () => { result.current.requestDelete(1); });
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      '/projects/demo/kanban/issues/1?scope_status_ids_present=1&scope_status_ids%5B%5D=1&scope_status_ids%5B%5D=2',
       expect.objectContaining({ method: 'DELETE' }),
     );
   });

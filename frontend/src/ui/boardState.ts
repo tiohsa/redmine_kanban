@@ -1,5 +1,6 @@
 import type { BoardData, Issue } from './types';
 import { normalizeTrackerId } from './kanbanShared';
+import { effectiveScopeStatusIds } from './boardQuery';
 
 export type IssueEntity = Omit<Issue, 'subtasks'>;
 export type IssueEntityPatch = Partial<IssueEntity> & { is_closed?: boolean };
@@ -151,7 +152,7 @@ export function createNormalizedBoardState(data: BoardData): NormalizedBoardStat
     scope: {
       fingerprint: scopeFingerprint(data),
       projectIds: [...(data.meta.project_ids ?? [data.meta.project_id])],
-      statusIds: [...(data.meta.scope_status_ids ?? data.columns.map((column) => column.id))],
+      statusIds: [...effectiveScopeStatusIds(data)],
     },
     board,
   };

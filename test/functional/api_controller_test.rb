@@ -198,6 +198,53 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_equal [], json['created_issues']
   end
 
+  def test_create_in_explicit_empty_status_scope_persists_and_returns_eviction
+    tracker = @project.trackers.first || Tracker.first
+    status = IssueStatus.first
+    priority = IssuePriority.active.first
+
+    post :create, params: {
+      project_id: @project.identifier,
+      project_ids: [@project.id],
+      scope_status_ids_present: '1',
+      issue: {
+        subject: 'Created outside empty scope',
+        tracker_id: tracker.id,
+        status_id: status.id,
+        priority_id: priority.id
+      }
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    created = Issue.find_by(subject: 'Created outside empty scope')
+    assert created
+    assert_equal [], json['created_issues']
+    assert_equal [created.id], json['evicted_issue_ids']
+    assert_equal created.id, json.dig('issue', 'id')
+  end
+
+  def test_mutation_result_builder_evicts_issue_that_loses_visibility
+    issue = build_issue(subject: 'Visibility will be lost')
+    visible_before_mutation = Issue.where(id: issue.id)
+
+    Issue.stubs(:visible).returns(visible_before_mutation, visible_before_mutation, Issue.none)
+    patch :update, params: {
+      project_id: @project.identifier,
+      id: issue.id,
+      project_ids: [@project.id],
+      scope_status_ids_present: '1',
+      scope_status_ids: [issue.status_id],
+      issue: { subject: 'Updated after visibility change', lock_version: issue.lock_version }
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal [], json['issue_updates']
+    assert_equal [issue.id], json['evicted_issue_ids']
+    assert_equal 'Updated after visibility change', Issue.find(issue.id).subject
+  end
+
   def test_physical_delete_returns_tombstone_not_eviction
     issue = build_issue(subject: 'Physical delete')
 
