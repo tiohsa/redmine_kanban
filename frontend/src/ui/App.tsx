@@ -18,7 +18,7 @@ import { useKanbanActions } from './useKanbanActions';
 import { useKanbanDialogs } from './useKanbanDialogs';
 import { useKanbanPreferences } from './useKanbanPreferences';
 
-type Props = { dataUrl: string };
+type Props = { dataUrl: string; initialCurrentUserId: number };
 
 export function findIssueForAction(data: BoardData, issueId: number): Issue | null {
   return findIssueInBoard(data, issueId);
@@ -47,7 +47,7 @@ export function resolveDefaultCreateProjectId(
   return null;
 }
 
-export function App({ dataUrl }: Props) {
+export function App({ dataUrl, initialCurrentUserId }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -85,8 +85,8 @@ export function App({ dataUrl }: Props) {
     setViewableProjectsEnabled,
     maximumBoardEntityCount,
     setMaximumBoardEntityCount,
-    setCurrentUserId,
-  } = useKanbanPreferences(dataUrl);
+    preferencesReady,
+  } = useKanbanPreferences(dataUrl, initialCurrentUserId);
 
   const baseUrl = useMemo(() => projectScope, [projectScope]);
   const boardQueryKey = useMemo(
@@ -100,13 +100,11 @@ export function App({ dataUrl }: Props) {
       await getJson<BoardApiResponse>(buildBoardDataUrl(baseUrl, filters.projectIds, filters.statusIds, hiddenStatusIds, maximumBoardEntityCount)),
     ),
     retry: false,
+    enabled: preferencesReady,
   });
 
   const data = boardQuery.data ?? null;
 
-  useEffect(() => {
-    if (data) setCurrentUserId(data.meta.current_user_id);
-  }, [data, setCurrentUserId]);
   const loading = boardQuery.isLoading;
   const labels = data?.labels;
   const emptyBoardData = useMemo<BoardData>(() => ({
@@ -116,6 +114,7 @@ export function App({ dataUrl }: Props) {
     meta: {
       project_id: 0,
       project_ids: [],
+      scope_status_ids: [],
       current_user_id: 0,
       can_move: false,
       can_create: false,

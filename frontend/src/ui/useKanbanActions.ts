@@ -67,8 +67,9 @@ export function useKanbanActions({
 
     const params = new URLSearchParams();
     projectIds.forEach((projectId) => params.append('project_ids[]', String(projectId)));
+    (data?.meta.scope_status_ids ?? []).forEach((statusId) => params.append('scope_status_ids[]', String(statusId)));
     return `${baseUrl}${path}?${params.toString()}`;
-  }, [baseUrl, data?.meta.project_ids]);
+  }, [baseUrl, data?.meta.project_ids, data?.meta.scope_status_ids]);
 
   const setIssueBusy = useCallback((issueId: number, busy: boolean) => {
     const nextRef = new Set(busyIssueIdsRef.current);
@@ -106,7 +107,7 @@ export function useKanbanActions({
     if (ids.length === 0) return;
     try {
       const response = await getJson<{ ok: boolean } & Parameters<typeof applyEntityReconciliation>[1]>(
-        buildBoardEntitiesUrl(baseUrl, data?.meta.project_ids ?? [], ids),
+        buildBoardEntitiesUrl(baseUrl, data?.meta.project_ids ?? [], ids, data?.meta.scope_status_ids ?? []),
       );
       queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
         current ? applyEntityReconciliation(current, response, options) : current
@@ -115,7 +116,7 @@ export function useKanbanActions({
       // Reconciliation is best-effort. The mutation response is authoritative
       // and must remain visible when this follow-up request is forbidden or unavailable.
     }
-  }, [baseUrl, boardQueryKey, data?.meta.project_ids, queryClient]);
+  }, [baseUrl, boardQueryKey, data?.meta.project_ids, data?.meta.scope_status_ids, queryClient]);
 
   const reconcileColumnCounts = useCallback(async (required: boolean) => {
     if (!required || !data) return;

@@ -16,13 +16,15 @@ function boot() {
 
   const dataUrl = rootEl.getAttribute('data-data-url');
   if (!dataUrl) return;
+  const initialCurrentUserId = Number(rootEl.getAttribute('data-current-user-id'));
+  if (!Number.isSafeInteger(initialCurrentUserId) || initialCurrentUserId <= 0) return;
 
   const queryClient = new QueryClient();
 
   ReactDOM.createRoot(rootEl).render(
     <React.StrictMode>
       <QueryClientProvider client={queryClient}>
-        <App dataUrl={dataUrl} />
+        <App dataUrl={dataUrl} initialCurrentUserId={initialCurrentUserId} />
       </QueryClientProvider>
     </React.StrictMode>
   );

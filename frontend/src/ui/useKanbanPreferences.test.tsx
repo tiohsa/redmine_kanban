@@ -178,4 +178,17 @@ describe('useKanbanPreferences', () => {
     expect(result.current.maximumBoardEntityCount).toBe(1500);
     expect(localStorage.getItem('rk_maximum_board_entity_count:/projects/demo/kanban:user:7')).toBe('1500');
   });
+
+  it('hydrates the saved user preference before reporting readiness', () => {
+    localStorage.setItem('rk_maximum_board_entity_count:/projects/demo/kanban:user:7', '3000');
+    localStorage.setItem('rk_filters:/projects/demo/kanban:user:7', JSON.stringify({ statusIds: [2], projectIds: [4] }));
+
+    const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data', 7));
+
+    expect(result.current.preferencesReady).toBe(true);
+    expect(result.current.maximumBoardEntityCount).toBe(3000);
+    expect(result.current.filters.statusIds).toEqual([2]);
+    expect(result.current.filters.projectIds).toEqual([4]);
+    expect(localStorage.getItem('rk_maximum_board_entity_count:/projects/demo/kanban:user:7')).toBe('3000');
+  });
 });

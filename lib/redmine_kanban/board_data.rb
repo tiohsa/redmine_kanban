@@ -239,7 +239,9 @@ module RedmineKanban
       @board_context = BoardContext.new(
         project: @project,
         user: @user,
-        project_ids: @requested_project_ids
+        project_ids: @requested_project_ids,
+        issue_status_ids: @issue_status_ids,
+        exclude_status_ids: @exclude_status_ids
       )
       @user.groups.load
       @user.builtin_role
@@ -270,7 +272,7 @@ module RedmineKanban
       status_ids = columns.map { |c| c[:id] }
       @count_snapshot_queries = true
       begin
-        issue_ids = fetch_issue_ids(status_ids)
+        issue_ids = fetch_issue_ids(@board_context.scope_status_ids)
         return too_large_error(issue_ids.size) if issue_ids.size > @effective_entity_limit
 
         issues = fetch_issues(issue_ids)
@@ -283,7 +285,7 @@ module RedmineKanban
         warm_permission_cache(issues)
         entities = presenter.issues_to_h(issues)
         tree = build_tree(issues)
-        lane_assignee_ids = fetch_lane_assignee_ids(status_ids)
+        lane_assignee_ids = fetch_lane_assignee_ids(@board_context.scope_status_ids)
         lanes = build_lanes(lane_assignee_ids)
 
         counts = fetch_column_counts(status_ids)
@@ -300,6 +302,7 @@ module RedmineKanban
         meta: {
           project_id: @project.id,
           project_ids: @project_ids,
+          scope_status_ids: @board_context.scope_status_ids,
           scope_fingerprint: @board_context.scope_fingerprint,
           current_user_id: @user.id,
           can_move: permission_policy.can_move_issue?(@project),
@@ -352,7 +355,6 @@ module RedmineKanban
 
     def fetch_issue_ids(status_ids)
       base_issue_scope(status_ids)
-        .where(status_id: filtered_status_ids(status_ids))
         .order(updated_on: :desc, id: :desc)
         .limit(@effective_entity_limit + 1)
         .pluck(:id)

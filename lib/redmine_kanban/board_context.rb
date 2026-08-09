@@ -4,12 +4,16 @@ require 'json'
 
 module RedmineKanban
   class BoardContext
-    attr_reader :project, :user, :project_ids
+    attr_reader :project, :user, :project_ids, :scope_status_ids
 
-    def initialize(project:, user:, project_ids: nil)
+    def initialize(project:, user:, project_ids: nil, scope_status_ids: nil, issue_status_ids: nil, exclude_status_ids: nil)
       @project = project
       @user = user
       @project_ids = sanitize_project_ids(project_ids).presence || [@project.id]
+      all_status_ids = IssueStatus.sorted.pluck(:id)
+      requested_status_ids = Array(scope_status_ids).presence || Array(issue_status_ids).presence || all_status_ids
+      @scope_status_ids = requested_status_ids.map(&:to_i).select(&:positive?).uniq & all_status_ids
+      @scope_status_ids -= Array(exclude_status_ids).map(&:to_i).select(&:positive?).uniq
     end
 
     def presenter(_root_issue_ids = [])

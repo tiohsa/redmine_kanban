@@ -33,6 +33,7 @@ module RedmineKanban
         ok: true,
         contract_version: 3,
         scope_fingerprint: context.scope_fingerprint,
+        scope_status_ids: context.scope_status_ids,
         entities: presenter.issues_to_h(issues),
         missing_issue_ids: ids - issues.map(&:id)
       }
@@ -187,7 +188,8 @@ module RedmineKanban
       BoardContext.new(
         project: @project,
         user: User.current,
-        project_ids: normalize_integer_array_param(params[:project_ids])
+        project_ids: normalize_integer_array_param(params[:project_ids]),
+        scope_status_ids: normalize_integer_array_param(params[:scope_status_ids])
       )
     end
 

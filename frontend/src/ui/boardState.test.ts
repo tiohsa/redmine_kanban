@@ -42,4 +42,38 @@ describe('normalized snapshot state', () => {
     expect(data.issues.find((candidate) => candidate.id === 1)?.subject).toBe('fresh');
     expect(data.issues.find((candidate) => candidate.id === 2)?.subject).toBe('newer');
   });
+
+  it('evicts scope-leaving entities without tombstoning them and accepts re-entry', () => {
+    const initial = createNormalizedBoardState(board([{ ...issue(1), project: { id: 1, name: 'Board' } }]));
+    initial.scope.statusIds = [1];
+    const evicted = applyBoardResponse(initial, {
+      kind: 'mutation',
+      evicted_issue_ids: [1],
+      issue_updates: [{ ...issue(1), status_id: 2, project: { id: 1, name: 'Board' } }],
+    });
+    expect(selectBoardData(evicted).entities).toEqual([]);
+    expect(selectBoardData(evicted).meta.complete).toBe(true);
+    expect(evicted.deletedIssueIds.has(1)).toBe(false);
+
+    const reentered = applyBoardResponse(evicted, { kind: 'mutation', issue_updates: [{ ...issue(1), lock_version: 2 }] });
+    expect(selectBoardData(reentered).entities?.map((entity) => entity.id)).toEqual([1]);
+  });
+
+  it('keeps physical deletion tombstoned and rejects re-entry', () => {
+    const initial = createNormalizedBoardState(board([issue(1)]));
+    const deleted = applyBoardResponse(initial, { kind: 'mutation', deleted_issue_ids: [1] });
+    expect(deleted.deletedIssueIds.has(1)).toBe(true);
+    const reentered = applyBoardResponse(deleted, { kind: 'mutation', issue_updates: [{ ...issue(1), lock_version: 2 }] });
+    expect(selectBoardData(reentered).entities).toEqual([]);
+  });
+
+  it('evicts an entity that leaves the project scope without creating a tombstone', () => {
+    const initial = createNormalizedBoardState(board([{ ...issue(1), project: { id: 1, name: 'Board' } }]));
+    const next = applyBoardResponse(initial, {
+      kind: 'mutation',
+      issue_updates: [{ ...issue(1), project: { id: 2, name: 'Other' }, lock_version: 2 }],
+    });
+    expect(selectBoardData(next).entities).toEqual([]);
+    expect(next.deletedIssueIds.has(1)).toBe(false);
+  });
 });

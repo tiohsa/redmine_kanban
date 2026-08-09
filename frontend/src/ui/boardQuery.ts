@@ -41,10 +41,11 @@ export function buildBoardCountsUrl(baseUrl: string, projectIds: number[]): stri
   return `${baseUrl}/counts?${params.toString()}`;
 }
 
-export function buildBoardEntitiesUrl(baseUrl: string, projectIds: number[], issueIds: number[]): string {
+export function buildBoardEntitiesUrl(baseUrl: string, projectIds: number[], issueIds: number[], scopeStatusIds: number[] = []): string {
   const params = new URLSearchParams();
   appendNumberParams(params, 'project_ids[]', projectIds);
   appendNumberParams(params, 'ids[]', issueIds);
+  appendNumberParams(params, 'scope_status_ids[]', scopeStatusIds);
   return `${baseUrl}/issues/entities?${params.toString()}`;
 }
 

@@ -17,6 +17,7 @@ export type NormalizedBoardState = {
   scope: {
     fingerprint: string;
     projectIds: number[];
+    statusIds: number[];
   };
   board: Omit<BoardData, 'issues'>;
 };
@@ -30,6 +31,7 @@ export type BoardResponse = {
   issue_updates?: Issue[];
   created_issues?: Issue[];
   deleted_issue_ids?: number[];
+  evicted_issue_ids?: number[];
   tree_changes?: TreeChange[];
   operationId?: string;
   scopeFingerprint?: string;
@@ -132,7 +134,7 @@ function copyState(state: NormalizedBoardState): NormalizedBoardState {
       childrenByParentId: new Map(Array.from(state.tree.childrenByParentId, ([id, children]) => [id, [...children]])),
       parentByChildId: new Map(state.tree.parentByChildId),
     },
-    scope: { ...state.scope, projectIds: [...state.scope.projectIds] },
+  scope: { ...state.scope, projectIds: [...state.scope.projectIds], statusIds: [...state.scope.statusIds] },
   };
 }
 
@@ -149,6 +151,7 @@ export function createNormalizedBoardState(data: BoardData): NormalizedBoardStat
     scope: {
       fingerprint: scopeFingerprint(data),
       projectIds: [...(data.meta.project_ids ?? [data.meta.project_id])],
+      statusIds: [...(data.meta.scope_status_ids ?? [])],
     },
     board,
   };
@@ -159,6 +162,26 @@ export function createNormalizedBoardState(data: BoardData): NormalizedBoardStat
 
 function shouldAcceptResponse(state: NormalizedBoardState, response: BoardResponse): boolean {
   return !response.scopeFingerprint || response.scopeFingerprint === state.scope.fingerprint;
+}
+
+function evictEntity(state: NormalizedBoardState, id: number, tombstone = false): void {
+  state.entitiesById.delete(id);
+  if (tombstone) state.deletedIssueIds.add(id);
+  state.tree.rootCandidateIds = state.tree.rootCandidateIds.filter((candidateId) => candidateId !== id);
+  const parentId = state.tree.parentByChildId.get(id);
+  if (parentId !== undefined) detachEdge(state, parentId, id);
+  for (const childId of state.tree.childrenByParentId.get(id) ?? []) {
+    state.tree.parentByChildId.delete(childId);
+    if (state.entitiesById.has(childId) && !state.tree.rootCandidateIds.includes(childId)) state.tree.rootCandidateIds.push(childId);
+  }
+  state.tree.childrenByParentId.delete(id);
+}
+
+function outsideScope(state: NormalizedBoardState, issue: Issue): boolean {
+  const projectIds = state.scope.projectIds;
+  const statusIds = state.scope.statusIds;
+  return (issue.project?.id !== undefined && !projectIds.includes(issue.project.id))
+    || (statusIds.length > 0 && !statusIds.includes(issue.status_id));
 }
 
 function reconcileParent(state: NormalizedBoardState, issue: Issue): void {
@@ -175,10 +198,12 @@ export function applyBoardResponse(previous: NormalizedBoardState, response: Boa
   const state = copyState(previous);
 
   for (const issue of response.issue_updates ?? []) {
-    if (mergeEntity(state, issue)) reconcileParent(state, issue);
+    if (outsideScope(state, issue)) evictEntity(state, issue.id);
+    else if (mergeEntity(state, issue)) reconcileParent(state, issue);
   }
   for (const issue of response.created_issues ?? []) {
-    if (mergeEntity(state, issue)) {
+    if (outsideScope(state, issue)) evictEntity(state, issue.id);
+    else if (mergeEntity(state, issue)) {
       const parentId = issue.parent_id ?? undefined;
       if (parentId !== undefined && state.entitiesById.has(parentId)) attachEdge(state, parentId, issue.id);
       else if (!state.tree.rootCandidateIds.includes(issue.id)) state.tree.rootCandidateIds.push(issue.id);
@@ -189,13 +214,10 @@ export function applyBoardResponse(previous: NormalizedBoardState, response: Boa
     else detachEdge(state, change.parent_id, change.child_id);
   }
   for (const id of response.deleted_issue_ids ?? []) {
-    state.deletedIssueIds.add(id);
-    state.entitiesById.delete(id);
-    state.tree.rootCandidateIds = state.tree.rootCandidateIds.filter((candidateId) => candidateId !== id);
-    const parentId = state.tree.parentByChildId.get(id);
-    if (parentId !== undefined) detachEdge(state, parentId, id);
-    for (const childId of state.tree.childrenByParentId.get(id) ?? []) state.tree.parentByChildId.delete(childId);
-    state.tree.childrenByParentId.delete(id);
+    evictEntity(state, id, true);
+  }
+  for (const id of response.evicted_issue_ids ?? []) {
+    evictEntity(state, id);
   }
   return state;
 }
@@ -227,7 +249,7 @@ export function selectBoardData(state: NormalizedBoardState): BoardData {
   return {
     ...(state.board as BoardData),
     scope_fingerprint: state.scope.fingerprint,
-    meta: { ...state.board.meta, project_ids: state.scope.projectIds, entity_count: state.entitiesById.size, complete: true },
+    meta: { ...state.board.meta, project_ids: state.scope.projectIds, scope_status_ids: state.scope.statusIds, entity_count: state.entitiesById.size, complete: true },
     entities: Array.from(state.entitiesById.values()),
     tree,
     issues: selectBoardIssues(state),

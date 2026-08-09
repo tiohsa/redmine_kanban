@@ -22,6 +22,7 @@ export type IssueMutationResult = {
   issue_updates?: Issue[];
   created_issues?: Issue[];
   deleted_issue_ids?: number[];
+  evicted_issue_ids?: number[];
   tree_changes?: Array<{ type: 'attach' | 'detach'; parent_id: number; child_id: number }>;
   invalidations?: { issue_ids?: number[]; parent_ids?: number[]; column_counts?: boolean; root_order?: boolean };
   column_counts?: Record<string, number>;

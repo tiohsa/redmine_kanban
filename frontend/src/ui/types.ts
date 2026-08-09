@@ -90,6 +90,7 @@ export type Lists = {
 export type Meta = {
   project_id: number;
   project_ids?: number[];
+  scope_status_ids?: number[];
   scope_fingerprint?: string;
   current_user_id: number;
   can_move: boolean;

@@ -1,6 +1,7 @@
 <div id='redmine-kanban-root'
      data-project-id='<%= @project.id %>'
-     data-data-url='<%= redmine_kanban_data_path(project_id: @project.identifier) %>'>
+     data-data-url='<%= redmine_kanban_data_path(project_id: @project.identifier) %>'
+     data-current-user-id='<%= User.current.id %>'>
 </div>
 
 <% content_for :header_tags do %>

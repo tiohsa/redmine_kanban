@@ -9,6 +9,7 @@ export type EntityReconciliationResponse = {
   scope_fingerprint?: string;
   entities?: Issue[];
   missing_issue_ids?: number[];
+  evicted_issue_ids?: number[];
 };
 
 export type EntityReconciliationOptions = {
@@ -23,6 +24,7 @@ export function applyMutationResponse(data: BoardData, result: Partial<IssueMuta
     issue_updates: issueUpdates,
     created_issues: result.created_issues,
     deleted_issue_ids: result.deleted_issue_ids,
+    evicted_issue_ids: result.evicted_issue_ids,
     tree_changes: result.tree_changes,
     scopeFingerprint: result.scope_fingerprint,
   }));
@@ -45,7 +47,7 @@ export function applyEntityReconciliation(
         ? []
         : [{ type: 'attach' as const, parent_id: issue.parent_id, child_id: issue.id }])
       : undefined,
-    deleted_issue_ids: [...new Set(response.missing_issue_ids ?? [])],
+    evicted_issue_ids: [...new Set(response.missing_issue_ids ?? [])],
     scopeFingerprint: response.scope_fingerprint,
   }));
 }
