@@ -238,6 +238,126 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     refute_includes json.fetch('evicted_issue_ids'), child.id
   end
 
+  def test_primary_membership_gain_does_not_evict_dependency_scope_outside_child
+    open_status = IssueStatus.where(is_closed: false).first
+    closed_status = IssueStatus.where(is_closed: true).first
+    outside_status = IssueStatus.where.not(id: [open_status&.id, closed_status&.id]).first
+    skip 'requires three statuses' unless open_status && closed_status && outside_status
+    parent = build_issue(subject: 'Bounded candidate parent', status: closed_status)
+    dependency_child = build_issue(subject: 'Bounded dependency child', parent_issue_id: parent.id, status: closed_status)
+    outside_child = build_issue(subject: 'Out of dependency scope child', parent_issue_id: parent.id, status: outside_status)
+
+    patch :update, params: {
+      project_id: @project.identifier,
+      id: parent.id,
+      project_ids: [@project.id],
+      scope_status_ids_present: '1',
+      scope_status_ids: [open_status.id],
+      dependency_status_ids_present: '1',
+      dependency_status_ids: [open_status.id, closed_status.id],
+      issue: { status_id: open_status.id, lock_version: parent.lock_version }
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_includes json.fetch('issue_updates').map { |issue| issue['id'] }, dependency_child.id
+    refute_includes json.fetch('issue_updates').map { |issue| issue['id'] }, outside_child.id
+    refute_includes json.fetch('evicted_issue_ids'), outside_child.id
+  end
+
+  def test_primary_membership_true_to_true_does_not_recheck_dependency_closure
+    first_open, second_open = distinct_open_statuses
+    closed_status = IssueStatus.where(is_closed: true).first
+    skip 'requires two open and one closed status' unless first_open && second_open && closed_status
+    parent = build_issue(subject: 'Stable primary parent', status: first_open)
+    child = build_issue(subject: 'Stable dependency child', parent_issue_id: parent.id, status: closed_status)
+
+    patch :update, params: {
+      project_id: @project.identifier,
+      id: parent.id,
+      project_ids: [@project.id],
+      scope_status_ids_present: '1',
+      scope_status_ids: [first_open.id, second_open.id],
+      dependency_status_ids_present: '1',
+      dependency_status_ids: [first_open.id, second_open.id, closed_status.id],
+      issue: { status_id: second_open.id, lock_version: parent.lock_version }
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_includes json.fetch('issue_updates').map { |issue| issue['id'] }, parent.id
+    refute_includes json.fetch('issue_updates').map { |issue| issue['id'] }, child.id
+  end
+
+  def test_mutation_overflow_persists_domain_change_and_invalidates_board_snapshot
+    issue = build_issue(subject: 'Mutation admission boundary')
+
+    patch :update, params: {
+      project_id: @project.identifier,
+      id: issue.id,
+      project_ids: [@project.id],
+      board_entity_limit: 1,
+      scope_status_ids_present: '1',
+      scope_status_ids: [issue.status_id],
+      issue: { subject: 'Persisted over board limit', lock_version: issue.lock_version }
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal true, json.dig('invalidations', 'board_snapshot')
+    assert_equal [], json.fetch('issue_updates')
+    assert_equal 'Persisted over board limit', Issue.find(issue.id).subject
+  end
+
+  def test_create_overflow_persists_issue_without_partial_created_delta
+    tracker = @project.trackers.first || Tracker.first
+    status = IssueStatus.first
+    priority = IssuePriority.active.first
+    build_issue(subject: 'Existing board admission entity', status: status)
+
+    post :create, params: {
+      project_id: @project.identifier,
+      project_ids: [@project.id],
+      board_entity_limit: 1,
+      scope_status_ids_present: '1',
+      scope_status_ids: [status.id],
+      issue: {
+        subject: 'Created over board admission limit',
+        tracker_id: tracker.id,
+        status_id: status.id,
+        priority_id: priority.id
+      }
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal true, json.dig('invalidations', 'board_snapshot')
+    assert_equal [], json.fetch('created_issues')
+    assert Issue.find_by(subject: 'Created over board admission limit')
+  end
+
+  def test_mutation_response_byte_overflow_returns_snapshot_invalidation
+    previous = ENV['REDMINE_KANBAN_MAX_RESPONSE_BYTES']
+    ENV['REDMINE_KANBAN_MAX_RESPONSE_BYTES'] = '1'
+    issue = build_issue(subject: 'Mutation response byte boundary')
+
+    patch :update, params: {
+      project_id: @project.identifier,
+      id: issue.id,
+      project_ids: [@project.id],
+      scope_status_ids_present: '1',
+      scope_status_ids: [issue.status_id],
+      issue: { subject: 'Persisted despite response bound', lock_version: issue.lock_version }
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal true, json.dig('invalidations', 'board_snapshot')
+    assert_equal [], json.fetch('issue_updates')
+  ensure
+    ENV['REDMINE_KANBAN_MAX_RESPONSE_BYTES'] = previous
+  end
+
   def test_visibility_loss_discovers_descendants_after_anchor_is_invisible
     previous_visibility = @role.issues_visibility
     @role.update!(issues_visibility: 'own')

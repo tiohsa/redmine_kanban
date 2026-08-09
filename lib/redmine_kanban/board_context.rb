@@ -1,12 +1,14 @@
 require_relative 'project_catalog'
+require_relative 'snapshot_limits'
 require 'digest'
 require 'json'
 
 module RedmineKanban
   class BoardContext
-    attr_reader :project, :user, :project_ids, :scope_status_ids, :dependency_status_ids
+    attr_reader :project, :user, :project_ids, :scope_status_ids, :dependency_status_ids,
+                :requested_entity_limit, :effective_entity_limit, :response_byte_limit
 
-    def initialize(project:, user:, project_ids: nil, scope_status_ids: nil, issue_status_ids: nil, exclude_status_ids: nil, dependency_status_ids: nil)
+    def initialize(project:, user:, project_ids: nil, scope_status_ids: nil, issue_status_ids: nil, exclude_status_ids: nil, dependency_status_ids: nil, board_entity_limit: nil)
       @project = project
       @user = user
       @project_ids = sanitize_project_ids(project_ids).presence || [@project.id]
@@ -24,6 +26,9 @@ module RedmineKanban
       else
         Array(scope_status_ids || @dependency_status_ids).map(&:to_i).select(&:positive?).uniq & all_status_ids
       end
+      @requested_entity_limit = SnapshotLimits.requested(board_entity_limit)
+      @effective_entity_limit = SnapshotLimits.effective(@requested_entity_limit)
+      @response_byte_limit = SnapshotLimits.response_bytes
     end
 
     def presenter(_root_issue_ids = [])

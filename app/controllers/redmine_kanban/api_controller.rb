@@ -11,6 +11,7 @@ module RedmineKanban
     before_action :require_create_permission, only: [:bulk_create]
     before_action :require_update_permission, only: [:update]
     before_action :require_delete_permission, only: [:destroy]
+    before_action :validate_board_entity_limit, only: [:move, :create, :update, :destroy, :bulk_create]
 
     def index
       render_board_payload(board_payload)
@@ -143,6 +144,7 @@ module RedmineKanban
           }
         )
       end
+      result = enforce_mutation_response_limit(result) if result[:ok]
       render json: result, status: result[:ok] ? :ok : (result[:message].include?('権限') ? :forbidden : :conflict)
     rescue ActiveRecord::StaleObjectError
       render json: { ok: false, message: '他ユーザにより更新されました' }, status: :conflict
@@ -198,7 +200,8 @@ module RedmineKanban
         user: User.current,
         project_ids: normalize_integer_array_param(params[:project_ids]),
         scope_status_ids: scope_status_ids,
-        dependency_status_ids: dependency_status_ids
+        dependency_status_ids: dependency_status_ids,
+        board_entity_limit: params[:board_entity_limit]
       )
     end
 
@@ -274,11 +277,44 @@ module RedmineKanban
     end
 
     def render_service_result(result)
+      result = enforce_mutation_response_limit(result)
       if result[:ok]
         render json: result
       else
         render json: result, status: result[:http_status] || :unprocessable_entity
       end
+    end
+
+    def enforce_mutation_response_limit(result)
+      return result unless result[:ok]
+      return result if result.to_json.bytesize <= SnapshotLimits.response_bytes
+
+      overflow = result.merge(
+        issue_updates: [],
+        created_issues: [],
+        evicted_issue_ids: [],
+        tree_changes: [],
+        ancestor_updates: nil,
+        invalidations: result.fetch(:invalidations, {}).merge(
+          issue_ids: [],
+          parent_ids: [],
+          board_snapshot: true
+        ),
+        column_counts: {}
+      )
+      overflow.delete(:ancestor_updates)
+      overflow.delete(:issue) if overflow.to_json.bytesize > SnapshotLimits.response_bytes
+      overflow
+    end
+
+    def validate_board_entity_limit
+      SnapshotLimits.requested(params[:board_entity_limit]) if params.key?(:board_entity_limit) || params.key?('board_entity_limit')
+    rescue SnapshotLimits::InvalidLimit => error
+      render json: {
+        ok: false,
+        contract_version: 3,
+        error: { code: 'INVALID_BOARD_ENTITY_LIMIT', message: error.message }
+      }, status: :bad_request
     end
 
     def require_permission!(allowed)

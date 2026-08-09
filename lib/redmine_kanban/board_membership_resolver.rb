@@ -34,6 +34,11 @@ module RedmineKanban
       Set.new(primary_ids + dependency_ids)
     end
 
+    def primary_member?(issue_or_id)
+      id = issue_or_id.is_a?(Numeric) ? issue_or_id.to_i : (issue_or_id.id if issue_or_id.respond_to?(:id))
+      id.present? && primary_scope.where(id: id).exists?
+    end
+
     def membership_candidate_ids(anchor_ids)
       ids = Array(anchor_ids).map(&:to_i).select(&:positive?).uniq
       return [] if ids.empty?
@@ -75,8 +80,8 @@ module RedmineKanban
     end
 
     def descendant_scope_for_anchors(anchor_ids)
-      candidate_scope = Issue.where(project_id: @context.project_ids)
-      candidate_scope.joins(primary_ancestor_join(candidate_scope.where(id: anchor_ids)))
+      anchor_scope = Issue.where(project_id: @context.project_ids, id: anchor_ids)
+      dependency_scope.joins(primary_ancestor_join(anchor_scope))
     end
 
     def primary_ancestor_join(scope)

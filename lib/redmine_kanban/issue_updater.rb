@@ -66,6 +66,8 @@ module RedmineKanban
       end
 
       error_result = nil
+      membership_resolver = BoardMembershipResolver.new(board_context: @board_context)
+      before_primary_member = membership_resolver.primary_member?(issue.id)
       priority_updated = priority_id != :no_change
       priority_lock_versions = nil
       mutation_outcome = nil
@@ -91,6 +93,8 @@ module RedmineKanban
 
       return error_result if error_result
 
+      after_primary_member = membership_resolver.primary_member?(issue.id)
+
       ancestor_updates_required = mutation_outcome[:status_changed] || mutation_outcome[:done_ratio_changed]
 
       if priority_id.is_a?(Integer)
@@ -102,8 +106,8 @@ module RedmineKanban
       ancestor_issues = ancestor_issues_for(issue) if ancestor_updates_required
       propagated_issues = priority_id.is_a?(Integer) ? issue.children.to_a : []
       issue_updates = [issue, *(ancestor_issues || []), *propagated_issues].uniq { |item| item.id }
-      membership_recheck_ids = if mutation_outcome[:status_changed] || mutation_outcome[:assigned_to_changed]
-        BoardMembershipResolver.new(board_context: @board_context).membership_candidate_ids([issue.id])
+      membership_recheck_ids = if before_primary_member != after_primary_member
+        membership_resolver.membership_candidate_ids([issue.id])
       else
         []
       end

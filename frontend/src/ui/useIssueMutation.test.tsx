@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { BoardData, Issue } from './types';
-import { applyAncestorIssueUpdates, isIssueFresh, replaceIssueInBoard, updateIssueInBoard, updateSubtaskInBoard, useIssueMutation } from './useIssueMutation';
+import { applyAncestorIssueUpdates, isBoardSnapshotInvalidated, isIssueFresh, replaceIssueInBoard, updateIssueInBoard, updateSubtaskInBoard, useIssueMutation } from './useIssueMutation';
 
 function makeIssue(id: number, attrs: Partial<Issue> = {}): Issue {
   return {
@@ -468,6 +468,33 @@ describe('isIssueFresh', () => {
 });
 
 describe('useIssueMutation', () => {
+  it('clears the complete board and refetches when the server invalidates the snapshot', async () => {
+    const queryKey = ['kanban', 'board', 'snapshot-overflow'] as const;
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    queryClient.setQueryData(queryKey, makeBoardData([makeIssue(1, { subject: 'Before' })]));
+    const resetQueries = vi.spyOn(queryClient, 'resetQueries');
+
+    const { result } = renderHook(
+      () => useIssueMutation({
+        queryKey,
+        mutationFn: async () => ({
+          issue: makeIssue(1, { subject: 'Persisted domain mutation' }),
+          issue_updates: [],
+          invalidations: { board_snapshot: true },
+        }),
+        applyOptimistic: (data) => updateIssueInBoard(data, 1, (issue) => ({ ...issue, subject: 'Optimistic' })),
+        applyServer: (data, response: { issue: Issue }) => replaceIssueInBoard(data, response.issue),
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await act(async () => { await result.current.mutateAsync({ issueId: 1 }); });
+
+    expect(isBoardSnapshotInvalidated({ invalidations: { board_snapshot: true } })).toBe(true);
+    expect(queryClient.getQueryData<BoardData>(queryKey)).toBeUndefined();
+    expect(resetQueries).toHaveBeenCalledWith({ queryKey });
+  });
+
   it('does not replace a newer cached issue with a late normal success response', async () => {
     const queryKey = ['kanban', 'board', 'freshness'] as const;
     const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });

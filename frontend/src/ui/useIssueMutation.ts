@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient, type QueryKey } from '@tanstack/react-query';
+import { useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { useRef } from 'react';
 import type { BoardData, Issue, Subtask } from './types';
 import { findIssueInBoard, resolveClosedState, type AncestorIssueUpdate, type IssueMutationResult } from './kanbanShared';
@@ -18,7 +18,18 @@ export type EntityReconciliationOptions = {
   treatAsCreated?: boolean;
 };
 
+export function isBoardSnapshotInvalidated(result: unknown): boolean {
+  if (!result || typeof result !== 'object') return false;
+  const invalidations = (result as { invalidations?: unknown }).invalidations;
+  return Boolean(invalidations && typeof invalidations === 'object' && (invalidations as { board_snapshot?: unknown }).board_snapshot === true);
+}
+
+export function invalidateBoardSnapshot(queryClient: QueryClient, queryKey: QueryKey): void {
+  void queryClient.resetQueries({ queryKey });
+}
+
 export function applyMutationResponse(data: BoardData, result: Partial<IssueMutationResult>): BoardData {
+  if (isBoardSnapshotInvalidated(result)) return data;
   const state = createNormalizedBoardState(data);
   const issueUpdates = result.issue_updates ?? (result.issue ? [result.issue] : []);
   return selectBoardData(applyBoardResponse(state, {
@@ -153,9 +164,13 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
       onError?.(_err);
     },
     onSuccess: (result, payload, context) => {
-      queryClient.setQueryData<BoardData>(queryKey, (current) =>
-        current ? applyFreshServerResult(current, result, payload, context, mutationRevisions.current, applyServer) : current
-      );
+      if (isBoardSnapshotInvalidated(result)) {
+        invalidateBoardSnapshot(queryClient, queryKey);
+      } else {
+        queryClient.setQueryData<BoardData>(queryKey, (current) =>
+          current ? applyFreshServerResult(current, result, payload, context, mutationRevisions.current, applyServer) : current
+        );
+      }
       onSuccess?.(result);
     },
     onSettled: (_result, _error, payload, context) => {

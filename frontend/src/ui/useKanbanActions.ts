@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { QueryKey } from '@tanstack/react-query';
 import type { BoardData, Issue } from './types';
 import { getJson, isHttpError, postJson } from './http';
-import { applyAncestorIssueUpdates, applyEntityReconciliation, applyMutationResponse, unresolvedInvalidationIds, useIssueMutation, type EntityReconciliationOptions } from './useIssueMutation';
+import { applyAncestorIssueUpdates, applyEntityReconciliation, applyMutationResponse, invalidateBoardSnapshot, isBoardSnapshotInvalidated, unresolvedInvalidationIds, useIssueMutation, type EntityReconciliationOptions } from './useIssueMutation';
 import { findIssueInBoard } from './kanbanShared';
 import { applyLocalIssuePatch } from './boardState';
 import { findSubtask, resolveAssigneeName, resolveMutationError, resolvePriorityName, resolveSubtaskStatus, resolveBoardIssue, type IssueMutationResult, type MovePayload, type UpdatePayload } from './kanbanShared';
@@ -28,7 +28,7 @@ type DeleteResponse = {
   contract_version?: number;
   scope_fingerprint?: string;
   deleted_issue_ids?: number[];
-  invalidations?: { issue_ids?: number[]; parent_ids?: number[]; column_counts?: boolean; root_order?: boolean };
+  invalidations?: { issue_ids?: number[]; parent_ids?: number[]; column_counts?: boolean; root_order?: boolean; board_snapshot?: boolean };
 };
 
 function clientOperationId(): string {
@@ -65,6 +65,7 @@ export function useKanbanActions({
     const projectIds = data?.meta.project_ids ?? [];
     const params = new URLSearchParams();
     projectIds.forEach((projectId) => params.append('project_ids[]', String(projectId)));
+    params.append('board_entity_limit', String(data?.meta.requested_entity_limit ?? data?.meta.effective_entity_limit ?? 1500));
     appendScopeStatusParams(params, data ? effectiveScopeStatusIds(data) : []);
     appendDependencyStatusParams(params, data ? effectiveDependencyStatusIds(data) : []);
     return `${baseUrl}${path}?${params.toString()}`;
@@ -251,9 +252,13 @@ export function useKanbanActions({
       }>(scopedUrl('/issues'), { issue: { ...payload, operation_id: clientOperationId() } }, 'POST');
     },
     onSuccess: (result, payload) => {
-      queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
-        current ? applyMutationResponse(current, result) : current
-      ));
+      if (isBoardSnapshotInvalidated(result)) {
+        invalidateBoardSnapshot(queryClient, boardQueryKey);
+      } else {
+        queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
+          current ? applyMutationResponse(current, result) : current
+        ));
+      }
       void reconcileIssueIds(unresolvedInvalidationIds(result));
       void reconcileIssueIds(result.invalidations?.parent_ids ?? []);
       void reconcileColumnCounts(Boolean(result.invalidations?.column_counts));
@@ -284,9 +289,13 @@ export function useKanbanActions({
         return;
       }
       deleted = true;
-      queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
-        current ? applyMutationResponse(current, response) : current
-      ));
+      if (isBoardSnapshotInvalidated(response)) {
+        invalidateBoardSnapshot(queryClient, boardQueryKey);
+      } else {
+        queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
+          current ? applyMutationResponse(current, response) : current
+        ));
+      }
       void reconcileIssueIds(unresolvedInvalidationIds(response));
       void reconcileIssueIds(response.invalidations?.parent_ids ?? []);
       void reconcileColumnCounts(Boolean(response.invalidations?.column_counts));
@@ -368,9 +377,13 @@ export function useKanbanActions({
       );
 
       if (response.ok) {
-        queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
-          current ? applyMutationResponse(current, response) : current
-        ));
+        if (isBoardSnapshotInvalidated(response)) {
+          invalidateBoardSnapshot(queryClient, boardQueryKey);
+        } else {
+          queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
+            current ? applyMutationResponse(current, response) : current
+          ));
+        }
         void reconcileIssueIds(unresolvedInvalidationIds(response));
         void reconcileIssueIds(response.invalidations?.parent_ids ?? []);
         void reconcileColumnCounts(Boolean(response.invalidations?.column_counts));
