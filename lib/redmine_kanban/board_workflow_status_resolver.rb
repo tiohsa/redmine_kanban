@@ -73,7 +73,7 @@ module RedmineKanban
 
       @not_closable_ids.merge(blocked_issue_ids(issue_ids))
       @not_closable_ids.merge(open_descendant_owner_ids(issue_ids))
-      @not_reopenable_ids.merge(open_ancestor_owner_ids(issue_ids))
+      @not_reopenable_ids.merge(closed_ancestor_owner_ids(issue_ids))
     end
 
     def preload_workflow_transitions(issues)
@@ -121,12 +121,12 @@ module RedmineKanban
         .pluck('board_ancestors.id')
     end
 
-    def open_ancestor_owner_ids(issue_ids)
+    def closed_ancestor_owner_ids(issue_ids)
       Issue
         .joins("INNER JOIN issues AS board_descendants ON board_descendants.root_id = issues.root_id AND issues.lft < board_descendants.lft AND issues.rgt > board_descendants.rgt")
         .joins(:status)
         .where(board_descendants: { id: issue_ids })
-        .where(issue_statuses: { is_closed: false })
+        .where(issue_statuses: { is_closed: true })
         .distinct
         .pluck('board_descendants.id')
     end

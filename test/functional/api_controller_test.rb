@@ -225,24 +225,30 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
   end
 
   def test_mutation_result_builder_evicts_issue_that_loses_visibility
-    issue = build_issue(subject: 'Visibility will be lost')
-    visible_before_mutation = Issue.where(id: issue.id)
+    previous_visibility = @role.issues_visibility
+    @role.update!(issues_visibility: 'own')
+    other_user = users(:users_001)
+    ensure_member!(other_user)
+    issue = build_issue(subject: 'Visibility will be lost', author: other_user, assigned_to: @user)
+    assert issue.visible?(@user)
 
-    Issue.stubs(:visible).returns(visible_before_mutation, visible_before_mutation, Issue.none)
     patch :update, params: {
       project_id: @project.identifier,
       id: issue.id,
       project_ids: [@project.id],
       scope_status_ids_present: '1',
       scope_status_ids: [issue.status_id],
-      issue: { subject: 'Updated after visibility change', lock_version: issue.lock_version }
+      issue: { assigned_to_id: other_user.id, subject: 'Updated after visibility change', lock_version: issue.lock_version }
     }
 
     assert_response :success
+    refute issue.reload.visible?(@user)
     json = JSON.parse(@response.body)
     assert_equal [], json['issue_updates']
     assert_equal [issue.id], json['evicted_issue_ids']
     assert_equal 'Updated after visibility change', Issue.find(issue.id).subject
+  ensure
+    @role.update!(issues_visibility: previous_visibility) if previous_visibility
   end
 
   def test_physical_delete_returns_tombstone_not_eviction
@@ -306,11 +312,11 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     MemberRole.create!(member_id: member.id, role_id: @role.id) unless member.roles.include?(@role)
   end
 
-  def build_issue(subject: 'Test issue', parent_issue_id: nil, status: nil, assigned_to: nil, priority: nil, tracker: nil, project: @project)
+  def build_issue(subject: 'Test issue', parent_issue_id: nil, status: nil, assigned_to: nil, author: @user, priority: nil, tracker: nil, project: @project)
     tracker ||= project.trackers.first || Tracker.first
     status ||= IssueStatus.first
     priority ||= IssuePriority.active.first
-    issue = Issue.new(project: project, tracker: tracker, author: @user, status: status, subject: subject, parent_issue_id: parent_issue_id, priority: priority, assigned_to: assigned_to)
+    issue = Issue.new(project: project, tracker: tracker, author: author, status: status, subject: subject, parent_issue_id: parent_issue_id, priority: priority, assigned_to: assigned_to)
     issue.save!
     issue.reload
   end

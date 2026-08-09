@@ -40,10 +40,34 @@ class RedmineKanbanBoardWorkflowStatusResolverTest < ActiveSupport::TestCase
       author_only: create_issue('Workflow author only', tracker, open_status, priority, author: @user),
       assignee_only: create_issue('Workflow assignee only', tracker, open_status, priority, author: other_user, assigned_to: @user),
       author_and_assignee: create_issue('Workflow author and assignee', tracker, open_status, priority, author: @user, assigned_to: @user),
-      blocked: create_issue('Workflow blocked', tracker, closed_status, priority, author: @user),
     }
-    scenarios[:open_descendant] = create_issue('Workflow open descendant', tracker, open_status, priority, author: @user)
-    scenarios[:closed_parent_reopen] = create_issue('Workflow closed parent reopen', tracker, closed_status, priority, author: @user)
+    blocker = create_issue('Workflow blocker', tracker, open_status, priority, author: other_user)
+    blocked = create_issue('Workflow blocked', tracker, open_status, priority, author: @user)
+    IssueRelation.create!(issue_from: blocker, issue_to: blocked, relation_type: 'blocks')
+    assert blocked.blocked?
+    scenarios[:blocked] = blocked
+
+    open_descendant_parent = create_issue('Workflow open descendant parent', tracker, open_status, priority, author: @user)
+    open_descendant = create_issue('Workflow open descendant', tracker, open_status, priority, author: @user, parent_issue_id: open_descendant_parent.id)
+    open_descendant_parent.reload
+    assert_equal open_descendant_parent.id, open_descendant.parent_id
+    refute open_descendant.closed?
+    scenarios[:open_descendant] = open_descendant_parent
+
+    closed_parent = create_issue('Workflow closed parent', tracker, closed_status, priority, author: @user)
+    closed_parent_child = create_issue('Workflow closed parent child', tracker, closed_status, priority, author: @user, parent_issue_id: closed_parent.id)
+    closed_parent.reload
+    assert_equal closed_parent.id, closed_parent_child.parent_id
+    assert closed_parent.closed?
+    scenarios[:closed_parent_reopen] = closed_parent_child
+
+    open_parent = create_issue('Workflow open parent', tracker, open_status, priority, author: @user)
+    open_parent_child = create_issue('Workflow open parent child', tracker, closed_status, priority, author: @user, parent_issue_id: open_parent.id)
+    open_parent.reload
+    assert_equal open_parent.id, open_parent_child.parent_id
+    refute open_parent.closed?
+    assert open_parent_child.closed?
+    scenarios[:open_parent_negative] = open_parent_child
     scenarios
   end
 
