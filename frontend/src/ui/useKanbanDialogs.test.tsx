@@ -61,7 +61,7 @@ describe('useKanbanDialogs issue resolution', () => {
       result.current.openView(10);
     });
 
-    expect(result.current.iframeEditContext).toEqual({
+    expect(result.current.iframeEditContext).toMatchObject({
       url: '/issues/10',
       issueId: 10,
       issueTitle: 'Bug #10 Parent issue',
@@ -92,7 +92,7 @@ describe('useKanbanDialogs issue resolution', () => {
       result.current.openView(20);
     });
 
-    expect(result.current.iframeEditContext).toEqual({
+    expect(result.current.iframeEditContext).toMatchObject({
       url: '/issues/20',
       issueId: 20,
       issueTitle: 'Bug #20 Closed child',
@@ -103,11 +103,40 @@ describe('useKanbanDialogs issue resolution', () => {
       result.current.openEdit(20);
     });
 
-    expect(result.current.iframeEditContext).toEqual({
+    expect(result.current.iframeEditContext).toMatchObject({
       url: '/issues/20/edit',
       issueId: 20,
       issueTitle: 'Bug #20 Closed child',
       projectId: 3,
+    });
+  });
+
+  it('keeps the opening runtime context when board data becomes unavailable', () => {
+    const data = makeBoardData([makeIssue(10, { project: { id: 3, name: 'Subproject' } })]);
+    data.meta.project_ids = [3];
+    data.meta.scope_status_ids = [2];
+    data.meta.dependency_status_ids = [2, 4];
+    data.meta.requested_entity_limit = 2500;
+    data.labels = { edit_issue: 'Edit issue' };
+    const openingQueryKey = ['kanban', 'board', 'opening'];
+    const { result, rerender } = renderHook(
+      ({ boardData }) => useKanbanDialogs('/projects/test/kanban', boardData, 'assignee', openingQueryKey),
+      { initialProps: { boardData: data as BoardData | null } },
+    );
+
+    act(() => result.current.openEdit(10));
+    rerender({ boardData: null });
+
+    expect(result.current.iframeEditContext).toMatchObject({
+      url: '/issues/10/edit',
+      issueId: 10,
+      baseUrl: '/projects/test/kanban',
+      boardQueryKey: openingQueryKey,
+      labels: { edit_issue: 'Edit issue' },
+      projectIds: [3],
+      scopeStatusIds: [2],
+      dependencyStatusIds: [2, 4],
+      boardEntityLimit: 2500,
     });
   });
 });

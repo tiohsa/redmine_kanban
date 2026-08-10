@@ -103,32 +103,42 @@ export function useKanbanActions({
     setIssueBusy(issueId, false);
   }, [setIssueBusy]);
 
-  const reconcileIssueIds = useCallback(async (issueIds: number[], options: EntityReconciliationOptions = {}) => {
+  const reconcileIssues = useCallback(async (issueIds: number[], options: EntityReconciliationOptions = {}) => {
     const ids = [...new Set(issueIds)];
-    if (ids.length === 0) return;
+    if (ids.length === 0) return true;
     const requestData = queryClient.getQueryData<BoardData>(boardQueryKey) ?? data;
-    if (!requestData) return;
+    if (!requestData) return false;
     const freshnessAuthority = getBoardFreshnessAuthority(queryClient, boardQueryKey);
     const request = freshnessAuthority.beginEntityReconciliation(requestData, ids);
     try {
       const response = await getJson<{ ok: boolean } & Parameters<typeof applyEntityReconciliation>[1]>(
         buildBoardEntitiesUrl(baseUrl, requestData.meta.project_ids ?? [], ids, effectiveScopeStatusIds(requestData), effectiveDependencyStatusIds(requestData)),
       );
+      if (!response.ok) return false;
+      let applied = false;
+      let complete = false;
       queryClient.setQueryData<BoardData>(boardQueryKey, (current) => {
         if (!current) return current;
         const missingIssueIds = freshnessAuthority.applicableNegativeIssueIds(request, current, response.missing_issue_ids ?? []);
-        return missingIssueIds === null
-          ? current
-          : applyEntityReconciliation(current, { ...response, missing_issue_ids: missingIssueIds }, options);
+        if (missingIssueIds === null) return current;
+        applied = true;
+        complete = missingIssueIds.length === 0
+          && ids.every((id) => response.entities?.some((issue) => issue.id === id));
+        return applyEntityReconciliation(current, { ...response, missing_issue_ids: missingIssueIds }, options);
       });
+      return applied && complete;
     } catch (_error) {
-      // Reconciliation is best-effort. The mutation response is authoritative
-      // and must remain visible when this follow-up request is forbidden or unavailable.
+      // Callers that require a verified entity can fall back to an authoritative snapshot.
+      return false;
     } finally {
       freshnessAuthority.finish(request);
       releaseBoardFreshnessAuthority(queryClient, boardQueryKey, freshnessAuthority);
     }
   }, [baseUrl, boardQueryKey, data, queryClient]);
+
+  const reconcileIssueIds = useCallback(async (issueIds: number[], options: EntityReconciliationOptions = {}) => {
+    await reconcileIssues(issueIds, options);
+  }, [reconcileIssues]);
 
   const reconcileColumnCounts = useCallback(async (required: boolean) => {
     if (!required || !data) return;
@@ -403,6 +413,7 @@ export function useKanbanActions({
       const response = await postJson<{
         ok: boolean;
         issue?: Issue;
+        created_issues?: Issue[];
         message?: string;
         invalidations?: DeleteResponse['invalidations'];
       }>(
@@ -416,9 +427,10 @@ export function useKanbanActions({
         if (snapshotInvalidated) {
           invalidateBoardSnapshot(queryClient, boardQueryKey);
         } else {
-          queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
-            current ? applyMutationResponse(current, response) : current
-          ));
+          const restoredIssueIds = [...new Set(response.created_issues?.map((issue) => issue.id) ?? [])];
+          const restoredIssuesReconciled = restoredIssueIds.length > 0
+            && await reconcileIssues(restoredIssueIds, { treatAsCreated: true });
+          if (!restoredIssuesReconciled) invalidateBoardSnapshot(queryClient, boardQueryKey);
         }
         if (!snapshotInvalidated) {
           void reconcileIssueIds(unresolvedInvalidationIds(response));
@@ -435,7 +447,7 @@ export function useKanbanActions({
     } finally {
       setIsRestoring(false);
     }
-  }, [boardQueryKey, data, isRestoring, pendingDeleteIssue, queryClient, reconcileColumnCounts, reconcileIssueIds, scopedUrl, setError, setNotice]);
+  }, [boardQueryKey, data, isRestoring, pendingDeleteIssue, queryClient, reconcileColumnCounts, reconcileIssueIds, reconcileIssues, scopedUrl, setError, setNotice]);
 
   return {
     busyIssueIds,
