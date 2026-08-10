@@ -109,6 +109,44 @@ describe('useKanbanActions delete flow', () => {
     expect(refresh).not.toHaveBeenCalled();
   });
 
+  it('publishes an undone issue only after entity reconciliation supplies its current lock version', async () => {
+    const restored = makeIssue(2);
+    restored.lock_version = 4;
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, deleted_issue_ids: [1] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, created_issues: [{ ...restored, lock_version: 0 }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, scope_fingerprint: 'project:1', entities: [restored], missing_issue_ids: [] }), { status: 200 }));
+    const { result, queryClient } = renderActions();
+
+    await act(async () => { result.current.requestDelete(1); });
+    await waitFor(() => expect(result.current.pendingDeleteIssue?.id).toBe(1));
+    await act(async () => { await result.current.handleUndo(); });
+
+    expect(queryClient.getQueryData<BoardData>(['kanban', 'board'])?.issues).toEqual([
+      expect.objectContaining({ id: 2, lock_version: 4 }),
+    ]);
+    expect(globalThis.fetch).toHaveBeenLastCalledWith(
+      '/projects/demo/kanban/issues/entities?project_ids%5B%5D=1&ids%5B%5D=2&scope_status_ids_present=1&scope_status_ids%5B%5D=1&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1',
+      expect.objectContaining({ cache: 'no-store', credentials: 'same-origin' }),
+    );
+  });
+
+  it('resets the board snapshot when an undone issue cannot be entity-reconciled', async () => {
+    const restored = makeIssue(2);
+    const { result, queryClient } = renderActions();
+    const resetQueries = vi.spyOn(queryClient, 'resetQueries');
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, deleted_issue_ids: [1] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, created_issues: [restored] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, scope_fingerprint: 'project:1', entities: [], missing_issue_ids: [2] }), { status: 200 }));
+
+    await act(async () => { result.current.requestDelete(1); });
+    await waitFor(() => expect(result.current.pendingDeleteIssue?.id).toBe(1));
+    await act(async () => { await result.current.handleUndo(); });
+
+    expect(resetQueries).toHaveBeenCalledWith({ queryKey: ['kanban', 'board'] });
+  });
+
   it('does not issue another DELETE when the delete notice is dismissed', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
     const { result } = renderActions();
