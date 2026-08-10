@@ -10,6 +10,7 @@ import { findSubtask, resolveAssigneeName, resolveMutationError, resolvePriority
 import { discardBulkIdempotencyKey, getOrCreateBulkIdempotencyKey, stableSerialize, storageKeyForBulkSignature } from './bulkIdempotency';
 import { buildBulkCreateRequest, buildRestoreIssuePayload, isBulkCreateInput } from './kanbanActionPayloads';
 import { buildBoardCountsUrl, buildBoardEntitiesUrl, buildBoardMutationUrl, effectiveDependencyStatusIds, effectiveScopeStatusIds } from './boardQuery';
+import { getBoardFreshnessAuthority, releaseBoardFreshnessAuthority } from './asyncFreshness';
 
 type Args = {
   baseUrl: string;
@@ -49,6 +50,7 @@ export function useKanbanActions({
   const [pendingDeleteIssue, setPendingDeleteIssue] = useState<Issue | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
   const queryClient = useQueryClient();
+  const freshnessAuthority = getBoardFreshnessAuthority(queryClient, boardQueryKey);
   const busyIssueIdsRef = useRef<Set<number>>(new Set());
   const busyMutationCountsRef = useRef(new Map<number, number>());
   const deletingIssueIdsRef = useRef(new Set<number>());
@@ -105,32 +107,49 @@ export function useKanbanActions({
   const reconcileIssueIds = useCallback(async (issueIds: number[], options: EntityReconciliationOptions = {}) => {
     const ids = [...new Set(issueIds)];
     if (ids.length === 0) return;
+    const requestData = queryClient.getQueryData<BoardData>(boardQueryKey) ?? data;
+    if (!requestData) return;
+    const request = freshnessAuthority.beginEntityReconciliation(requestData, ids);
     try {
       const response = await getJson<{ ok: boolean } & Parameters<typeof applyEntityReconciliation>[1]>(
-        buildBoardEntitiesUrl(baseUrl, data?.meta.project_ids ?? [], ids, data ? effectiveScopeStatusIds(data) : [], data ? effectiveDependencyStatusIds(data) : []),
+        buildBoardEntitiesUrl(baseUrl, requestData.meta.project_ids ?? [], ids, effectiveScopeStatusIds(requestData), effectiveDependencyStatusIds(requestData)),
       );
-      queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
-        current ? applyEntityReconciliation(current, response, options) : current
-      ));
+      queryClient.setQueryData<BoardData>(boardQueryKey, (current) => {
+        if (!current) return current;
+        const missingIssueIds = freshnessAuthority.applicableNegativeIssueIds(request, current, response.missing_issue_ids ?? []);
+        return missingIssueIds === null
+          ? current
+          : applyEntityReconciliation(current, { ...response, missing_issue_ids: missingIssueIds }, options);
+      });
     } catch (_error) {
       // Reconciliation is best-effort. The mutation response is authoritative
       // and must remain visible when this follow-up request is forbidden or unavailable.
+    } finally {
+      freshnessAuthority.finish(request);
+      releaseBoardFreshnessAuthority(queryClient, boardQueryKey, freshnessAuthority);
     }
-  }, [baseUrl, boardQueryKey, data, queryClient]);
+  }, [baseUrl, boardQueryKey, data, freshnessAuthority, queryClient]);
 
   const reconcileColumnCounts = useCallback(async (required: boolean) => {
     if (!required || !data) return;
+    const requestData = queryClient.getQueryData<BoardData>(boardQueryKey) ?? data;
+    const request = freshnessAuthority.beginAggregateReconciliation(requestData);
     try {
       const response = await getJson<{ ok: boolean; columns?: BoardData['columns'] }>(
-        buildBoardCountsUrl(baseUrl, data.meta.project_ids ?? []),
+        buildBoardCountsUrl(baseUrl, requestData.meta.project_ids ?? []),
       );
       queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
-        current && response.columns ? { ...current, columns: response.columns } : current
+        current && response.columns && freshnessAuthority.canApplyAggregateReconciliation(request, current)
+          ? { ...current, columns: response.columns }
+          : current
       ));
     } catch (_error) {
       // Counts are auxiliary and must not turn a successful mutation into a rejection.
+    } finally {
+      freshnessAuthority.finish(request);
+      releaseBoardFreshnessAuthority(queryClient, boardQueryKey, freshnessAuthority);
     }
-  }, [baseUrl, boardQueryKey, data, queryClient]);
+  }, [baseUrl, boardQueryKey, data, freshnessAuthority, queryClient]);
 
   const moveIssueMutation = useIssueMutation<MovePayload, IssueMutationResult>({
     queryKey: boardQueryKey,
@@ -166,8 +185,10 @@ export function useKanbanActions({
       });
     },
     applyServer: (prev, result, payload, options = { applyTarget: true }) => {
-      const next = applyMutationResponse(prev, result);
-      return applyAncestorIssueUpdates(options.applyTarget ? next : prev, result.ancestor_updates);
+      const next = options.applyTarget
+        ? applyMutationResponse(prev, result)
+        : applyMutationResponse(prev, result, { excludeIssueId: payload.issueId });
+      return applyAncestorIssueUpdates(options.applyTarget || options.applyNonTarget ? next : prev, result.ancestor_updates);
     },
     onError: (error) => {
       setError(resolveMutationError(error, data?.labels, data?.labels.move_failed));
@@ -209,8 +230,10 @@ export function useKanbanActions({
       });
     },
     applyServer: (prev, result, payload, options = { applyTarget: true }) => {
-      const next = applyMutationResponse(prev, result);
-      return applyAncestorIssueUpdates(options.applyTarget ? next : prev, result.ancestor_updates);
+      const next = options.applyTarget
+        ? applyMutationResponse(prev, result)
+        : applyMutationResponse(prev, result, { excludeIssueId: payload.issueId });
+      return applyAncestorIssueUpdates(options.applyTarget || options.applyNonTarget ? next : prev, result.ancestor_updates);
     },
     onSuccess: (result) => {
       if (result.warning) setNotice(result.warning);

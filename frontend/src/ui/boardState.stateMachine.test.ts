@@ -24,8 +24,6 @@ type ModelState = {
   limit: number;
   complete: boolean;
   entities: Map<number, ModelEntity>;
-  roots: number[];
-  childrenByParentId: Map<number, number[]>;
   deletedIds: Set<number>;
 };
 
@@ -111,10 +109,12 @@ function board(
   };
 }
 
-function modelEntityFromIssue(nextIssue: Issue, current?: ModelEntity): ModelEntity {
+function modelEntityFromIssue(nextIssue: Issue, current?: ModelEntity, parentId?: number | null): ModelEntity {
   return {
     id: nextIssue.id,
-    parentId: Object.prototype.hasOwnProperty.call(nextIssue, 'parent_id')
+    parentId: parentId !== undefined
+      ? parentId
+      : Object.prototype.hasOwnProperty.call(nextIssue, 'parent_id')
       ? nextIssue.parent_id ?? null
       : current?.parentId ?? null,
     lockVersion: nextIssue.lock_version,
@@ -131,24 +131,15 @@ function modelSnapshot(data: BoardData): ModelState {
     limit: data.meta.effective_entity_limit ?? data.meta.requested_entity_limit ?? 1500,
     complete: data.meta.complete ?? true,
     entities: new Map(),
-    roots: [],
-    childrenByParentId: new Map(),
     deletedIds: new Set(),
   };
 
-  const collect = (nextIssue: Issue, parentId?: number) => {
-    const current = state.entities.get(nextIssue.id);
-    state.entities.set(nextIssue.id, modelEntityFromIssue(nextIssue, current));
-    if (parentId === undefined) {
-      if (!state.roots.includes(nextIssue.id)) state.roots.push(nextIssue.id);
-    } else {
-      modelAttach(state, parentId, nextIssue.id);
-    }
+  const collect = (nextIssue: Issue, parentId: number | null = null) => {
+    state.entities.set(nextIssue.id, modelEntityFromIssue(nextIssue, state.entities.get(nextIssue.id), parentId));
     for (const child of nextIssue.subtasks ?? []) collect(child as unknown as Issue, nextIssue.id);
   };
 
   for (const nextIssue of data.issues) collect(nextIssue);
-  state.roots = state.roots.filter((id) => !modelParentByChild(state).has(id));
   return state;
 }
 
@@ -157,63 +148,23 @@ function cloneModelState(state: ModelState): ModelState {
     ...state,
     projectIds: [...state.projectIds],
     entities: new Map(Array.from(state.entities, ([id, entity]) => [id, { ...entity }])),
-    roots: [...state.roots],
-    childrenByParentId: new Map(Array.from(state.childrenByParentId, ([id, childIds]) => [id, [...childIds]])),
     deletedIds: new Set(state.deletedIds),
   };
-}
-
-function modelParentByChild(state: ModelState): Map<number, number> {
-  const parentByChild = new Map<number, number>();
-  for (const [parentId, childIds] of state.childrenByParentId) {
-    for (const childId of childIds) parentByChild.set(childId, parentId);
-  }
-  return parentByChild;
-}
-
-function modelWouldCreateCycle(state: ModelState, parentId: number, childId: number): boolean {
-  const seen = new Set<number>([childId]);
-  let current: number | undefined = parentId;
-  const parentByChild = modelParentByChild(state);
-  while (current !== undefined) {
-    if (seen.has(current)) return true;
-    seen.add(current);
-    current = parentByChild.get(current);
-  }
-  return false;
-}
-
-function modelAttach(state: ModelState, parentId: number, childId: number): void {
-  if (parentId === childId || !state.entities.has(parentId) || !state.entities.has(childId) || modelWouldCreateCycle(state, parentId, childId)) return;
-  const parentByChild = modelParentByChild(state);
-  const previousParentId = parentByChild.get(childId);
-  if (previousParentId !== undefined && previousParentId !== parentId) modelDetach(state, previousParentId, childId);
-  state.childrenByParentId.set(parentId, [...new Set([...(state.childrenByParentId.get(parentId) ?? []), childId])]);
-  state.roots = state.roots.filter((id) => id !== childId);
-}
-
-function modelDetach(state: ModelState, parentId: number, childId: number): void {
-  if (modelParentByChild(state).get(childId) !== parentId) return;
-  state.childrenByParentId.set(parentId, (state.childrenByParentId.get(parentId) ?? []).filter((id) => id !== childId));
 }
 
 function modelEvict(state: ModelState, issueId: number, tombstone = false): void {
   state.entities.delete(issueId);
   if (tombstone) state.deletedIds.add(issueId);
-  state.roots = state.roots.filter((id) => id !== issueId);
-  const parentId = modelParentByChild(state).get(issueId);
-  if (parentId !== undefined) modelDetach(state, parentId, issueId);
-  for (const childId of state.childrenByParentId.get(issueId) ?? []) {
-    if (state.entities.has(childId) && !state.roots.includes(childId)) state.roots.push(childId);
+  for (const entity of state.entities.values()) {
+    if (entity.parentId === issueId) entity.parentId = null;
   }
-  state.childrenByParentId.delete(issueId);
 }
 
 function modelIsOutsideProjectScope(state: ModelState, nextIssue: Issue): boolean {
   return nextIssue.project?.id !== undefined && !state.projectIds.includes(nextIssue.project.id);
 }
 
-function modelIsFresh(current: ModelEntity | undefined, incoming: ModelEntity): boolean {
+function modelCanAcceptRevision(current: ModelEntity | undefined, incoming: ModelEntity): boolean {
   if (!current) return true;
   if (typeof current.lockVersion === 'number' && typeof incoming.lockVersion === 'number') {
     return incoming.lockVersion >= current.lockVersion;
@@ -226,67 +177,49 @@ function modelIsFresh(current: ModelEntity | undefined, incoming: ModelEntity): 
   return true;
 }
 
-function modelHasSameRevision(current: ModelEntity, incoming: ModelEntity): boolean {
-  if (typeof current.lockVersion === 'number' && typeof incoming.lockVersion === 'number') {
-    return current.lockVersion === incoming.lockVersion;
-  }
-  if (current.updatedOn && incoming.updatedOn) {
-    const currentTime = Date.parse(current.updatedOn);
-    const incomingTime = Date.parse(incoming.updatedOn);
-    return !Number.isNaN(currentTime) && currentTime === incomingTime;
+function modelWouldCreateCycle(state: ModelState, parentId: number, childId: number): boolean {
+  const seen = new Set<number>([childId]);
+  let current: number | null | undefined = parentId;
+  while (current !== null && current !== undefined) {
+    if (seen.has(current)) return true;
+    seen.add(current);
+    current = state.entities.get(current)?.parentId;
   }
   return false;
 }
 
-function modelMergeEntity(state: ModelState, nextIssue: Issue): boolean {
-  const current = state.entities.get(nextIssue.id);
-  const incoming = modelEntityFromIssue(nextIssue, current);
-  if (state.deletedIds.has(incoming.id) || !modelIsFresh(current, incoming)) return false;
-  if (!current || !modelHasSameRevision(current, incoming)) {
-    state.entities.set(incoming.id, incoming);
-  } else {
-    state.entities.set(incoming.id, {
-      ...current,
-      value: current.value || incoming.value,
-      updatedOn: current.updatedOn ?? incoming.updatedOn,
-      projectId: current.projectId ?? incoming.projectId,
-    });
-  }
-  return true;
-}
-
-function modelReconcileParent(state: ModelState, nextIssue: Issue): void {
-  if (!Object.prototype.hasOwnProperty.call(nextIssue, 'parent_id')) return;
-  const oldParentId = modelParentByChild(state).get(nextIssue.id);
-  if (oldParentId !== undefined) modelDetach(state, oldParentId, nextIssue.id);
-  const newParentId = nextIssue.parent_id ?? undefined;
-  if (newParentId !== undefined && state.entities.has(newParentId)) modelAttach(state, newParentId, nextIssue.id);
-  else if (!state.roots.includes(nextIssue.id)) state.roots.push(nextIssue.id);
-}
-
-function modelApplyIssueUpdate(state: ModelState, nextIssue: Issue, created: boolean): void {
+function modelApplyEntity(state: ModelState, nextIssue: Issue, created: boolean): void {
   if (modelIsOutsideProjectScope(state, nextIssue)) {
     modelEvict(state, nextIssue.id);
     return;
   }
-  if (!modelMergeEntity(state, nextIssue)) return;
-  if (created) {
-    const parentId = nextIssue.parent_id ?? undefined;
-    if (parentId !== undefined && state.entities.has(parentId)) modelAttach(state, parentId, nextIssue.id);
-    else if (!state.roots.includes(nextIssue.id)) state.roots.push(nextIssue.id);
-  } else {
-    modelReconcileParent(state, nextIssue);
-  }
+  const current = state.entities.get(nextIssue.id);
+  const incoming = modelEntityFromIssue(nextIssue, current);
+  if (state.deletedIds.has(incoming.id) || !modelCanAcceptRevision(current, incoming)) return;
+  const requestedParentId = Object.prototype.hasOwnProperty.call(nextIssue, 'parent_id') ? incoming.parentId : current?.parentId ?? null;
+  const parentId = requestedParentId !== null
+    && state.entities.has(requestedParentId)
+    && !modelWouldCreateCycle(state, requestedParentId, incoming.id)
+    ? requestedParentId
+    : null;
+  state.entities.set(incoming.id, { ...incoming, parentId });
+  if (created && parentId === null) state.entities.get(incoming.id)!.parentId = null;
 }
 
 function modelApplyResponse(state: ModelState, response: BoardResponse): ModelState {
   if (response.scopeFingerprint && response.scopeFingerprint !== state.scope) return state;
   const next = cloneModelState(state);
-  for (const nextIssue of response.issue_updates ?? []) modelApplyIssueUpdate(next, nextIssue, false);
-  for (const nextIssue of response.created_issues ?? []) modelApplyIssueUpdate(next, nextIssue, true);
+  for (const nextIssue of response.issue_updates ?? []) modelApplyEntity(next, nextIssue, false);
+  for (const nextIssue of response.created_issues ?? []) modelApplyEntity(next, nextIssue, true);
   for (const change of response.tree_changes ?? []) {
-    if (change.type === 'attach') modelAttach(next, change.parent_id, change.child_id);
-    else modelDetach(next, change.parent_id, change.child_id);
+    if (change.type === 'attach') {
+      if (next.entities.has(change.parent_id) && next.entities.has(change.child_id)
+        && !modelWouldCreateCycle(next, change.parent_id, change.child_id)) {
+        next.entities.get(change.child_id)!.parentId = change.parent_id;
+      }
+    } else if (next.entities.get(change.child_id)?.parentId === change.parent_id) {
+      next.entities.get(change.child_id)!.parentId = null;
+    }
   }
   for (const issueId of response.deleted_issue_ids ?? []) modelEvict(next, issueId, true);
   for (const issueId of response.evicted_issue_ids ?? []) modelEvict(next, issueId);
@@ -326,15 +259,29 @@ function sortRelations(relations: Array<[number, number[]]>): Array<[number, num
     .sort(([left], [right]) => left - right);
 }
 
+function modelRelations(state: ModelState): Array<[number, number[]]> {
+  const grouped = new Map<number, number[]>();
+  for (const entity of state.entities.values()) {
+    if (entity.parentId === null || !state.entities.has(entity.parentId)) continue;
+    grouped.set(entity.parentId, [...(grouped.get(entity.parentId) ?? []), entity.id]);
+  }
+  return Array.from(grouped, ([parentId, childIds]) => [parentId, childIds]);
+}
+
+function modelRootIds(state: ModelState): number[] {
+  return [...state.entities.values()]
+    .filter((entity) => entity.parentId === null || !state.entities.has(entity.parentId))
+    .map((entity) => entity.id);
+}
+
 function projectModel(state: ModelState): Projection {
-  const parentByChild = modelParentByChild(state);
   return {
     entityIds: [...state.entities.keys()].sort((left, right) => left - right),
     revisions: Array.from(state.entities.values())
       .map((entity) => [entity.id, entity.lockVersion, entity.updatedOn, entity.value] as [number, number | undefined, string | null | undefined, string])
       .sort(([left], [right]) => left - right),
-    relations: sortRelations(Array.from(state.childrenByParentId)),
-    rootIds: state.roots.filter((id) => !parentByChild.has(id)).sort((left, right) => left - right),
+    relations: sortRelations(modelRelations(state)),
+    rootIds: modelRootIds(state).sort((left, right) => left - right),
     deletedIds: [...state.deletedIds].sort((left, right) => left - right),
     scope: state.scope,
     complete: state.complete,

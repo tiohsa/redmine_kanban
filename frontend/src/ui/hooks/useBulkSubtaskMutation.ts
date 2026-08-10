@@ -6,6 +6,7 @@ import type { BoardData, Issue } from '../types';
 import { discardBulkIdempotencyKey, getOrCreateBulkIdempotencyKey, stableSerialize } from '../bulkIdempotency';
 import { applyEntityReconciliation, applyMutationResponse, invalidateBoardSnapshot, isBoardSnapshotInvalidated, unresolvedInvalidationIds } from '../useIssueMutation';
 import { buildBoardCountsUrl, buildBoardEntitiesUrl, buildBoardMutationUrl } from '../boardQuery';
+import { getBoardFreshnessAuthority, releaseBoardFreshnessAuthority } from '../asyncFreshness';
 
 export type SubtaskPayload = {
   parent_issue_id: number;
@@ -80,6 +81,7 @@ export function useBulkSubtaskMutation(
   deferBoardRefresh = false,
 ) {
   const queryClient = useQueryClient();
+  const freshnessAuthority = getBoardFreshnessAuthority(queryClient, queryKey);
   const inFlight = useRef(new Map<string, Promise<BulkMutationResponse>>());
 
   return useMutation({
@@ -150,25 +152,47 @@ export function useBulkSubtaskMutation(
         invalidations: result.invalidations,
       });
       if (reconciliationIds.length > 0) {
-        void getJson<Parameters<typeof applyEntityReconciliation>[1]>(
-          buildBoardEntitiesUrl(baseUrl, projectIds, reconciliationIds, scopeStatusIds, dependencyStatusIds),
-        ).then((response) => {
-          queryClient.setQueryData(queryKey, (current: unknown) => {
-            if (!current || !('issues' in (current as object))) return current;
-            return applyEntityReconciliation(current as Parameters<typeof applyEntityReconciliation>[0], response);
-          });
-        }).catch(() => undefined);
-      }
-      if (result.invalidations?.column_counts) {
-        void getJson<{ columns?: BoardData['columns'] }>(buildBoardCountsUrl(baseUrl, projectIds))
-          .then((response) => {
-            if (!response.columns) return;
+        const requestData = queryClient.getQueryData<BoardData>(queryKey);
+        if (requestData) {
+          const request = freshnessAuthority.beginEntityReconciliation(requestData, reconciliationIds);
+          void getJson<Parameters<typeof applyEntityReconciliation>[1]>(
+            buildBoardEntitiesUrl(baseUrl, projectIds, reconciliationIds, scopeStatusIds, dependencyStatusIds),
+          ).then((response) => {
             queryClient.setQueryData(queryKey, (current: unknown) => {
               if (!current || !('issues' in (current as object))) return current;
-              return { ...(current as BoardData), columns: response.columns };
+              const board = current as Parameters<typeof applyEntityReconciliation>[0];
+              const missingIssueIds = freshnessAuthority.applicableNegativeIssueIds(request, board, response.missing_issue_ids ?? []);
+              return missingIssueIds === null
+                ? board
+                : applyEntityReconciliation(board, { ...response, missing_issue_ids: missingIssueIds });
             });
-          })
-          .catch(() => undefined);
+          }).catch(() => undefined).finally(() => {
+            freshnessAuthority.finish(request);
+            releaseBoardFreshnessAuthority(queryClient, queryKey, freshnessAuthority);
+          });
+        }
+      }
+      if (result.invalidations?.column_counts) {
+        const requestData = queryClient.getQueryData<BoardData>(queryKey);
+        if (requestData) {
+          const request = freshnessAuthority.beginAggregateReconciliation(requestData);
+          void getJson<{ columns?: BoardData['columns'] }>(buildBoardCountsUrl(baseUrl, projectIds))
+            .then((response) => {
+              if (!response.columns) return;
+              queryClient.setQueryData(queryKey, (current: unknown) => {
+                if (!current || !('issues' in (current as object))) return current;
+                const board = current as BoardData;
+                return freshnessAuthority.canApplyAggregateReconciliation(request, board)
+                  ? { ...board, columns: response.columns }
+                  : board;
+              });
+            })
+            .catch(() => undefined)
+            .finally(() => {
+              freshnessAuthority.finish(request);
+              releaseBoardFreshnessAuthority(queryClient, queryKey, freshnessAuthority);
+            });
+        }
       }
     },
   });

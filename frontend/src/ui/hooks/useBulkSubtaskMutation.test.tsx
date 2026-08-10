@@ -2,9 +2,9 @@
 
 import React, { PropsWithChildren } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Issue } from '../types';
+import type { BoardData, Issue } from '../types';
 import { useBulkSubtaskMutation } from './useBulkSubtaskMutation';
 import { HttpError } from '../http';
 
@@ -167,6 +167,39 @@ describe('useBulkSubtaskMutation', () => {
 
     expect(getJsonMock).toHaveBeenCalledTimes(1);
     expect(queryClient.getQueryData<ReturnType<typeof makeBoard>>(['kanban'])?.issues[0]?.subtasks).toEqual([]);
+  });
+
+  it('does not let stale bulk reconciliation evict a newer same-scope child', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    queryClient.setQueryData(['kanban'], makeBoard());
+    let resolveReconciliation!: (value: { scope_fingerprint: string; entities: Issue[]; missing_issue_ids: number[] }) => void;
+    postJsonMock.mockResolvedValueOnce({
+      subtasks: [makeIssue(101)],
+      invalidations: { issue_ids: [2] },
+    });
+    getJsonMock.mockReturnValueOnce(new Promise((resolve) => { resolveReconciliation = resolve; }));
+
+    const { result } = renderHook(
+      () => useBulkSubtaskMutation('/projects/demo/kanban', ['kanban'] as const),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    let mutation!: Promise<unknown>;
+    await act(async () => {
+      mutation = result.current.mutateAsync([{ parent_issue_id: 1, subject: 'A', tracker_id: 2 }]);
+      await waitFor(() => expect(getJsonMock).toHaveBeenCalledTimes(1));
+    });
+    queryClient.setQueryData<BoardData>(['kanban'], (current) => {
+      if (!current) return current;
+      const parent = current.issues[0];
+      const child = parent?.subtasks?.[0];
+      if (!parent || !child) return current;
+      return { ...current, issues: [{ ...parent, subtasks: [{ ...child, subject: 'Child newer' }] }] };
+    });
+    resolveReconciliation({ scope_fingerprint: 'project:1', entities: [], missing_issue_ids: [2] });
+    await act(async () => { await mutation; });
+
+    expect(queryClient.getQueryData<BoardData>(['kanban'])?.issues[0]?.subtasks?.[0]?.subject).toBe('Child newer');
   });
 
   it('resets the board and skips reconciliation for snapshot-invalidated success without issue DTOs', async () => {

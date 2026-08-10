@@ -4,6 +4,7 @@ import type { BoardData, Issue, Subtask } from './types';
 import { findIssueInBoard, resolveClosedState, type AncestorIssueUpdate, type IssueMutationResult } from './kanbanShared';
 import { mapSubtasksTree, updateSubtasksTree } from './subtasksTree';
 import { applyBoardResponse, createNormalizedBoardState, rollbackLocalIssuePatch, selectBoardData } from './boardState';
+import { getBoardFreshnessAuthority } from './asyncFreshness';
 
 export type EntityReconciliationResponse = {
   scope_fingerprint?: string;
@@ -25,22 +26,50 @@ export function isBoardSnapshotInvalidated(result: unknown): boolean {
 }
 
 export function invalidateBoardSnapshot(queryClient: QueryClient, queryKey: QueryKey): void {
+  getBoardFreshnessAuthority(queryClient, queryKey).invalidate();
   void queryClient.resetQueries({ queryKey });
 }
 
-export function applyMutationResponse(data: BoardData, result: Partial<IssueMutationResult>): BoardData {
+export type MutationResponseApplyOptions = {
+  excludeIssueId?: number;
+};
+
+export function applyMutationResponse(
+  data: BoardData,
+  result: Partial<IssueMutationResult>,
+  options: MutationResponseApplyOptions = {},
+): BoardData {
   if (isBoardSnapshotInvalidated(result)) return data;
+  const applicableResult = options.excludeIssueId === undefined
+    ? result
+    : withoutIssueEffect(result, options.excludeIssueId);
   const state = createNormalizedBoardState(data);
-  const issueUpdates = result.issue_updates ?? (result.issue ? [result.issue] : []);
+  const issueUpdates = applicableResult.issue_updates ?? (applicableResult.issue ? [applicableResult.issue] : []);
   return selectBoardData(applyBoardResponse(state, {
     kind: 'mutation',
     issue_updates: issueUpdates,
-    created_issues: result.created_issues,
-    deleted_issue_ids: result.deleted_issue_ids,
-    evicted_issue_ids: result.evicted_issue_ids,
-    tree_changes: result.tree_changes,
-    scopeFingerprint: result.scope_fingerprint,
+    created_issues: applicableResult.created_issues,
+    deleted_issue_ids: applicableResult.deleted_issue_ids,
+    evicted_issue_ids: applicableResult.evicted_issue_ids,
+    tree_changes: applicableResult.tree_changes,
+    scopeFingerprint: applicableResult.scope_fingerprint,
   }));
+}
+
+function withoutIssueEffect(result: Partial<IssueMutationResult>, issueId: number): Partial<IssueMutationResult> {
+  return {
+    ...result,
+    issue: result.issue?.id === issueId ? undefined : result.issue,
+    issue_updates: result.issue_updates?.filter((issue) => issue.id !== issueId),
+    created_issues: result.created_issues?.filter((issue) => issue.id !== issueId),
+    // A stale target does not prove that a negative membership/tree effect is
+    // still current. Let a fresh reconciliation or authoritative snapshot
+    // establish those effects instead of guessing from the old response.
+    deleted_issue_ids: undefined,
+    evicted_issue_ids: undefined,
+    tree_changes: undefined,
+    ancestor_updates: result.ancestor_updates?.filter((update) => update.id !== issueId),
+  };
 }
 
 export function applyEntityReconciliation(
@@ -94,7 +123,12 @@ type UseIssueMutationOptions<TPayload extends IssuePayload, TResult> = {
   queryKey: QueryKey;
   mutationFn: (payload: TPayload) => Promise<TResult>;
   applyOptimistic: (data: BoardData, payload: TPayload) => BoardData;
-  applyServer: (data: BoardData, result: TResult, payload: TPayload, options?: { applyTarget: boolean }) => BoardData;
+  applyServer: (
+    data: BoardData,
+    result: TResult,
+    payload: TPayload,
+    options?: { applyTarget: boolean; applyNonTarget?: boolean },
+  ) => BoardData;
   onError?: (error: unknown) => void;
   onSuccess?: (result: TResult) => void;
   onMutateIssue?: (issueId: number) => void;
@@ -197,25 +231,38 @@ function applyFreshServerResult<TPayload extends IssuePayload, TResult>(
   payload: TPayload,
   context: MutationContext | undefined,
   revisions: Map<number, number>,
-  applyServer: (data: BoardData, result: TResult, payload: TPayload, options?: { applyTarget: boolean }) => BoardData,
+  applyServer: (
+    data: BoardData,
+    result: TResult,
+    payload: TPayload,
+    options?: { applyTarget: boolean; applyNonTarget?: boolean },
+  ) => BoardData,
 ): BoardData {
   const currentIssue = findIssueInBoard(data, payload.issueId);
-  const incomingIssue = issueFromResult(result);
+  const incomingIssue = issueFromResult(result, payload.issueId);
   const hasNewerMutation = context ? (revisions.get(payload.issueId) ?? 0) > context.revision : false;
   if (!currentIssue || !incomingIssue || (!hasNewerMutation && isIssueFresh(currentIssue, incomingIssue))) {
-    return applyServer(data, result, payload, { applyTarget: true });
+    return applyServer(data, result, payload, { applyTarget: true, applyNonTarget: true });
   }
 
-  // Keep ancestor updates from this response, but prevent its target issue
-  // from replacing a newer optimistic/server state.
+  // Keep independent server effects from this response, but let the mutation
+  // path exclude the stale target effect itself.
   const preservedResult = { ...(result as object), issue: currentIssue } as TResult;
-  return applyServer(data, preservedResult, payload, { applyTarget: false });
+  return applyServer(data, preservedResult, payload, { applyTarget: false, applyNonTarget: true });
 }
 
-function issueFromResult<TResult>(result: TResult): Issue | null {
-  if (!result || typeof result !== 'object' || !('issue' in result)) return null;
+function issueFromResult<TResult>(result: TResult, issueId: number): Issue | null {
+  if (!result || typeof result !== 'object') return null;
   const issue = (result as { issue?: unknown }).issue;
-  return issue && typeof issue === 'object' && 'id' in issue ? issue as Issue : null;
+  if (issue && typeof issue === 'object' && 'id' in issue && (issue as { id?: unknown }).id === issueId) {
+    return issue as Issue;
+  }
+  const issueUpdates = (result as { issue_updates?: unknown }).issue_updates;
+  if (!Array.isArray(issueUpdates)) return null;
+  const target = issueUpdates.find((candidate) => (
+    candidate && typeof candidate === 'object' && 'id' in candidate && (candidate as { id?: unknown }).id === issueId
+  ));
+  return target && typeof target === 'object' ? target as Issue : null;
 }
 
 export function isIssueFresh(current: Issue, incoming: Issue): boolean {
