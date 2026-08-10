@@ -223,7 +223,7 @@ export function App({ dataUrl, initialCurrentUserId }: Props) {
   }, [allowedTrackerIds, data, filters.trackerIds, setFilters]);
 
   const effectiveLaneType = displayData?.meta.lane_type;
-  const dialogs = useKanbanDialogs(baseUrl, data, effectiveLaneType);
+  const dialogs = useKanbanDialogs(baseUrl, data, effectiveLaneType, boardQueryKey);
   const actions = useKanbanActions({
     baseUrl,
     boardQueryKey,
@@ -430,7 +430,7 @@ export function App({ dataUrl, initialCurrentUserId }: Props) {
 
               if (createdIssue?.id) {
                 dialogs.setModal(null);
-                dialogs.setIframeEditContext({
+                dialogs.openIssue({
                   url: `/issues/${createdIssue.id}`,
                   issueId: createdIssue.id,
                   issueTitle: buildIssueTitle(data, createdIssue.id, createdIssue),
@@ -449,19 +449,19 @@ export function App({ dataUrl, initialCurrentUserId }: Props) {
         />
       ) : null}
 
-      {dialogs.iframeEditContext && data ? (
+      {dialogs.iframeEditContext ? (
         <IframeEditDialog
           url={dialogs.iframeEditContext.url}
           issueId={dialogs.iframeEditContext.issueId}
           issueTitle={dialogs.iframeEditContext.issueTitle}
           projectId={dialogs.iframeEditContext.projectId}
-          labels={data.labels}
-          baseUrl={baseUrl}
-          queryKey={boardQueryKey}
-          projectIds={data.meta.project_ids ?? []}
-          scopeStatusIds={effectiveScopeStatusIds(data)}
-          dependencyStatusIds={effectiveDependencyStatusIds(data)}
-          boardEntityLimit={data.meta.requested_entity_limit ?? data.meta.effective_entity_limit}
+          labels={dialogs.iframeEditContext.labels}
+          baseUrl={dialogs.iframeEditContext.baseUrl}
+          queryKey={dialogs.iframeEditContext.boardQueryKey}
+          projectIds={dialogs.iframeEditContext.projectIds}
+          scopeStatusIds={dialogs.iframeEditContext.scopeStatusIds}
+          dependencyStatusIds={dialogs.iframeEditContext.dependencyStatusIds}
+          boardEntityLimit={dialogs.iframeEditContext.boardEntityLimit}
           onClose={() => {
             dialogs.setIframeEditContext(null);
           }}
@@ -469,31 +469,31 @@ export function App({ dataUrl, initialCurrentUserId }: Props) {
             setNotice(message);
           }}
           onNativeWriteComplete={() => {
-            invalidateBoardSnapshot(queryClient, boardQueryKey);
+            invalidateBoardSnapshot(queryClient, dialogs.iframeEditContext!.boardQueryKey);
           }}
         />
       ) : null}
 
-      {dialogs.iframeCreateUrl && data ? (
+      {dialogs.iframeCreateContext ? (
         <IframeEditDialog
-          url={dialogs.iframeCreateUrl}
+          url={dialogs.iframeCreateContext.url}
           issueId={0}
           mode="create"
-          labels={data.labels}
-          baseUrl={baseUrl}
-          queryKey={boardQueryKey}
-          projectIds={data.meta.project_ids ?? []}
-          scopeStatusIds={effectiveScopeStatusIds(data)}
-          dependencyStatusIds={effectiveDependencyStatusIds(data)}
-          boardEntityLimit={data.meta.requested_entity_limit ?? data.meta.effective_entity_limit}
+          labels={dialogs.iframeCreateContext.labels}
+          baseUrl={dialogs.iframeCreateContext.baseUrl}
+          queryKey={dialogs.iframeCreateContext.boardQueryKey}
+          projectIds={dialogs.iframeCreateContext.projectIds}
+          scopeStatusIds={dialogs.iframeCreateContext.scopeStatusIds}
+          dependencyStatusIds={dialogs.iframeCreateContext.dependencyStatusIds}
+          boardEntityLimit={dialogs.iframeCreateContext.boardEntityLimit}
           onClose={() => {
-            dialogs.setIframeCreateUrl(null);
+            dialogs.setIframeCreateContext(null);
           }}
           onSuccess={(message) => {
             setNotice(message);
           }}
           onNativeWriteComplete={() => {
-            invalidateBoardSnapshot(queryClient, boardQueryKey);
+            invalidateBoardSnapshot(queryClient, dialogs.iframeCreateContext!.boardQueryKey);
           }}
         />
       ) : null}

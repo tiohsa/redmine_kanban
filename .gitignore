@@ -11,7 +11,7 @@ specs/
 .specify/
 .venv/
 .serena/
-#docs/
+docs/
 e2e/test-results/
 .codegraph/
 .agents/

@@ -10,6 +10,7 @@ const mutateAsyncMock = vi.hoisted(() => vi.fn());
 const getJsonMock = vi.hoisted(() => vi.fn());
 
 vi.mock('./hooks/useBulkSubtaskMutation', () => ({
+  BulkSubtaskError: class BulkSubtaskError extends Error {},
   useBulkSubtaskMutation: () => ({
     mutateAsync: mutateAsyncMock,
   }),
@@ -431,6 +432,57 @@ describe('IframeEditDialog layout variants', () => {
     fireEvent.load(iframe);
 
     await waitFor(() => expect(mutateAsyncMock).toHaveBeenCalledTimes(1));
+  });
+
+  it('retains bulk subtask input and the error after the native save succeeds but bulk creation fails', async () => {
+    mutateAsyncMock.mockRejectedValue(new Error('bulk failed'));
+    const { container } = render(
+      <IframeEditDialog
+        url="/issues/1"
+        issueId={1}
+        issueTitle="Feature request"
+        projectId={3}
+        labels={labels}
+        baseUrl="/projects/demo/kanban"
+        queryKey={['kanban', 'board']}
+        onClose={() => {}}
+        onSuccess={() => {}}
+      />,
+    );
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    const doc = document.implementation.createHTMLDocument('iframe');
+    doc.body.innerHTML = '<div id="content"><div class="issue details">Issue</div></div>';
+    const iframeWindow = {
+      location: { href: 'http://example.com/issues/1' }, document: doc,
+      addEventListener: vi.fn(), removeEventListener: vi.fn(), $: vi.fn(() => ({ off: vi.fn() })),
+    };
+    Object.defineProperty(iframe, 'contentWindow', { value: iframeWindow, configurable: true });
+    Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+    fireEvent.load(iframe);
+    await waitFor(() => expect(getJsonMock).toHaveBeenCalledWith('/projects/demo/kanban/trackers?target_project_id=3'));
+    fireEvent.click(screen.getByRole('button', { name: /子チケット一括登録/ }));
+    const input = screen.getByRole('textbox', { name: '子チケット一括登録 (1行に1件名)' });
+    fireEvent.change(input, { target: { value: '再試行する子チケット' } });
+
+    const editDoc = document.implementation.createHTMLDocument('edit iframe');
+    editDoc.body.innerHTML = '<div id="content"><form id="issue-form"><input name="issue[project_id]" value="3" /><button type="submit">Save</button></form></div>';
+    iframeWindow.location.href = 'http://example.com/issues/1/edit';
+    Object.defineProperty(iframe, 'contentDocument', { value: editDoc, configurable: true });
+    vi.spyOn(editDoc.querySelector('button') as HTMLButtonElement, 'click').mockImplementation(() => undefined);
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    fireEvent.load(iframe);
+
+    iframeWindow.location.href = 'http://example.com/issues/1';
+    editDoc.body.innerHTML = '<div id="content"><div class="issue details">Saved issue</div></div>';
+    fireEvent.load(iframe);
+
+    await waitFor(() => {
+      expect(mutateAsyncMock).toHaveBeenCalledOnce();
+      expect(screen.getByTestId('issue-dialog-error').textContent).toContain('更新失敗 1');
+      expect((screen.getByRole('textbox', { name: '子チケット一括登録 (1行に1件名)' }) as HTMLTextAreaElement).value).toBe('再試行する子チケット');
+      expect(screen.getByRole('button', { name: '保存' })).toBeTruthy();
+    });
   });
 
   it('shows comment save action when a journal edit form is active', async () => {

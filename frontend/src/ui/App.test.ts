@@ -1,10 +1,33 @@
 // @vitest-environment jsdom
-import { render, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App, normalizeAssigneeIds, normalizeProjectIds, normalizeTrackerIds, resolveDefaultCreateProjectId } from './App';
 import { getJson } from './http';
+
+const iframeUnmountSpy = vi.hoisted(() => vi.fn());
+
+vi.mock('./board/CanvasBoard', async () => {
+  const ReactModule = await import('react');
+  return {
+    CanvasBoard: ReactModule.forwardRef(({ onEdit }: { onEdit: (issueId: number) => void }, _ref) => ReactModule.createElement(
+      'button', { type: 'button', onClick: () => onEdit(9) }, 'Open issue 9',
+    )),
+  };
+});
+
+vi.mock('./IframeEditDialog', async () => {
+  const ReactModule = await import('react');
+  return {
+    IframeEditDialog: ({ onNativeWriteComplete }: { onNativeWriteComplete?: () => void }) => {
+      ReactModule.useEffect(() => () => { iframeUnmountSpy(); }, []);
+      return ReactModule.createElement(
+        'button', { type: 'button', 'data-testid': 'iframe-dialog', onClick: onNativeWriteComplete }, 'Complete native write',
+      );
+    },
+  };
+});
 
 vi.stubGlobal('ResizeObserver', class {
   observe() {}
@@ -60,6 +83,7 @@ describe('App board scope helpers', () => {
   });
 
   beforeEach(() => vi.mocked(getJson).mockClear());
+  afterEach(() => cleanup());
 
   it('uses hydrated preferences in the first board request', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -71,5 +95,39 @@ describe('App board scope helpers', () => {
 
     await waitFor(() => expect(getJson).toHaveBeenCalled());
     expect(vi.mocked(getJson).mock.calls[0][0]).toBe('/projects/demo/kanban/data?project_ids%5B%5D=4&issue_status_ids%5B%5D=2&board_entity_limit=3000');
+  });
+
+  it('keeps the iframe dialog mounted while its native write resets a pending board snapshot', async () => {
+    iframeUnmountSpy.mockClear();
+    const boardData = {
+      ok: true, contract_version: 3, scope_fingerprint: 'sha256:test',
+      meta: { project_id: 1, project_ids: [4], scope_status_ids: [2], current_user_id: 7, can_move: false, can_create: false, can_delete: false, lane_type: 'none', aging_warn_days: 7, aging_danger_days: 14, aging_exclude_closed: false, complete: true, entity_count: 1 },
+      columns: [], lanes: [], lists: { assignees: [], trackers: [{ id: 1, name: 'Bug' }], priorities: [], projects: [], viewable_projects: [], creatable_projects: [] },
+      issues: [{ id: 9, subject: 'Session issue', status_id: 2, tracker_id: 1, description: '', assigned_to_id: null, lock_version: 1, urls: { issue: '/issues/9', issue_edit: '/issues/9/edit' } }],
+      entities: [{ id: 9, subject: 'Session issue', status_id: 2, tracker_id: 1, description: '', assigned_to_id: null, lock_version: 1, urls: { issue: '/issues/9', issue_edit: '/issues/9/edit' } }], tree: { root_ids: [9], children_by_parent_id: {} }, labels: {},
+    };
+    let resolvePendingBoard: ((value: typeof boardData) => void) | undefined;
+    vi.mocked(getJson)
+      .mockImplementationOnce(() => Promise.resolve(boardData))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolvePendingBoard = resolve; }));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(React.createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      React.createElement(App, { dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7 }),
+    ));
+
+    await screen.findByRole('button', { name: 'Open issue 9' });
+    const openIssueButtons = screen.getAllByRole('button', { name: 'Open issue 9' });
+    fireEvent.click(openIssueButtons[openIssueButtons.length - 1]);
+    await screen.findByTestId('iframe-dialog');
+    fireEvent.click(screen.getByTestId('iframe-dialog'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('iframe-dialog')).toBeTruthy();
+      expect(iframeUnmountSpy).not.toHaveBeenCalled();
+    });
+    resolvePendingBoard?.(boardData);
+    queryClient.clear();
   });
 });
