@@ -914,6 +914,16 @@
   width: 220px;
 }
 
+.rk-settings-menu {
+  width: 300px;
+  height: 400px;
+  box-sizing: border-box;
+  max-height: min(680px, calc(100dvh - 96px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
 .rk-settings-title {
   padding: 8px 12px;
   color: var(--rk-text-dark);
@@ -1001,6 +1011,107 @@
 .rk-settings-select-row {
   min-height: 36px;
   border-bottom: 0;
+}
+
+.rk-settings-label-with-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.rk-settings-field {
+  padding: 8px 12px 4px;
+}
+
+.rk-settings-field-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--rk-text-primary);
+  font-size: 13px;
+}
+
+.rk-settings-field > .rk-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.rk-settings-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 4px 12px 8px;
+}
+
+.rk-settings-actions .rk-btn {
+  width: 100%;
+  min-width: 0;
+  padding-inline: 6px;
+  white-space: nowrap;
+}
+
+.rk-settings-info-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.rk-settings-info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--rk-text-secondary);
+  cursor: pointer;
+}
+
+.rk-settings-info-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  font-family: Arial, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.rk-settings-info:hover,
+.rk-settings-info:focus-visible {
+  color: var(--rk-primary);
+  background: #eff6ff;
+  outline: none;
+}
+
+.rk-settings-tooltip {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 210;
+  display: none;
+  width: 250px;
+  padding: 8px 10px;
+  border: 1px solid var(--rk-border);
+  border-radius: 8px;
+  background: var(--rk-text-dark);
+  color: #fff;
+  box-shadow: var(--rk-shadow-md);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: normal;
+}
+
+.rk-settings-info-wrap:hover .rk-settings-tooltip,
+.rk-settings-info:focus-visible + .rk-settings-tooltip {
+  display: block;
 }
 
 .rk-settings-select-row select {

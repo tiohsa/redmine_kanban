@@ -2,7 +2,16 @@
 
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it, beforeEach } from 'vitest';
-import { useKanbanPreferences } from './useKanbanPreferences';
+import { MAXIMUM_BOARD_ENTITY_COUNT, parseMaximumBoardEntityCount, useKanbanPreferences } from './useKanbanPreferences';
+
+describe('parseMaximumBoardEntityCount', () => {
+  it('accepts the documented bounds and rejects values outside them', () => {
+    expect(parseMaximumBoardEntityCount('1')).toBe(1);
+    expect(parseMaximumBoardEntityCount(String(MAXIMUM_BOARD_ENTITY_COUNT))).toBe(MAXIMUM_BOARD_ENTITY_COUNT);
+    expect(parseMaximumBoardEntityCount('0')).toBeNull();
+    expect(parseMaximumBoardEntityCount(String(MAXIMUM_BOARD_ENTITY_COUNT + 1))).toBeNull();
+  });
+});
 
 describe('useKanbanPreferences', () => {
   beforeEach(() => {
@@ -164,6 +173,8 @@ describe('useKanbanPreferences', () => {
     expect(alpha.result.current.maximumBoardEntityCount).toBe(1500);
 
     act(() => { alpha.result.current.setCurrentUserId(7); });
+    act(() => { alpha.result.current.setMaximumBoardEntityCount(1); });
+    expect(localStorage.getItem('rk_maximum_board_entity_count:/projects/alpha/kanban:user:7')).toBe('1');
     act(() => { alpha.result.current.setMaximumBoardEntityCount(5000); });
     expect(localStorage.getItem('rk_maximum_board_entity_count:/projects/alpha/kanban:user:7')).toBe('5000');
 
