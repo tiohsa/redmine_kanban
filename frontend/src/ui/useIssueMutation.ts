@@ -4,7 +4,7 @@ import type { BoardData, Issue, Subtask } from './types';
 import { findIssueInBoard, resolveClosedState, type AncestorIssueUpdate, type IssueMutationResult } from './kanbanShared';
 import { mapSubtasksTree, updateSubtasksTree } from './subtasksTree';
 import { applyBoardResponse, createNormalizedBoardState, rollbackLocalIssuePatch, selectBoardData } from './boardState';
-import { getBoardFreshnessAuthority } from './asyncFreshness';
+import { getBoardFreshnessAuthority, releaseBoardFreshnessAuthority } from './asyncFreshness';
 
 export type EntityReconciliationResponse = {
   scope_fingerprint?: string;
@@ -26,7 +26,9 @@ export function isBoardSnapshotInvalidated(result: unknown): boolean {
 }
 
 export function invalidateBoardSnapshot(queryClient: QueryClient, queryKey: QueryKey): void {
-  getBoardFreshnessAuthority(queryClient, queryKey).invalidate();
+  const authority = getBoardFreshnessAuthority(queryClient, queryKey);
+  authority.invalidate();
+  releaseBoardFreshnessAuthority(queryClient, queryKey, authority);
   void queryClient.resetQueries({ queryKey });
 }
 

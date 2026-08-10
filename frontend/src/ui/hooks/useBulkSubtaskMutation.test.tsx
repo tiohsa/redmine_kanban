@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BoardData, Issue } from '../types';
 import { useBulkSubtaskMutation } from './useBulkSubtaskMutation';
 import { HttpError } from '../http';
+import { invalidateBoardSnapshot } from '../useIssueMutation';
 
 const postJsonMock = vi.hoisted(() => vi.fn());
 const getJsonMock = vi.hoisted(() => vi.fn());
@@ -200,6 +201,43 @@ describe('useBulkSubtaskMutation', () => {
     await act(async () => { await mutation; });
 
     expect(queryClient.getQueryData<BoardData>(['kanban'])?.issues[0]?.subtasks?.[0]?.subject).toBe('Child newer');
+  });
+
+  it('rejects a second bulk follow-up response after an authoritative invalidation without an explicit rerender', async () => {
+    const queryKey = ['kanban', 'bulk-released-authority'] as const;
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    queryClient.setQueryData(queryKey, makeBoard());
+    let resolveSecond!: (value: { scope_fingerprint: string; entities: Issue[]; missing_issue_ids: number[] }) => void;
+    postJsonMock
+      .mockResolvedValueOnce({ subtasks: [makeIssue(101)], invalidations: { issue_ids: [2] } })
+      .mockResolvedValueOnce({ subtasks: [makeIssue(102)], invalidations: { issue_ids: [2] } });
+    getJsonMock
+      .mockResolvedValueOnce({ scope_fingerprint: 'project:1', entities: [], missing_issue_ids: [] })
+      .mockReturnValueOnce(new Promise((resolve) => { resolveSecond = resolve; }));
+
+    const { result } = renderHook(
+      () => useBulkSubtaskMutation('/projects/demo/kanban', queryKey),
+      { wrapper: createWrapper(queryClient) },
+    );
+    const mutateAsync = result.current.mutateAsync;
+
+    await act(async () => {
+      await mutateAsync([{ parent_issue_id: 1, subject: 'First', tracker_id: 2 }]);
+      await waitFor(() => expect(getJsonMock).toHaveBeenCalledTimes(1));
+    });
+    await act(async () => {
+      await mutateAsync([{ parent_issue_id: 1, subject: 'Second', tracker_id: 2 }]);
+      await waitFor(() => expect(getJsonMock).toHaveBeenCalledTimes(2));
+    });
+
+    const beforeReset = queryClient.getQueryData<BoardData>(queryKey)!;
+    invalidateBoardSnapshot(queryClient, queryKey);
+    queryClient.setQueryData(queryKey, beforeReset);
+    resolveSecond({ scope_fingerprint: 'project:1', entities: [], missing_issue_ids: [2] });
+
+    await waitFor(() => {
+      expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0]?.subtasks?.map((child) => child.id)).toEqual([2]);
+    });
   });
 
   it('resets the board and skips reconciliation for snapshot-invalidated success without issue DTOs', async () => {

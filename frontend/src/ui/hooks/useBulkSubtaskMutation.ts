@@ -81,7 +81,6 @@ export function useBulkSubtaskMutation(
   deferBoardRefresh = false,
 ) {
   const queryClient = useQueryClient();
-  const freshnessAuthority = getBoardFreshnessAuthority(queryClient, queryKey);
   const inFlight = useRef(new Map<string, Promise<BulkMutationResponse>>());
 
   return useMutation({
@@ -154,6 +153,7 @@ export function useBulkSubtaskMutation(
       if (reconciliationIds.length > 0) {
         const requestData = queryClient.getQueryData<BoardData>(queryKey);
         if (requestData) {
+          const freshnessAuthority = getBoardFreshnessAuthority(queryClient, queryKey);
           const request = freshnessAuthority.beginEntityReconciliation(requestData, reconciliationIds);
           void getJson<Parameters<typeof applyEntityReconciliation>[1]>(
             buildBoardEntitiesUrl(baseUrl, projectIds, reconciliationIds, scopeStatusIds, dependencyStatusIds),
@@ -175,6 +175,7 @@ export function useBulkSubtaskMutation(
       if (result.invalidations?.column_counts) {
         const requestData = queryClient.getQueryData<BoardData>(queryKey);
         if (requestData) {
+          const freshnessAuthority = getBoardFreshnessAuthority(queryClient, queryKey);
           const request = freshnessAuthority.beginAggregateReconciliation(requestData);
           void getJson<{ columns?: BoardData['columns'] }>(buildBoardCountsUrl(baseUrl, projectIds))
             .then((response) => {

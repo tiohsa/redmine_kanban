@@ -50,7 +50,6 @@ export function useKanbanActions({
   const [pendingDeleteIssue, setPendingDeleteIssue] = useState<Issue | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
   const queryClient = useQueryClient();
-  const freshnessAuthority = getBoardFreshnessAuthority(queryClient, boardQueryKey);
   const busyIssueIdsRef = useRef<Set<number>>(new Set());
   const busyMutationCountsRef = useRef(new Map<number, number>());
   const deletingIssueIdsRef = useRef(new Set<number>());
@@ -109,6 +108,7 @@ export function useKanbanActions({
     if (ids.length === 0) return;
     const requestData = queryClient.getQueryData<BoardData>(boardQueryKey) ?? data;
     if (!requestData) return;
+    const freshnessAuthority = getBoardFreshnessAuthority(queryClient, boardQueryKey);
     const request = freshnessAuthority.beginEntityReconciliation(requestData, ids);
     try {
       const response = await getJson<{ ok: boolean } & Parameters<typeof applyEntityReconciliation>[1]>(
@@ -128,11 +128,12 @@ export function useKanbanActions({
       freshnessAuthority.finish(request);
       releaseBoardFreshnessAuthority(queryClient, boardQueryKey, freshnessAuthority);
     }
-  }, [baseUrl, boardQueryKey, data, freshnessAuthority, queryClient]);
+  }, [baseUrl, boardQueryKey, data, queryClient]);
 
   const reconcileColumnCounts = useCallback(async (required: boolean) => {
     if (!required || !data) return;
     const requestData = queryClient.getQueryData<BoardData>(boardQueryKey) ?? data;
+    const freshnessAuthority = getBoardFreshnessAuthority(queryClient, boardQueryKey);
     const request = freshnessAuthority.beginAggregateReconciliation(requestData);
     try {
       const response = await getJson<{ ok: boolean; columns?: BoardData['columns'] }>(
@@ -149,7 +150,7 @@ export function useKanbanActions({
       freshnessAuthority.finish(request);
       releaseBoardFreshnessAuthority(queryClient, boardQueryKey, freshnessAuthority);
     }
-  }, [baseUrl, boardQueryKey, data, freshnessAuthority, queryClient]);
+  }, [baseUrl, boardQueryKey, data, queryClient]);
 
   const moveIssueMutation = useIssueMutation<MovePayload, IssueMutationResult>({
     queryKey: boardQueryKey,

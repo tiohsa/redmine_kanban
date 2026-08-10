@@ -104,6 +104,32 @@ describe('async freshness authority', () => {
     expect(getBoardFreshnessAuthority(queryClient, queryKey)).not.toBe(authority);
   });
 
+  it('does not retain completed authority history across sequential query keys', () => {
+    const queryClient = new QueryClient();
+
+    for (let index = 0; index < 32; index += 1) {
+      const queryKey = ['kanban', 'board', 'repro-sequential-resource', index] as const;
+      const authority = getBoardFreshnessAuthority(queryClient, queryKey);
+      const request = authority.beginEntityReconciliation(board(), [1]);
+      authority.finish(request);
+      releaseBoardFreshnessAuthority(queryClient, queryKey, authority);
+
+      const replacement = getBoardFreshnessAuthority(queryClient, queryKey);
+      expect(replacement).not.toBe(authority);
+      releaseBoardFreshnessAuthority(queryClient, queryKey, replacement);
+    }
+  });
+
+  it('releases an idle authority after snapshot invalidation', () => {
+    const queryClient = new QueryClient();
+    const queryKey = ['kanban', 'board', 'repro-idle-invalidation'] as const;
+    const authority = getBoardFreshnessAuthority(queryClient, queryKey);
+
+    invalidateBoardSnapshot(queryClient, queryKey);
+
+    expect(getBoardFreshnessAuthority(queryClient, queryKey)).not.toBe(authority);
+  });
+
   it('keeps a fresh non-target issue update when the target response is stale', async () => {
     const queryKey = ['kanban', 'board', 'repro-t1'] as const;
     const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
@@ -190,6 +216,93 @@ describe('async freshness authority', () => {
     expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0]?.subject).toBe('X newer');
   });
 
+  it('does not reuse a released hook authority for a later entity reconciliation', async () => {
+    const queryKey = ['kanban', 'board', 'repro-released-entity'] as const;
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const initial = board([issue(1)]);
+    queryClient.setQueryData(queryKey, initial);
+    let resolveSecond!: (value: { scope_fingerprint: string; entities: Issue[]; missing_issue_ids: number[] }) => void;
+    getJsonMock
+      .mockResolvedValueOnce({ scope_fingerprint: 'project:1', entities: [], missing_issue_ids: [] })
+      .mockReturnValueOnce(new Promise((resolve) => { resolveSecond = resolve; }));
+
+    const { result } = renderHook(
+      () => useKanbanActions({
+        baseUrl: '/projects/demo/kanban',
+        boardQueryKey: queryKey,
+        data: initial,
+        timeEntryOnClose: false,
+        setNotice: vi.fn(),
+        setError: vi.fn(),
+        setIframeTimeEntryUrl: vi.fn(),
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    const reconcileIssueIds = result.current.reconcileIssueIds;
+
+    await act(async () => { await reconcileIssueIds([1]); });
+
+    let second!: Promise<void>;
+    await act(async () => {
+      second = reconcileIssueIds([1]);
+      await waitFor(() => expect(getJsonMock).toHaveBeenCalledTimes(2));
+    });
+    const beforeReset = queryClient.getQueryData<BoardData>(queryKey)!;
+    invalidateBoardSnapshot(queryClient, queryKey);
+    const authoritative = { ...beforeReset, columns: countResponse(42, 0).columns };
+    queryClient.setQueryData(queryKey, authoritative);
+    resolveSecond({ scope_fingerprint: 'project:1', entities: [], missing_issue_ids: [1] });
+    await act(async () => { await second; });
+
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues.map((candidate) => candidate.id)).toEqual([1]);
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.columns.map((column) => column.count)).toEqual([42, 0]);
+  });
+
+  it('rejects a positive response started on a released hook authority before an authoritative reset', async () => {
+    const queryKey = ['kanban', 'board', 'repro-released-positive'] as const;
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const initial = board([issue(1)]);
+    queryClient.setQueryData(queryKey, initial);
+    let resolveSecond!: (value: { scope_fingerprint: string; entities: Issue[]; missing_issue_ids: number[] }) => void;
+    getJsonMock
+      .mockResolvedValueOnce({ scope_fingerprint: 'project:1', entities: [], missing_issue_ids: [] })
+      .mockReturnValueOnce(new Promise((resolve) => { resolveSecond = resolve; }));
+
+    const { result } = renderHook(
+      () => useKanbanActions({
+        baseUrl: '/projects/demo/kanban',
+        boardQueryKey: queryKey,
+        data: initial,
+        timeEntryOnClose: false,
+        setNotice: vi.fn(),
+        setError: vi.fn(),
+        setIframeTimeEntryUrl: vi.fn(),
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    const reconcileIssueIds = result.current.reconcileIssueIds;
+
+    await act(async () => { await reconcileIssueIds([1]); });
+
+    let second!: Promise<void>;
+    await act(async () => {
+      second = reconcileIssueIds([1]);
+      await waitFor(() => expect(getJsonMock).toHaveBeenCalledTimes(2));
+    });
+    invalidateBoardSnapshot(queryClient, queryKey);
+    const authoritative = board([issue(1, { subject: 'Authoritative', lock_version: 5 })]);
+    queryClient.setQueryData(queryKey, authoritative);
+    resolveSecond({
+      scope_fingerprint: 'project:1',
+      entities: [issue(1, { subject: 'Old positive response', lock_version: 6 })],
+      missing_issue_ids: [],
+    });
+    await act(async () => { await second; });
+
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0]?.subject).toBe('Authoritative');
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0]?.lock_version).toBe(5);
+  });
+
   it('applies only the newest applicable column-count response', async () => {
     const queryKey = ['kanban', 'board', 'repro-t4'] as const;
     const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
@@ -230,6 +343,49 @@ describe('async freshness authority', () => {
     });
 
     expect(queryClient.getQueryData<BoardData>(queryKey)?.columns.map((column) => column.count)).toEqual([8, 4]);
+  });
+
+  it('does not reuse a released hook authority for a later count reconciliation', async () => {
+    const queryKey = ['kanban', 'board', 'repro-released-counts'] as const;
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const initial = board([issue(1)]);
+    queryClient.setQueryData(queryKey, initial);
+    let resolveSecondCounts!: (value: { columns: BoardData['columns'] }) => void;
+    postJsonMock
+      .mockResolvedValueOnce({ ok: true, issue: issue(1, { lock_version: 2 }), invalidations: { column_counts: true } })
+      .mockResolvedValueOnce({ ok: true, issue: issue(1, { lock_version: 3 }), invalidations: { column_counts: true } });
+    getJsonMock
+      .mockResolvedValueOnce(countResponse(1, 0))
+      .mockReturnValueOnce(new Promise((resolve) => { resolveSecondCounts = resolve; }));
+
+    const { result } = renderHook(
+      () => useKanbanActions({
+        baseUrl: '/projects/demo/kanban',
+        boardQueryKey: queryKey,
+        data: initial,
+        timeEntryOnClose: false,
+        setNotice: vi.fn(),
+        setError: vi.fn(),
+        setIframeTimeEntryUrl: vi.fn(),
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+    const moveIssue = result.current.moveIssue;
+
+    act(() => { moveIssue(1, 2); });
+    await waitFor(() => expect(result.current.busyIssueIds.size).toBe(0));
+    await waitFor(() => expect(getJsonMock).toHaveBeenCalledTimes(1));
+
+    act(() => { moveIssue(1, 2); });
+    await waitFor(() => expect(getJsonMock).toHaveBeenCalledTimes(2));
+    const beforeReset = queryClient.getQueryData<BoardData>(queryKey)!;
+    invalidateBoardSnapshot(queryClient, queryKey);
+    const authoritative = { ...beforeReset, columns: countResponse(42, 0).columns };
+    queryClient.setQueryData(queryKey, authoritative);
+    resolveSecondCounts(countResponse(7, 1));
+    await act(async () => { await Promise.resolve(); });
+
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.columns.map((column) => column.count)).toEqual([42, 0]);
   });
 
   it('rejects a pre-reset count response after an authoritative snapshot', async () => {
