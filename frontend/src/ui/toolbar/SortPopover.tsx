@@ -10,12 +10,12 @@ export function SortPopover({ sortKey, onChangeSort, labels }: {
   const [open, setOpen] = useState(false);
   const { triggerRef, menuRef } = useDropdownDismiss(open, () => setOpen(false));
   const options: { key: 'due' | 'priority' | 'updated'; label: string; asc: SortKey; desc: SortKey }[] = [
-    { key: 'due', label: labels.issue_due_date ?? 'Due date', asc: 'due_asc', desc: 'due_desc' },
-    { key: 'priority', label: labels.issue_priority ?? 'Priority', asc: 'priority_asc', desc: 'priority_desc' },
-    { key: 'updated', label: labels.updated ?? 'Updated', asc: 'updated_asc', desc: 'updated_desc' },
+    { key: 'due', label: labels.issue_due_date, asc: 'due_asc', desc: 'due_desc' },
+    { key: 'priority', label: labels.issue_priority, asc: 'priority_asc', desc: 'priority_desc' },
+    { key: 'updated', label: labels.updated, asc: 'updated_asc', desc: 'updated_desc' },
   ];
   const active = options.find((option) => sortKey === option.asc || sortKey === option.desc);
-  const title = labels.sort ?? labels.sort_by ?? 'Sort';
+  const title = labels.sort;
 
   return (
     <div className="rk-dropdown-container">

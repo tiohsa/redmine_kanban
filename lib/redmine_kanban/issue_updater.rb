@@ -19,8 +19,8 @@ module RedmineKanban
 
     def update(issue_id:, params:)
       issue = Issue.visible(@user).find_by(id: issue_id)
-      return error_response('タスクが見つかりません', status: :not_found) unless issue
-      return error_response('権限がありません', status: :forbidden) unless PermissionPolicy.new(user: @user).can_update_issue?(issue, @project)
+      return error_response(I18n.t('redmine_kanban.error_issue_not_found'), status: :not_found) unless issue
+      return error_response(I18n.t('redmine_kanban.error_permission_denied'), status: :forbidden) unless PermissionPolicy.new(user: @user).can_update_issue?(issue, @project)
 
       issue.init_journal(@user)
 
@@ -31,7 +31,7 @@ module RedmineKanban
       attributes['assigned_to_id'] = normalize_assigned_to_id(params[:assigned_to_id]) if params.key?(:assigned_to_id)
       if params.key?(:priority_id)
         priority_id = normalize_priority_id(params[:priority_id])
-        return error_response('優先度の値が不正です') if priority_id == :invalid
+        return error_response(I18n.t('redmine_kanban.label_invalid_priority')) if priority_id == :invalid
 
         attributes['priority_id'] = priority_id
       end
@@ -51,7 +51,7 @@ module RedmineKanban
       attributes['done_ratio'] = normalize_done_ratio(params[:done_ratio]) if params.key?(:done_ratio)
 
       lock_version = normalize_lock_version(params[:lock_version])
-      return error_response('lock_versionが必要です') if lock_version.nil?
+      return error_response(I18n.t('redmine_kanban.error_lock_version_required')) if lock_version.nil?
 
       issue.lock_version = lock_version
 
@@ -61,7 +61,7 @@ module RedmineKanban
         if status_allowed_for?(issue, status_id)
           attributes['status_id'] = status_id
         else
-          return error_response('ワークフロー上、このステータスへ遷移できません')
+          return error_response(I18n.t('redmine_kanban.error_workflow_transition'))
         end
       end
 
@@ -119,7 +119,7 @@ module RedmineKanban
       result[:ancestor_updates] = ancestor_updates if ancestor_updates&.any?
       result
     rescue ActiveRecord::StaleObjectError
-      error_response('他ユーザにより更新されました', status: :conflict)
+      error_response(I18n.t('redmine_kanban.error_conflict'), status: :conflict)
     end
 
     private
@@ -141,8 +141,9 @@ module RedmineKanban
     end
 
     def invalid_date_response(field)
-      label = field == :start_date ? '開始日' : '期日'
-      error_response("#{label}の日付が不正です", field_errors: { field => ["#{label}の日付が不正です"] })
+      key = field == :start_date ? 'redmine_kanban.error_invalid_date_start' : 'redmine_kanban.error_invalid_date_due'
+      message = I18n.t(key)
+      error_response(message, field_errors: { field => [message] })
     end
 
     def normalize_done_ratio(value)

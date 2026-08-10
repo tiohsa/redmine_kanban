@@ -216,7 +216,7 @@ export function useKanbanActions({
         if (issue.can_log_time) {
           setIframeTimeEntryUrl(`/issues/${issue.id}/time_entries/new`);
         } else {
-          setNotice(data?.labels.time_entry_permission_required ?? 'You do not have permission to log time for this issue');
+          setNotice(data?.labels.time_entry_permission_required ?? null);
         }
       }
     },

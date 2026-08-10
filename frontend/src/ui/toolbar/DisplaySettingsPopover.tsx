@@ -78,10 +78,10 @@ export function DisplaySettingsPopover({
   useEffect(() => {
     setMaximumEntityCountDraft(String(maximumBoardEntityCount));
   }, [maximumBoardEntityCount]);
-  const title = labels.display_settings ?? 'Display settings';
+  const title = labels.display_settings;
   const widthOptions = [
-    { id: 'none', name: labels.fit_none ?? 'Original size' },
-    { id: 'width', name: labels.fit_width ?? 'Fit to width' },
+    { id: 'none', name: labels.fit_none },
+    { id: 'width', name: labels.fit_width },
   ];
   const fontSizeOptions = FONT_SIZE_OPTIONS.map((value) => ({ id: value, name: `${value}px` }));
 
@@ -94,31 +94,31 @@ export function DisplaySettingsPopover({
       {open ? (
         <div ref={menuRef} className="rk-settings-menu" role="dialog" aria-label={title}>
           <div className="rk-settings-title">{title}</div>
-          <SettingsToggle label={labels.show_subtasks_short ?? labels.show_subtasks ?? 'Show subtasks'} checked={showSubtasks} onChange={onToggleShowSubtasks} />
-          <SettingsSelect label={labels.lane_type ?? 'Swimlane'} value={laneType} options={[
-            { id: 'none', name: labels.none ?? 'None' },
-            { id: 'assignee', name: labels.assignee ?? 'Assignee' },
-            { id: 'priority', name: labels.issue_priority ?? 'Priority' },
+          <SettingsToggle label={labels.show_subtasks_short} checked={showSubtasks} onChange={onToggleShowSubtasks} />
+          <SettingsSelect label={labels.lane_type} value={laneType} options={[
+            { id: 'none', name: labels.none },
+            { id: 'assignee', name: labels.assignee },
+            { id: 'priority', name: labels.issue_priority },
           ]} onChange={(value) => onChangeLaneType(value as LaneType)} />
-          <SettingsSelect label={labels.aging_warn_days ?? 'Aging warning days'} value={String(agingWarnDays)} options={[0, 1, 3, 5, 7, 14, 30].map((value) => ({ id: String(value), name: String(value) }))} onChange={(value) => onChangeAgingWarnDays(Number(value))} selectClassName="rk-settings-aging-days-select" />
-          <SettingsSelect label={labels.aging_danger_days ?? 'Aging danger days'} value={String(agingDangerDays)} options={[1, 3, 5, 7, 14, 30, 60].map((value) => ({ id: String(value), name: String(value) }))} onChange={(value) => onChangeAgingDangerDays(Number(value))} selectClassName="rk-settings-aging-days-select" />
-          <SettingsToggle label={labels.aging_exclude_closed ?? 'Exclude closed issues from aging'} checked={agingExcludeClosed} onChange={onToggleAgingExcludeClosed} />
-          <SettingsToggle label={labels.time_entry_short ?? 'Time entry on close'} checked={timeEntryOnClose} onChange={onToggleTimeEntryOnClose} />
+          <SettingsSelect label={labels.aging_warn_days} value={String(agingWarnDays)} options={[0, 1, 3, 5, 7, 14, 30].map((value) => ({ id: String(value), name: String(value) }))} onChange={(value) => onChangeAgingWarnDays(Number(value))} selectClassName="rk-settings-aging-days-select" />
+          <SettingsSelect label={labels.aging_danger_days} value={String(agingDangerDays)} options={[1, 3, 5, 7, 14, 30, 60].map((value) => ({ id: String(value), name: String(value) }))} onChange={(value) => onChangeAgingDangerDays(Number(value))} selectClassName="rk-settings-aging-days-select" />
+          <SettingsToggle label={labels.aging_exclude_closed} checked={agingExcludeClosed} onChange={onToggleAgingExcludeClosed} />
+          <SettingsToggle label={labels.time_entry_short} checked={timeEntryOnClose} onChange={onToggleTimeEntryOnClose} />
           <div className="rk-settings-field">
             <label className="rk-settings-field-label" htmlFor="rk-maximum-board-entity-count">
               <span className="rk-settings-label-with-info">
-              <span>{labels.maximum_board_entity_count ?? 'Maximum display count'}</span>
+              <span>{labels.maximum_board_entity_count}</span>
               <span className="rk-settings-info-wrap">
                 <button
                   type="button"
                   className="rk-settings-info"
-                  aria-label={labels.maximum_board_entity_count_help ?? 'Display count limits'}
+                  aria-label={labels.maximum_board_entity_count_help}
                 >
                   <span className="rk-settings-info-glyph" aria-hidden="true">i</span>
                 </button>
                 <span className="rk-settings-tooltip" role="tooltip">
-                  {(labels.maximum_board_entity_count_help ?? `Enter a value from 1 to ${MAXIMUM_BOARD_ENTITY_COUNT.toLocaleString()}.`).replace('%{max}', MAXIMUM_BOARD_ENTITY_COUNT.toLocaleString())}
-                  {serverEntityLimit ? ` ${ (labels.server_entity_limit_notice ?? 'The server safety limit is %{count} issues.').replace('%{count}', String(serverEntityLimit))}` : ''}
+                  {labels.maximum_board_entity_count_help.replace('%{max}', MAXIMUM_BOARD_ENTITY_COUNT.toLocaleString())}
+                  {serverEntityLimit ? ` ${labels.server_entity_limit_notice.replace('%{count}', String(serverEntityLimit))}` : ''}
                 </span>
               </span>
               </span>
@@ -138,27 +138,27 @@ export function DisplaySettingsPopover({
             />
           </div>
           {maximumEntityCountError ? <div className="rk-settings-error" role="alert">{maximumEntityCountError}</div> : null}
-          {maximumEntityCountSaved ? <div className="rk-settings-help" role="status">{labels.maximum_board_entity_count_saved ?? 'Saved.'}</div> : null}
+          {maximumEntityCountSaved ? <div className="rk-settings-help" role="status">{labels.maximum_board_entity_count_saved}</div> : null}
           <div className="rk-settings-actions">
             <button type="button" className="rk-btn rk-btn-sm" onClick={() => {
               const parsed = parseMaximumBoardEntityCount(maximumEntityCountDraft);
               if (parsed === null) {
-                setMaximumEntityCountError(labels.maximum_board_entity_count_invalid ?? 'Enter a positive integer.');
+                setMaximumEntityCountError(labels.maximum_board_entity_count_invalid);
                 return;
               }
               onChangeMaximumBoardEntityCount(parsed);
               setMaximumEntityCountError(null);
               setMaximumEntityCountSaved(true);
-            }}>{labels.save ?? 'Save'}</button>
+            }}>{labels.save}</button>
             <button type="button" className="rk-btn rk-btn-sm" onClick={() => {
               setMaximumEntityCountDraft(String(DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT));
               onChangeMaximumBoardEntityCount(DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT);
               setMaximumEntityCountError(null);
               setMaximumEntityCountSaved(true);
-            }}>{labels.reset ?? 'Reset'}</button>
+            }}>{labels.reset}</button>
           </div>
-          <SettingsSelect label={labels.display_width ?? 'Display width'} value={fitMode} options={widthOptions} onChange={(value) => { if (value !== fitMode) onToggleFitMode(); }} />
-          <SettingsSelect label={labels.font_size ?? 'Font size'} value={String(fontSize)} options={fontSizeOptions} onChange={(value) => onChangeFontSize(Number(value))} />
+          <SettingsSelect label={labels.display_width} value={fitMode} options={widthOptions} onChange={(value) => { if (value !== fitMode) onToggleFitMode(); }} />
+          <SettingsSelect label={labels.font_size} value={String(fontSize)} options={fontSizeOptions} onChange={(value) => onChangeFontSize(Number(value))} />
         </div>
       ) : null}
     </div>

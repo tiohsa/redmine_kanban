@@ -24,7 +24,7 @@ export function KanbanIssueModal({ data, baseUrl, ctx, onClose, onSaved, onDelet
   const labels = data.labels;
   const modalTitle = isEdit
     ? buildIssueTitle(data, issue.id, issue)
-    : labels.issue_create_dialog_title ?? 'Create issue';
+    : labels.issue_create_dialog_title;
   const defaultLinkUrl = isEdit
     ? issue?.urls.issue_edit
     : buildDefaultIssueCreateUrl(baseUrl, data.meta.project_id, data.meta.lane_type, ctx);
@@ -136,7 +136,7 @@ export function KanbanIssueModal({ data, baseUrl, ctx, onClose, onSaved, onDelet
         <IssueDialogHeader
           title={modalTitle}
           linkUrl={defaultLinkUrl}
-          linkAriaLabel={labels.open_in_redmine ?? 'Open in Redmine'}
+          linkAriaLabel={labels.open_in_redmine}
         />
 
         <form className="rk-form" onSubmit={(event) => { event.preventDefault(); void submit(); }}>

@@ -113,7 +113,7 @@ export function ToolbarMultiSelect({
   const optionIdSet = useMemo(() => new Set(optionIds), [optionIds]);
   const allSelected = optionIds.length > 0 && optionIds.every((id) => value.includes(id));
   const selectedCount = value.filter((id) => optionIdSet.has(id)).length;
-  const resolvedAllLabel = allLabel ?? labels.all ?? 'All';
+  const resolvedAllLabel = allLabel ?? labels.all;
   const title = allSelected
     ? resolvedAllLabel
     : value.length > 0

@@ -207,7 +207,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
       saveTargetRef.current = null;
       setDialogMode('form');
       setIsSubmitting(false);
-      onSuccess(labels.successful_update ?? 'Successful update', targetIssueId);
+      onSuccess(labels.successful_update, targetIssueId);
       onClose();
       return;
     }
@@ -477,9 +477,9 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
 
   const effectiveSaveTarget = saveTargetRef.current ?? saveTarget;
   const submitLabel = dialogMode === 'issue-show'
-    ? (hasSubtaskInput ? labels.save : (labels.edit_issue ?? 'Edit issue'))
+    ? (hasSubtaskInput ? labels.save : labels.edit_issue)
     : effectiveSaveTarget === 'journal'
-      ? (isSubmitting ? (labels.saving_comment ?? 'Saving comment...') : (labels.save_comment ?? 'Save comment'))
+      ? (isSubmitting ? labels.saving_comment : labels.save_comment)
       : effectiveSaveTarget === 'new-issue' || mode === 'create'
         ? (isSubmitting ? labels.creating : (labels.create_issue ?? labels.create))
         : (isSubmitting ? labels.saving : labels.save);
@@ -490,17 +490,17 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
       ? `${issueTitle} #${issueId}`
       : issueTitle;
   const dialogTitle = mode === 'create'
-    ? (labels.issue_create_dialog_title ?? 'Create issue')
+    ? labels.issue_create_dialog_title
     : mode === 'time_entry'
-      ? (labels.time_entry_dialog_title ?? 'Log time')
+      ? labels.time_entry_dialog_title
       : resolvedIssueTitle && issueId > 0
         ? resolvedIssueTitle
         : isViewDialog
-          ? (labels.issue_info_dialog_title ?? 'Issue details')
-          : (labels.issue_edit_dialog_title ?? 'Edit issue');
+          ? labels.issue_info_dialog_title
+          : labels.issue_edit_dialog_title;
   const issueDialogLinkUrl = currentUrl || url;
-  const issueDialogLinkLabel = labels.open_in_redmine ?? 'Open in Redmine';
-  const closeLabel = labels.close ?? 'Close';
+  const issueDialogLinkLabel = labels.open_in_redmine;
+  const closeLabel = labels.close;
   const maxDialogHeight = Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO);
   const effectiveDialogHeight = dialogHeightPx ?? maxDialogHeight;
 

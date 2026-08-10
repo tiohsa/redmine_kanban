@@ -158,7 +158,7 @@ export function KanbanToolbar({
           showTriggerLabel
           extraContent={(
             <SettingsToggle
-              label={labels.viewable_projects_short ?? labels.show_viewable_projects ?? 'Show viewable projects'}
+              label={labels.viewable_projects_short}
               checked={viewableProjectsEnabled}
               onChange={onToggleViewableProjects}
             />

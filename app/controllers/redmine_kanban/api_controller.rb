@@ -61,7 +61,7 @@ module RedmineKanban
       target_project_id = params[:target_project_id].to_i
       target_project = target_project_id.positive? ? Project.visible(User.current).find_by(id: target_project_id) : @project
       unless target_project && permission_policy.can_view_board?(@project)
-        render json: { ok: false, message: '権限がありません' }, status: :forbidden
+        render json: { ok: false, message: I18n.t('redmine_kanban.error_permission_denied') }, status: :forbidden
         return
       end
 
@@ -88,7 +88,7 @@ module RedmineKanban
     def bulk_create
       payload = params[:bulk] || params
       unless parameter_hash?(payload)
-        render json: { ok: false, message: '一括作成payloadの形式が不正です', field_errors: { bulk: ['Hash形式で指定してください'] } }, status: :unprocessable_entity
+        render json: { ok: false, message: I18n.t('redmine_kanban.error_bulk_payload_invalid'), field_errors: { bulk: [I18n.t('redmine_kanban.error_hash_expected')] } }, status: :unprocessable_entity
         return
       end
 
@@ -108,7 +108,7 @@ module RedmineKanban
     def destroy
       lock_version = params.dig(:issue, :lock_version) || params[:lock_version]
       if lock_version.blank?
-        render json: { ok: false, message: 'lock_versionが必要です' }, status: :unprocessable_entity
+        render json: { ok: false, message: I18n.t('redmine_kanban.error_lock_version_required') }, status: :unprocessable_entity
         return
       end
 
@@ -119,16 +119,16 @@ module RedmineKanban
       Issue.transaction do
         locked_issue = Issue.lock.find_by(id: @issue.id)
         unless locked_issue && locked_issue.lock_version.to_i == lock_version.to_i
-          result = { ok: false, message: '他ユーザにより更新されました' }
+          result = { ok: false, message: I18n.t('redmine_kanban.error_conflict') }
           raise ActiveRecord::Rollback
         end
 
         unless permission_policy.can_delete_issue?(locked_issue, @project)
-          result = { ok: false, message: '権限がありません' }
+          result = { ok: false, message: I18n.t('redmine_kanban.error_permission_denied') }
           raise ActiveRecord::Rollback
         end
 
-        result = locked_issue.destroy ? { ok: true } : { ok: false, message: '削除に失敗しました' }
+        result = locked_issue.destroy ? { ok: true } : { ok: false, message: I18n.t('redmine_kanban.error_delete_failed') }
         raise ActiveRecord::Rollback unless result[:ok]
       end
       if result[:ok]
@@ -145,9 +145,10 @@ module RedmineKanban
         )
       end
       result = enforce_mutation_response_limit(result) if result[:ok]
-      render json: result, status: result[:ok] ? :ok : (result[:message].include?('権限') ? :forbidden : :conflict)
+      status = result[:ok] ? :ok : (result[:message] == I18n.t('redmine_kanban.error_permission_denied') ? :forbidden : :conflict)
+      render json: result, status: status
     rescue ActiveRecord::StaleObjectError
-      render json: { ok: false, message: '他ユーザにより更新されました' }, status: :conflict
+      render json: { ok: false, message: I18n.t('redmine_kanban.error_conflict') }, status: :conflict
     end
 
     private
@@ -321,7 +322,7 @@ module RedmineKanban
     def require_permission!(allowed)
       return true if allowed
 
-      render json: { ok: false, message: '権限がありません' }, status: :forbidden
+      render json: { ok: false, message: I18n.t('redmine_kanban.error_permission_denied') }, status: :forbidden
       false
     end
 

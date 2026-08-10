@@ -36,7 +36,7 @@ module RedmineKanban
         return hash if hash.is_a?(Hash)
 
         raise Error.new(
-          '各行はHash形式で指定してください',
+          I18n.t('redmine_kanban.error_hash_expected'),
           field: field,
           row_index: row_index,
           row_key: row_key
@@ -56,7 +56,7 @@ module RedmineKanban
                  value.to_unsafe_h
                end
         unless hash.is_a?(Hash)
-          raise Error.new('配列またはHash形式で指定してください', field: field)
+          raise Error.new(I18n.t('redmine_kanban.error_collection_expected'), field: field)
         end
 
         hash.sort_by { |key, _value| collection_key(key) }.map do |key, row|

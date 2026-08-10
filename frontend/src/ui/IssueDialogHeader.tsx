@@ -54,8 +54,8 @@ export const IssueDialogHeader = React.forwardRef<HTMLDivElement, Props>(functio
           <button
             type="button"
             className="rk-icon-btn rk-issue-dialog-close"
-            aria-label={closeAriaLabel ?? 'Close'}
-            title={closeAriaLabel ?? 'Close'}
+            aria-label={closeAriaLabel}
+            title={closeAriaLabel}
             onClick={onClose}
             style={compactIconButtonSize ? {
               width: compactIconButtonSize,

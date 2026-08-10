@@ -77,11 +77,11 @@ module RedmineKanban
       end
 
       def processing_response
-        { ok: false, message: '同じ一括作成リクエストが処理中です', field_errors: {}, http_status: :conflict }
+        { ok: false, message: I18n.t('redmine_kanban.error_bulk_processing'), field_errors: {}, http_status: :conflict }
       end
 
       def payload_conflict_response
-        { ok: false, message: '同じIdempotency-Keyが異なる一括作成リクエストに使用されています', field_errors: {}, http_status: :conflict }
+        { ok: false, message: I18n.t('redmine_kanban.error_idempotency_conflict'), field_errors: {}, http_status: :conflict }
       end
 
       def payload_matches?(entry, digest)

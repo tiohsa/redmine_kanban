@@ -30,7 +30,7 @@ module RedmineKanban
     end
 
     def create_with_subtasks(parent_params:, subtasks:, idempotency_key:)
-      return error_response('Idempotency-Keyが必要です', status: :unprocessable_entity) if idempotency_key.blank?
+      return error_response(I18n.t('redmine_kanban.error_idempotency_key_required'), status: :unprocessable_entity) if idempotency_key.blank?
 
       normalized_parent = normalize_bulk_parent(parent_params)
       return normalized_parent if normalized_parent.is_a?(Hash) && normalized_parent[:ok] == false
@@ -41,7 +41,8 @@ module RedmineKanban
       parent_issue_id = normalized_parent[:parent_issue_id]
 
       if normalized_subtasks.count { |subtask| subtask[:subject].to_s.strip.present? } > MAX_BULK_SUBTASKS
-        return error_response('子チケットは最大50件まで作成できます', field_errors: { subtasks: ['子チケットは最大50件まで作成できます'] })
+        message = I18n.t('redmine_kanban.error_bulk_subtask_limit')
+        return error_response(message, field_errors: { subtasks: [message] })
       end
 
       RedmineKanban::BulkIdempotency.with_request(
@@ -111,7 +112,7 @@ module RedmineKanban
 
     def persist_issue(params:)
       subject = params[:subject].to_s.strip
-      return [nil, error_response(nil, field_errors: { subject: ['件名を入力してください'] })] if subject.empty?
+      return [nil, error_response(nil, field_errors: { subject: [I18n.t('redmine_kanban.error_subject_required')] })] if subject.empty?
 
       target_project_id = params[:project_id].to_i
       target_project = if target_project_id > 0
@@ -120,20 +121,20 @@ module RedmineKanban
                          @project
                        end
       unless target_project
-        return [nil, error_response('指定されたプロジェクトが見つからないか、表示する権限がありません', field_errors: { project_id: ['指定されたプロジェクトを利用できません'] })]
+        return [nil, error_response(I18n.t('redmine_kanban.error_project_unavailable'), field_errors: { project_id: [I18n.t('redmine_kanban.error_project_unavailable_field')] })]
       end
 
       unless PermissionPolicy.new(user: @user).can_create_issue?(target_project, @project)
-        return [nil, error_response('指定されたプロジェクトでチケットを作成する権限がありません', status: :forbidden)]
+        return [nil, error_response(I18n.t('redmine_kanban.error_project_create_forbidden'), status: :forbidden)]
       end
 
       parent_issue = find_visible_parent_issue(params[:parent_issue_id])
       if params[:parent_issue_id].present? && !parent_issue
-        return [nil, error_response('親チケットが見つからないか、表示する権限がありません', field_errors: { parent_issue_id: ['親チケットを利用できません'] }, status: :not_found)]
+        return [nil, error_response(I18n.t('redmine_kanban.error_parent_unavailable'), field_errors: { parent_issue_id: [I18n.t('redmine_kanban.error_parent_unavailable_field')] }, status: :not_found)]
       end
 
       if parent_issue && parent_issue.project_id != target_project.id
-        return [nil, error_response('親チケットと作成先プロジェクトが一致しません', field_errors: { project_id: ['親チケットと同じプロジェクトを指定してください'] })]
+        return [nil, error_response(I18n.t('redmine_kanban.error_parent_project_mismatch'), field_errors: { project_id: [I18n.t('redmine_kanban.error_parent_project_required')] })]
       end
 
       tracker_id = params[:tracker_id].to_s.strip
@@ -147,7 +148,7 @@ module RedmineKanban
 
       tracker = target_project.trackers.find_by(id: tracker_id.to_i)
       unless tracker
-        return [nil, error_response('指定されたtrackerは作成先プロジェクトで利用できません', field_errors: { tracker_id: ['作成先プロジェクトで利用可能なtrackerを指定してください'] })]
+        return [nil, error_response(I18n.t('redmine_kanban.error_tracker_unavailable'), field_errors: { tracker_id: [I18n.t('redmine_kanban.error_tracker_project_required')] })]
       end
 
       start_date = normalize_date(params[:start_date])
@@ -189,8 +190,8 @@ module RedmineKanban
 
     def existing_parent_issue(parent_issue_id)
       parent = find_visible_parent_issue(parent_issue_id)
-      return [nil, error_response('親チケットが見つからないか、表示する権限がありません', status: :not_found)] unless parent
-      return [nil, error_response('親チケットに子チケットを追加する権限がありません', status: :forbidden)] unless PermissionPolicy.new(user: @user).can_create_issue?(parent.project, @project)
+      return [nil, error_response(I18n.t('redmine_kanban.error_parent_unavailable'), status: :not_found)] unless parent
+      return [nil, error_response(I18n.t('redmine_kanban.error_permission_denied'), status: :forbidden)] unless PermissionPolicy.new(user: @user).can_create_issue?(parent.project, @project)
 
       [parent, nil]
     end
@@ -243,8 +244,9 @@ module RedmineKanban
     end
 
     def invalid_date_response(field)
-      label = field == :start_date ? '開始日' : '期日'
-      error_response("#{label}の日付が不正です", field_errors: { field => ["#{label}の日付が不正です"] })
+      key = field == :start_date ? 'redmine_kanban.error_invalid_date_start' : 'redmine_kanban.error_invalid_date_due'
+      message = I18n.t(key)
+      error_response(message, field_errors: { field => [message] })
     end
 
     def normalize_done_ratio(value)
