@@ -27,6 +27,6 @@ class RedmineKanbanBulkPayloadNormalizerTest < ActiveSupport::TestCase
       RedmineKanban::BulkPayloadNormalizer.normalize_collection('not-a-collection')
     end
 
-    assert_equal({ 'subtasks' => ['配列またはHash形式で指定してください'] }, error.field_errors)
+    assert_equal({ 'subtasks' => [I18n.t('redmine_kanban.error_collection_expected')] }, error.field_errors)
   end
 end

@@ -12,14 +12,14 @@ module RedmineKanban
       return DEFAULT_BOARD_ENTITY_LIMIT if value.nil?
 
       raw = value.to_s.strip
-      raise InvalidLimit, 'board_entity_limit must be a positive integer' unless raw.match?(/\A[1-9][0-9]*\z/)
+      raise InvalidLimit, I18n.t('redmine_kanban.error_board_entity_limit_positive') unless raw.match?(/\A[1-9][0-9]*\z/)
 
       parsed = Integer(raw, 10)
-      raise InvalidLimit, 'board_entity_limit is out of range' if parsed > INTEGER_MAX
+      raise InvalidLimit, I18n.t('redmine_kanban.error_board_entity_limit_range') if parsed > INTEGER_MAX
 
       parsed
     rescue ArgumentError
-      raise InvalidLimit, 'board_entity_limit must be a positive integer'
+      raise InvalidLimit, I18n.t('redmine_kanban.error_board_entity_limit_positive')
     end
 
     def self.env_positive_integer(name, default)

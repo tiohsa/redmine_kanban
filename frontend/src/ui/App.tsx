@@ -19,7 +19,7 @@ import { invalidateBoardSnapshot } from './useIssueMutation';
 import { useKanbanDialogs } from './useKanbanDialogs';
 import { useKanbanPreferences } from './useKanbanPreferences';
 
-type Props = { dataUrl: string; initialCurrentUserId: number };
+type Props = { dataUrl: string; initialCurrentUserId: number; initialLabels?: Record<string, string> };
 
 export function findIssueForAction(data: BoardData, issueId: number): Issue | null {
   return findIssueInBoard(data, issueId);
@@ -48,7 +48,7 @@ export function resolveDefaultCreateProjectId(
   return null;
 }
 
-export function App({ dataUrl, initialCurrentUserId }: Props) {
+export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -134,17 +134,8 @@ export function App({ dataUrl, initialCurrentUserId }: Props) {
     lanes: [],
     lists: { assignees: [], trackers: [], priorities: [], projects: [], viewable_projects: [], creatable_projects: [] },
     issues: [],
-    labels: {
-      fetching_data: 'Fetching board data…',
-      display_settings: 'Display settings',
-      maximum_board_entity_count: 'Maximum display count',
-      maximum_board_entity_count_help: 'Enter a value from 1 to 2,147,483,647. Issues loaded in one complete board snapshot.',
-      maximum_board_entity_count_invalid: 'Enter an integer from 1 to 2,147,483,647.',
-      maximum_board_entity_count_saved: 'Saved.',
-      save: 'Save',
-      reset: 'Reset',
-    },
-  }), [agingDangerDays, agingExcludeClosed, agingWarnDays, baseUrl, maximumBoardEntityCount]);
+    labels: initialLabels,
+  }), [agingDangerDays, agingExcludeClosed, agingWarnDays, baseUrl, initialLabels, maximumBoardEntityCount]);
   const toolbarData = data ?? emptyBoardData;
   const suppressNextBoardErrorRef = useRef(false);
 
@@ -164,15 +155,15 @@ export function App({ dataUrl, initialCurrentUserId }: Props) {
     if (boardError?.code === 'BOARD_SCOPE_TOO_LARGE') {
       const limit = boardError.effective_entity_limit ?? boardError.requested_entity_limit ?? maximumBoardEntityCount;
       const serverSuffix = boardError.server_entity_limit && boardError.requested_entity_limit && boardError.requested_entity_limit > boardError.server_entity_limit
-        ? ` サーバーの安全上限は${boardError.server_entity_limit.toLocaleString()}件です。`
+        ? ` ${toolbarData.labels.board_server_limit_suffix.replace('%{limit}', boardError.server_entity_limit.toLocaleString())}`
         : '';
-      setError(`対象のIssueが最大表示件数の${limit.toLocaleString()}件を超えています。フィルタを絞るか、最大表示件数を変更してください。${serverSuffix}`);
+      setError(toolbarData.labels.board_scope_too_large.replace('%{limit}', limit.toLocaleString()) + serverSuffix);
     } else if (boardError?.code === 'BOARD_RESPONSE_TOO_LARGE') {
-      setError(`ボードのレスポンスが安全上限（${(boardError.maximum_response_bytes ?? 0).toLocaleString()} bytes）を超えています。`);
+      setError(toolbarData.labels.board_response_too_large.replace('%{bytes}', (boardError.maximum_response_bytes ?? 0).toLocaleString()));
     } else {
-      setError(data?.labels.load_failed ?? 'Board data could not be loaded.');
+      setError(toolbarData.labels.load_failed);
     }
-  }, [boardQuery.data, boardQuery.error, data?.labels.load_failed, maximumBoardEntityCount]);
+  }, [boardQuery.data, boardQuery.error, maximumBoardEntityCount, toolbarData.labels]);
 
   const refresh = useCallback(async (options: { suppressError?: boolean } = {}) => {
     if (options.suppressError) suppressNextBoardErrorRef.current = true;
@@ -531,7 +522,7 @@ export function App({ dataUrl, initialCurrentUserId }: Props) {
             dialogs.setPriorityPopup(null);
 
             if (Number.isNaN(nextPriorityId)) {
-              setError('Invalid priority ID');
+              setError(data.labels.invalid_priority_id);
               return;
             }
             if (!popup || nextPriorityId === popup.currentId) return;
@@ -574,7 +565,7 @@ export function App({ dataUrl, initialCurrentUserId }: Props) {
                 lockVersion: findIssueForAction(data, popup.issueId)?.lock_version ?? null,
               });
             } catch (caught: unknown) {
-              setError(caught instanceof Error ? caught.message : 'Date update failed');
+              setError(caught instanceof Error ? caught.message : data.labels.date_update_failed);
             } finally {
               dialogs.setDatePopup(null);
             }
@@ -600,7 +591,7 @@ export function App({ dataUrl, initialCurrentUserId }: Props) {
                 lockVersion: findIssueForAction(data, popup.issueId)?.lock_version ?? null,
               });
             } catch (caught: unknown) {
-              setError(caught instanceof Error ? caught.message : 'Progress update failed');
+              setError(caught instanceof Error ? caught.message : data.labels.progress_update_failed);
             }
           }}
         />

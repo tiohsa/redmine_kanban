@@ -693,7 +693,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       ref={containerRef}
       className="rk-canvas-board"
       role="region"
-      aria-label={labels.board_aria || 'Kanban Board'}
+aria-label={labels.board_aria}
     >
       <canvas
         ref={canvasRef}

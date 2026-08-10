@@ -18,13 +18,21 @@ function boot() {
   if (!dataUrl) return;
   const initialCurrentUserId = Number(rootEl.getAttribute('data-current-user-id'));
   if (!Number.isSafeInteger(initialCurrentUserId) || initialCurrentUserId <= 0) return;
+  let initialLabels: Record<string, string> = {};
+  try {
+    const rawLabels = rootEl.getAttribute('data-labels');
+    const parsedLabels = rawLabels ? JSON.parse(rawLabels) : {};
+    if (parsedLabels && typeof parsedLabels === 'object') initialLabels = parsedLabels;
+  } catch {
+    initialLabels = {};
+  }
 
   const queryClient = new QueryClient();
 
   ReactDOM.createRoot(rootEl).render(
     <React.StrictMode>
       <QueryClientProvider client={queryClient}>
-        <App dataUrl={dataUrl} initialCurrentUserId={initialCurrentUserId} />
+        <App dataUrl={dataUrl} initialCurrentUserId={initialCurrentUserId} initialLabels={initialLabels} />
       </QueryClientProvider>
     </React.StrictMode>
   );

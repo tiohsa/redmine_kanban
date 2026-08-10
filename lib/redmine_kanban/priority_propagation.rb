@@ -13,7 +13,7 @@ module RedmineKanban
 
     def update_children_priority!(issue, priority_id)
       issue.children.each do |child|
-        return "子チケット ##{child.id} を更新できません" unless child.editable?
+        return I18n.t('redmine_kanban.error_subtask_update_forbidden', id: child.id) unless child.editable?
 
         child.init_journal(@user)
         child.safe_attributes = { 'priority_id' => priority_id }
@@ -75,7 +75,7 @@ module RedmineKanban
       issue.priority_id = priority_id
       nil
     rescue StandardError => e
-      "チケット ##{issue.id} の優先度を反映できません: #{e.message}"
+      I18n.t('redmine_kanban.error_priority_apply_failed', id: issue.id, detail: e.message)
     end
   end
 end

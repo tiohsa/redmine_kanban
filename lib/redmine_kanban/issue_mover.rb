@@ -19,21 +19,21 @@ module RedmineKanban
     end
 
     def move(status_id:, assigned_to_id: nil, priority_id: nil, assigned_to_provided: false, priority_provided: false, lock_version: nil)
-      return error_response('権限がありません') unless PermissionPolicy.new(user: @user).can_update_issue?(@issue, @project)
+      return error_response(I18n.t('redmine_kanban.error_permission_denied')) unless PermissionPolicy.new(user: @user).can_update_issue?(@issue, @project)
 
       status_id = status_id.to_i
       assigned_to_id = normalize_assigned_to_id(assigned_to_id, assigned_to_provided)
       priority_id = normalize_priority_id(priority_id, priority_provided)
       lock_version = normalize_lock_version(lock_version)
 
-      return error_response('lock_versionが必要です') if lock_version.nil?
+      return error_response(I18n.t('redmine_kanban.error_lock_version_required')) if lock_version.nil?
 
       if priority_id == :invalid
-        return error_response('優先度の値が不正です')
+        return error_response(I18n.t('redmine_kanban.label_invalid_priority'))
       end
 
       unless status_allowed_for?(@issue, status_id)
-        return error_response('ワークフロー上、このステータスへ遷移できません')
+        return error_response(I18n.t('redmine_kanban.error_workflow_transition'))
       end
 
       @issue.init_journal(@user)
@@ -113,7 +113,7 @@ module RedmineKanban
       result[:ancestor_updates] = ancestor_updates if ancestor_updates&.any?
       result
     rescue ActiveRecord::StaleObjectError
-      error_response('他ユーザにより更新されました', status: :conflict)
+      error_response(I18n.t('redmine_kanban.error_conflict'), status: :conflict)
     end
 
     private
@@ -142,7 +142,7 @@ module RedmineKanban
       parent.update_column(:priority_id, expected_priority_id)
       nil
     rescue StandardError => e
-      "親チケット ##{parent&.id || @issue.parent_id} の優先度を維持できません: #{e.message}"
+      I18n.t('redmine_kanban.error_parent_priority_preserve_failed', id: parent&.id || @issue.parent_id, detail: e.message)
     end
 
     def issue_presenter(issue)
