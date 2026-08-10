@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import type { SortKey } from './board/sort';
 import type { Filters } from './boardFilters';
 import { buildProjectScopeFromDataUrl, makeScopedStorageKey, readScopedBooleanWithLegacy, readScopedNumberSetWithLegacy, readScopedValueWithLegacy } from './utils/storage';
@@ -6,6 +6,7 @@ import type { FitMode } from './kanbanShared';
 
 export type LaneType = 'none' | 'assignee' | 'priority';
 export const DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT = 1500;
+export const MAXIMUM_BOARD_ENTITY_COUNT = 2_147_483_647;
 
 export function parseMaximumBoardEntityCount(value: string | number | null | undefined): number | null {
   if (value === null || value === undefined) return DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT;
@@ -13,7 +14,7 @@ export function parseMaximumBoardEntityCount(value: string | number | null | und
   if (raw === '') return DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT;
   if (!/^[1-9][0-9]*$/.test(raw)) return null;
   const parsed = Number(raw);
-  if (!Number.isSafeInteger(parsed) || parsed <= 0) return null;
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > MAXIMUM_BOARD_ENTITY_COUNT) return null;
   return parsed;
 }
 
@@ -236,6 +237,13 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
     if (preferencesReady && maximumBoardEntityCountStorageKey) writeStorageValue(maximumBoardEntityCountStorageKey, String(maximumBoardEntityCount));
   }, [maximumBoardEntityCount, maximumBoardEntityCountStorageKey, preferencesReady]);
 
+  const setMaximumBoardEntityCountImmediately = useCallback((value: number) => {
+    setMaximumBoardEntityCount(value);
+    if (preferencesReady && maximumBoardEntityCountStorageKey) {
+      writeStorageValue(maximumBoardEntityCountStorageKey, String(value));
+    }
+  }, [maximumBoardEntityCountStorageKey, preferencesReady]);
+
   return {
     projectScope,
     preferencesReady,
@@ -267,6 +275,6 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
     viewableProjectsEnabled,
     setViewableProjectsEnabled,
     maximumBoardEntityCount,
-    setMaximumBoardEntityCount,
+    setMaximumBoardEntityCount: setMaximumBoardEntityCountImmediately,
   };
 }

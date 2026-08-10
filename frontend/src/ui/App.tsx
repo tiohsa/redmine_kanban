@@ -138,8 +138,9 @@ export function App({ dataUrl, initialCurrentUserId }: Props) {
       fetching_data: 'Fetching board data…',
       display_settings: 'Display settings',
       maximum_board_entity_count: 'Maximum display count',
-      maximum_board_entity_count_help: 'Issues loaded in one complete board snapshot.',
-      maximum_board_entity_count_invalid: 'Enter a positive integer.',
+      maximum_board_entity_count_help: 'Enter a value from 1 to 2,147,483,647. Issues loaded in one complete board snapshot.',
+      maximum_board_entity_count_invalid: 'Enter an integer from 1 to 2,147,483,647.',
+      maximum_board_entity_count_saved: 'Saved.',
       save: 'Save',
       reset: 'Reset',
     },
@@ -306,7 +307,7 @@ export function App({ dataUrl, initialCurrentUserId }: Props) {
           onChangeFontSize={setFontSize}
           maximumBoardEntityCount={maximumBoardEntityCount}
           onChangeMaximumBoardEntityCount={setMaximumBoardEntityCount}
-          serverEntityLimit={data?.meta.server_entity_limit}
+          serverEntityLimit={toolbarData.meta.server_entity_limit}
           canCreate={canCreate}
           onCreate={() => {
             if (defaultCreateProjectId === null) return;

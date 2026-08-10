@@ -62,6 +62,7 @@ module RedmineKanban
       maximum_board_entity_count: "redmine_kanban.label_maximum_board_entity_count",
       maximum_board_entity_count_help: "redmine_kanban.label_maximum_board_entity_count_help",
       maximum_board_entity_count_invalid: "redmine_kanban.label_maximum_board_entity_count_invalid",
+      maximum_board_entity_count_saved: "redmine_kanban.label_maximum_board_entity_count_saved",
       server_entity_limit_notice: "redmine_kanban.label_server_entity_limit_notice",
       no_result: "redmine_kanban.label_no_result",
       reset: "redmine_kanban.label_reset",

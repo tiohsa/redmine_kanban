@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { FitMode } from '../kanbanShared';
-import { DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT, parseMaximumBoardEntityCount, type LaneType } from '../useKanbanPreferences';
+import { DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT, MAXIMUM_BOARD_ENTITY_COUNT, parseMaximumBoardEntityCount, type LaneType } from '../useKanbanPreferences';
 import { useDropdownDismiss } from './useDropdownDismiss';
 
 const FONT_SIZE_OPTIONS = ['10', '12', '14', '16', '18', '20', '22', '24', '26', '28', '30'] as const;
@@ -73,6 +73,7 @@ export function DisplaySettingsPopover({
   const [open, setOpen] = useState(false);
   const [maximumEntityCountDraft, setMaximumEntityCountDraft] = useState(String(maximumBoardEntityCount));
   const [maximumEntityCountError, setMaximumEntityCountError] = useState<string | null>(null);
+  const [maximumEntityCountSaved, setMaximumEntityCountSaved] = useState(false);
   const { triggerRef, menuRef } = useDropdownDismiss(open, () => setOpen(false));
   useEffect(() => {
     setMaximumEntityCountDraft(String(maximumBoardEntityCount));
@@ -103,9 +104,27 @@ export function DisplaySettingsPopover({
           <SettingsSelect label={labels.aging_danger_days ?? 'Aging danger days'} value={String(agingDangerDays)} options={[1, 3, 5, 7, 14, 30, 60].map((value) => ({ id: String(value), name: String(value) }))} onChange={(value) => onChangeAgingDangerDays(Number(value))} selectClassName="rk-settings-aging-days-select" />
           <SettingsToggle label={labels.aging_exclude_closed ?? 'Exclude closed issues from aging'} checked={agingExcludeClosed} onChange={onToggleAgingExcludeClosed} />
           <SettingsToggle label={labels.time_entry_short ?? 'Time entry on close'} checked={timeEntryOnClose} onChange={onToggleTimeEntryOnClose} />
-          <label className="rk-settings-select-row">
-            <span>{labels.maximum_board_entity_count ?? 'Maximum display count'}</span>
+          <div className="rk-settings-field">
+            <label className="rk-settings-field-label" htmlFor="rk-maximum-board-entity-count">
+              <span className="rk-settings-label-with-info">
+              <span>{labels.maximum_board_entity_count ?? 'Maximum display count'}</span>
+              <span className="rk-settings-info-wrap">
+                <button
+                  type="button"
+                  className="rk-settings-info"
+                  aria-label={labels.maximum_board_entity_count_help ?? 'Display count limits'}
+                >
+                  <span className="rk-settings-info-glyph" aria-hidden="true">i</span>
+                </button>
+                <span className="rk-settings-tooltip" role="tooltip">
+                  {(labels.maximum_board_entity_count_help ?? `Enter a value from 1 to ${MAXIMUM_BOARD_ENTITY_COUNT.toLocaleString()}.`).replace('%{max}', MAXIMUM_BOARD_ENTITY_COUNT.toLocaleString())}
+                  {serverEntityLimit ? ` ${ (labels.server_entity_limit_notice ?? 'The server safety limit is %{count} issues.').replace('%{count}', String(serverEntityLimit))}` : ''}
+                </span>
+              </span>
+              </span>
+            </label>
             <input
+              id="rk-maximum-board-entity-count"
               className="rk-input"
               type="text"
               inputMode="numeric"
@@ -113,19 +132,13 @@ export function DisplaySettingsPopover({
               onChange={(event) => {
                 setMaximumEntityCountDraft(event.target.value);
                 setMaximumEntityCountError(null);
+                setMaximumEntityCountSaved(false);
               }}
               aria-invalid={maximumEntityCountError ? 'true' : 'false'}
             />
-          </label>
-          <div className="rk-settings-help">
-            {labels.maximum_board_entity_count_help ?? 'Issues loaded in one complete board snapshot.'}
           </div>
           {maximumEntityCountError ? <div className="rk-settings-error" role="alert">{maximumEntityCountError}</div> : null}
-          {serverEntityLimit && maximumBoardEntityCount > serverEntityLimit ? (
-            <div className="rk-settings-help" role="status">
-              {(labels.server_entity_limit_notice ?? 'The server safety limit is %{count} issues.').replace('%{count}', String(serverEntityLimit))}
-            </div>
-          ) : null}
+          {maximumEntityCountSaved ? <div className="rk-settings-help" role="status">{labels.maximum_board_entity_count_saved ?? 'Saved.'}</div> : null}
           <div className="rk-settings-actions">
             <button type="button" className="rk-btn rk-btn-sm" onClick={() => {
               const parsed = parseMaximumBoardEntityCount(maximumEntityCountDraft);
@@ -135,11 +148,13 @@ export function DisplaySettingsPopover({
               }
               onChangeMaximumBoardEntityCount(parsed);
               setMaximumEntityCountError(null);
+              setMaximumEntityCountSaved(true);
             }}>{labels.save ?? 'Save'}</button>
             <button type="button" className="rk-btn rk-btn-sm" onClick={() => {
               setMaximumEntityCountDraft(String(DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT));
               onChangeMaximumBoardEntityCount(DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT);
               setMaximumEntityCountError(null);
+              setMaximumEntityCountSaved(true);
             }}>{labels.reset ?? 'Reset'}</button>
           </div>
           <SettingsSelect label={labels.display_width ?? 'Display width'} value={fitMode} options={widthOptions} onChange={(value) => { if (value !== fitMode) onToggleFitMode(); }} />
