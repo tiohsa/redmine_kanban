@@ -1,5 +1,5 @@
 import React from 'react';
-import type { BoardData, Issue, Lane, Subtask } from './types';
+import type { BoardApiResponse, BoardData, BoardIssueEntity, Issue, Lane, Subtask } from './types';
 import { findSubtaskInTree } from './subtasksTree';
 import { isHttpError } from './http';
 import type { LaneType } from './useKanbanPreferences';
@@ -15,15 +15,17 @@ export type AncestorIssueUpdate = {
 };
 
 export type IssueMutationResult = {
-  issue: Issue;
+  issue?: Issue;
   contract_version?: number;
   operation_id?: string;
   scope_fingerprint?: string;
+  dependency_status_ids?: number[];
   issue_updates?: Issue[];
   created_issues?: Issue[];
   deleted_issue_ids?: number[];
+  evicted_issue_ids?: number[];
   tree_changes?: Array<{ type: 'attach' | 'detach'; parent_id: number; child_id: number }>;
-  invalidations?: { issue_ids?: number[]; parent_ids?: number[]; column_counts?: boolean; root_order?: boolean };
+  invalidations?: { issue_ids?: number[]; parent_ids?: number[]; column_counts?: boolean; root_order?: boolean; board_snapshot?: boolean };
   column_counts?: Record<string, number>;
   warning?: string;
   ancestor_updates?: AncestorIssueUpdate[];
@@ -87,26 +89,58 @@ export function resolveTrackerName(catalog: TrackerCatalog, trackerId: number | 
   return catalog.get(normalizedTrackerId) ?? null;
 }
 
-function normalizeSubtask(subtask: Subtask): Subtask {
+export function resolveClosedState(issue: Pick<Issue, 'is_closed' | 'status_is_closed' | 'status_id'> | Pick<Subtask, 'is_closed' | 'status_is_closed' | 'status_id'>, columns?: BoardData['columns']): boolean {
+  return issue.is_closed ?? issue.status_is_closed ?? columns?.find((column) => column.id === issue.status_id)?.is_closed ?? false;
+}
+
+function normalizeSubtask(subtask: Subtask, columns?: BoardData['columns']): Subtask {
   return {
     ...subtask,
+    is_closed: resolveClosedState(subtask, columns),
     tracker_id: normalizeTrackerId(subtask.tracker_id),
-    ...(subtask.subtasks ? { subtasks: subtask.subtasks.map(normalizeSubtask) } : {}),
+    ...(subtask.subtasks ? { subtasks: subtask.subtasks.map((child) => normalizeSubtask(child, columns)) } : {}),
   };
 }
 
-function normalizeIssue(issue: Issue): Issue {
+function normalizeIssue(issue: Issue, columns?: BoardData['columns']): Issue {
   return {
     ...issue,
+    is_closed: resolveClosedState(issue, columns),
     tracker_id: normalizeTrackerId(issue.tracker_id),
-    ...(issue.subtasks ? { subtasks: issue.subtasks.map(normalizeSubtask) } : {}),
+    ...(issue.subtasks ? { subtasks: issue.subtasks.map((child) => normalizeSubtask(child, columns)) } : {}),
   };
 }
 
-export function normalizeBoardData(data: BoardData): BoardData {
+function snapshotIssues(data: BoardApiResponse): Issue[] {
+  const entities = new Map<number, BoardIssueEntity>(data.entities.map((entity) => [entity.id, entity]));
+  const childrenByParentId = new Map<number, number[]>(
+    Object.entries(data.tree.children_by_parent_id).map(([parentId, childIds]) => [Number(parentId), childIds]),
+  );
+  const building = new Set<number>();
+  const toIssue = (id: number, parentId: number | null): Issue | null => {
+    const entity = entities.get(id);
+    if (!entity || building.has(id)) return null;
+    building.add(id);
+    const subtasks = (childrenByParentId.get(id) ?? [])
+      .map((childId) => toIssue(childId, id))
+      .filter((child): child is Issue => child !== null)
+      .map((child) => child as unknown as Subtask);
+    building.delete(id);
+    return { ...entity, parent_id: entity.parent_id ?? parentId, subtasks };
+  };
+
+  return data.tree.root_ids
+    .map((id) => toIssue(id, null))
+    .filter((issue): issue is Issue => issue !== null);
+}
+
+export function normalizeBoardData(data: BoardApiResponse | BoardData): BoardData {
+  const issues = 'entities' in data && data.entities && data.tree
+    ? snapshotIssues(data as BoardApiResponse)
+    : (data.issues ?? []);
   return {
     ...data,
-    issues: data.issues.map(normalizeIssue),
+    issues: issues.map((issue) => normalizeIssue(issue, data.columns)),
   };
 }
 

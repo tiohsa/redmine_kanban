@@ -1,46 +1,55 @@
 import { describe, expect, it } from 'vitest';
-import { buildBoardDataUrl, buildBoardEntitiesUrl, buildBoardIssuesUrl, buildBoardQueryKey } from './boardQuery';
+import { appendScopeStatusParams, buildBoardDataUrl, buildBoardEntitiesUrl, buildBoardMutationUrl, buildBoardQueryKey, effectiveScopeStatusIds } from './boardQuery';
+import type { BoardData } from './types';
 
-describe('buildBoardQueryKey', () => {
-  it('includes sorted status-based filters in the cache key', () => {
-    expect(
-      buildBoardQueryKey('/projects/demo/kanban', [4, 2, 4], [9, 1], new Set([7, 3, 7])),
-    ).toEqual(['kanban', 'board', '/projects/demo/kanban', '2,4', '1,9', '3,7', 'default']);
-  });
+const snapshot = (scope_status_ids?: number[]): BoardData => ({
+  ok: true,
+  meta: { project_id: 1, current_user_id: 1, can_move: true, can_create: true, can_delete: true, lane_type: 'none', aging_warn_days: 7, aging_danger_days: 14, aging_exclude_closed: false, scope_status_ids },
+  columns: [{ id: 1, name: 'Open', is_closed: false }, { id: 2, name: 'Closed', is_closed: true }],
+  lanes: [],
+  lists: { assignees: [], trackers: [], priorities: [], projects: [], viewable_projects: [], creatable_projects: [] },
+  issues: [],
+  labels: {},
 });
 
-describe('buildBoardIssuesUrl', () => {
-  it('serializes filters, limit, and offset for the issues page request', () => {
-    expect(
-      buildBoardIssuesUrl('/projects/demo/kanban', [4, 2, 4], [9, 1], new Set([7, 3, 7]), 100, 200),
-    ).toBe(
-      '/projects/demo/kanban/issues?project_ids%5B%5D=2&project_ids%5B%5D=4&issue_status_ids%5B%5D=1&issue_status_ids%5B%5D=9&exclude_status_ids%5B%5D=3&exclude_status_ids%5B%5D=7&issue_limit=100&offset=200',
+describe('snapshot board query', () => {
+  it('resolves explicit, empty, and legacy status scopes consistently', () => {
+    expect(effectiveScopeStatusIds(snapshot([2]))).toEqual([2]);
+    expect(effectiveScopeStatusIds(snapshot([]))).toEqual([]);
+    expect(effectiveScopeStatusIds(snapshot())).toEqual([1, 2]);
+  });
+  it('sends the entity admission limit and never sends page parameters', () => {
+    const url = buildBoardDataUrl('/projects/demo/kanban', [3, 1], [7], new Set([9]), 3000);
+    expect(url).toBe('/projects/demo/kanban/data?project_ids%5B%5D=1&project_ids%5B%5D=3&issue_status_ids%5B%5D=7&exclude_status_ids%5B%5D=9&board_entity_limit=3000');
+    expect(url).not.toContain('issue_limit');
+    expect(url).not.toContain('offset');
+    expect(url).not.toContain('cursor');
+    expect(url).not.toContain('tree_parent_id');
+  });
+
+  it('keys the cache by the requested maximum entity count', () => {
+    expect(buildBoardQueryKey('/projects/demo/kanban', [], [], [], 1500)).not.toEqual(
+      buildBoardQueryKey('/projects/demo/kanban', [], [], [], 3000),
     );
   });
 
-  it('serializes a scoped tree parent for subtree recovery', () => {
-    expect(
-      buildBoardIssuesUrl('/projects/demo/kanban', [], [], new Set(), 500, 12, 42),
-    ).toBe('/projects/demo/kanban/issues?issue_limit=500&offset=12&tree_parent_id=42');
-  });
-});
-
-it('builds a scoped flat entity reconciliation URL', () => {
-  expect(buildBoardEntitiesUrl('/projects/demo/kanban', [4, 2, 4], [12, 7])).toBe(
-    '/projects/demo/kanban/issues/entities?project_ids%5B%5D=2&project_ids%5B%5D=4&ids%5B%5D=7&ids%5B%5D=12',
-  );
-});
-
-describe('buildBoardDataUrl', () => {
-  it('serializes sorted filter params for the board API request', () => {
-    expect(
-      buildBoardDataUrl('/projects/demo/kanban', [4, 2, 4], [9, 1], new Set([7, 3, 7])),
-    ).toBe(
-      '/projects/demo/kanban/data?project_ids%5B%5D=2&project_ids%5B%5D=4&issue_status_ids%5B%5D=1&issue_status_ids%5B%5D=9&exclude_status_ids%5B%5D=3&exclude_status_ids%5B%5D=7',
-    );
+  it('builds the complete mutation scope including the configured entity limit', () => {
+    expect(buildBoardMutationUrl('/projects/demo/kanban', '/issues/bulk', {
+      projectIds: [7, 3, 7],
+      scopeStatusIds: [4, 2],
+      dependencyStatusIds: [5, 2],
+      boardEntityLimit: 3000,
+    })).toBe('/projects/demo/kanban/issues/bulk?project_ids%5B%5D=3&project_ids%5B%5D=7&board_entity_limit=3000&scope_status_ids_present=1&scope_status_ids%5B%5D=2&scope_status_ids%5B%5D=4&dependency_status_ids_present=1&dependency_status_ids%5B%5D=2&dependency_status_ids%5B%5D=5');
   });
 
-  it('omits the query string when no filters are selected', () => {
-    expect(buildBoardDataUrl('/projects/demo/kanban', [], [], new Set())).toBe('/projects/demo/kanban/data');
+  it('encodes nonempty entity reconciliation scope explicitly', () => {
+    expect(buildBoardEntitiesUrl('/projects/demo/kanban', [2, 1], [9], [3, 2])).toBe('/projects/demo/kanban/issues/entities?project_ids%5B%5D=1&project_ids%5B%5D=2&ids%5B%5D=9&scope_status_ids_present=1&scope_status_ids%5B%5D=2&scope_status_ids%5B%5D=3&dependency_status_ids_present=1&dependency_status_ids%5B%5D=2&dependency_status_ids%5B%5D=3');
+  });
+
+  it('preserves explicit empty scope in entity reconciliation', () => {
+    expect(buildBoardEntitiesUrl('/projects/demo/kanban', [2, 1], [9], [])).toBe('/projects/demo/kanban/issues/entities?project_ids%5B%5D=1&project_ids%5B%5D=2&ids%5B%5D=9&scope_status_ids_present=1&dependency_status_ids_present=1');
+    const params = new URLSearchParams();
+    appendScopeStatusParams(params, []);
+    expect(params.toString()).toBe('scope_status_ids_present=1');
   });
 });

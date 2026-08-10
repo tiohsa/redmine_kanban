@@ -158,4 +158,37 @@ describe('useKanbanPreferences', () => {
     expect(alpha.result.current.laneType).toBe('priority');
     expect(beta.result.current.laneType).toBe('none');
   });
+
+  it('defaults, persists, and isolates the maximum board entity count', () => {
+    const alpha = renderHook(() => useKanbanPreferences('/projects/alpha/kanban/data'));
+    expect(alpha.result.current.maximumBoardEntityCount).toBe(1500);
+
+    act(() => { alpha.result.current.setCurrentUserId(7); });
+    act(() => { alpha.result.current.setMaximumBoardEntityCount(5000); });
+    expect(localStorage.getItem('rk_maximum_board_entity_count:/projects/alpha/kanban:user:7')).toBe('5000');
+
+    act(() => { alpha.result.current.setCurrentUserId(8); });
+    expect(alpha.result.current.maximumBoardEntityCount).toBe(1500);
+  });
+
+  it('repairs corrupt maximum count values without creating an unbounded setting', () => {
+    localStorage.setItem('rk_maximum_board_entity_count:/projects/demo/kanban:user:7', '1e5');
+    const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data'));
+    act(() => { result.current.setCurrentUserId(7); });
+    expect(result.current.maximumBoardEntityCount).toBe(1500);
+    expect(localStorage.getItem('rk_maximum_board_entity_count:/projects/demo/kanban:user:7')).toBe('1500');
+  });
+
+  it('hydrates the saved user preference before reporting readiness', () => {
+    localStorage.setItem('rk_maximum_board_entity_count:/projects/demo/kanban:user:7', '3000');
+    localStorage.setItem('rk_filters:/projects/demo/kanban:user:7', JSON.stringify({ statusIds: [2], projectIds: [4] }));
+
+    const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data', 7));
+
+    expect(result.current.preferencesReady).toBe(true);
+    expect(result.current.maximumBoardEntityCount).toBe(3000);
+    expect(result.current.filters.statusIds).toEqual([2]);
+    expect(result.current.filters.projectIds).toEqual([4]);
+    expect(localStorage.getItem('rk_maximum_board_entity_count:/projects/demo/kanban:user:7')).toBe('3000');
+  });
 });

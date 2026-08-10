@@ -22,7 +22,7 @@ describe('HelpDialog', () => {
     help_quick_edit_desc: 'クイック説明',
     help_subtask_title: '子チケット',
     help_subtask_desc: '子チケット説明',
-    help_load_more_issues: 'さらに読み込み',
+    help_maximum_board_entity_count: '最大表示件数',
   };
 
   it('renders all sections and labels', () => {

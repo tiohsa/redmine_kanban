@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { BoardData, Issue } from './types';
-import { applyAncestorIssueUpdates, isIssueFresh, replaceIssueInBoard, updateIssueInBoard, updateSubtaskInBoard, useIssueMutation } from './useIssueMutation';
+import { applyAncestorIssueUpdates, isBoardSnapshotInvalidated, isIssueFresh, replaceIssueInBoard, updateIssueInBoard, updateSubtaskInBoard, useIssueMutation } from './useIssueMutation';
 
 function makeIssue(id: number, attrs: Partial<Issue> = {}): Issue {
   return {
@@ -424,7 +424,7 @@ describe('replaceIssueInBoard', () => {
     expect(next.columns.map((column) => column.count)).toEqual([100, 20]);
   });
 
-  it('keeps pagination metadata and applies deltas to full server counts', () => {
+  it('keeps snapshot metadata and applies deltas to full server counts', () => {
     const board = makeBoardData([
       makeIssue(10, {
         subtasks: [{
@@ -436,14 +436,7 @@ describe('replaceIssueInBoard', () => {
         }],
       }),
     ]);
-    board.meta.pagination = {
-      issue_limit: 25,
-      offset: 0,
-      issue_count: 1,
-      total_issue_count: 700,
-      next_offset: 25,
-      has_more_issues: true,
-    };
+    board.meta.entity_count = 2;
     board.columns[0].count = 680;
     board.columns[1].count = 20;
 
@@ -453,7 +446,7 @@ describe('replaceIssueInBoard', () => {
     }));
 
     expect(next.columns.map((column) => column.count)).toEqual([679, 21]);
-    expect(next.meta.pagination).toEqual(board.meta.pagination);
+    expect(next.meta.entity_count).toBe(2);
     expect(next.issues).toHaveLength(1);
   });
 });
@@ -475,6 +468,35 @@ describe('isIssueFresh', () => {
 });
 
 describe('useIssueMutation', () => {
+  it('clears the complete board and refetches when the server invalidates the snapshot', async () => {
+    const queryKey = ['kanban', 'board', 'snapshot-overflow'] as const;
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    queryClient.setQueryData(queryKey, makeBoardData([makeIssue(1, { subject: 'Before' })]));
+    const resetQueries = vi.spyOn(queryClient, 'resetQueries');
+    const onSuccess = vi.fn();
+
+    const { result } = renderHook(
+      () => useIssueMutation({
+        queryKey,
+        mutationFn: async () => ({
+          issue_updates: [],
+          invalidations: { board_snapshot: true },
+        }),
+        applyOptimistic: (data) => updateIssueInBoard(data, 1, (issue) => ({ ...issue, subject: 'Optimistic' })),
+        applyServer: (data, response: { issue?: Issue; issue_updates?: Issue[]; invalidations?: { board_snapshot?: boolean } }) => response.issue ? replaceIssueInBoard(data, response.issue) : data,
+        onSuccess,
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await act(async () => { await result.current.mutateAsync({ issueId: 1 }); });
+
+    expect(isBoardSnapshotInvalidated({ invalidations: { board_snapshot: true } })).toBe(true);
+    expect(queryClient.getQueryData<BoardData>(queryKey)).toBeUndefined();
+    expect(resetQueries).toHaveBeenCalledWith({ queryKey });
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+  });
+
   it('does not replace a newer cached issue with a late normal success response', async () => {
     const queryKey = ['kanban', 'board', 'freshness'] as const;
     const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });

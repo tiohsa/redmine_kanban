@@ -5,12 +5,13 @@ module RedmineKanban
     skip_before_action :authorize, only: [:move, :create, :update, :destroy, :bulk_create]
 
     before_action :find_issue, only: [:move, :update, :destroy]
-    before_action :require_view_permission, only: [:index, :bootstrap, :issues, :entities, :counts, :trackers]
+    before_action :require_view_permission, only: [:index, :bootstrap, :entities, :counts, :trackers]
     before_action :require_move_permission, only: [:move]
     before_action :require_create_permission, only: [:create]
     before_action :require_create_permission, only: [:bulk_create]
     before_action :require_update_permission, only: [:update]
     before_action :require_delete_permission, only: [:destroy]
+    before_action :validate_board_entity_limit, only: [:move, :create, :update, :destroy, :bulk_create]
 
     def index
       render_board_payload(board_payload)
@@ -18,42 +19,42 @@ module RedmineKanban
 
     def bootstrap
       payload = board_payload
-      render_board_payload(payload.except(:issues))
-    end
-
-    def issues
-      payload = board_payload
-      render_board_payload({
-        ok: payload[:ok],
-        meta: payload[:meta],
-        issues: payload[:issues]
-      })
+      render_board_payload(payload)
     end
 
     def entities
       ids = normalize_integer_array_param(params[:ids])
       context = mutation_board_context
+      member_ids = RedmineKanban::BoardMembershipResolver.new(board_context: context).member_ids(ids)
       issues = Issue.visible(User.current)
-                     .where(id: ids, project_id: context.project_ids)
+                     .where(id: member_ids.to_a, project_id: context.project_ids)
                      .includes(:assigned_to, :priority, :status, :project)
                      .to_a
       presenter = IssueEntityPresenter.new(user: User.current, board_project: @project)
       render json: {
         ok: true,
-        contract_version: 2,
+        contract_version: 3,
         scope_fingerprint: context.scope_fingerprint,
+        scope_status_ids: context.scope_status_ids,
+        dependency_status_ids: context.dependency_status_ids,
         entities: presenter.issues_to_h(issues),
         missing_issue_ids: ids - issues.map(&:id)
       }
     end
 
     def counts
-      payload = board_payload
-      render_board_payload({
-        ok: payload[:ok],
-        columns: payload[:columns],
-        lanes: payload[:lanes]
-      })
+      context = mutation_board_context
+      statuses = IssueStatus.sorted.to_a
+      counts = Issue.visible(User.current)
+                    .where(project_id: context.project_ids, status_id: statuses.map(&:id))
+                    .group(:status_id)
+                    .count
+      render json: {
+        ok: true,
+        contract_version: 3,
+        scope_fingerprint: context.scope_fingerprint,
+        columns: statuses.map { |status| { id: status.id, name: status.name, is_closed: status.is_closed, count: counts[status.id].to_i } }
+      }
     end
 
     def trackers
@@ -143,6 +144,7 @@ module RedmineKanban
           }
         )
       end
+      result = enforce_mutation_response_limit(result) if result[:ok]
       render json: result, status: result[:ok] ? :ok : (result[:message].include?('権限') ? :forbidden : :conflict)
     rescue ActiveRecord::StaleObjectError
       render json: { ok: false, message: '他ユーザにより更新されました' }, status: :conflict
@@ -151,31 +153,64 @@ module RedmineKanban
     private
 
     def board_payload
+      if legacy_pagination_param_present?
+        return {
+          ok: false,
+          contract_version: 3,
+          error: { code: 'BOARD_PAGINATION_UNSUPPORTED' },
+          http_status: :bad_request
+        }
+      end
+
       BoardData.new(
         project: @project,
         user: User.current,
         project_ids: normalize_integer_array_param(params[:project_ids]),
         issue_status_ids: normalize_integer_array_param(params[:issue_status_ids]),
         exclude_status_ids: normalize_integer_array_param(params[:exclude_status_ids]),
-        issue_limit: params[:issue_limit],
-        issue_offset: params[:offset],
-        issue_cursor: params[:cursor],
-        tree_parent_id: params[:tree_parent_id]
+        board_entity_limit: params[:board_entity_limit]
       ).to_h
-    rescue CursorCodec::InvalidCursor => error
-      { ok: false, message: 'cursorが不正か、現在のscopeと一致しません', error: error.message, http_status: :unprocessable_entity }
+    rescue SnapshotLimits::InvalidLimit => error
+      {
+        ok: false,
+        contract_version: 3,
+        error: { code: 'INVALID_BOARD_ENTITY_LIMIT', message: error.message },
+        http_status: :bad_request
+      }
+    end
+
+    def legacy_pagination_param_present?
+      %w[offset cursor tree_parent_id issue_limit].any? { |key| params.key?(key) || params.key?(key.to_sym) }
     end
 
     def render_board_payload(payload)
-      render json: payload, status: payload[:ok] == false ? (payload[:http_status] || :unprocessable_entity) : :ok
+      status = payload[:ok] == false ? (payload[:http_status] || :unprocessable_entity) : :ok
+      render json: payload.except(:http_status), status: status
     end
 
     def mutation_board_context
+      scope_status_ids = if scope_status_ids_present?
+        normalize_integer_array_param(params[:scope_status_ids])
+      end
+      dependency_status_ids = if dependency_status_ids_present?
+        normalize_integer_array_param(params[:dependency_status_ids])
+      end
       BoardContext.new(
         project: @project,
         user: User.current,
-        project_ids: normalize_integer_array_param(params[:project_ids])
+        project_ids: normalize_integer_array_param(params[:project_ids]),
+        scope_status_ids: scope_status_ids,
+        dependency_status_ids: dependency_status_ids,
+        board_entity_limit: params[:board_entity_limit]
       )
+    end
+
+    def scope_status_ids_present?
+      %w[1 true].include?(params[:scope_status_ids_present].to_s.downcase)
+    end
+
+    def dependency_status_ids_present?
+      %w[1 true].include?(params[:dependency_status_ids_present].to_s.downcase)
     end
 
     def require_move_permission
@@ -242,11 +277,45 @@ module RedmineKanban
     end
 
     def render_service_result(result)
+      result = enforce_mutation_response_limit(result)
       if result[:ok]
         render json: result
       else
         render json: result, status: result[:http_status] || :unprocessable_entity
       end
+    end
+
+    def enforce_mutation_response_limit(result)
+      return result unless result[:ok]
+      return result if result.to_json.bytesize <= SnapshotLimits.response_bytes
+
+      overflow = result.merge(
+        issue_updates: [],
+        created_issues: [],
+        evicted_issue_ids: [],
+        tree_changes: [],
+        ancestor_updates: nil,
+        invalidations: result.fetch(:invalidations, {}).merge(
+          issue_ids: [],
+          parent_ids: [],
+          board_snapshot: true
+        ),
+        column_counts: {}
+      )
+      overflow.delete(:ancestor_updates)
+      overflow.delete(:subtasks)
+      overflow.delete(:issue) if overflow.to_json.bytesize > SnapshotLimits.response_bytes
+      overflow
+    end
+
+    def validate_board_entity_limit
+      SnapshotLimits.requested(params[:board_entity_limit]) if params.key?(:board_entity_limit) || params.key?('board_entity_limit')
+    rescue SnapshotLimits::InvalidLimit => error
+      render json: {
+        ok: false,
+        contract_version: 3,
+        error: { code: 'INVALID_BOARD_ENTITY_LIMIT', message: error.message }
+      }, status: :bad_request
     end
 
     def require_permission!(allowed)

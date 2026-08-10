@@ -79,12 +79,15 @@ type Props = {
   baseUrl: string;
   queryKey: readonly unknown[];
   projectIds?: number[];
+  scopeStatusIds?: number[];
+  dependencyStatusIds?: number[];
+  boardEntityLimit?: number;
   onClose: () => void;
-  onBeforeBulkSubtasks?: (parentIssueId: number) => Promise<void>;
   onSuccess: (message: string, issueId?: number) => void;
+  onNativeWriteComplete?: () => void;
 };
 
-export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = 'edit', labels, baseUrl, queryKey, projectIds = [], onClose, onBeforeBulkSubtasks, onSuccess }: Props) {
+export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = 'edit', labels, baseUrl, queryKey, projectIds = [], scopeStatusIds = [], dependencyStatusIds = scopeStatusIds, boardEntityLimit = 1500, onClose, onSuccess, onNativeWriteComplete }: Props) {
   const [subtasks, setSubtasks] = useState<SubtaskCreateInput[]>([]);
   const [subtaskValidationError, setSubtaskValidationError] = useState<string | null>(null);
   const [trackerOptions, setTrackerOptions] = useState<Array<{ id: number; name: string }>>([]);
@@ -119,7 +122,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
   const parentAttributesRef = useRef<Record<string, number | undefined>>({});
   const parentTrackerChangeCleanupRef = useRef<(() => void) | null>(null);
 
-  const bulkMutation = useBulkSubtaskMutation(baseUrl, queryKey, projectIds);
+  const bulkMutation = useBulkSubtaskMutation(baseUrl, queryKey, projectIds, scopeStatusIds, dependencyStatusIds, boardEntityLimit, true);
   const hasSubtaskInput = useMemo(
     () => subtasks.some((subtask) => subtask.subject.trim().length > 0),
     [subtasks],
@@ -195,6 +198,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
       setDialogMode('issue-show');
       setIsSubmitting(false);
       onSuccess(labels.saved.replace('%{id}', String(targetIssueId)), targetIssueId);
+      onNativeWriteComplete?.();
       return;
     }
 
@@ -212,7 +216,6 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
 
     if (lines.length > 0) {
       try {
-        if (mode === 'create') await onBeforeBulkSubtasks?.(targetIssueId);
         await bulkMutation.mutateAsync({
           parent: {
             parent_issue_id: targetIssueId,
@@ -258,7 +261,8 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
     setSaveTarget(null);
     saveTargetRef.current = null;
     setIsSubmitting(false);
-  }, [bulkMutation, labels, mode, onBeforeBulkSubtasks, onClose, onSuccess, subtasks]);
+    onNativeWriteComplete?.();
+  }, [bulkMutation, labels, mode, onClose, onNativeWriteComplete, onSuccess, subtasks]);
 
   const submitIssueForm = useCallback((form: HTMLFormElement, target: SaveTarget) => {
     const formData = new FormData(form);

@@ -488,7 +488,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         if (!issue || !onSubtaskToggle) return;
         const subtask = findSubtaskInTree(issue.subtasks, hit.subtaskId);
         if (!subtask) return;
-        onSubtaskToggle(hit.subtaskId, subtask.is_closed);
+        onSubtaskToggle(hit.subtaskId, subtask.is_closed ?? false);
         return;
       }
       case 'subtask_subject':

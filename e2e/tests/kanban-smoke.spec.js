@@ -26,6 +26,17 @@ async function adminLogin(page, baseURL) {
   }
 }
 
+function normalizeSnapshot(payload) {
+  const byId = new Map(payload.entities.map((entity) => [entity.id, entity]));
+  const children = payload.tree.children_by_parent_id;
+  const build = (id) => {
+    const entity = byId.get(id);
+    if (!entity) return null;
+    return { ...entity, subtasks: (children[String(id)] || []).map(build).filter(Boolean) };
+  };
+  return { ...payload, issues: payload.tree.root_ids.map(build).filter(Boolean) };
+}
+
 test('kanban page loads without request errors and without Loading text', async ({ page, baseURL }) => {
   const redmineBase = baseURL || 'http://127.0.0.1:3002';
   const consoleErrors = [];
@@ -94,10 +105,10 @@ test('nested child can close and reopen while server column counts return to bas
   await adminLogin(page, redmineBase);
   await page.goto(`${redmineBase}/projects/ecookbook/kanban`);
 
-  const getBoard = async () => page.evaluate(async (url) => {
+  const getBoard = async () => normalizeSnapshot(await page.evaluate(async (url) => {
     const response = await fetch(url, { credentials: 'same-origin' });
     return response.json();
-  }, dataUrl);
+  }, dataUrl));
   let initial = await getBoard();
   let parent = initial.issues.find((issue) => issue.subject === 'Kanban E2E parent issue');
   let child = parent?.subtasks?.find((subtask) => subtask.subject === 'Kanban E2E nested child');

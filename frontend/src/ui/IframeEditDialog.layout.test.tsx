@@ -145,6 +145,7 @@ describe('IframeEditDialog layout variants', () => {
   it('keeps the dialog open and switches to edit action after issue save success', async () => {
     const onClose = vi.fn();
     const onSuccess = vi.fn();
+    const onNativeWriteComplete = vi.fn();
     const { container } = render(
       <IframeEditDialog
         url="/issues/1/edit"
@@ -155,6 +156,7 @@ describe('IframeEditDialog layout variants', () => {
         queryKey={['kanban', 'board']}
         onClose={onClose}
         onSuccess={onSuccess}
+        onNativeWriteComplete={onNativeWriteComplete}
       />,
     );
 
@@ -190,6 +192,7 @@ describe('IframeEditDialog layout variants', () => {
     expect(onSuccess).toHaveBeenCalledWith('保存済み 1', 1);
       expect(screen.queryByRole('button', { name: '保存' })).toBeNull();
       expect(screen.getByRole('button', { name: 'チケットを編集' })).toBeTruthy();
+      expect(onNativeWriteComplete).toHaveBeenCalledOnce();
     });
   });
 

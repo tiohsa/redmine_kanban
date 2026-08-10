@@ -4,8 +4,9 @@ import { isHttpError, postJson } from '../http';
 import { getJson } from '../http';
 import type { BoardData, Issue } from '../types';
 import { discardBulkIdempotencyKey, getOrCreateBulkIdempotencyKey, stableSerialize } from '../bulkIdempotency';
-import { applyEntityReconciliation, applyMutationResponse, unresolvedInvalidationIds } from '../useIssueMutation';
-import { buildBoardCountsUrl, buildBoardEntitiesUrl } from '../boardQuery';
+import { applyEntityReconciliation, applyMutationResponse, invalidateBoardSnapshot, isBoardSnapshotInvalidated, unresolvedInvalidationIds } from '../useIssueMutation';
+import { buildBoardCountsUrl, buildBoardEntitiesUrl, buildBoardMutationUrl } from '../boardQuery';
+import { getBoardFreshnessAuthority, releaseBoardFreshnessAuthority } from '../asyncFreshness';
 
 export type SubtaskPayload = {
   parent_issue_id: number;
@@ -32,7 +33,7 @@ type BulkMutationResponse = {
   created_issues?: Issue[];
   scope_fingerprint?: string;
   tree_changes?: Array<{ type: 'attach' | 'detach'; parent_id: number; child_id: number }>;
-  invalidations?: { issue_ids?: number[]; parent_ids?: number[]; column_counts?: boolean; root_order?: boolean };
+  invalidations?: { issue_ids?: number[]; parent_ids?: number[]; column_counts?: boolean; root_order?: boolean; board_snapshot?: boolean };
 };
 
 export type BulkSubtaskErrorDetails = {
@@ -70,7 +71,15 @@ function errorDetails(error: unknown, payload: SubtaskPayload, rowIndex: number)
   };
 }
 
-export function useBulkSubtaskMutation(baseUrl: string, queryKey: readonly unknown[], projectIds: number[] = []) {
+export function useBulkSubtaskMutation(
+  baseUrl: string,
+  queryKey: readonly unknown[],
+  projectIds: number[] = [],
+  scopeStatusIds: number[] = [],
+  dependencyStatusIds = scopeStatusIds,
+  boardEntityLimit = 1500,
+  deferBoardRefresh = false,
+) {
   const queryClient = useQueryClient();
   const inFlight = useRef(new Map<string, Promise<BulkMutationResponse>>());
 
@@ -93,7 +102,7 @@ export function useBulkSubtaskMutation(baseUrl: string, queryKey: readonly unkno
         const { key: idempotencyKey } = getOrCreateBulkIdempotencyKey(signature);
         try {
           const res = await postJson<BulkMutationResponse>(
-            scopedPath(baseUrl, '/issues/bulk', projectIds), { ...normalized, operation_id: clientOperationId() }, 'POST', { 'Idempotency-Key': idempotencyKey },
+            scopedPath(baseUrl, '/issues/bulk', projectIds, scopeStatusIds, dependencyStatusIds, boardEntityLimit), { ...normalized, operation_id: clientOperationId() }, 'POST', { 'Idempotency-Key': idempotencyKey },
           );
           return res;
         } catch (error) {
@@ -117,6 +126,12 @@ export function useBulkSubtaskMutation(baseUrl: string, queryKey: readonly unkno
         : payload;
       const storageKey = getOrCreateBulkIdempotencyKey(stableSerialize(normalized)).storageKey;
       discardBulkIdempotencyKey(storageKey);
+      if (deferBoardRefresh) return;
+      if (isBoardSnapshotInvalidated(result)) {
+        invalidateBoardSnapshot(queryClient, queryKey);
+        return;
+      }
+
       queryClient.setQueryData(queryKey, (current: unknown) => {
         if (!current || !('issues' in (current as object))) return current;
         return applyMutationResponse(current as Parameters<typeof applyMutationResponse>[0], {
@@ -136,36 +151,68 @@ export function useBulkSubtaskMutation(baseUrl: string, queryKey: readonly unkno
         invalidations: result.invalidations,
       });
       if (reconciliationIds.length > 0) {
-        void getJson<Parameters<typeof applyEntityReconciliation>[1]>(
-          buildBoardEntitiesUrl(baseUrl, projectIds, reconciliationIds),
-        ).then((response) => {
-          queryClient.setQueryData(queryKey, (current: unknown) => {
-            if (!current || !('issues' in (current as object))) return current;
-            return applyEntityReconciliation(current as Parameters<typeof applyEntityReconciliation>[0], response);
-          });
-        }).catch(() => undefined);
-      }
-      if (result.invalidations?.column_counts) {
-        void getJson<{ columns?: BoardData['columns'] }>(buildBoardCountsUrl(baseUrl, projectIds))
-          .then((response) => {
-            if (!response.columns) return;
+        const requestData = queryClient.getQueryData<BoardData>(queryKey);
+        if (requestData) {
+          const freshnessAuthority = getBoardFreshnessAuthority(queryClient, queryKey);
+          const request = freshnessAuthority.beginEntityReconciliation(requestData, reconciliationIds);
+          void getJson<Parameters<typeof applyEntityReconciliation>[1]>(
+            buildBoardEntitiesUrl(baseUrl, projectIds, reconciliationIds, scopeStatusIds, dependencyStatusIds),
+          ).then((response) => {
             queryClient.setQueryData(queryKey, (current: unknown) => {
               if (!current || !('issues' in (current as object))) return current;
-              return { ...(current as BoardData), columns: response.columns };
+              const board = current as Parameters<typeof applyEntityReconciliation>[0];
+              const missingIssueIds = freshnessAuthority.applicableNegativeIssueIds(request, board, response.missing_issue_ids ?? []);
+              return missingIssueIds === null
+                ? board
+                : applyEntityReconciliation(board, { ...response, missing_issue_ids: missingIssueIds });
             });
-          })
-          .catch(() => undefined);
+          }).catch(() => undefined).finally(() => {
+            freshnessAuthority.finish(request);
+            releaseBoardFreshnessAuthority(queryClient, queryKey, freshnessAuthority);
+          });
+        }
+      }
+      if (result.invalidations?.column_counts) {
+        const requestData = queryClient.getQueryData<BoardData>(queryKey);
+        if (requestData) {
+          const freshnessAuthority = getBoardFreshnessAuthority(queryClient, queryKey);
+          const request = freshnessAuthority.beginAggregateReconciliation(requestData);
+          void getJson<{ columns?: BoardData['columns'] }>(buildBoardCountsUrl(baseUrl, projectIds))
+            .then((response) => {
+              if (!response.columns) return;
+              queryClient.setQueryData(queryKey, (current: unknown) => {
+                if (!current || !('issues' in (current as object))) return current;
+                const board = current as BoardData;
+                return freshnessAuthority.canApplyAggregateReconciliation(request, board)
+                  ? { ...board, columns: response.columns }
+                  : board;
+              });
+            })
+            .catch(() => undefined)
+            .finally(() => {
+              freshnessAuthority.finish(request);
+              releaseBoardFreshnessAuthority(queryClient, queryKey, freshnessAuthority);
+            });
+        }
       }
     },
   });
 }
 
-function scopedPath(baseUrl: string, path: string, projectIds: number[]): string {
-  const params = new URLSearchParams();
-  [...new Set(projectIds)].filter((id) => Number.isFinite(id) && id > 0).sort((a, b) => a - b)
-    .forEach((id) => params.append('project_ids[]', String(id)));
-  const query = params.toString();
-  return `${baseUrl}${path}${query ? `?${query}` : ''}`;
+function scopedPath(
+  baseUrl: string,
+  path: string,
+  projectIds: number[],
+  scopeStatusIds: number[] = [],
+  dependencyStatusIds = scopeStatusIds,
+  boardEntityLimit = 1500,
+): string {
+  return buildBoardMutationUrl(baseUrl, path, {
+    projectIds,
+    scopeStatusIds,
+    dependencyStatusIds,
+    boardEntityLimit,
+  });
 }
 
 function clientOperationId(): string {

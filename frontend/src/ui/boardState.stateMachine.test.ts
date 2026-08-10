@@ -1,30 +1,92 @@
 import { describe, expect, it } from 'vitest';
+import {
+  applyBoardResponse,
+  createNormalizedBoardState,
+  selectBoardData,
+  type BoardResponse,
+  type NormalizedBoardState,
+} from './boardState';
+import { normalizeMaximumBoardEntityCount, parseMaximumBoardEntityCount } from './useKanbanPreferences';
 import type { BoardData, Issue } from './types';
-import { applyBoardResponse, createNormalizedBoardState, type BoardResponse, type NormalizedBoardState } from './boardState';
 
-function issue(id: number, overrides: Partial<Issue> = {}): Issue {
-  return {
-    id,
-    subject: `Issue ${id}`,
-    status_id: 1,
-    status_is_closed: false,
-    tracker_id: 1,
-    description: '',
-    assigned_to_id: null,
-    lock_version: 1,
-    updated_on: `2026-08-01T00:00:${String(id).padStart(2, '0')}Z`,
-    urls: { issue: `/issues/${id}`, issue_edit: `/issues/${id}/edit` },
-    ...overrides,
-  };
+type ModelEntity = {
+  id: number;
+  parentId: number | null;
+  lockVersion: number | undefined;
+  updatedOn: string | null | undefined;
+  value: string;
+  projectId: number | undefined;
+};
+
+type ModelState = {
+  scope: string;
+  projectIds: number[];
+  limit: number;
+  complete: boolean;
+  entities: Map<number, ModelEntity>;
+  deletedIds: Set<number>;
+};
+
+type Operation =
+  | { type: 'loadSnapshot' | 'changeScope' | 'nativeReset'; board: BoardData }
+  | { type: 'applyMutation' | 'applyStaleMutation' | 'retryMutation'; response: BoardResponse }
+  | { type: 'scopeEvict' | 'physicalDelete'; issueId: number; scopeFingerprint: string };
+
+type Projection = {
+  entityIds: number[];
+  revisions: Array<[number, number | undefined, string | null | undefined, string]>;
+  relations: Array<[number, number[]]>;
+  rootIds: number[];
+  deletedIds: number[];
+  scope: string;
+  complete: boolean;
+  limit: number;
+};
+
+const issue = (
+  id: number,
+  parent_id: number | null = null,
+  lock_version = 1,
+  subject = `Issue ${id}`,
+  projectId = 1,
+): Issue => ({
+  id,
+  parent_id,
+  subject,
+  status_id: 1,
+  tracker_id: null,
+  description: '',
+  assigned_to_id: null,
+  urls: { issue: `/issues/${id}`, issue_edit: `/issues/${id}/edit` },
+  subtasks: [],
+  lock_version,
+  updated_on: `2026-08-10T00:00:${String(lock_version).padStart(2, '0')}Z`,
+  project: { id: projectId, name: `Project ${projectId}` },
+});
+
+function countIssues(issues: Issue[]): number {
+  return issues.reduce((count, current) => count + 1 + (current.subtasks ? countSubtasks(current.subtasks) : 0), 0);
 }
 
-function board(issues: Issue[]): BoardData {
+function countSubtasks(subtasks: NonNullable<Issue['subtasks']>): number {
+  return subtasks.reduce((count, current) => count + 1 + (current.subtasks ? countSubtasks(current.subtasks as never) : 0), 0);
+}
+
+function board(
+  issues: Issue[],
+  scopeFingerprint: string,
+  projectIds: number[],
+  limit = 4,
+): BoardData {
+  const entityCount = countIssues(issues);
   return {
     ok: true,
+    contract_version: 3,
+    scope_fingerprint: scopeFingerprint,
     meta: {
-      project_id: 1,
-      project_ids: [1],
-      scope_fingerprint: 'sha256:state-machine',
+      project_id: projectIds[0] ?? 1,
+      project_ids: projectIds,
+      scope_fingerprint: scopeFingerprint,
       current_user_id: 1,
       can_move: true,
       can_create: true,
@@ -33,8 +95,13 @@ function board(issues: Issue[]): BoardData {
       aging_warn_days: 7,
       aging_danger_days: 14,
       aging_exclude_closed: false,
+      complete: true,
+      entity_count: entityCount,
+      requested_entity_limit: limit,
+      effective_entity_limit: limit,
+      server_entity_limit: 5000,
     },
-    columns: [{ id: 1, name: 'Open', is_closed: false, count: issues.length }],
+    columns: [{ id: 1, name: 'Open', is_closed: false, count: entityCount }],
     lanes: [],
     lists: { assignees: [], trackers: [], priorities: [], projects: [], viewable_projects: [], creatable_projects: [] },
     issues,
@@ -42,129 +109,341 @@ function board(issues: Issue[]): BoardData {
   };
 }
 
-type Reference = {
-  entities: Set<number>;
-  edges: Set<string>;
-  deleted: Set<number>;
-};
-
-function edgeKey(parentId: number, childId: number): string {
-  return `${parentId}:${childId}`;
-}
-
-function collectReference(reference: Reference, value: Issue, parentId?: number): void {
-  if (!reference.deleted.has(value.id)) reference.entities.add(value.id);
-  if (parentId !== undefined && !reference.deleted.has(value.id)) reference.edges.add(edgeKey(parentId, value.id));
-  for (const child of value.subtasks ?? []) collectReference(reference, child as unknown as Issue, value.id);
-}
-
-function applyReference(reference: Reference, response: BoardResponse): void {
-  for (const value of response.issues ?? []) collectReference(reference, value, response.kind === 'tree_page' ? response.parentId : undefined);
-  for (const value of response.issue_updates ?? []) collectReference(reference, value);
-  for (const value of response.created_issues ?? []) collectReference(reference, value);
-  for (const change of response.tree_changes ?? []) {
-    const key = edgeKey(change.parent_id, change.child_id);
-    if (change.type === 'attach' && reference.entities.has(change.child_id) && !reference.deleted.has(change.child_id)) reference.edges.add(key);
-    if (change.type === 'detach') reference.edges.delete(key);
-  }
-  if (response.kind === 'tree_page' && response.parentId !== undefined && response.completeness === 'complete') {
-    const authoritative = new Set((response.issues ?? []).map((value) => value.id));
-    for (const edge of [...reference.edges]) {
-      const [parentId, childId] = edge.split(':').map(Number);
-      if (parentId === response.parentId && !authoritative.has(childId)) reference.edges.delete(edge);
-    }
-  }
-  for (const id of response.deleted_issue_ids ?? []) {
-    reference.deleted.add(id);
-    reference.entities.delete(id);
-    for (const edge of [...reference.edges]) {
-      if (edge.split(':').map(Number).includes(id)) reference.edges.delete(edge);
-    }
-  }
-}
-
-function referenceFromState(state: NormalizedBoardState): Reference {
+function modelEntityFromIssue(nextIssue: Issue, current?: ModelEntity, parentId?: number | null): ModelEntity {
   return {
-    entities: new Set(state.entitiesById.keys()),
-    edges: new Set(Array.from(state.tree.childrenByParentId).flatMap(([parentId, children]) => children.map((childId) => edgeKey(parentId, childId)))),
-    deleted: new Set(state.deletedIssueIds),
+    id: nextIssue.id,
+    parentId: parentId !== undefined
+      ? parentId
+      : Object.prototype.hasOwnProperty.call(nextIssue, 'parent_id')
+      ? nextIssue.parent_id ?? null
+      : current?.parentId ?? null,
+    lockVersion: nextIssue.lock_version,
+    updatedOn: nextIssue.updated_on,
+    value: nextIssue.subject,
+    projectId: nextIssue.project?.id ?? current?.projectId,
   };
 }
 
-function assertInvariants(state: NormalizedBoardState, reference: Reference): void {
-  expect(new Set(state.entitiesById.keys())).toEqual(reference.entities);
-  const actualEdges = new Set(
-    Array.from(state.tree.childrenByParentId).flatMap(([parentId, children]) => children.map((childId) => edgeKey(parentId, childId))),
-  );
-  expect(actualEdges).toEqual(reference.edges);
+function modelSnapshot(data: BoardData): ModelState {
+  const state: ModelState = {
+    scope: data.scope_fingerprint ?? data.meta.scope_fingerprint ?? `project:${(data.meta.project_ids ?? [data.meta.project_id]).join(',')}`,
+    projectIds: [...(data.meta.project_ids ?? [data.meta.project_id])],
+    limit: data.meta.effective_entity_limit ?? data.meta.requested_entity_limit ?? 1500,
+    complete: data.meta.complete ?? true,
+    entities: new Map(),
+    deletedIds: new Set(),
+  };
 
-  const seenChildren = new Set<number>();
-  for (const [parentId, children] of state.tree.childrenByParentId) {
-    expect(new Set(children).size).toBe(children.length);
-    for (const childId of children) {
-      expect(state.entitiesById.has(childId)).toBe(true);
-      expect(seenChildren.has(childId)).toBe(false);
-      seenChildren.add(childId);
-      expect(state.tree.parentByChildId.get(childId)).toBe(parentId);
-    }
-  }
-  for (const id of state.entitiesById.keys()) expect(state.deletedIssueIds.has(id)).toBe(false);
+  const collect = (nextIssue: Issue, parentId: number | null = null) => {
+    state.entities.set(nextIssue.id, modelEntityFromIssue(nextIssue, state.entities.get(nextIssue.id), parentId));
+    for (const child of nextIssue.subtasks ?? []) collect(child as unknown as Issue, nextIssue.id);
+  };
+
+  for (const nextIssue of data.issues) collect(nextIssue);
+  return state;
 }
 
-describe('normalized board state state-machine', () => {
-  it('preserves entity, edge, deletion, freshness, and pagination invariants across an operation sequence', () => {
-    let state = createNormalizedBoardState(board([issue(1, {
-      subtasks: [issue(2, { parent_id: 1, tracker_id: 2 }) as never],
-    })]));
-    state.tree.parentStates.set(1, { completeness: 'partial', nextCursor: 'tree-0', loadedCount: 1 });
-    const reference = referenceFromState(state);
-    const scopeFingerprint = state.scope.fingerprint;
-    const responses: BoardResponse[] = [
-      { kind: 'root_page', requestCursor: null, issues: [issue(3)], nextCursor: 'root-1', hasMore: true, scopeFingerprint },
-      { kind: 'tree_page', parentId: 1, requestCursor: 'tree-0', issues: [issue(4, { parent_id: 1 })], completeness: 'partial', nextCursor: 'tree-1', scopeFingerprint },
-      { kind: 'tree_page', parentId: 1, requestCursor: 'tree-1', issues: [issue(5, { parent_id: 1 })], completeness: 'complete', nextCursor: null, scopeFingerprint },
-      { kind: 'mutation', operationId: 'create-child', created_issues: [issue(6, { parent_id: 1 })], tree_changes: [{ type: 'attach', parent_id: 1, child_id: 6 }], scopeFingerprint },
-      { kind: 'mutation', operationId: 'update-parent', issue_updates: [issue(1, { subject: 'Updated parent', lock_version: 2 })], scopeFingerprint },
-      { kind: 'mutation', operationId: 'delete-child', deleted_issue_ids: [4], tree_changes: [{ type: 'detach', parent_id: 1, child_id: 4 }], scopeFingerprint },
+function cloneModelState(state: ModelState): ModelState {
+  return {
+    ...state,
+    projectIds: [...state.projectIds],
+    entities: new Map(Array.from(state.entities, ([id, entity]) => [id, { ...entity }])),
+    deletedIds: new Set(state.deletedIds),
+  };
+}
+
+function modelEvict(state: ModelState, issueId: number, tombstone = false): void {
+  state.entities.delete(issueId);
+  if (tombstone) state.deletedIds.add(issueId);
+  for (const entity of state.entities.values()) {
+    if (entity.parentId === issueId) entity.parentId = null;
+  }
+}
+
+function modelIsOutsideProjectScope(state: ModelState, nextIssue: Issue): boolean {
+  return nextIssue.project?.id !== undefined && !state.projectIds.includes(nextIssue.project.id);
+}
+
+function modelCanAcceptRevision(current: ModelEntity | undefined, incoming: ModelEntity): boolean {
+  if (!current) return true;
+  if (typeof current.lockVersion === 'number' && typeof incoming.lockVersion === 'number') {
+    return incoming.lockVersion >= current.lockVersion;
+  }
+  if (current.updatedOn && incoming.updatedOn) {
+    const currentTime = Date.parse(current.updatedOn);
+    const incomingTime = Date.parse(incoming.updatedOn);
+    if (!Number.isNaN(currentTime) && !Number.isNaN(incomingTime)) return incomingTime >= currentTime;
+  }
+  return true;
+}
+
+function modelWouldCreateCycle(state: ModelState, parentId: number, childId: number): boolean {
+  const seen = new Set<number>([childId]);
+  let current: number | null | undefined = parentId;
+  while (current !== null && current !== undefined) {
+    if (seen.has(current)) return true;
+    seen.add(current);
+    current = state.entities.get(current)?.parentId;
+  }
+  return false;
+}
+
+function modelApplyEntity(state: ModelState, nextIssue: Issue, created: boolean): void {
+  if (modelIsOutsideProjectScope(state, nextIssue)) {
+    modelEvict(state, nextIssue.id);
+    return;
+  }
+  const current = state.entities.get(nextIssue.id);
+  const incoming = modelEntityFromIssue(nextIssue, current);
+  if (state.deletedIds.has(incoming.id) || !modelCanAcceptRevision(current, incoming)) return;
+  const requestedParentId = Object.prototype.hasOwnProperty.call(nextIssue, 'parent_id') ? incoming.parentId : current?.parentId ?? null;
+  const parentId = requestedParentId !== null
+    && state.entities.has(requestedParentId)
+    && !modelWouldCreateCycle(state, requestedParentId, incoming.id)
+    ? requestedParentId
+    : null;
+  state.entities.set(incoming.id, { ...incoming, parentId });
+  if (created && parentId === null) state.entities.get(incoming.id)!.parentId = null;
+}
+
+function modelApplyResponse(state: ModelState, response: BoardResponse): ModelState {
+  if (response.scopeFingerprint && response.scopeFingerprint !== state.scope) return state;
+  const next = cloneModelState(state);
+  for (const nextIssue of response.issue_updates ?? []) modelApplyEntity(next, nextIssue, false);
+  for (const nextIssue of response.created_issues ?? []) modelApplyEntity(next, nextIssue, true);
+  for (const change of response.tree_changes ?? []) {
+    if (change.type === 'attach') {
+      if (next.entities.has(change.parent_id) && next.entities.has(change.child_id)
+        && !modelWouldCreateCycle(next, change.parent_id, change.child_id)) {
+        next.entities.get(change.child_id)!.parentId = change.parent_id;
+      }
+    } else if (next.entities.get(change.child_id)?.parentId === change.parent_id) {
+      next.entities.get(change.child_id)!.parentId = null;
+    }
+  }
+  for (const issueId of response.deleted_issue_ids ?? []) modelEvict(next, issueId, true);
+  for (const issueId of response.evicted_issue_ids ?? []) modelEvict(next, issueId);
+  return next;
+}
+
+function referenceOperation(state: ModelState | undefined, operation: Operation): ModelState {
+  if (operation.type === 'loadSnapshot' || operation.type === 'changeScope' || operation.type === 'nativeReset') return modelSnapshot(operation.board);
+  if (!state) throw new Error(`Operation ${operation.type} requires a loaded snapshot`);
+  if (operation.type === 'scopeEvict') {
+    return modelApplyResponse(state, { kind: 'mutation', scopeFingerprint: operation.scopeFingerprint, evicted_issue_ids: [operation.issueId] });
+  }
+  if (operation.type === 'physicalDelete') {
+    return modelApplyResponse(state, { kind: 'mutation', scopeFingerprint: operation.scopeFingerprint, deleted_issue_ids: [operation.issueId] });
+  }
+  if ('response' in operation) return modelApplyResponse(state, operation.response);
+  throw new Error(`Unsupported operation ${operation.type}`);
+}
+
+function productionOperation(state: NormalizedBoardState | undefined, operation: Operation): NormalizedBoardState {
+  if (operation.type === 'loadSnapshot' || operation.type === 'changeScope' || operation.type === 'nativeReset') return createNormalizedBoardState(operation.board);
+  if (!state) throw new Error(`Operation ${operation.type} requires a loaded snapshot`);
+  if (operation.type === 'scopeEvict') {
+    return applyBoardResponse(state, { kind: 'mutation', scopeFingerprint: operation.scopeFingerprint, evicted_issue_ids: [operation.issueId] });
+  }
+  if (operation.type === 'physicalDelete') {
+    return applyBoardResponse(state, { kind: 'mutation', scopeFingerprint: operation.scopeFingerprint, deleted_issue_ids: [operation.issueId] });
+  }
+  if ('response' in operation) return applyBoardResponse(state, operation.response);
+  throw new Error(`Unsupported operation ${operation.type}`);
+}
+
+function sortRelations(relations: Array<[number, number[]]>): Array<[number, number[]]> {
+  return relations
+    .filter(([, childIds]) => childIds.length > 0)
+    .map(([parentId, childIds]) => [parentId, [...childIds].sort((left, right) => left - right)] as [number, number[]])
+    .sort(([left], [right]) => left - right);
+}
+
+function modelRelations(state: ModelState): Array<[number, number[]]> {
+  const grouped = new Map<number, number[]>();
+  for (const entity of state.entities.values()) {
+    if (entity.parentId === null || !state.entities.has(entity.parentId)) continue;
+    grouped.set(entity.parentId, [...(grouped.get(entity.parentId) ?? []), entity.id]);
+  }
+  return Array.from(grouped, ([parentId, childIds]) => [parentId, childIds]);
+}
+
+function modelRootIds(state: ModelState): number[] {
+  return [...state.entities.values()]
+    .filter((entity) => entity.parentId === null || !state.entities.has(entity.parentId))
+    .map((entity) => entity.id);
+}
+
+function projectModel(state: ModelState): Projection {
+  return {
+    entityIds: [...state.entities.keys()].sort((left, right) => left - right),
+    revisions: Array.from(state.entities.values())
+      .map((entity) => [entity.id, entity.lockVersion, entity.updatedOn, entity.value] as [number, number | undefined, string | null | undefined, string])
+      .sort(([left], [right]) => left - right),
+    relations: sortRelations(modelRelations(state)),
+    rootIds: modelRootIds(state).sort((left, right) => left - right),
+    deletedIds: [...state.deletedIds].sort((left, right) => left - right),
+    scope: state.scope,
+    complete: state.complete,
+    limit: state.limit,
+  };
+}
+
+function projectProduction(state: NormalizedBoardState): Projection {
+  const data = selectBoardData(state);
+  return {
+    entityIds: (data.entities ?? []).map((entity) => entity.id).sort((left, right) => left - right),
+    revisions: (data.entities ?? [])
+      .map((entity) => [entity.id, entity.lock_version, entity.updated_on, entity.subject] as [number, number | undefined, string | null | undefined, string])
+      .sort(([left], [right]) => left - right),
+    relations: sortRelations(Object.entries(data.tree?.children_by_parent_id ?? {}).map(([parentId, childIds]) => [Number(parentId), childIds])),
+    rootIds: [...(data.tree?.root_ids ?? [])].sort((left, right) => left - right),
+    deletedIds: [...state.deletedIssueIds].sort((left, right) => left - right),
+    scope: state.scope.fingerprint,
+    complete: data.meta.complete ?? false,
+    limit: data.meta.effective_entity_limit ?? data.meta.requested_entity_limit ?? 1500,
+  };
+}
+
+function assertProjectionInvariants(projection: Projection): void {
+  expect(new Set(projection.entityIds).size).toBe(projection.entityIds.length);
+  expect(projection.complete ? projection.entityIds.length <= projection.limit : true).toBe(true);
+
+  const entities = new Set(projection.entityIds);
+  const parentByChild = new Map<number, number>();
+  for (const [parentId, childIds] of projection.relations) {
+    expect(entities.has(parentId)).toBe(true);
+    expect(new Set(childIds).size).toBe(childIds.length);
+    for (const childId of childIds) {
+      expect(entities.has(childId)).toBe(true);
+      expect(parentByChild.has(childId)).toBe(false);
+      parentByChild.set(childId, parentId);
+    }
+  }
+  for (const rootId of projection.rootIds) {
+    expect(entities.has(rootId)).toBe(true);
+    expect(parentByChild.has(rootId)).toBe(false);
+  }
+
+  const visiting = new Set<number>();
+  const visited = new Set<number>();
+  const childrenByParent = new Map(projection.relations);
+  const visit = (issueId: number) => {
+    if (visiting.has(issueId)) throw new Error(`cycle at ${issueId}`);
+    if (visited.has(issueId)) return;
+    visiting.add(issueId);
+    for (const childId of childrenByParent.get(issueId) ?? []) visit(childId);
+    visiting.delete(issueId);
+    visited.add(issueId);
+  };
+  for (const issueId of projection.entityIds) visit(issueId);
+}
+
+function assertDifferentialState(
+  reference: ModelState,
+  production: NormalizedBoardState,
+  operation: Operation,
+): void {
+  const referenceProjection = projectModel(reference);
+  const productionProjection = projectProduction(production);
+  expect(productionProjection, `Production diverged after ${operation.type}`).toEqual(referenceProjection);
+  assertProjectionInvariants(referenceProjection);
+  assertProjectionInvariants(productionProjection);
+}
+
+describe('snapshot admission preference state machine', () => {
+  it.each(['0', '-1', '1.5', '1e5', 'NaN', 'Infinity'])('rejects non-positive, fractional, or non-finite input %s', (value) => {
+    expect(parseMaximumBoardEntityCount(value)).toBeNull();
+  });
+
+  it('normalizes missing and blank values to the product default', () => {
+    expect(normalizeMaximumBoardEntityCount(undefined)).toBe(1500);
+    expect(normalizeMaximumBoardEntityCount('')).toBe(1500);
+    expect(normalizeMaximumBoardEntityCount(' 1500 ')).toBe(1500);
+  });
+
+  it('accepts positive integer values only', () => {
+    expect(parseMaximumBoardEntityCount('1')).toBe(1);
+    expect(parseMaximumBoardEntityCount('5000')).toBe(5000);
+  });
+});
+
+describe('production differential normalized snapshot state machine', () => {
+  it('keeps the reference model and production state equal after every lifecycle step', () => {
+    const initialParent = issue(1);
+    initialParent.subtasks = [issue(2, 1) as never];
+    const initial = board([initialParent], 'scope-a', [1]);
+    const scopeB = board([issue(3, null, 1, 'scope-b issue', 2)], 'scope-b', [2]);
+    const nativeSnapshot = board([issue(3, null, 5, 'native authoritative issue', 2)], 'scope-b', [2]);
+    const operations: Operation[] = [
+      { type: 'loadSnapshot', board: initial },
+      {
+        type: 'applyMutation',
+        response: {
+          kind: 'mutation',
+          scopeFingerprint: 'scope-a',
+          issue_updates: [issue(1, null, 2, 'parent v2'), issue(2, 1, 2, 'child v2')],
+        },
+      },
+      {
+        type: 'applyStaleMutation',
+        response: {
+          kind: 'mutation',
+          scopeFingerprint: 'scope-a',
+          issue_updates: [issue(1, null, 1, 'stale parent'), issue(2, 1, 3, 'child v3')],
+        },
+      },
+      { type: 'changeScope', board: scopeB },
+      {
+        type: 'applyStaleMutation',
+        response: {
+          kind: 'mutation',
+          scopeFingerprint: 'scope-a',
+          issue_updates: [issue(1, null, 4, 'old scope response')],
+        },
+      },
+      { type: 'scopeEvict', issueId: 3, scopeFingerprint: 'scope-b' },
+      {
+        type: 'retryMutation',
+        response: { kind: 'mutation', scopeFingerprint: 'scope-b', issue_updates: [issue(3, null, 2, 'scope re-entry', 2)] },
+      },
+      { type: 'physicalDelete', issueId: 3, scopeFingerprint: 'scope-b' },
+      {
+        type: 'retryMutation',
+        response: { kind: 'mutation', scopeFingerprint: 'scope-b', issue_updates: [issue(3, null, 3, 'deleted retry', 2)] },
+      },
+      { type: 'nativeReset', board: nativeSnapshot },
+      {
+        type: 'retryMutation',
+        response: { kind: 'mutation', scopeFingerprint: 'scope-b', issue_updates: [issue(3, null, 4, 'old mutation after native reset', 2)] },
+      },
     ];
 
-    for (const response of responses) {
-      state = applyBoardResponse(state, response);
-      applyReference(reference, response);
-      assertInvariants(state, reference);
-      expect(state.entitiesById.get(2)?.tracker_id).toBe(2);
+    let reference: ModelState | undefined;
+    let production: NormalizedBoardState | undefined;
+    for (const operation of operations) {
+      reference = referenceOperation(reference, operation);
+      production = productionOperation(production, operation);
+      assertDifferentialState(reference, production, operation);
+
+      if (operation.type === 'scopeEvict') {
+        expect(reference.entities.has(operation.issueId)).toBe(false);
+        expect(reference.deletedIds.has(operation.issueId)).toBe(false);
+        expect(production.entitiesById.has(operation.issueId)).toBe(false);
+        expect(production.deletedIssueIds.has(operation.issueId)).toBe(false);
+      }
+      if (operation.type === 'physicalDelete') {
+        expect(reference.entities.has(operation.issueId)).toBe(false);
+        expect(reference.deletedIds.has(operation.issueId)).toBe(true);
+        expect(production.entitiesById.has(operation.issueId)).toBe(false);
+        expect(production.deletedIssueIds.has(operation.issueId)).toBe(true);
+      }
     }
 
-    const afterSequence = state;
-    const replay = responses.reduce((current, response) => applyBoardResponse(current, response), afterSequence);
-    expect(replay.entitiesById).toEqual(afterSequence.entitiesById);
-    expect(replay.tree.childrenByParentId).toEqual(afterSequence.tree.childrenByParentId);
-    expect(replay.rootPage).toEqual(afterSequence.rootPage);
+    if (!reference || !production) throw new Error('State machine did not load its initial snapshot');
 
-    const advanced = applyBoardResponse(replay, {
-      kind: 'root_page',
-      requestCursor: 'root-1',
-      issues: [issue(7)],
-      nextCursor: 'root-2',
-      hasMore: true,
-      scopeFingerprint,
-    });
-    const stale = applyBoardResponse(advanced, {
-      kind: 'root_page',
-      requestCursor: 'root-1',
-      issues: [issue(8)],
-      nextCursor: 'root-old',
-      hasMore: true,
-      scopeFingerprint,
-    });
-    expect(stale.entitiesById.has(8)).toBe(false);
-    expect(stale.rootPage).toEqual(advanced.rootPage);
-
-    const wrongScope = applyBoardResponse(replay, {
-      kind: 'mutation',
-      issue_updates: [issue(8)],
-      scopeFingerprint: 'sha256:other-scope',
-    });
-    expect(wrongScope.entitiesById.has(8)).toBe(false);
+    expect(reference.deletedIds).toEqual(new Set());
+    expect(production.deletedIssueIds).toEqual(new Set());
+    expect(selectBoardData(production).issues[0].subject).toBe('native authoritative issue');
   });
 });

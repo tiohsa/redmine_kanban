@@ -55,6 +55,7 @@ export type Issue = {
   subject: string;
   status_id: number;
   status_is_closed?: boolean;
+  is_closed?: boolean;
   can_log_time?: boolean;
   lock_version?: number;
   tracker_id: number | null;
@@ -90,6 +91,8 @@ export type Lists = {
 export type Meta = {
   project_id: number;
   project_ids?: number[];
+  scope_status_ids?: number[];
+  dependency_status_ids?: number[];
   scope_fingerprint?: string;
   current_user_id: number;
   can_move: boolean;
@@ -99,46 +102,56 @@ export type Meta = {
   aging_warn_days: number;
   aging_danger_days: number;
   aging_exclude_closed: boolean;
-  tree?: TreeMeta;
-  pagination?: {
-    issue_limit: number;
-    offset: number;
-    issue_count: number;
-    total_issue_count: number;
-    next_offset: number;
-    has_more_issues: boolean;
-    tree_parent_id?: number;
-    next_cursor?: string | null;
-  };
+  complete?: boolean;
+  entity_count?: number;
+  requested_entity_limit?: number;
+  effective_entity_limit?: number;
+  server_entity_limit?: number;
+  response_byte_limit?: number;
+  response_bytes?: number;
+  id_probe_count?: number;
+  materialized_row_count?: number;
+  query_count?: number;
 };
 
-export type TreeMeta = {
-  node_limit: number;
-  root_issue_count: number;
-  unique_node_count: number;
-  serialized_node_count: number;
-  duplicate_node_count: number;
-  truncated: boolean;
-  truncated_parent_ids?: number[];
-  unexpanded_parent_ids?: number[];
-  loaded_node_count?: number;
-  db_row_count?: number;
-  parent_states?: Record<string, {
-    completeness: 'complete' | 'partial' | 'unexpanded';
-    next_cursor: string | null;
-    loaded_count: number;
-  }>;
-  query_count?: number;
-  parent_batch_count?: number;
-  max_depth?: number;
+export type BoardSnapshotTree = {
+  root_ids: number[];
+  children_by_parent_id: Record<string, number[]>;
 };
 
 export type BoardData = {
   ok: boolean;
+  contract_version?: number;
+  scope_fingerprint?: string;
   meta: Meta;
   columns: Column[];
   lanes: Lane[];
   lists: Lists;
   issues: Issue[];
   labels: Record<string, string>;
+  entities?: BoardIssueEntity[];
+  tree?: BoardSnapshotTree;
+};
+
+export type BoardIssueEntity = Omit<Issue, 'subtasks'>;
+
+export type BoardApiResponse = Omit<BoardData, 'issues'> & {
+  issues?: Issue[];
+  entities: BoardIssueEntity[];
+  tree: BoardSnapshotTree;
+};
+
+export type BoardErrorResponse = {
+  ok: false;
+  contract_version: 3;
+  scope_fingerprint?: string;
+  error: {
+    code: string;
+    requested_entity_limit?: number;
+    effective_entity_limit?: number;
+    server_entity_limit?: number;
+    count_at_least?: number;
+    maximum_response_bytes?: number;
+    message?: string;
+  };
 };

@@ -1,36 +1,24 @@
 import type { BoardData, Issue } from './types';
-import { normalizeTrackerId } from './kanbanShared';
+import { normalizeTrackerId, resolveClosedState } from './kanbanShared';
+import { effectiveScopeStatusIds } from './boardQuery';
 
 export type IssueEntity = Omit<Issue, 'subtasks'>;
 export type IssueEntityPatch = Partial<IssueEntity> & { is_closed?: boolean };
-
-export type TreeCompleteness = 'complete' | 'partial' | 'unexpanded';
-
-export type ParentTreeState = {
-  completeness: TreeCompleteness;
-  nextCursor: string | null;
-  loadedCount: number;
-};
 
 export type BoardTreeState = {
   rootCandidateIds: number[];
   childrenByParentId: Map<number, number[]>;
   parentByChildId: Map<number, number>;
-  parentStates: Map<number, ParentTreeState>;
 };
 
 export type NormalizedBoardState = {
   entitiesById: Map<number, IssueEntity>;
   deletedIssueIds: Set<number>;
   tree: BoardTreeState;
-  rootPage: {
-    nextCursor: string | null;
-    hasMore: boolean;
-    lastSequence: number;
-  };
   scope: {
     fingerprint: string;
     projectIds: number[];
+    statusIds: number[];
   };
   board: Omit<BoardData, 'issues'>;
 };
@@ -40,30 +28,23 @@ export type TreeChange =
   | { type: 'detach'; parent_id: number; child_id: number };
 
 export type BoardResponse = {
-  kind: 'initial' | 'root_page' | 'tree_page' | 'mutation';
-  issues?: Issue[];
+  kind: 'mutation';
   issue_updates?: Issue[];
   created_issues?: Issue[];
   deleted_issue_ids?: number[];
+  evicted_issue_ids?: number[];
   tree_changes?: TreeChange[];
-  parentId?: number;
-  completeness?: TreeCompleteness;
-  nextCursor?: string | null;
-  hasMore?: boolean;
-  requestCursor?: string | null;
-  sequence?: number;
   operationId?: string;
   scopeFingerprint?: string;
-  invalidations?: {
-    issue_ids?: number[];
-    parent_ids?: number[];
-  };
 };
 
-function entityOf(issue: Issue): IssueEntity {
+function entityOf(issue: Issue, columns?: BoardData['columns']): IssueEntity {
   const { subtasks: _subtasks, ...entity } = issue;
-  if (issue.tracker_id === undefined) return entity;
-  return { ...entity, tracker_id: normalizeTrackerId(issue.tracker_id) };
+  return {
+    ...entity,
+    is_closed: resolveClosedState(issue, columns),
+    ...(issue.tracker_id === undefined ? {} : { tracker_id: normalizeTrackerId(issue.tracker_id) }),
+  };
 }
 
 function isFresh(current: IssueEntity | undefined, incoming: IssueEntity): boolean {
@@ -77,31 +58,6 @@ function isFresh(current: IssueEntity | undefined, incoming: IssueEntity): boole
     if (!Number.isNaN(currentTime) && !Number.isNaN(incomingTime)) return incomingTime >= currentTime;
   }
   return true;
-}
-
-function mergeEntity(state: NormalizedBoardState, issue: Issue): void {
-  const incoming = entityOf(issue);
-  if (state.deletedIssueIds.has(incoming.id)) return;
-  const current = state.entitiesById.get(incoming.id);
-  if (isFresh(current, incoming)) {
-    if (!current || !sameRevision(current, incoming)) {
-      state.entitiesById.set(incoming.id, { ...current, ...incoming });
-      return;
-    }
-
-    // Equal-version representations can occur when a root page also contains
-    // the same issue nested under another root. Keep the first authoritative
-    // value, but allow a later partial/reconciliation entity to fill fields
-    // that were not loaded previously.
-    const enriched = { ...current };
-    for (const [key, value] of Object.entries(incoming)) {
-      const currentValue = enriched[key as keyof IssueEntity];
-      if ((currentValue === undefined || currentValue === null || currentValue === '') && value !== undefined) {
-        (enriched as Record<string, unknown>)[key] = value;
-      }
-    }
-    state.entitiesById.set(incoming.id, enriched);
-  }
 }
 
 function sameRevision(current: IssueEntity, incoming: IssueEntity): boolean {
@@ -128,30 +84,47 @@ function wouldCreateCycle(state: NormalizedBoardState, parentId: number, childId
 }
 
 function attachEdge(state: NormalizedBoardState, parentId: number, childId: number): void {
-  if (parentId === childId || !state.entitiesById.has(childId) || wouldCreateCycle(state, parentId, childId)) return;
+  if (parentId === childId || !state.entitiesById.has(parentId) || !state.entitiesById.has(childId) || wouldCreateCycle(state, parentId, childId)) return;
   const previousParentId = state.tree.parentByChildId.get(childId);
-  if (previousParentId !== undefined && previousParentId !== parentId) return;
+  if (previousParentId !== undefined && previousParentId !== parentId) detachEdge(state, previousParentId, childId);
   state.tree.parentByChildId.set(childId, parentId);
   const children = state.tree.childrenByParentId.get(parentId) ?? [];
   if (!children.includes(childId)) state.tree.childrenByParentId.set(parentId, [...children, childId]);
+  state.tree.rootCandidateIds = state.tree.rootCandidateIds.filter((id) => id !== childId);
 }
 
 function detachEdge(state: NormalizedBoardState, parentId: number, childId: number): void {
   if (state.tree.parentByChildId.get(childId) !== parentId) return;
   state.tree.parentByChildId.delete(childId);
-  state.tree.childrenByParentId.set(
-    parentId,
-    (state.tree.childrenByParentId.get(parentId) ?? []).filter((id) => id !== childId),
-  );
+  state.tree.childrenByParentId.set(parentId, (state.tree.childrenByParentId.get(parentId) ?? []).filter((id) => id !== childId));
+}
+
+function mergeEntity(state: NormalizedBoardState, issue: Issue): boolean {
+  const incoming = entityOf(issue, state.board.columns);
+  if (state.deletedIssueIds.has(incoming.id) || !isFresh(state.entitiesById.get(incoming.id), incoming)) return false;
+  const current = state.entitiesById.get(incoming.id);
+  if (!current || !sameRevision(current, incoming)) {
+    state.entitiesById.set(incoming.id, { ...current, ...incoming });
+    return true;
+  }
+
+  const enriched = { ...current };
+  for (const [key, value] of Object.entries(incoming)) {
+    const currentValue = enriched[key as keyof IssueEntity];
+    if ((currentValue === undefined || currentValue === null || currentValue === '') && value !== undefined) {
+      (enriched as Record<string, unknown>)[key] = value;
+    }
+  }
+  state.entitiesById.set(incoming.id, enriched);
+  return true;
 }
 
 function collectIssue(state: NormalizedBoardState, issue: Issue, parentId?: number, rootCandidate = false): void {
   mergeEntity(state, issue);
-  if (rootCandidate && !state.tree.rootCandidateIds.includes(issue.id)) {
-    state.tree.rootCandidateIds.push(issue.id);
-  }
-  if (parentId !== undefined) attachEdge(state, parentId, issue.id);
-  for (const child of (issue.subtasks ?? []) as unknown as Issue[]) collectIssue(state, child, issue.id);
+  if (rootCandidate && !state.tree.rootCandidateIds.includes(issue.id)) state.tree.rootCandidateIds.push(issue.id);
+  const effectiveParentId = parentId;
+  if (effectiveParentId !== undefined) attachEdge(state, effectiveParentId, issue.id);
+  for (const child of issue.subtasks ?? []) collectIssue(state, child as unknown as Issue, issue.id);
 }
 
 function copyState(state: NormalizedBoardState): NormalizedBoardState {
@@ -163,22 +136,13 @@ function copyState(state: NormalizedBoardState): NormalizedBoardState {
       rootCandidateIds: [...state.tree.rootCandidateIds],
       childrenByParentId: new Map(Array.from(state.tree.childrenByParentId, ([id, children]) => [id, [...children]])),
       parentByChildId: new Map(state.tree.parentByChildId),
-      parentStates: new Map(Array.from(state.tree.parentStates, ([id, parent]) => [id, { ...parent }])),
     },
-    rootPage: { ...state.rootPage },
-    scope: { ...state.scope, projectIds: [...state.scope.projectIds] },
+  scope: { ...state.scope, projectIds: [...state.scope.projectIds], statusIds: [...state.scope.statusIds] },
   };
 }
 
 function scopeFingerprint(data: BoardData): string {
-  return data.meta.scope_fingerprint ?? `project:${(data.meta.project_ids ?? [data.meta.project_id]).join(',')}`;
-}
-
-function incompleteParentIds(tree: BoardData['meta']['tree']): Set<number> {
-  return new Set([
-    ...(tree?.truncated_parent_ids ?? []),
-    ...(tree?.unexpanded_parent_ids ?? []),
-  ]);
+  return data.scope_fingerprint ?? data.meta.scope_fingerprint ?? `project:${(data.meta.project_ids ?? [data.meta.project_id]).join(',')}`;
 }
 
 export function createNormalizedBoardState(data: BoardData): NormalizedBoardState {
@@ -186,119 +150,76 @@ export function createNormalizedBoardState(data: BoardData): NormalizedBoardStat
   const state: NormalizedBoardState = {
     entitiesById: new Map(),
     deletedIssueIds: new Set(),
-    tree: { rootCandidateIds: [], childrenByParentId: new Map(), parentByChildId: new Map(), parentStates: new Map() },
-    rootPage: {
-      nextCursor: data.meta.pagination?.next_cursor ?? null,
-      hasMore: data.meta.pagination?.has_more_issues ?? false,
-      lastSequence: 0,
-    },
+    tree: { rootCandidateIds: [], childrenByParentId: new Map(), parentByChildId: new Map() },
     scope: {
       fingerprint: scopeFingerprint(data),
       projectIds: [...(data.meta.project_ids ?? [data.meta.project_id])],
+      statusIds: [...effectiveScopeStatusIds(data)],
     },
     board,
   };
   for (const issue of data.issues) collectIssue(state, issue, undefined, true);
-  const incompleteIds = incompleteParentIds(data.meta.tree);
-  for (const parentId of state.tree.childrenByParentId.keys()) {
-    state.tree.parentStates.set(parentId, {
-      completeness: incompleteIds.has(parentId) ? 'partial' : 'complete',
-      nextCursor: null,
-      loadedCount: state.tree.childrenByParentId.get(parentId)?.length ?? 0,
-    });
-  }
-  for (const [parentId, parentState] of Object.entries(data.meta.tree?.parent_states ?? {})) {
-    state.tree.parentStates.set(Number(parentId), {
-      completeness: parentState.completeness,
-      nextCursor: parentState.next_cursor,
-      loadedCount: parentState.loaded_count,
-    });
-  }
-  for (const parentId of incompleteIds) {
-    if (!state.tree.parentStates.has(parentId)) {
-      state.tree.parentStates.set(parentId, {
-        completeness: 'partial',
-        nextCursor: null,
-        loadedCount: state.tree.childrenByParentId.get(parentId)?.length ?? 0,
-      });
-    }
-  }
   state.tree.rootCandidateIds = state.tree.rootCandidateIds.filter((id) => !state.tree.parentByChildId.has(id));
   return state;
 }
 
-function shouldAcceptPage(state: NormalizedBoardState, response: BoardResponse): boolean {
-  if (response.scopeFingerprint && response.scopeFingerprint !== state.scope.fingerprint) return false;
-  if (response.kind === 'mutation' || response.kind === 'initial') return true;
-  if (response.sequence !== undefined && response.sequence < state.rootPage.lastSequence) return false;
-  if (response.requestCursor !== undefined) {
-    const expectedCursor = response.kind === 'tree_page'
-      ? (response.parentId === undefined ? null : state.tree.parentStates.get(response.parentId)?.nextCursor ?? null)
-      : state.rootPage.nextCursor;
-    if (response.requestCursor !== expectedCursor) return false;
-  }
-  if (response.kind === 'root_page' && response.requestCursor === undefined && state.rootPage.nextCursor && response.nextCursor !== state.rootPage.nextCursor) return false;
-  return true;
+function shouldAcceptResponse(state: NormalizedBoardState, response: BoardResponse): boolean {
+  return !response.scopeFingerprint || response.scopeFingerprint === state.scope.fingerprint;
 }
 
-function applyParentPage(state: NormalizedBoardState, response: BoardResponse): void {
-  if (response.parentId === undefined) return;
-  const current = state.tree.parentStates.get(response.parentId);
-  if (current?.completeness === 'complete' && response.completeness === 'partial') return;
-  const children = state.tree.childrenByParentId.get(response.parentId) ?? [];
-  state.tree.parentStates.set(response.parentId, {
-    completeness: response.completeness ?? 'partial',
-    nextCursor: response.nextCursor ?? null,
-    loadedCount: children.length,
-  });
+function evictEntity(state: NormalizedBoardState, id: number, tombstone = false): void {
+  state.entitiesById.delete(id);
+  if (tombstone) state.deletedIssueIds.add(id);
+  state.tree.rootCandidateIds = state.tree.rootCandidateIds.filter((candidateId) => candidateId !== id);
+  const parentId = state.tree.parentByChildId.get(id);
+  if (parentId !== undefined) detachEdge(state, parentId, id);
+  for (const childId of state.tree.childrenByParentId.get(id) ?? []) {
+    state.tree.parentByChildId.delete(childId);
+    if (state.entitiesById.has(childId) && !state.tree.rootCandidateIds.includes(childId)) state.tree.rootCandidateIds.push(childId);
+  }
+  state.tree.childrenByParentId.delete(id);
+}
+
+function reconcileParent(state: NormalizedBoardState, issue: Issue): void {
+  if (!Object.prototype.hasOwnProperty.call(issue, 'parent_id')) return;
+  const oldParentId = state.tree.parentByChildId.get(issue.id);
+  if (oldParentId !== undefined) detachEdge(state, oldParentId, issue.id);
+  const newParentId = issue.parent_id ?? undefined;
+  if (newParentId !== undefined && state.entitiesById.has(newParentId)) attachEdge(state, newParentId, issue.id);
+  else if (!state.tree.rootCandidateIds.includes(issue.id)) state.tree.rootCandidateIds.push(issue.id);
+}
+
+function outsideProjectScope(state: NormalizedBoardState, issue: Issue): boolean {
+  return issue.project?.id !== undefined && !state.scope.projectIds.includes(issue.project.id);
 }
 
 export function applyBoardResponse(previous: NormalizedBoardState, response: BoardResponse): NormalizedBoardState {
-  if (!shouldAcceptPage(previous, response)) return previous;
+  if (!shouldAcceptResponse(previous, response)) return previous;
   const state = copyState(previous);
 
-  for (const issue of response.issues ?? []) {
-    collectIssue(state, issue, response.kind === 'tree_page' ? response.parentId : undefined, response.kind !== 'tree_page');
+  for (const issue of response.issue_updates ?? []) {
+    if (outsideProjectScope(state, issue)) evictEntity(state, issue.id);
+    else if (mergeEntity(state, issue)) reconcileParent(state, issue);
   }
-  for (const issue of response.issue_updates ?? []) mergeEntity(state, issue);
   for (const issue of response.created_issues ?? []) {
-    collectIssue(state, issue, undefined, issue.parent_id == null);
-  }
-
-  if (response.kind === 'tree_page' && response.parentId !== undefined && response.completeness === 'complete') {
-    const authoritativeChildIds = new Set((response.issues ?? []).map((issue) => issue.id));
-    for (const childId of state.tree.childrenByParentId.get(response.parentId) ?? []) {
-      if (!authoritativeChildIds.has(childId)) detachEdge(state, response.parentId, childId);
+    if (outsideProjectScope(state, issue)) evictEntity(state, issue.id);
+    else if (mergeEntity(state, issue)) {
+      const parentId = issue.parent_id ?? undefined;
+      if (parentId !== undefined && state.entitiesById.has(parentId)) attachEdge(state, parentId, issue.id);
+      else if (!state.tree.rootCandidateIds.includes(issue.id)) state.tree.rootCandidateIds.push(issue.id);
     }
   }
-
   for (const change of response.tree_changes ?? []) {
     if (change.type === 'attach') attachEdge(state, change.parent_id, change.child_id);
     else detachEdge(state, change.parent_id, change.child_id);
   }
   for (const id of response.deleted_issue_ids ?? []) {
-    state.deletedIssueIds.add(id);
-    state.entitiesById.delete(id);
-    state.tree.rootCandidateIds = state.tree.rootCandidateIds.filter((candidateId) => candidateId !== id);
-    const parentId = state.tree.parentByChildId.get(id);
-    if (parentId !== undefined) detachEdge(state, parentId, id);
-    for (const childId of state.tree.childrenByParentId.get(id) ?? []) state.tree.parentByChildId.delete(childId);
-    state.tree.childrenByParentId.delete(id);
+    evictEntity(state, id, true);
   }
-
-  if (response.kind === 'tree_page') applyParentPage(state, response);
-  if (response.kind === 'root_page') {
-    state.rootPage = {
-      nextCursor: response.nextCursor === undefined ? state.rootPage.nextCursor : response.nextCursor,
-      hasMore: response.hasMore === undefined ? state.rootPage.hasMore : response.hasMore,
-      lastSequence: response.sequence ?? state.rootPage.lastSequence,
-    };
+  for (const id of response.evicted_issue_ids ?? []) {
+    evictEntity(state, id);
   }
   return state;
-}
-
-export function reduceBoardData(data: BoardData, response: BoardResponse): BoardData {
-  return selectBoardData(applyBoardResponse(createNormalizedBoardState(data), response));
 }
 
 function toIssue(state: NormalizedBoardState, id: number, path: Set<number>): Issue | null {
@@ -307,8 +228,9 @@ function toIssue(state: NormalizedBoardState, id: number, path: Set<number>): Is
   const nextPath = new Set(path).add(id);
   const subtasks = (state.tree.childrenByParentId.get(id) ?? [])
     .map((childId) => toIssue(state, childId, nextPath))
-    .filter((child): child is Issue => child !== null);
-  return { ...entity, subtasks: subtasks as unknown as Issue['subtasks'] };
+    .filter((child): child is Issue => child !== null)
+    .map((child) => child as unknown as NonNullable<Issue['subtasks']>[number]);
+  return { ...entity, subtasks };
 }
 
 export function selectBoardIssues(state: NormalizedBoardState): Issue[] {
@@ -319,57 +241,31 @@ export function selectBoardIssues(state: NormalizedBoardState): Issue[] {
 }
 
 export function selectBoardData(state: NormalizedBoardState): BoardData {
-  const partialParentIds = Array.from(state.tree.parentStates)
-    .filter(([, parent]) => parent.completeness !== 'complete')
-    .map(([parentId]) => parentId)
-    .sort((left, right) => left - right);
-  const tree = state.board.meta.tree
-      ? {
-        ...state.board.meta.tree,
-        truncated: partialParentIds.length > 0,
-        truncated_parent_ids: partialParentIds,
-        unexpanded_parent_ids: (state.board.meta.tree.unexpanded_parent_ids ?? [])
-          .filter((parentId) => partialParentIds.includes(parentId)),
-        unique_node_count: state.entitiesById.size,
-        serialized_node_count: state.entitiesById.size,
-        duplicate_node_count: 0,
-        parent_states: Object.fromEntries(Array.from(state.tree.parentStates, ([parentId, parent]) => [String(parentId), {
-          completeness: parent.completeness,
-          next_cursor: parent.nextCursor,
-          loaded_count: parent.loadedCount,
-        }])),
-      }
-    : undefined;
+  const rootIds = state.tree.rootCandidateIds.filter((id) => !state.tree.parentByChildId.has(id));
+  const tree = {
+    root_ids: rootIds,
+    children_by_parent_id: Object.fromEntries(Array.from(state.tree.childrenByParentId, ([parentId, childIds]) => [String(parentId), childIds])),
+  };
   return {
     ...(state.board as BoardData),
-    meta: {
-      ...state.board.meta,
-      project_ids: state.scope.projectIds,
-      scope_fingerprint: state.scope.fingerprint,
-      ...(tree ? { tree } : {}),
-      pagination: {
-        ...(state.board.meta.pagination ?? { issue_limit: 0, offset: 0, issue_count: 0, total_issue_count: 0, next_offset: 0, has_more_issues: false }),
-        next_cursor: state.rootPage.nextCursor,
-        has_more_issues: state.rootPage.hasMore,
-      },
-    },
+    scope_fingerprint: state.scope.fingerprint,
+    meta: { ...state.board.meta, project_ids: state.scope.projectIds, scope_status_ids: state.scope.statusIds, entity_count: state.entitiesById.size, complete: true },
+    entities: Array.from(state.entitiesById.values()),
+    tree,
     issues: selectBoardIssues(state),
   };
 }
 
-export function applyLocalIssuePatch(
-  data: BoardData,
-  issueId: number,
-  patch: IssueEntityPatch,
-): BoardData {
+export function reduceBoardData(data: BoardData, response: BoardResponse): BoardData {
+  return selectBoardData(applyBoardResponse(createNormalizedBoardState(data), response));
+}
+
+export function applyLocalIssuePatch(data: BoardData, issueId: number, patch: IssueEntityPatch): BoardData {
   const state = createNormalizedBoardState(data);
   const current = state.entitiesById.get(issueId);
   if (!current) return data;
-  const normalizedPatch = patch.tracker_id === undefined
-    ? patch
-    : { ...patch, tracker_id: normalizeTrackerId(patch.tracker_id) };
+  const normalizedPatch = patch.tracker_id === undefined ? patch : { ...patch, tracker_id: normalizeTrackerId(patch.tracker_id) };
   state.entitiesById.set(issueId, { ...current, ...normalizedPatch });
-
   if (patch.status_id !== undefined && patch.status_id !== current.status_id) {
     state.board = {
       ...state.board,
@@ -383,12 +279,7 @@ export function applyLocalIssuePatch(
   return selectBoardData(state);
 }
 
-export function rollbackLocalIssuePatch(
-  data: BoardData,
-  issueId: number,
-  previous: Issue,
-  optimistic: Issue,
-): BoardData {
+export function rollbackLocalIssuePatch(data: BoardData, issueId: number, previous: Issue, optimistic: Issue): BoardData {
   const current = createNormalizedBoardState(data).entitiesById.get(issueId);
   if (!current) return data;
   const patch: IssueEntityPatch = {};

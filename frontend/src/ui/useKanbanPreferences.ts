@@ -5,6 +5,21 @@ import { buildProjectScopeFromDataUrl, makeScopedStorageKey, readScopedBooleanWi
 import type { FitMode } from './kanbanShared';
 
 export type LaneType = 'none' | 'assignee' | 'priority';
+export const DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT = 1500;
+
+export function parseMaximumBoardEntityCount(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined) return DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT;
+  const raw = String(value).trim();
+  if (raw === '') return DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT;
+  if (!/^[1-9][0-9]*$/.test(raw)) return null;
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
+export function normalizeMaximumBoardEntityCount(value: string | number | null | undefined): number {
+  return parseMaximumBoardEntityCount(value) ?? DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT;
+}
 
 const DEFAULT_FILTERS: Filters = {
   assigneeIds: [],
@@ -67,9 +82,9 @@ function readFilters(storageKey: string | null, legacyKey?: string): Filters {
   return DEFAULT_FILTERS;
 }
 
-export function useKanbanPreferences(dataUrl: string) {
+export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: number) {
   const projectScope = useMemo(() => buildProjectScopeFromDataUrl(dataUrl), [dataUrl]);
-  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<number | null>(initialCurrentUserId ?? null);
   const userScope = currentUserId === null ? null : `user:${currentUserId}`;
   const projectKey = useMemo(() => (baseKey: string) => userScope ? makeScopedStorageKey(baseKey, `${projectScope}:${userScope}`) : null, [projectScope, userScope]);
   const userKey = useMemo(() => (baseKey: string) => userScope ? makeScopedStorageKey(baseKey, userScope) : null, [userScope]);
@@ -81,6 +96,7 @@ export function useKanbanPreferences(dataUrl: string) {
   const agingDangerDaysStorageKey = projectKey('rk_aging_danger_days');
   const agingExcludeClosedStorageKey = projectKey('rk_aging_exclude_closed');
   const viewableProjectsStorageKey = projectKey('rk_viewable_projects_enabled');
+  const maximumBoardEntityCountStorageKey = projectKey('rk_maximum_board_entity_count');
   const fullWindowStorageKey = userKey('rk_fullwindow');
   const fitModeStorageKey = userKey('rk_fit_mode');
   const showSubtasksStorageKey = userKey('rk_show_subtasks');
@@ -101,6 +117,9 @@ export function useKanbanPreferences(dataUrl: string) {
   const [agingDangerDays, setAgingDangerDays] = useState(7);
   const [agingExcludeClosed, setAgingExcludeClosed] = useState(true);
   const [viewableProjectsEnabled, setViewableProjectsEnabled] = useState(false);
+  const [maximumBoardEntityCount, setMaximumBoardEntityCount] = useState(DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT);
+  const [hydratedScope, setHydratedScope] = useState<string | null>(null);
+  const preferencesReady = userScope !== null && hydratedScope === userScope;
 
   useLayoutEffect(() => {
     if (!userScope) return;
@@ -109,8 +128,7 @@ export function useKanbanPreferences(dataUrl: string) {
     const fitMode = readScopedValueWithLegacy(fitModeStorageKey!, 'rk_fit_mode');
     const legacyFitToScreen = readStorageValue('rk_fit_to_screen');
     if (fitMode === null && legacyFitToScreen === '1') {
-      writeStorageValue(fitModeStorageKey!, 'width');
-      removeStorageValue('rk_fit_to_screen');
+      // The gated persistence effects perform the migration write after hydration.
     }
     setFitMode(fitMode === 'width' || (fitMode === null && legacyFitToScreen === '1') ? 'width' : 'none');
     setShowSubtasks(readScopedValueWithLegacy(showSubtasksStorageKey!, 'rk_show_subtasks') !== '0');
@@ -134,17 +152,22 @@ export function useKanbanPreferences(dataUrl: string) {
           ? 'priority'
           : 'assignee',
     );
-    if (laneType === null && legacyLaneType !== null) {
-      // The project-scoped value belonged to the first user upgrading from the
-      // legacy version. Consume it so a later Redmine user does not inherit it.
-      removeStorageValue(legacyLaneTypeStorageKey);
-    }
     const warnDays = Math.max(0, Number(readScopedValueWithLegacy(agingWarnDaysStorageKey!, makeScopedStorageKey('rk_aging_warn_days', projectScope))) || 3);
     setAgingWarnDays(warnDays);
     setAgingDangerDays(Math.max(warnDays, Number(readScopedValueWithLegacy(agingDangerDaysStorageKey!, makeScopedStorageKey('rk_aging_danger_days', projectScope))) || 7));
     setAgingExcludeClosed(readScopedBooleanWithLegacy(agingExcludeClosedStorageKey!, makeScopedStorageKey('rk_aging_exclude_closed', projectScope), true));
     setViewableProjectsEnabled(readScopedBooleanWithLegacy(viewableProjectsStorageKey!, makeScopedStorageKey('rk_viewable_projects_enabled', projectScope), false));
-  }, [agingDangerDaysStorageKey, agingExcludeClosedStorageKey, agingWarnDaysStorageKey, filtersStorageKey, fitModeStorageKey, fontSizeStorageKey, fullWindowStorageKey, hiddenStatusStorageKey, laneTypeStorageKey, priorityLaneStorageKey, projectScope, showSubtasksStorageKey, sortKeyStorageKey, timeEntryStorageKey, userScope, viewableProjectsStorageKey]);
+    setMaximumBoardEntityCount(normalizeMaximumBoardEntityCount(readStorageValue(maximumBoardEntityCountStorageKey!)));
+    setHydratedScope(userScope);
+  }, [agingDangerDaysStorageKey, agingExcludeClosedStorageKey, agingWarnDaysStorageKey, filtersStorageKey, fitModeStorageKey, fontSizeStorageKey, fullWindowStorageKey, hiddenStatusStorageKey, laneTypeStorageKey, maximumBoardEntityCountStorageKey, priorityLaneStorageKey, projectScope, showSubtasksStorageKey, sortKeyStorageKey, timeEntryStorageKey, userScope, viewableProjectsStorageKey]);
+
+  useEffect(() => {
+    if (!preferencesReady) return;
+    const legacyFitKey = 'rk_fit_to_screen';
+    if (readStorageValue(legacyFitKey) === '1') removeStorageValue(legacyFitKey);
+    const legacyLaneKey = makeScopedStorageKey('rk_lane_type', projectScope);
+    if (readStorageValue(legacyLaneKey) !== null && laneTypeStorageKey && readStorageValue(laneTypeStorageKey) === null) removeStorageValue(legacyLaneKey);
+  }, [laneTypeStorageKey, preferencesReady, projectScope]);
 
   useEffect(() => {
     const className = 'rk-kanban-fullwindow';
@@ -154,63 +177,68 @@ export function useKanbanPreferences(dataUrl: string) {
       document.body.classList.remove(className);
     }
 
-    if (fullWindowStorageKey) writeStorageValue(fullWindowStorageKey, fullWindow ? '1' : '0');
+    if (preferencesReady && fullWindowStorageKey) writeStorageValue(fullWindowStorageKey, fullWindow ? '1' : '0');
 
     return () => {
       document.body.classList.remove(className);
     };
-  }, [fullWindow, fullWindowStorageKey]);
+  }, [fullWindow, fullWindowStorageKey, preferencesReady]);
 
   useEffect(() => {
-    if (fitModeStorageKey) writeStorageValue(fitModeStorageKey, fitMode);
-  }, [fitMode, fitModeStorageKey]);
+    if (preferencesReady && fitModeStorageKey) writeStorageValue(fitModeStorageKey, fitMode);
+  }, [fitMode, fitModeStorageKey, preferencesReady]);
 
   useEffect(() => {
-    if (sortKeyStorageKey) writeStorageValue(sortKeyStorageKey, sortKey);
-  }, [sortKey, sortKeyStorageKey]);
+    if (preferencesReady && sortKeyStorageKey) writeStorageValue(sortKeyStorageKey, sortKey);
+  }, [preferencesReady, sortKey, sortKeyStorageKey]);
 
   useEffect(() => {
-    if (filtersStorageKey) writeStorageValue(filtersStorageKey, JSON.stringify(filters));
-  }, [filters, filtersStorageKey]);
+    if (preferencesReady && filtersStorageKey) writeStorageValue(filtersStorageKey, JSON.stringify(filters));
+  }, [filters, filtersStorageKey, preferencesReady]);
 
   useEffect(() => {
-    if (hiddenStatusStorageKey) writeStorageValue(hiddenStatusStorageKey, JSON.stringify(Array.from(hiddenStatusIds)));
-  }, [hiddenStatusIds, hiddenStatusStorageKey]);
+    if (preferencesReady && hiddenStatusStorageKey) writeStorageValue(hiddenStatusStorageKey, JSON.stringify(Array.from(hiddenStatusIds)));
+  }, [hiddenStatusIds, hiddenStatusStorageKey, preferencesReady]);
 
   useEffect(() => {
-    if (showSubtasksStorageKey) writeStorageValue(showSubtasksStorageKey, showSubtasks ? '1' : '0');
-  }, [showSubtasks, showSubtasksStorageKey]);
+    if (preferencesReady && showSubtasksStorageKey) writeStorageValue(showSubtasksStorageKey, showSubtasks ? '1' : '0');
+  }, [preferencesReady, showSubtasks, showSubtasksStorageKey]);
 
   useEffect(() => {
-    if (fontSizeStorageKey) writeStorageValue(fontSizeStorageKey, String(fontSize));
-  }, [fontSize, fontSizeStorageKey]);
+    if (preferencesReady && fontSizeStorageKey) writeStorageValue(fontSizeStorageKey, String(fontSize));
+  }, [fontSize, fontSizeStorageKey, preferencesReady]);
 
   useEffect(() => {
-    if (timeEntryStorageKey) writeStorageValue(timeEntryStorageKey, timeEntryOnClose ? '1' : '0');
-  }, [timeEntryOnClose, timeEntryStorageKey]);
+    if (preferencesReady && timeEntryStorageKey) writeStorageValue(timeEntryStorageKey, timeEntryOnClose ? '1' : '0');
+  }, [preferencesReady, timeEntryOnClose, timeEntryStorageKey]);
 
   useEffect(() => {
-    if (laneTypeStorageKey) writeStorageValue(laneTypeStorageKey, laneType);
-  }, [laneType, laneTypeStorageKey]);
+    if (preferencesReady && laneTypeStorageKey) writeStorageValue(laneTypeStorageKey, laneType);
+  }, [laneType, laneTypeStorageKey, preferencesReady]);
 
   useEffect(() => {
-    if (agingWarnDaysStorageKey) writeStorageValue(agingWarnDaysStorageKey, String(agingWarnDays));
-  }, [agingWarnDays, agingWarnDaysStorageKey]);
+    if (preferencesReady && agingWarnDaysStorageKey) writeStorageValue(agingWarnDaysStorageKey, String(agingWarnDays));
+  }, [agingWarnDays, agingWarnDaysStorageKey, preferencesReady]);
 
   useEffect(() => {
-    if (agingDangerDaysStorageKey) writeStorageValue(agingDangerDaysStorageKey, String(agingDangerDays));
-  }, [agingDangerDays, agingDangerDaysStorageKey]);
+    if (preferencesReady && agingDangerDaysStorageKey) writeStorageValue(agingDangerDaysStorageKey, String(agingDangerDays));
+  }, [agingDangerDays, agingDangerDaysStorageKey, preferencesReady]);
 
   useEffect(() => {
-    if (agingExcludeClosedStorageKey) writeStorageValue(agingExcludeClosedStorageKey, agingExcludeClosed ? '1' : '0');
-  }, [agingExcludeClosed, agingExcludeClosedStorageKey]);
+    if (preferencesReady && agingExcludeClosedStorageKey) writeStorageValue(agingExcludeClosedStorageKey, agingExcludeClosed ? '1' : '0');
+  }, [agingExcludeClosed, agingExcludeClosedStorageKey, preferencesReady]);
 
   useEffect(() => {
-    if (viewableProjectsStorageKey) writeStorageValue(viewableProjectsStorageKey, viewableProjectsEnabled ? '1' : '0');
-  }, [viewableProjectsEnabled, viewableProjectsStorageKey]);
+    if (preferencesReady && viewableProjectsStorageKey) writeStorageValue(viewableProjectsStorageKey, viewableProjectsEnabled ? '1' : '0');
+  }, [preferencesReady, viewableProjectsEnabled, viewableProjectsStorageKey]);
+
+  useEffect(() => {
+    if (preferencesReady && maximumBoardEntityCountStorageKey) writeStorageValue(maximumBoardEntityCountStorageKey, String(maximumBoardEntityCount));
+  }, [maximumBoardEntityCount, maximumBoardEntityCountStorageKey, preferencesReady]);
 
   return {
     projectScope,
+    preferencesReady,
     setCurrentUserId,
     filters,
     setFilters,
@@ -238,5 +266,7 @@ export function useKanbanPreferences(dataUrl: string) {
     setAgingExcludeClosed,
     viewableProjectsEnabled,
     setViewableProjectsEnabled,
+    maximumBoardEntityCount,
+    setMaximumBoardEntityCount,
   };
 }
