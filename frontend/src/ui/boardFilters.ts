@@ -73,10 +73,14 @@ export function buildPrimaryColumns(data: BoardData, selectedTrackerIds: number[
   ));
 }
 
-export function withContextColumns(data: BoardData, primaryColumns: Column[], rootIssues: Issue[]): Column[] {
+export function withContextColumns(data: BoardData, primaryColumns: Column[], rootIssues: Issue[], statusIds: number[] = []): Column[] {
   const primaryStatusIds = new Set(primaryColumns.map((column) => column.id));
   const requiredRootStatusIds = new Set(rootIssues.map((issue) => issue.status_id));
-  return data.columns.filter((column) => primaryStatusIds.has(column.id) || requiredRootStatusIds.has(column.id));
+  const statusFilter = new Set(statusIds);
+  return data.columns.filter((column) => (
+    (primaryStatusIds.has(column.id) || requiredRootStatusIds.has(column.id))
+    && (statusFilter.size === 0 || statusFilter.has(column.id))
+  ));
 }
 
 export function resolvePreferredTrackerId(
@@ -90,8 +94,24 @@ export function resolvePreferredTrackerId(
   return tracker.available_project_ids.includes(targetProjectId) ? tracker.id : undefined;
 }
 
-export function defaultCreateStatusId(columns: Column[]): number {
-  return columns.find((column) => !column.is_closed)?.id ?? columns[0]?.id ?? 1;
+export function defaultCreateStatusId(columns: Column[], preferredStatusId?: number): number | undefined {
+  if (preferredStatusId !== undefined && columns.some((column) => column.id === preferredStatusId)) {
+    return preferredStatusId;
+  }
+  return columns.find((column) => !column.is_closed)?.id ?? columns[0]?.id;
+}
+
+export function resolveCreateStatusId(
+  data: BoardData,
+  candidateColumns: Column[],
+  selectedTrackerIds: number[],
+  targetProjectId: number | undefined,
+): number | undefined {
+  const preferredTrackerId = resolvePreferredTrackerId(data, selectedTrackerIds, targetProjectId);
+  const preferredStatusId = preferredTrackerId === undefined
+    ? undefined
+    : data.lists.trackers.find((tracker) => tracker.id === preferredTrackerId)?.default_status_id ?? undefined;
+  return defaultCreateStatusId(candidateColumns, preferredStatusId);
 }
 
 export function buildVisibleIssues(

@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { App, normalizeAssigneeIds, normalizeProjectIds, normalizeTrackerIds, resolveDefaultCreateProjectId } from './App';
+import { App, canCreateInBoard, normalizeAssigneeIds, normalizeProjectIds, normalizeTrackerIds, resolveDefaultCreateProjectId } from './App';
 import { getJson } from './http';
 
 const iframeUnmountSpy = vi.hoisted(() => vi.fn());
@@ -80,6 +80,12 @@ describe('App board scope helpers', () => {
   it('selects a creatable project with the board project as fallback', () => {
     expect(resolveDefaultCreateProjectId([2, 1], new Set([1]), 1)).toBe(1);
     expect(resolveDefaultCreateProjectId([2], new Set(), 1)).toBeNull();
+  });
+
+  it('requires a projected create candidate for toolbar and lane creation', () => {
+    expect(canCreateInBoard(1, 2)).toBe(true);
+    expect(canCreateInBoard(1, undefined)).toBe(false);
+    expect(canCreateInBoard(null, 2)).toBe(false);
   });
 
   beforeEach(() => vi.mocked(getJson).mockClear());

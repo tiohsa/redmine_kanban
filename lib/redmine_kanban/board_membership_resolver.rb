@@ -51,6 +51,32 @@ module RedmineKanban
       descendant_scope_for_anchors(ids).distinct.pluck(:id)
     end
 
+    def deletion_candidate_ids(anchor_ids, limit:)
+      ids = Array(anchor_ids).map(&:to_i).select(&:positive?).uniq
+      return { ids: [], overflow: false } if ids.empty?
+      return { ids: ids, overflow: true } if ids.length > limit
+
+      remaining = limit - ids.length
+      if remaining.zero?
+        has_descendants = descendant_scope_for_anchors(ids)
+                              .where.not(id: ids)
+                              .distinct
+                              .limit(1)
+                              .exists?
+        return { ids: ids, overflow: has_descendants }
+      end
+
+      descendant_ids = descendant_scope_for_anchors(ids)
+                        .where.not(id: ids)
+                        .distinct
+                        .order(id: :asc)
+                        .limit(remaining + 1)
+                        .pluck(:id)
+      return { ids: ids, overflow: true } if descendant_ids.length > remaining
+
+      { ids: ids + descendant_ids, overflow: false }
+    end
+
     def membership_candidate_issues(ids)
       candidate_ids = Array(ids).map(&:to_i).select(&:positive?).uniq
       return [] if candidate_ids.empty?

@@ -244,7 +244,7 @@ describe('CanvasBoard cursor lifecycle', () => {
     expect(context.fillText).not.toHaveBeenCalledWith('...', expect.any(Number), expect.any(Number));
   });
 
-  it('resets cursor after pointercancel and keeps pending drop cursor default after lost capture', async () => {
+  it('resets cursor and drag guidance after pointercancel and lost capture', async () => {
     const issue = makeIssue(1, { due_date: '2026-03-20' });
     const data = makeBoardData(issue);
     const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
@@ -325,6 +325,49 @@ describe('CanvasBoard cursor lifecycle', () => {
     fireEvent.pointerMove(canvas, { clientX: 320, clientY: 100, pointerId: 2 });
     await waitFor(() => {
       expect(board.style.cursor).toBe('default');
+    });
+  });
+
+  it('draws workflow guidance for every rendered cell after drag threshold', async () => {
+    const issue = makeIssue(1, { allowed_status_ids: [1, 2] });
+    const baseData = makeBoardData(issue);
+    const data = {
+      ...baseData,
+      columns: [
+        { id: 1, name: 'New', is_closed: false, count: 1 },
+        { id: 2, name: 'Doing', is_closed: false, count: 0 },
+        { id: 3, name: 'Blocked', is_closed: false, count: 0 },
+        { id: 4, name: 'Done', is_closed: true, count: 0 },
+      ],
+    };
+    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const context = createCanvasContextWithSpies();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+
+    const { container } = render(
+      <CanvasBoard
+        data={data}
+        state={state}
+        canMove
+        canCreate
+        onCommand={vi.fn()}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onView={vi.fn()}
+        onDelete={vi.fn()}
+        onEditClick={vi.fn()}
+        labels={data.labels}
+      />,
+    );
+
+    const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
+    await waitFor(() => expect(canvas.width).toBeGreaterThan(0));
+    fireEvent.pointerDown(canvas, { clientX: 200, clientY: 100, pointerId: 1 });
+    fireEvent.pointerMove(canvas, { clientX: 240, clientY: 100, pointerId: 1 });
+
+    await waitFor(() => {
+      expect(context.fillText).toHaveBeenCalledWith('✓', expect.any(Number), expect.any(Number));
+      expect(context.fillText).toHaveBeenCalledWith('×', expect.any(Number), expect.any(Number));
     });
   });
 

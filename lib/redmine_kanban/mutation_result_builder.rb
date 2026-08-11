@@ -38,7 +38,7 @@ module RedmineKanban
           parent_ids: Array(invalidations[:parent_ids]).map(&:to_i).uniq,
           column_counts: !!invalidations[:column_counts],
           root_order: !!invalidations[:root_order],
-          board_snapshot: false
+          board_snapshot: !!invalidations[:board_snapshot]
         },
         column_counts: column_counts
       }
@@ -58,7 +58,7 @@ module RedmineKanban
         issue_updates: [],
         created_issues: [],
         dependency_status_ids: @board_context.dependency_status_ids,
-        deleted_issue_ids: Array(deleted_issue_ids).map(&:to_i).uniq,
+        deleted_issue_ids: [],
         evicted_issue_ids: [],
         tree_changes: [],
         invalidations: {

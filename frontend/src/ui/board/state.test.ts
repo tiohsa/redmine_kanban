@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BoardData, Issue } from '../types';
 import { buildBoardState, cellKey, resolveLaneId } from './state';
+import { applyBoardResponse, createNormalizedBoardState, selectBoardData } from '../boardState';
 
 function makeBoardData(laneType: BoardData['meta']['lane_type']): BoardData {
   return {
@@ -197,6 +198,45 @@ describe('buildBoardState', () => {
 
     expect(hiddenState.lanes.map((lane) => lane.id)).toEqual([1]);
     expect(visibleState.lanes.map((lane) => lane.id)).toEqual(['no_priority']);
+  });
+
+  it('removes a physical delete cascade without promoting descendants', () => {
+    const data = makeBoardData('none');
+    const grandchild = makeIssue(3, { parent_id: 2 });
+    const child = makeIssue(2, { parent_id: 1, subtasks: [grandchild as never] });
+    const parent = makeIssue(1, { subtasks: [child as never] });
+    data.issues = [parent];
+
+    const state = applyBoardResponse(createNormalizedBoardState(data), {
+      kind: 'mutation',
+      deleted_issue_ids: [1, 2, 3],
+    });
+    const result = selectBoardData(state);
+
+    expect(result.entities).toEqual([]);
+    expect(result.issues).toEqual([]);
+    expect(state.deletedIssueIds).toEqual(new Set([1, 2, 3]));
+
+    const stale = applyBoardResponse(state, {
+      kind: 'mutation',
+      issue_updates: [makeIssue(2, { parent_id: 1, lock_version: 99 })],
+    });
+    expect(selectBoardData(stale).entities).toEqual([]);
+  });
+
+  it('keeps scope eviction separate from physical delete root promotion', () => {
+    const data = makeBoardData('none');
+    data.issues = [makeIssue(1, { subtasks: [makeIssue(2, { parent_id: 1 }) as never] })];
+
+    const state = applyBoardResponse(createNormalizedBoardState(data), {
+      kind: 'mutation',
+      evicted_issue_ids: [1],
+    });
+    const result = selectBoardData(state);
+
+    expect(result.entities?.map((issue) => issue.id)).toEqual([2]);
+    expect(result.tree?.root_ids).toEqual([2]);
+    expect(state.deletedIssueIds).toEqual(new Set());
   });
 
   it('keeps no_priority lane at the end in priority_asc', () => {

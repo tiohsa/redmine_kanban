@@ -120,7 +120,10 @@ module RedmineKanban
       end
 
       result = nil
-      deleted_issue_id = @issue.id
+      board_context = mutation_board_context
+      membership_resolver = RedmineKanban::BoardMembershipResolver.new(board_context: board_context)
+      deletion_candidate_ids = []
+      deletion_delta_overflow = false
       deleted_parent_id = @issue.parent_id
       affected_ancestor_ids = @issue.ancestors.select { |ancestor| ancestor.visible?(User.current) }.map(&:id)
       Issue.transaction do
@@ -135,19 +138,37 @@ module RedmineKanban
           raise ActiveRecord::Rollback
         end
 
+        candidate_result = membership_resolver.deletion_candidate_ids(
+          [locked_issue.id],
+          limit: board_context.effective_entity_limit
+        )
+        deletion_delta_overflow = candidate_result[:overflow]
+        unless deletion_delta_overflow
+          deletion_candidate_ids = Issue.lock
+                                             .where(id: candidate_result[:ids])
+                                             .order(id: :asc)
+                                             .pluck(:id)
+        end
+
         result = locked_issue.destroy ? { ok: true } : { ok: false, message: I18n.t('redmine_kanban.error_delete_failed') }
         raise ActiveRecord::Rollback unless result[:ok]
+
+        unless deletion_delta_overflow
+          surviving_ids = Issue.where(id: deletion_candidate_ids).pluck(:id)
+          deletion_candidate_ids -= surviving_ids
+        end
       end
       if result[:ok]
         operation_id = params[:operation_id] || params.dig(:issue, :operation_id)
         affected_ancestors = Issue.visible(User.current).where(id: affected_ancestor_ids).to_a
-        result = MutationResultBuilder.new(board_context: mutation_board_context, operation_id: operation_id).build(
-          deleted_issue_ids: [deleted_issue_id],
+        result = MutationResultBuilder.new(board_context: board_context, operation_id: operation_id).build(
+          deleted_issue_ids: deletion_delta_overflow ? [] : deletion_candidate_ids,
           issue_updates: affected_ancestors,
           invalidations: {
             issue_ids: affected_ancestor_ids,
             parent_ids: [deleted_parent_id].compact,
-            column_counts: true
+            column_counts: true,
+            board_snapshot: deletion_delta_overflow
           }
         )
       end

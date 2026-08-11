@@ -32,6 +32,15 @@ class RedmineKanbanTrackerMetadataBuilderTest < ActiveSupport::TestCase
     assert metadata[:workflow_status_ids].all? { |id| id.to_i.positive? && IssueStatus.exists?(id: id) }
   end
 
+  def test_workflow_status_ids_match_redmine_core_tracker_issue_statuses
+    metadata = RedmineKanban::TrackerMetadataBuilder.new(
+      trackers: [@tracker],
+      available_project_ids_by_tracker: { @tracker.id => [@project.id] }
+    ).build.first
+
+    assert_equal @tracker.issue_statuses.map(&:id).sort, metadata[:workflow_status_ids].sort
+  end
+
   def test_build_uses_a_constant_number_of_metadata_queries_for_multiple_trackers
     trackers = Tracker.all.to_a
     skip 'requires at least two trackers' if trackers.length < 2

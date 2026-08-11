@@ -4,7 +4,7 @@ import type { BoardApiResponse, BoardData, Issue } from './types';
 import { getJson, isHttpError } from './http';
 import { CanvasBoard, type CanvasBoardHandle } from './board/CanvasBoard';
 import { buildBoardState } from './board/state';
-import { applyBoardDataFilters, buildVisibleIssues, defaultCreateStatusId, resolvePreferredTrackerId, withContextColumns } from './boardFilters';
+import { applyBoardDataFilters, buildVisibleIssues, resolveCreateStatusId, resolvePreferredTrackerId, withContextColumns } from './boardFilters';
 import { buildBoardDataUrl, buildBoardQueryKey, effectiveDependencyStatusIds, effectiveScopeStatusIds } from './boardQuery';
 import { IframeEditDialog } from './IframeEditDialog';
 import { KanbanIssueModal } from './KanbanIssueModal';
@@ -46,6 +46,10 @@ export function resolveDefaultCreateProjectId(
   if (selectedCreatableProjectId) return selectedCreatableProjectId;
   if (fallbackProjectId && creatableProjectIds.has(fallbackProjectId)) return fallbackProjectId;
   return null;
+}
+
+export function canCreateInBoard(projectId: number | null, statusId: number | undefined): boolean {
+  return projectId !== null && statusId !== undefined;
 }
 
 export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props) {
@@ -240,9 +244,9 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
       if (!primaryFilteredData || !displayData) return null;
       return {
         ...primaryFilteredData,
-        columns: withContextColumns(displayData, primaryFilteredData.columns, issues),
+        columns: withContextColumns(displayData, primaryFilteredData.columns, issues, filters.statusIds),
       };
-    }, [displayData, issues, primaryFilteredData],
+    }, [displayData, filters.statusIds, issues, primaryFilteredData],
   );
   const priorityRank = useMemo(() => {
     const rank = new Map<number, number>();
@@ -273,7 +277,16 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     () => resolveDefaultCreateProjectId(selectedProjectIds, creatableProjectIds, data?.meta.project_id),
     [creatableProjectIds, data?.meta.project_id, selectedProjectIds],
   );
-  const canCreate = defaultCreateProjectId !== null;
+  const createStatusId = useMemo(
+    () => resolveCreateStatusId(
+      toolbarData,
+      primaryFilteredData?.columns ?? [],
+      filters.trackerIds,
+      defaultCreateProjectId ?? undefined,
+    ),
+    [defaultCreateProjectId, filters.trackerIds, primaryFilteredData?.columns, toolbarData],
+  );
+  const canCreate = canCreateInBoard(defaultCreateProjectId, createStatusId);
 
   return (
     <div className={`rk-root${fullWindow ? ' rk-root-fullwindow' : ''}`}>
@@ -310,9 +323,9 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
           serverEntityLimit={toolbarData.meta.server_entity_limit}
           canCreate={canCreate}
           onCreate={() => {
-            if (defaultCreateProjectId === null) return;
+            if (defaultCreateProjectId === null || createStatusId === undefined) return;
             dialogs.openCreate({
-              statusId: defaultCreateStatusId(primaryFilteredData?.columns ?? toolbarData.columns),
+              statusId: createStatusId,
               projectId: defaultCreateProjectId,
               preferredTrackerId: data ? resolvePreferredTrackerId(data, filters.trackerIds, defaultCreateProjectId) : undefined,
             });
@@ -359,7 +372,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
                 preferredTrackerId: data ? resolvePreferredTrackerId(data, filters.trackerIds, projectId) : undefined,
               });
             }}
-            defaultCreateStatusId={defaultCreateStatusId(primaryFilteredData?.columns ?? toolbarData.columns)}
+            defaultCreateStatusId={createStatusId}
             onEdit={dialogs.openEdit}
             onView={dialogs.openView}
             onDelete={actions.requestDelete}

@@ -36,11 +36,12 @@ export function dropEligibility(
   originLaneId: string | number,
   targetStatusId: number,
   targetLaneId: string | number,
-  allowedStatusIds?: number[],
+  allowedStatusIds?: number[] | ReadonlySet<number>,
 ): DropEligibility {
   if (originStatusId === targetStatusId && originLaneId === targetLaneId) return 'noop';
-  if (!Array.isArray(allowedStatusIds)) return 'unknown';
-  return allowedStatusIds.includes(targetStatusId) ? 'allowed' : 'denied';
+  if (Array.isArray(allowedStatusIds)) return allowedStatusIds.includes(targetStatusId) ? 'allowed' : 'denied';
+  if (allowedStatusIds instanceof Set) return allowedStatusIds.has(targetStatusId) ? 'allowed' : 'denied';
+  return 'unknown';
 }
 
 export function shouldDispatchDrop(eligibility: DropEligibility): boolean {

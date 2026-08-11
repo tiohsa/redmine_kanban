@@ -720,6 +720,99 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_equal [], json['evicted_issue_ids']
   end
 
+  def test_physical_delete_returns_board_visible_cascade_tombstones
+    status = IssueStatus.first
+    parent = build_issue(subject: 'Physical delete parent', status: status)
+    child = build_issue(subject: 'Physical delete child', parent_issue_id: parent.id, status: status)
+    grandchild = build_issue(subject: 'Physical delete grandchild', parent_issue_id: child.id, status: status)
+
+    delete :destroy, params: {
+      project_id: @project.identifier,
+      id: parent.id,
+      project_ids: [@project.id],
+      scope_status_ids_present: '1',
+      scope_status_ids: [status.id],
+      lock_version: parent.lock_version
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal [parent.id, child.id, grandchild.id].sort, json['deleted_issue_ids'].sort
+    assert_nil Issue.find_by(id: parent.id)
+    assert_nil Issue.find_by(id: child.id)
+    assert_nil Issue.find_by(id: grandchild.id)
+  end
+
+  def test_physical_delete_does_not_report_out_of_scope_descendant
+    status = IssueStatus.first
+    outside_status = IssueStatus.where.not(id: status.id).first
+    skip 'requires at least two issue statuses' unless outside_status
+    parent = build_issue(subject: 'Scoped delete parent', status: status)
+    visible_child = build_issue(subject: 'Scoped delete child', parent_issue_id: parent.id, status: status)
+    outside_child = build_issue(subject: 'Out of scope child', parent_issue_id: parent.id, status: outside_status)
+
+    delete :destroy, params: {
+      project_id: @project.identifier,
+      id: parent.id,
+      project_ids: [@project.id],
+      scope_status_ids_present: '1',
+      scope_status_ids: [status.id],
+      lock_version: parent.lock_version
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal [parent.id, visible_child.id].sort, json['deleted_issue_ids'].sort
+    refute_includes json['deleted_issue_ids'], outside_child.id
+    assert_nil Issue.find_by(id: outside_child.id)
+  end
+
+  def test_physical_delete_overflow_invalidates_board_instead_of_returning_partial_delta
+    status = IssueStatus.first
+    parent = build_issue(subject: 'Overflow delete parent', status: status)
+    child = build_issue(subject: 'Overflow delete child', parent_issue_id: parent.id, status: status)
+
+    delete :destroy, params: {
+      project_id: @project.identifier,
+      id: parent.id,
+      project_ids: [@project.id],
+      scope_status_ids_present: '1',
+      scope_status_ids: [status.id],
+      board_entity_limit: 1,
+      lock_version: parent.lock_version
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal [], json['deleted_issue_ids']
+    assert_equal true, json.dig('invalidations', 'board_snapshot')
+    assert_nil Issue.find_by(id: parent.id)
+    assert_nil Issue.find_by(id: child.id)
+  end
+
+  def test_physical_delete_response_overflow_invalidates_board_without_partial_tombstone
+    previous = ENV['REDMINE_KANBAN_MAX_RESPONSE_BYTES']
+    ENV['REDMINE_KANBAN_MAX_RESPONSE_BYTES'] = '1'
+    issue = build_issue(subject: 'Physical delete response overflow')
+
+    delete :destroy, params: {
+      project_id: @project.identifier,
+      id: issue.id,
+      project_ids: [@project.id],
+      scope_status_ids_present: '1',
+      scope_status_ids: [issue.status_id],
+      lock_version: issue.lock_version
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal [], json['deleted_issue_ids']
+    assert_equal true, json.dig('invalidations', 'board_snapshot')
+    assert_nil Issue.find_by(id: issue.id)
+  ensure
+    ENV['REDMINE_KANBAN_MAX_RESPONSE_BYTES'] = previous
+  end
+
   def test_read_endpoints_still_require_view_permission
     @role.remove_permission!(:view_redmine_kanban)
     get :index, params: { project_id: @project.identifier, board_entity_limit: 1500 }

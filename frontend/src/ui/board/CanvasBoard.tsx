@@ -90,7 +90,7 @@ type DragState = {
   start: { x: number; y: number };
   current: { x: number; y: number };
   origin: { statusId: number; laneId: string | number };
-  allowedStatusIds?: number[];
+  allowedStatusIds?: ReadonlySet<number>;
   dragging: boolean;
   targetCellKey: string | null;
   dropTargetCellKey?: string | null;
@@ -217,15 +217,10 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     scheduleRender();
   }, [scheduleRender]);
 
-  const resetPointerState = React.useCallback((preservePendingDrop: boolean = false) => {
+  const resetPointerState = React.useCallback(() => {
     clearHoverState();
-    if (preservePendingDrop && dragRef.current?.dropTargetCellKey) {
-      setCursor(getBoardCursor({ phase: 'pending-drop' }));
-      scheduleRender();
-      return;
-    }
     clearDragState();
-  }, [clearDragState, clearHoverState, scheduleRender]);
+  }, [clearDragState, clearHoverState]);
 
   const measureCtx = useMemo(() => {
     const canvas = document.createElement('canvas');
@@ -574,7 +569,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
           start: point,
           current: point,
           origin: { statusId: issue.status_id, laneId: originLaneId },
-          allowedStatusIds: issue.allowed_status_ids ? [...issue.allowed_status_ids] : undefined,
+          allowedStatusIds: issue.allowed_status_ids ? new Set(issue.allowed_status_ids) : undefined,
           dragging: false,
           targetCellKey: null,
         };
@@ -698,11 +693,11 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   };
 
   const handleLostPointerCapture = () => {
-    resetPointerState(true);
+    resetPointerState();
   };
 
   const handlePointerLeave = () => {
-    resetPointerState(true);
+    resetPointerState();
   };
 
   return (
@@ -1137,7 +1132,7 @@ function drawCells(
 
       const colBg = theme.columnBgs[colIndex % theme.columnBgs.length];
       const isTarget = drag?.dragging && drag.targetCellKey === key;
-      const targetEligibility = isTarget
+      const targetEligibility = drag?.dragging
         ? dropEligibility(drag!.origin.statusId, drag!.origin.laneId, statusId, laneLayout.laneId, drag!.allowedStatusIds)
         : null;
       ctx.fillStyle = targetEligibility === 'denied' ? '#cbd5e1' : targetEligibility === 'allowed' ? '#dcfce7' : isTarget ? '#e0f2fe' : colBg;
@@ -1149,6 +1144,17 @@ function drawCells(
         ctx.textBaseline = 'top';
         ctx.fillText(targetEligibility === 'denied' ? '×' : '✓', cellRect.x + cellRect.width - 18, cellRect.y + 6);
         ctx.restore();
+      }
+      if (isTarget) {
+        ctx.strokeStyle = targetEligibility === 'denied' ? '#475569' : '#0369a1';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(cellRect.x + 2, cellRect.y + 2);
+        ctx.lineTo(cellRect.x + cellRect.width - 2, cellRect.y + 2);
+        ctx.lineTo(cellRect.x + cellRect.width - 2, cellRect.y + cellRect.height - 2);
+        ctx.lineTo(cellRect.x + 2, cellRect.y + cellRect.height - 2);
+        ctx.closePath();
+        ctx.stroke();
       }
 
       ctx.strokeStyle = theme.borderStrong;

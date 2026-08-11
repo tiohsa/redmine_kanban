@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyBoardDataFilters, buildVisibleIssues, buildPrimaryColumns, resolvePreferredTrackerId, withContextColumns, type Filters } from './boardFilters';
+import { applyBoardDataFilters, buildVisibleIssues, buildPrimaryColumns, resolveCreateStatusId, resolvePreferredTrackerId, withContextColumns, type Filters } from './boardFilters';
 import type { BoardData, Issue } from './types';
 
 function makeIssue(id: number, statusId: number, subject: string, attrs: Partial<Issue> = {}): Issue {
@@ -103,6 +103,43 @@ describe('applyBoardDataFilters', () => {
     const primary = [data.columns[0]];
 
     expect(withContextColumns(data, primary, data.issues).map((column) => column.id)).toEqual([1, 2]);
+  });
+
+  it('does not restore a context column outside the explicit status filter', () => {
+    const data = makeBoardData([makeIssue(1, 2, 'Context parent')]);
+    const primary = [data.columns[0]];
+
+    expect(withContextColumns(data, primary, data.issues, [1]).map((column) => column.id)).toEqual([1]);
+  });
+
+  it('prefers an available selected tracker default status for create', () => {
+    const data = makeBoardData([makeIssue(1, 1, 'Issue')]);
+    data.columns = [
+      { id: 1, name: 'New', is_closed: false },
+      { id: 2, name: 'Review', is_closed: false },
+      { id: 3, name: 'Done', is_closed: true },
+    ];
+    data.lists.trackers = [{ id: 1, name: 'Bug', workflow_status_ids: [1, 2, 3], default_status_id: 2, available_project_ids: [1] }];
+
+    expect(resolveCreateStatusId(data, data.columns, [1], 1)).toBe(2);
+  });
+
+  it('falls back to the first candidate when tracker default is filtered out', () => {
+    const data = makeBoardData([makeIssue(1, 1, 'Issue')]);
+    data.columns = [
+      { id: 1, name: 'New', is_closed: false },
+      { id: 2, name: 'Review', is_closed: false },
+    ];
+    data.lists.trackers = [{ id: 1, name: 'Bug', workflow_status_ids: [1, 2], default_status_id: 2, available_project_ids: [1] }];
+
+    expect(resolveCreateStatusId(data, [data.columns[0]], [1], 1)).toBe(1);
+  });
+
+  it('returns no create status when the candidate set is empty', () => {
+    const data = makeBoardData([makeIssue(1, 1, 'Issue')]);
+    data.columns = [{ id: 1, name: 'New', is_closed: false }];
+
+    expect(resolveCreateStatusId(data, [], [], 1)).toBeUndefined();
   });
 
   it('resolves a preferred tracker only when it is available in the target project', () => {
