@@ -1,26 +1,34 @@
 import { describe, expect, it } from 'vitest';
-import { dropEligibility, shouldDispatchDrop } from './canvasInteraction';
+import { assessDrop, getDropHintVisual, shouldDispatchDrop } from './canvasInteraction';
 
-describe('dropEligibility', () => {
+describe('drop assessment', () => {
   it('returns noop for the same status and lane', () => {
-    expect(dropEligibility(1, 'a', 1, 'a', [1, 2])).toBe('noop');
+    expect(assessDrop(1, 'a', 1, 'a', [1, 2])).toEqual({ action: 'noop', workflowHint: 'allowed' });
   });
 
   it('returns allowed when the target status is in the issue workflow hint', () => {
-    expect(dropEligibility(1, 'a', 2, 'b', [1, 2])).toBe('allowed');
+    expect(assessDrop(1, 'a', 2, 'b', [1, 2])).toEqual({ action: 'dispatch', workflowHint: 'allowed' });
   });
 
   it('returns denied without blocking the command path', () => {
-    expect(dropEligibility(1, 'a', 3, 'b', [1, 2])).toBe('denied');
+    const assessment = assessDrop(1, 'a', 3, 'b', [1, 2]);
+    expect(assessment).toEqual({ action: 'dispatch', workflowHint: 'denied' });
+    expect(shouldDispatchDrop(assessment)).toBe(true);
   });
 
   it('returns unknown when workflow metadata is unavailable', () => {
-    expect(dropEligibility(1, 'a', 2, 'b', undefined)).toBe('unknown');
+    expect(assessDrop(1, 'a', 2, 'b', undefined)).toEqual({ action: 'dispatch', workflowHint: 'unknown' });
   });
 
-  it('dispatches denied and unknown drops but suppresses noop drops', () => {
-    expect(shouldDispatchDrop('denied')).toBe(true);
-    expect(shouldDispatchDrop('unknown')).toBe(true);
-    expect(shouldDispatchDrop('noop')).toBe(false);
+  it('dispatches only dispatch actions and keeps denied as advisory', () => {
+    expect(shouldDispatchDrop({ action: 'dispatch', workflowHint: 'unknown' })).toBe(true);
+    expect(shouldDispatchDrop({ action: 'noop', workflowHint: 'unknown' })).toBe(false);
+  });
+
+  it('uses advisory and neutral visuals instead of a hard-denial cross', () => {
+    expect(getDropHintVisual({ action: 'dispatch', workflowHint: 'denied' })).toMatchObject({ glyph: '!', tone: 'advisory' });
+    expect(getDropHintVisual({ action: 'dispatch', workflowHint: 'denied' }).glyph).not.toBe('×');
+    expect(getDropHintVisual({ action: 'dispatch', workflowHint: 'unknown' })).toMatchObject({ glyph: '?', tone: 'neutral' });
+    expect(getDropHintVisual({ action: 'noop', workflowHint: 'unknown' })).toMatchObject({ glyph: '', tone: 'noop' });
   });
 });

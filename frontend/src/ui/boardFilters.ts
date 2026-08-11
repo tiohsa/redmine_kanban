@@ -13,6 +13,11 @@ export type Filters = {
   trackerIds: number[];
 };
 
+export type BoardPresentationProjection = {
+  columns: Column[];
+  issues: Issue[];
+};
+
 export function applyBoardDataFilters(
   displayData: BoardData | null,
   showSubtasks: boolean,
@@ -73,14 +78,60 @@ export function buildPrimaryColumns(data: BoardData, selectedTrackerIds: number[
   ));
 }
 
-export function withContextColumns(data: BoardData, primaryColumns: Column[], rootIssues: Issue[], statusIds: number[] = []): Column[] {
+export function withContextColumns(
+  data: BoardData,
+  primaryColumns: Column[],
+  rootIssues: Issue[],
+  statusIds: number[] = [],
+  hiddenStatusIds: ReadonlySet<number> = new Set(),
+): Column[] {
   const primaryStatusIds = new Set(primaryColumns.map((column) => column.id));
   const requiredRootStatusIds = new Set(rootIssues.map((issue) => issue.status_id));
   const statusFilter = new Set(statusIds);
   return data.columns.filter((column) => (
-    (primaryStatusIds.has(column.id) || requiredRootStatusIds.has(column.id))
+    (primaryStatusIds.has(column.id) || (requiredRootStatusIds.has(column.id) && !hiddenStatusIds.has(column.id)))
     && (statusFilter.size === 0 || statusFilter.has(column.id))
   ));
+}
+
+export function buildPresentationProjection(
+  data: BoardData,
+  primaryColumns: Column[],
+  rootIssues: Issue[],
+  statusIds: number[] = [],
+  hiddenStatusIds: ReadonlySet<number> = new Set(),
+): BoardPresentationProjection {
+  const columns = withContextColumns(data, primaryColumns, rootIssues, statusIds, hiddenStatusIds);
+  const renderedColumnIds = new Set(
+    columns.filter((column) => !hiddenStatusIds.has(column.id)).map((column) => column.id),
+  );
+
+  return {
+    columns,
+    issues: projectPresentationRoots(rootIssues, renderedColumnIds),
+  };
+}
+
+export function projectPresentationRoots(rootIssues: Issue[], renderedColumnIds: ReadonlySet<number>): Issue[] {
+  const roots: Issue[] = [];
+  const seenRootIds = new Set<number>();
+
+  const visit = (issue: Issue) => {
+    if (renderedColumnIds.has(issue.status_id)) {
+      if (!seenRootIds.has(issue.id)) {
+        seenRootIds.add(issue.id);
+        roots.push(issue);
+      }
+      return;
+    }
+
+    for (const child of issue.subtasks ?? []) {
+      visit(child as Issue);
+    }
+  };
+
+  for (const issue of rootIssues) visit(issue);
+  return roots;
 }
 
 export function resolvePreferredTrackerId(
@@ -121,13 +172,19 @@ export function buildVisibleIssues(
   pendingDeleteIssue: Issue | null,
 ): Issue[] {
   let visible = filterIssues(filteredData?.issues ?? [], filteredData, filters)
-    .filter((issue) => !hiddenStatusIds.has(issue.status_id));
+    .filter((issue) => !hiddenStatusIds.has(issue.status_id) || hasVisibleDescendant(issue, hiddenStatusIds));
 
   if (pendingDeleteIssue) {
     visible = visible.filter((issue) => issue.id !== pendingDeleteIssue.id);
   }
 
   return visible;
+}
+
+function hasVisibleDescendant(issue: Issue, hiddenStatusIds: ReadonlySet<number>): boolean {
+  return (issue.subtasks ?? []).some((child) => (
+    !hiddenStatusIds.has(child.status_id) || hasVisibleDescendant(child as Issue, hiddenStatusIds)
+  ));
 }
 
 function startOfWeek(date: Date): Date {

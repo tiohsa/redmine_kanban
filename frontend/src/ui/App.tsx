@@ -4,7 +4,7 @@ import type { BoardApiResponse, BoardData, Issue } from './types';
 import { getJson, isHttpError } from './http';
 import { CanvasBoard, type CanvasBoardHandle } from './board/CanvasBoard';
 import { buildBoardState } from './board/state';
-import { applyBoardDataFilters, buildVisibleIssues, resolveCreateStatusId, resolvePreferredTrackerId, withContextColumns } from './boardFilters';
+import { applyBoardDataFilters, buildPresentationProjection, buildVisibleIssues, resolveCreateStatusId, resolvePreferredTrackerId } from './boardFilters';
 import { buildBoardDataUrl, buildBoardQueryKey, effectiveDependencyStatusIds, effectiveScopeStatusIds } from './boardQuery';
 import { IframeEditDialog } from './IframeEditDialog';
 import { KanbanIssueModal } from './KanbanIssueModal';
@@ -239,14 +239,26 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     () => buildVisibleIssues(primaryFilteredData, filters, hiddenStatusIds, actions.pendingDeleteIssue),
     [actions.pendingDeleteIssue, filters, hiddenStatusIds, primaryFilteredData],
   );
-  const filteredData = useMemo(
+  const presentation = useMemo(
     () => {
       if (!primaryFilteredData || !displayData) return null;
+      return buildPresentationProjection(
+        displayData,
+        primaryFilteredData.columns,
+        issues,
+        filters.statusIds,
+        hiddenStatusIds,
+      );
+    }, [displayData, filters.statusIds, hiddenStatusIds, issues, primaryFilteredData],
+  );
+  const filteredData = useMemo(
+    () => {
+      if (!primaryFilteredData || !presentation) return null;
       return {
         ...primaryFilteredData,
-        columns: withContextColumns(displayData, primaryFilteredData.columns, issues, filters.statusIds),
+        columns: presentation.columns,
       };
-    }, [displayData, filters.statusIds, issues, primaryFilteredData],
+    }, [presentation, primaryFilteredData],
   );
   const priorityRank = useMemo(() => {
     const rank = new Map<number, number>();
@@ -259,16 +271,16 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     if (!filteredData) return null;
     return buildBoardState(
       filteredData,
-      issues,
+      presentation?.issues ?? [],
       sortKey,
       priorityRank,
       filters.assigneeIds,
       filters.priority,
       filters.priorityFilterEnabled,
     );
-  }, [filteredData, issues, priorityRank, sortKey, filters.assigneeIds, filters.priority, filters.priorityFilterEnabled]);
+  }, [filteredData, presentation?.issues, priorityRank, sortKey, filters.assigneeIds, filters.priority, filters.priorityFilterEnabled]);
 
-  const canMove = issues.some((issue) => issue.permissions?.can_move);
+  const canMove = (presentation?.issues ?? []).some((issue) => issue.permissions?.can_move);
   const selectedProjectIds = useMemo(
     () => (filters.projectIds.length > 0 ? filters.projectIds : data?.meta.project_id ? [data.meta.project_id] : []),
     [data?.meta.project_id, filters.projectIds],

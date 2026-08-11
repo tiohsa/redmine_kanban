@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyBoardDataFilters, buildVisibleIssues, buildPrimaryColumns, resolveCreateStatusId, resolvePreferredTrackerId, withContextColumns, type Filters } from './boardFilters';
+import { applyBoardDataFilters, buildPresentationProjection, buildVisibleIssues, buildPrimaryColumns, resolveCreateStatusId, resolvePreferredTrackerId, withContextColumns, type Filters } from './boardFilters';
 import type { BoardData, Issue } from './types';
 
 function makeIssue(id: number, statusId: number, subject: string, attrs: Partial<Issue> = {}): Issue {
@@ -390,6 +390,66 @@ describe('buildVisibleIssues', () => {
 
     expect(issues.map((issue) => issue.id)).toEqual([1]);
     expect(issues[0].subtasks?.map((subtask) => subtask.id)).toEqual([2]);
+  });
+
+  it('promotes a matching child when an explicit status filter hides the context parent column', () => {
+    const data = makeBoardData([
+      makeIssue(10, 2, 'Parent', {
+        subtasks: [{ id: 11, subject: 'Matching child', status_id: 1, is_closed: false }],
+      }),
+    ]);
+    const filteredData = applyBoardDataFilters(data, true, [1]);
+    const issues = buildVisibleIssues(filteredData, makeFilters({ statusIds: [1] }), new Set(), null);
+    const projection = buildPresentationProjection(data, filteredData!.columns, issues, [1], new Set());
+
+    expect(projection.columns.map((column) => column.id)).toEqual([1]);
+    expect(projection.issues.map((issue) => issue.id)).toEqual([11]);
+    expect(projection.issues.every((issue) => projection.columns.some((column) => column.id === issue.status_id))).toBe(true);
+  });
+
+  it('promotes a visible child when its hidden parent cannot be rendered', () => {
+    const data = makeBoardData([
+      makeIssue(20, 2, 'Hidden parent', {
+        subtasks: [{ id: 21, subject: 'Visible child', status_id: 1, is_closed: false }],
+      }),
+    ]);
+    const issues = buildVisibleIssues(data, makeFilters(), new Set([2]), null);
+    const projection = buildPresentationProjection(data, data.columns, issues, [], new Set([2]));
+
+    expect(projection.issues.map((issue) => issue.id)).toEqual([21]);
+    expect(projection.issues.every((issue) => projection.columns.some((column) => column.id === issue.status_id && !new Set([2]).has(column.id)))).toBe(true);
+  });
+
+  it('promotes the nearest visible descendant once for a deeply hidden branch', () => {
+    const data = makeBoardData([
+      makeIssue(30, 2, 'A', {
+        subtasks: [{
+          id: 31,
+          subject: 'B',
+          status_id: 2,
+          is_closed: false,
+          subtasks: [{ id: 32, subject: 'C', status_id: 1, is_closed: false }],
+        }],
+      }),
+    ]);
+    const issues = buildVisibleIssues(data, makeFilters(), new Set([2]), null);
+    const projection = buildPresentationProjection(data, data.columns, issues, [], new Set([2]));
+
+    expect(projection.issues.map((issue) => issue.id)).toEqual([32]);
+    expect(new Set(projection.issues.map((issue) => issue.id)).size).toBe(projection.issues.length);
+  });
+
+  it('keeps a context parent when its column remains renderable', () => {
+    const data = makeBoardData([
+      makeIssue(40, 2, 'Renderable parent', {
+        subtasks: [{ id: 41, subject: 'Matching child', status_id: 1, is_closed: false }],
+      }),
+    ]);
+    const projection = buildPresentationProjection(data, [data.columns[0]], data.issues, [], new Set());
+
+    expect(projection.columns.map((column) => column.id)).toEqual([1, 2]);
+    expect(projection.issues.map((issue) => issue.id)).toEqual([40]);
+    expect(projection.issues[0].subtasks?.map((issue) => issue.id)).toEqual([41]);
   });
 
   it('hides a parent when neither it nor any descendant matches project', () => {

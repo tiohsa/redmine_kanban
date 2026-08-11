@@ -244,7 +244,7 @@ describe('CanvasBoard cursor lifecycle', () => {
     expect(context.fillText).not.toHaveBeenCalledWith('...', expect.any(Number), expect.any(Number));
   });
 
-  it('resets cursor and drag guidance after pointercancel and lost capture', async () => {
+  it('resets active drag but keeps a committed drop across lost capture', async () => {
     const issue = makeIssue(1, { due_date: '2026-03-20' });
     const data = makeBoardData(issue);
     const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
@@ -322,6 +322,12 @@ describe('CanvasBoard cursor lifecycle', () => {
       expect(board.style.cursor).toBe('default');
     });
 
+    fireEvent.pointerLeave(canvas, { clientX: 320, clientY: 100, pointerId: 2 });
+    fireEvent.pointerDown(canvas, { clientX: 200, clientY: 100, pointerId: 2 });
+    fireEvent.pointerMove(canvas, { clientX: 320, clientY: 100, pointerId: 2 });
+    fireEvent.pointerUp(canvas, { clientX: 320, clientY: 100, pointerId: 2 });
+    expect(onCommand).toHaveBeenCalledTimes(1);
+
     fireEvent.pointerMove(canvas, { clientX: 320, clientY: 100, pointerId: 2 });
     await waitFor(() => {
       expect(board.style.cursor).toBe('default');
@@ -367,7 +373,8 @@ describe('CanvasBoard cursor lifecycle', () => {
 
     await waitFor(() => {
       expect(context.fillText).toHaveBeenCalledWith('✓', expect.any(Number), expect.any(Number));
-      expect(context.fillText).toHaveBeenCalledWith('×', expect.any(Number), expect.any(Number));
+      expect(context.fillText).toHaveBeenCalledWith('!', expect.any(Number), expect.any(Number));
+      expect(context.fillText).not.toHaveBeenCalledWith('×', expect.any(Number), expect.any(Number));
     });
   });
 

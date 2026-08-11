@@ -8,7 +8,8 @@ import {
   canDeleteIssue,
   canEditIssue,
   canMoveIssue,
-  dropEligibility,
+  assessDrop,
+  getDropHintVisual,
   getHoverSnapshot,
   getIssueFromHover,
   getTooltipTextFromHover,
@@ -16,6 +17,7 @@ import {
   type HitResult,
   subtaskPermissions,
 } from './canvasInteraction';
+import { transitionDragPhase, type DragPhase } from './dragInteraction';
 import { buildSubtaskKey, laneIdToAssignee, laneIdToPriority, parseCellKey, parseSubtaskKey, resolveBoardLaneId } from './keys';
 import { getMetrics } from './metrics';
 import type { BoardState } from './state';
@@ -91,7 +93,7 @@ type DragState = {
   current: { x: number; y: number };
   origin: { statusId: number; laneId: string | number };
   allowedStatusIds?: ReadonlySet<number>;
-  dragging: boolean;
+  phase: Exclude<DragPhase, 'idle'>;
   targetCellKey: string | null;
   dropTargetCellKey?: string | null;
   dropCommittedAt?: number;
@@ -217,11 +219,6 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     scheduleRender();
   }, [scheduleRender]);
 
-  const resetPointerState = React.useCallback(() => {
-    clearHoverState();
-    clearDragState();
-  }, [clearDragState, clearHoverState]);
-
   const measureCtx = useMemo(() => {
     const canvas = document.createElement('canvas');
     return canvas.getContext('2d');
@@ -282,7 +279,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
 
   useEffect(() => {
     const drag = dragRef.current;
-    if (!drag?.dropTargetCellKey) return;
+    if (drag?.phase !== 'pending-drop' || !drag.dropTargetCellKey) return;
 
     const issue = state.cardsById.get(drag.issueId);
     if (issue) {
@@ -560,6 +557,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       case 'card':
       case 'subtask_area':
       case 'subtask_row': {
+        if (dragRef.current?.phase === 'pending-drop') return;
         if (isBusy(hit.issueId)) return;
         const issue = state.cardsById.get(hit.issueId);
         if (!issue || !canMoveIssue(issue)) return;
@@ -570,7 +568,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
           current: point,
           origin: { statusId: issue.status_id, laneId: originLaneId },
           allowedStatusIds: issue.allowed_status_ids ? new Set(issue.allowed_status_ids) : undefined,
-          dragging: false,
+          phase: transitionDragPhase('idle', 'pointerdown') as Exclude<DragPhase, 'idle'>,
           targetCellKey: null,
         };
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -613,21 +611,21 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       return;
     }
 
-    if (drag.dropTargetCellKey) {
+    if (drag.phase === 'pending-drop') {
       setCursor(getBoardCursor({ phase: 'pending-drop' }));
       return;
     }
 
     drag.current = point;
-    if (!drag.dragging) {
+    if (drag.phase === 'pressed') {
       const dx = Math.abs(point.x - drag.start.x);
       const dy = Math.abs(point.y - drag.start.y);
       if (dx + dy >= dragThreshold) {
-        drag.dragging = true;
+        drag.phase = transitionDragPhase(drag.phase, 'threshold-reached') as Exclude<DragPhase, 'idle'>;
       }
     }
 
-    if (drag.dragging) {
+    if (drag.phase === 'dragging') {
       const hit = hitTestCell(point, rectMapRef.current, data);
       drag.targetCellKey = hit ? cellKey(hit.statusId, hit.laneId) : null;
       setCursor(getBoardCursor({ phase: 'dragging' }));
@@ -641,7 +639,9 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     const drag = dragRef.current;
     if (!drag) return;
 
-    if (!drag.dragging) {
+    if (drag.phase === 'pending-drop') return;
+
+    if (drag.phase !== 'dragging') {
       // If we released on the same card and didn't drag, open the dialog
       // except for subtask checkbox area which is already handled in handlePointerDown
       const hit = hitTest(point, rectMapRef.current, state, data);
@@ -661,14 +661,14 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     const issue = state.cardsById.get(drag.issueId);
     const assignedToId = laneIdToAssignee(data, hit.laneId, issue?.assigned_to_id ?? null);
     const priorityId = laneIdToPriority(data, hit.laneId, issue?.priority_id ?? null);
-    const eligibility = dropEligibility(
+    const assessment = assessDrop(
       drag.origin.statusId,
       drag.origin.laneId,
       hit.statusId,
       hit.laneId,
       drag.allowedStatusIds,
     );
-    if (!shouldDispatchDrop(eligibility)) {
+    if (!shouldDispatchDrop(assessment)) {
       clearDragState();
       return;
     }
@@ -681,6 +681,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       priorityId,
     });
 
+    drag.phase = transitionDragPhase(drag.phase, 'pointerup-dispatch') as Exclude<DragPhase, 'idle'>;
     drag.dropTargetCellKey = cellKey(hit.statusId, hit.laneId);
     drag.dropCommittedAt = Date.now();
     setCursor(getBoardCursor({ phase: 'pending-drop' }));
@@ -688,17 +689,24 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     return;
   };
 
-  const handlePointerCancel = () => {
-    resetPointerState();
+  const handlePointerLifecycle = (event: 'pointercancel' | 'lostpointercapture' | 'pointerleave') => {
+    clearHoverState();
+    const drag = dragRef.current;
+    if (!drag) return;
+    const nextPhase = transitionDragPhase(drag.phase, event);
+    if (nextPhase === 'idle') {
+      clearDragState();
+      return;
+    }
+    setCursor(getBoardCursor({ phase: 'pending-drop' }));
+    scheduleRender();
   };
 
-  const handleLostPointerCapture = () => {
-    resetPointerState();
-  };
+  const handlePointerCancel = () => handlePointerLifecycle('pointercancel');
 
-  const handlePointerLeave = () => {
-    resetPointerState();
-  };
+  const handleLostPointerCapture = () => handlePointerLifecycle('lostpointercapture');
+
+  const handlePointerLeave = () => handlePointerLifecycle('pointerleave');
 
   return (
     <div
@@ -1131,22 +1139,37 @@ function drawCells(
       rectMap.cells.set(key, cellRect);
 
       const colBg = theme.columnBgs[colIndex % theme.columnBgs.length];
-      const isTarget = drag?.dragging && drag.targetCellKey === key;
-      const targetEligibility = drag?.dragging
-        ? dropEligibility(drag!.origin.statusId, drag!.origin.laneId, statusId, laneLayout.laneId, drag!.allowedStatusIds)
+      const targetAssessment = drag?.phase === 'dragging'
+        ? assessDrop(drag.origin.statusId, drag.origin.laneId, statusId, laneLayout.laneId, drag.allowedStatusIds)
         : null;
-      ctx.fillStyle = targetEligibility === 'denied' ? '#cbd5e1' : targetEligibility === 'allowed' ? '#dcfce7' : isTarget ? '#e0f2fe' : colBg;
+      const hintVisual = targetAssessment ? getDropHintVisual(targetAssessment) : null;
+      const isTarget = drag?.phase === 'dragging'
+        && drag.targetCellKey === key
+        && targetAssessment?.action === 'dispatch';
+      ctx.fillStyle = hintVisual?.tone === 'advisory'
+        ? '#fef3c7'
+        : hintVisual?.tone === 'allowed'
+          ? '#dcfce7'
+          : hintVisual?.tone === 'neutral'
+            ? '#f1f5f9'
+            : isTarget
+              ? '#e0f2fe'
+              : colBg;
       ctx.fillRect(cellRect.x, cellRect.y, cellRect.width, cellRect.height);
-      if (targetEligibility === 'denied' || targetEligibility === 'allowed') {
+      if (hintVisual?.glyph) {
         ctx.save();
-        ctx.fillStyle = targetEligibility === 'denied' ? '#475569' : '#166534';
+        ctx.fillStyle = hintVisual.tone === 'advisory'
+          ? '#92400e'
+          : hintVisual.tone === 'allowed'
+            ? '#166534'
+            : '#64748b';
         ctx.font = '700 14px "DM Sans Variable", "Noto Sans JP Variable", sans-serif';
         ctx.textBaseline = 'top';
-        ctx.fillText(targetEligibility === 'denied' ? '×' : '✓', cellRect.x + cellRect.width - 18, cellRect.y + 6);
+        ctx.fillText(hintVisual.glyph, cellRect.x + cellRect.width - 18, cellRect.y + 6);
         ctx.restore();
       }
       if (isTarget) {
-        ctx.strokeStyle = targetEligibility === 'denied' ? '#475569' : '#0369a1';
+        ctx.strokeStyle = hintVisual?.tone === 'advisory' ? '#b45309' : '#0369a1';
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.moveTo(cellRect.x + 2, cellRect.y + 2);
@@ -1176,7 +1199,7 @@ function drawCells(
 
       for (let index = 0; index < cardIds.length; index += 1) {
         const cardId = cardIds[index];
-        if (drag?.dragging && drag.issueId === cardId) {
+    if (drag?.phase === 'dragging' && drag.issueId === cardId) {
           // The dragged card is rendered by drawDragOverlay.
           // Skipping the original card prevents a temporary snap-back impression.
           continue;
@@ -1848,7 +1871,7 @@ function drawDragOverlay(
   fontSize: number,
   layout: ReturnType<typeof computeLayout>
 ) {
-  if (!drag || !drag.dragging) return;
+  if (!drag || drag.phase !== 'dragging') return;
   const issue = state.cardsById.get(drag.issueId);
   if (!issue) return;
   const offsetX = 20;
