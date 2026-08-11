@@ -53,6 +53,17 @@ function makeBoardData(issues: Issue[]): BoardData {
 }
 
 describe('useKanbanDialogs issue resolution', () => {
+  it('passes the preferred tracker through the native create URL', () => {
+    const data = makeBoardData([]);
+    const { result } = renderHook(() => useKanbanDialogs('/projects/test/kanban', data, 'assignee'));
+
+    act(() => {
+      result.current.openCreate({ statusId: 2, laneId: 8, projectId: 3, preferredTrackerId: 1 });
+    });
+
+    expect(result.current.iframeCreateContext?.url).toBe('/projects/test/issues/new?project_id=3&issue%5Bstatus_id%5D=2&issue%5Btracker_id%5D=1&issue%5Bassigned_to_id%5D=8');
+  });
+
   it('opens top-level issues with tracker-based title', () => {
     const data = makeBoardData([makeIssue(10, { subject: 'Parent issue', project: { id: 3, name: 'Subproject' } })]);
     const { result } = renderHook(() => useKanbanDialogs('/projects/test/kanban', data, 'assignee'));

@@ -1,6 +1,12 @@
 import type { BoardData } from './types';
 
-export type ModalContext = { statusId: number; laneId?: string | number; issueId?: number; projectId?: number };
+export type ModalContext = {
+  statusId: number;
+  laneId?: string | number;
+  issueId?: number;
+  projectId?: number;
+  preferredTrackerId?: number;
+};
 
 export function buildDefaultIssueCreateUrl(
   baseUrl: string,
@@ -17,6 +23,9 @@ export function buildDefaultIssueCreateUrl(
   }
   if (ctx.statusId) {
     params.append('issue[status_id]', String(ctx.statusId));
+  }
+  if (ctx.preferredTrackerId && ctx.preferredTrackerId > 0) {
+    params.append('issue[tracker_id]', String(ctx.preferredTrackerId));
   }
   if (ctx.laneId && effectiveLaneType === 'assignee' && ctx.laneId !== 'unassigned' && ctx.laneId !== 'none') {
     params.append('issue[assigned_to_id]', String(ctx.laneId));

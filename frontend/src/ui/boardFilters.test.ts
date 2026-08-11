@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyBoardDataFilters, buildVisibleIssues, type Filters } from './boardFilters';
+import { applyBoardDataFilters, buildVisibleIssues, buildPrimaryColumns, resolvePreferredTrackerId, withContextColumns, type Filters } from './boardFilters';
 import type { BoardData, Issue } from './types';
 
 function makeIssue(id: number, statusId: number, subject: string, attrs: Partial<Issue> = {}): Issue {
@@ -68,6 +68,52 @@ function makeFilters(overrides: Partial<Filters> = {}): Filters {
 }
 
 describe('applyBoardDataFilters', () => {
+  it('projects primary columns from one tracker workflow plus its default status in source order', () => {
+    const data = makeBoardData([makeIssue(1, 1, 'Issue')]);
+    const projected = buildPrimaryColumns({
+      ...data,
+      columns: [
+        { id: 1, name: 'Open', is_closed: false },
+        { id: 2, name: 'Review', is_closed: false },
+        { id: 3, name: 'Closed', is_closed: true },
+      ],
+      lists: {
+        ...data.lists,
+        trackers: [{ id: 1, name: 'Bug', workflow_status_ids: [2, 2], default_status_id: 1, available_project_ids: [1] }],
+      },
+    }, [1], []);
+
+    expect(projected.map((column) => column.id)).toEqual([1, 2]);
+  });
+
+  it('fails open when selected tracker workflow metadata is missing', () => {
+    const data = makeBoardData([makeIssue(1, 1, 'Issue')]);
+    expect(buildPrimaryColumns(data, [1], []).map((column) => column.id)).toEqual([1, 2]);
+  });
+
+  it('keeps a valid default status when workflow metadata is empty', () => {
+    const data = makeBoardData([makeIssue(1, 1, 'Issue')]);
+    data.lists.trackers = [{ id: 1, name: 'Bug', workflow_status_ids: [], default_status_id: 2 }];
+
+    expect(buildPrimaryColumns(data, [1], []).map((column) => column.id)).toEqual([2]);
+  });
+
+  it('adds the rendered root status without changing the primary column order', () => {
+    const data = makeBoardData([makeIssue(1, 2, 'Context parent')]);
+    const primary = [data.columns[0]];
+
+    expect(withContextColumns(data, primary, data.issues).map((column) => column.id)).toEqual([1, 2]);
+  });
+
+  it('resolves a preferred tracker only when it is available in the target project', () => {
+    const data = makeBoardData([makeIssue(1, 1, 'Issue')]);
+    data.lists.trackers = [{ id: 1, name: 'Bug', workflow_status_ids: [1], available_project_ids: [1] }];
+
+    expect(resolvePreferredTrackerId(data, [1], 1)).toBe(1);
+    expect(resolvePreferredTrackerId(data, [1], 2)).toBeUndefined();
+    expect(resolvePreferredTrackerId(data, [1, 2], 1)).toBeUndefined();
+  });
+
   it('keeps local status filtering on placeholder data by hiding columns immediately', () => {
     const data = makeBoardData([
       makeIssue(1, 1, 'Parent'),

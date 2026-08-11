@@ -33,7 +33,10 @@ module RedmineKanban
       end
 
       unless status_allowed_for?(@issue, status_id)
-        return error_response(I18n.t('redmine_kanban.error_workflow_transition'))
+        return error_response(
+          I18n.t('redmine_kanban.error_workflow_transition'),
+          code: 'WORKFLOW_TRANSITION_NOT_ALLOWED',
+        )
       end
 
       @issue.init_journal(@user)

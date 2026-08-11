@@ -151,6 +151,7 @@ type FieldErrors = {
 type ErrorPayload = {
   message?: string;
   field_errors?: FieldErrors;
+  error?: { code?: string };
 };
 
 function errorPayload(error: unknown): ErrorPayload | null {
@@ -173,6 +174,10 @@ export function payloadMessage(error: unknown): string | null {
 
 export function payloadFieldError(error: unknown): string | null {
   return fieldError(errorPayload(error)?.field_errors);
+}
+
+export function isWorkflowTransitionError(error: unknown): boolean {
+  return errorPayload(error)?.error?.code === 'WORKFLOW_TRANSITION_NOT_ALLOWED';
 }
 
 export function resolveMutationError(

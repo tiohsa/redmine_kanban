@@ -61,7 +61,10 @@ module RedmineKanban
         if status_allowed_for?(issue, status_id)
           attributes['status_id'] = status_id
         else
-          return error_response(I18n.t('redmine_kanban.error_workflow_transition'))
+          return error_response(
+            I18n.t('redmine_kanban.error_workflow_transition'),
+            code: 'WORKFLOW_TRANSITION_NOT_ALLOWED',
+          )
         end
       end
 

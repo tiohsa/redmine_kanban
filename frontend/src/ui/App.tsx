@@ -4,7 +4,7 @@ import type { BoardApiResponse, BoardData, Issue } from './types';
 import { getJson, isHttpError } from './http';
 import { CanvasBoard, type CanvasBoardHandle } from './board/CanvasBoard';
 import { buildBoardState } from './board/state';
-import { applyBoardDataFilters, buildVisibleIssues } from './boardFilters';
+import { applyBoardDataFilters, buildVisibleIssues, defaultCreateStatusId, resolvePreferredTrackerId, withContextColumns } from './boardFilters';
 import { buildBoardDataUrl, buildBoardQueryKey, effectiveDependencyStatusIds, effectiveScopeStatusIds } from './boardQuery';
 import { IframeEditDialog } from './IframeEditDialog';
 import { KanbanIssueModal } from './KanbanIssueModal';
@@ -227,13 +227,22 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     setIframeTimeEntryUrl: dialogs.setIframeTimeEntryUrl,
   });
 
-  const filteredData = useMemo(
-    () => applyBoardDataFilters(displayData, showSubtasks, filters.statusIds),
-    [displayData, filters.statusIds, showSubtasks],
+  const primaryFilteredData = useMemo(
+    () => applyBoardDataFilters(displayData, showSubtasks, filters.statusIds, filters.trackerIds),
+    [displayData, filters.statusIds, filters.trackerIds, showSubtasks],
   );
   const issues = useMemo(
-    () => buildVisibleIssues(filteredData, filters, hiddenStatusIds, actions.pendingDeleteIssue),
-    [actions.pendingDeleteIssue, filteredData, filters, hiddenStatusIds],
+    () => buildVisibleIssues(primaryFilteredData, filters, hiddenStatusIds, actions.pendingDeleteIssue),
+    [actions.pendingDeleteIssue, filters, hiddenStatusIds, primaryFilteredData],
+  );
+  const filteredData = useMemo(
+    () => {
+      if (!primaryFilteredData || !displayData) return null;
+      return {
+        ...primaryFilteredData,
+        columns: withContextColumns(displayData, primaryFilteredData.columns, issues),
+      };
+    }, [displayData, issues, primaryFilteredData],
   );
   const priorityRank = useMemo(() => {
     const rank = new Map<number, number>();
@@ -302,8 +311,11 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
           canCreate={canCreate}
           onCreate={() => {
             if (defaultCreateProjectId === null) return;
-            const defaultStatus = toolbarData.columns.find((column) => !column.is_closed)?.id ?? toolbarData.columns[0]?.id ?? 1;
-            dialogs.openCreate({ statusId: defaultStatus, projectId: defaultCreateProjectId });
+            dialogs.openCreate({
+              statusId: defaultCreateStatusId(primaryFilteredData?.columns ?? toolbarData.columns),
+              projectId: defaultCreateProjectId,
+              preferredTrackerId: data ? resolvePreferredTrackerId(data, filters.trackerIds, defaultCreateProjectId) : undefined,
+            });
           }}
           onScrollToTop={() => boardRef.current?.scrollToTop()}
           timeEntryOnClose={timeEntryOnClose}
@@ -340,11 +352,14 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
               }
             }}
             onCreate={(ctx) => {
+              const projectId = ctx.projectId ?? defaultCreateProjectId ?? undefined;
               dialogs.openCreate({
                 ...ctx,
-                projectId: ctx.projectId ?? defaultCreateProjectId ?? undefined,
+                projectId,
+                preferredTrackerId: data ? resolvePreferredTrackerId(data, filters.trackerIds, projectId) : undefined,
               });
             }}
+            defaultCreateStatusId={defaultCreateStatusId(primaryFilteredData?.columns ?? toolbarData.columns)}
             onEdit={dialogs.openEdit}
             onView={dialogs.openView}
             onDelete={actions.requestDelete}

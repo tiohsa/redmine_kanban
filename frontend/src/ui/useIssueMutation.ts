@@ -131,7 +131,7 @@ type UseIssueMutationOptions<TPayload extends IssuePayload, TResult> = {
     payload: TPayload,
     options?: { applyTarget: boolean; applyNonTarget?: boolean },
   ) => BoardData;
-  onError?: (error: unknown) => void;
+  onError?: (error: unknown, payload: TPayload) => void;
   onSuccess?: (result: TResult) => void;
   onMutateIssue?: (issueId: number) => void;
   onSettledIssue?: (issueId: number) => void;
@@ -197,7 +197,7 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
         // effects that cannot be represented by the local patch.
         void queryClient.invalidateQueries({ queryKey });
       }
-      onError?.(_err);
+      onError?.(_err, _payload);
     },
     onSuccess: (result, payload, context) => {
       if (isBoardSnapshotInvalidated(result)) {

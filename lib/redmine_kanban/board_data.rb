@@ -128,6 +128,7 @@ module RedmineKanban
       help_chapter1_desc: "redmine_kanban.label_help_chapter1_desc",
       help_add: "redmine_kanban.label_help_add",
       help_filter: "redmine_kanban.label_help_filter",
+      help_tracker: "redmine_kanban.label_help_tracker",
       help_assignee: "redmine_kanban.label_help_assignee",
       help_project: "redmine_kanban.label_help_project",
       help_status: "redmine_kanban.label_help_status",

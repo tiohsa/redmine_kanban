@@ -29,6 +29,24 @@ export type HoverSnapshot = {
   hoveredSubtaskKey: string | null;
 };
 
+export type DropEligibility = 'noop' | 'allowed' | 'denied' | 'unknown';
+
+export function dropEligibility(
+  originStatusId: number,
+  originLaneId: string | number,
+  targetStatusId: number,
+  targetLaneId: string | number,
+  allowedStatusIds?: number[],
+): DropEligibility {
+  if (originStatusId === targetStatusId && originLaneId === targetLaneId) return 'noop';
+  if (!Array.isArray(allowedStatusIds)) return 'unknown';
+  return allowedStatusIds.includes(targetStatusId) ? 'allowed' : 'denied';
+}
+
+export function shouldDispatchDrop(eligibility: DropEligibility): boolean {
+  return eligibility !== 'noop';
+}
+
 export function canMoveIssue(issue?: Issue | null) {
   return !!issue?.permissions?.can_move;
 }

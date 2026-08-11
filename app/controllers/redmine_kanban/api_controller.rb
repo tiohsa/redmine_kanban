@@ -65,7 +65,14 @@ module RedmineKanban
         return
       end
 
-      render json: { ok: true, trackers: target_project.trackers.sorted.map { |tracker| { id: tracker.id, name: tracker.name } } }
+      trackers = target_project.trackers.sorted.to_a
+      available_project_ids_by_tracker = trackers.to_h { |tracker| [tracker.id, [target_project.id]] }
+      metadata = TrackerMetadataBuilder.new(
+        trackers: trackers,
+        available_project_ids_by_tracker: available_project_ids_by_tracker,
+      ).build
+
+      render json: { ok: true, trackers: metadata }
     end
 
     def move

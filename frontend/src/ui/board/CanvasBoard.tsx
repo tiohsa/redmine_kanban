@@ -8,9 +8,11 @@ import {
   canDeleteIssue,
   canEditIssue,
   canMoveIssue,
+  dropEligibility,
   getHoverSnapshot,
   getIssueFromHover,
   getTooltipTextFromHover,
+  shouldDispatchDrop,
   type HitResult,
   subtaskPermissions,
 } from './canvasInteraction';
@@ -88,6 +90,7 @@ type DragState = {
   start: { x: number; y: number };
   current: { x: number; y: number };
   origin: { statusId: number; laneId: string | number };
+  allowedStatusIds?: number[];
   dragging: boolean;
   targetCellKey: string | null;
   dropTargetCellKey?: string | null;
@@ -120,6 +123,7 @@ type Props = {
   hiddenStatusIds?: Set<number>;
   onToggleStatusVisibility?: (statusId: number) => void;
   fontSize?: number;
+  defaultCreateStatusId?: number;
 };
 
 export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasBoard({
@@ -144,6 +148,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   hiddenStatusIds,
   onToggleStatusVisibility,
   fontSize = 13,
+  defaultCreateStatusId,
 }: Props, ref) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -266,7 +271,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   }, []);
   useEffect(() => {
     scheduleRender();
-  }, [size, state, data.meta, trackerCatalog, canCreate, canMove, theme, fontSize, scheduleRender]);
+  }, [size, state, data.meta, trackerCatalog, canCreate, canMove, theme, fontSize, defaultCreateStatusId, scheduleRender]);
 
   useEffect(() => {
     const onViewportChange = () => {
@@ -442,7 +447,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     );
 
     if (laneType !== 'none') {
-      drawLaneLabels(ctx, layout, state.lanes, theme, canCreate, state.columns[0]?.id, rectMapRef.current, labels, metrics);
+    drawLaneLabels(ctx, layout, state.lanes, theme, canCreate, defaultCreateStatusId ?? state.columns[0]?.id, rectMapRef.current, labels, metrics);
     }
 
     drawDragOverlay(ctx, state, data, trackerCatalog, theme, dragRef.current, labels, metrics, fontSize, layout);
@@ -569,6 +574,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
           start: point,
           current: point,
           origin: { statusId: issue.status_id, laneId: originLaneId },
+          allowedStatusIds: issue.allowed_status_ids ? [...issue.allowed_status_ids] : undefined,
           dragging: false,
           targetCellKey: null,
         };
@@ -660,6 +666,17 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     const issue = state.cardsById.get(drag.issueId);
     const assignedToId = laneIdToAssignee(data, hit.laneId, issue?.assigned_to_id ?? null);
     const priorityId = laneIdToPriority(data, hit.laneId, issue?.priority_id ?? null);
+    const eligibility = dropEligibility(
+      drag.origin.statusId,
+      drag.origin.laneId,
+      hit.statusId,
+      hit.laneId,
+      drag.allowedStatusIds,
+    );
+    if (!shouldDispatchDrop(eligibility)) {
+      clearDragState();
+      return;
+    }
     onCommand({
       type: 'move_issue',
       issueId: drag.issueId,
@@ -1120,8 +1137,19 @@ function drawCells(
 
       const colBg = theme.columnBgs[colIndex % theme.columnBgs.length];
       const isTarget = drag?.dragging && drag.targetCellKey === key;
-      ctx.fillStyle = isTarget ? '#e0f2fe' : colBg;
+      const targetEligibility = isTarget
+        ? dropEligibility(drag!.origin.statusId, drag!.origin.laneId, statusId, laneLayout.laneId, drag!.allowedStatusIds)
+        : null;
+      ctx.fillStyle = targetEligibility === 'denied' ? '#cbd5e1' : targetEligibility === 'allowed' ? '#dcfce7' : isTarget ? '#e0f2fe' : colBg;
       ctx.fillRect(cellRect.x, cellRect.y, cellRect.width, cellRect.height);
+      if (targetEligibility === 'denied' || targetEligibility === 'allowed') {
+        ctx.save();
+        ctx.fillStyle = targetEligibility === 'denied' ? '#475569' : '#166534';
+        ctx.font = '700 14px "DM Sans Variable", "Noto Sans JP Variable", sans-serif';
+        ctx.textBaseline = 'top';
+        ctx.fillText(targetEligibility === 'denied' ? '×' : '✓', cellRect.x + cellRect.width - 18, cellRect.y + 6);
+        ctx.restore();
+      }
 
       ctx.strokeStyle = theme.borderStrong;
       ctx.lineWidth = 2;

@@ -64,6 +64,7 @@ export function HelpDialog({ labels, onClose }: Props) {
             <div className="rk-help-icon-grid">
               <IconRow icon="add" text={labels.help_add} />
               <IconRow icon="filter_list" text={labels.help_filter} />
+              <IconRow icon="label" text={labels.help_tracker} />
               <IconRow icon="person" text={labels.help_assignee} />
               <IconRow icon="folder" text={labels.help_project} />
               <IconRow icon="fact_check" text={labels.help_status} />

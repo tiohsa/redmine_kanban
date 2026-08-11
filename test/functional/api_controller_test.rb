@@ -46,6 +46,49 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     refute json.key?('pagination')
   end
 
+  def test_index_tracker_list_includes_workflow_metadata
+    json = index_response
+    tracker = @project.trackers.first || Tracker.first
+    item = json.fetch('lists').fetch('trackers').find { |candidate| candidate['id'] == tracker.id }
+
+    assert item
+    assert item.key?('workflow_status_ids')
+    assert item.key?('default_status_id')
+    assert item.key?('available_project_ids')
+    assert_includes item.fetch('available_project_ids'), @project.id
+  end
+
+  def test_workflow_rejection_returns_a_machine_readable_error_code
+    issue = build_issue(subject: 'Workflow rejection')
+    allowed_status_ids = [issue.status_id, *issue.new_statuses_allowed_to(@user).map(&:id)]
+    denied_status = IssueStatus.where.not(id: allowed_status_ids).first
+    skip 'fixture has no denied workflow status' unless denied_status
+
+    patch :update, params: {
+      project_id: @project.identifier,
+      id: issue.id,
+      issue: { status_id: denied_status.id, lock_version: issue.lock_version }
+    }
+
+    assert_response :unprocessable_entity
+    json = JSON.parse(@response.body)
+    assert_equal false, json['ok']
+    assert_equal 'WORKFLOW_TRANSITION_NOT_ALLOWED', json.dig('error', 'code')
+  end
+
+  def test_trackers_endpoint_uses_the_shared_metadata_semantics_for_target_project
+    tracker = @project.trackers.first || Tracker.first
+
+    get :trackers, params: { project_id: @project.identifier, target_project_id: @project.id }
+
+    assert_response :success
+    item = JSON.parse(@response.body).fetch('trackers').find { |candidate| candidate['id'] == tracker.id }
+    assert item
+    assert_equal [@project.id], item.fetch('available_project_ids')
+    assert item.key?('workflow_status_ids')
+    assert item.key?('default_status_id')
+  end
+
   def test_scope_over_limit_returns_no_partial_entities
     build_issue(subject: 'Too large one')
     build_issue(subject: 'Too large two')

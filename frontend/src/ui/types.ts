@@ -49,6 +49,14 @@ export type ProjectListItem = {
   level: number;
 };
 
+export type TrackerListItem = {
+  id: number;
+  name: string;
+  workflow_status_ids?: number[];
+  default_status_id?: number | null;
+  available_project_ids?: number[];
+};
+
 export type Issue = {
   id: number;
   parent_id?: number | null;
@@ -81,7 +89,7 @@ export type Issue = {
 
 export type Lists = {
   assignees: { id: number | null; name: string }[];
-  trackers: { id: number; name: string }[];
+  trackers: TrackerListItem[];
   priorities: { id: number; name: string }[];
   projects: ProjectListItem[];
   viewable_projects: ProjectListItem[];

@@ -39,8 +39,17 @@ module RedmineKanban
 
     def trackers_list
       project_ids = @project_ids | project_catalog.subtree_projects(root: @project).map { |project| project[:id] }
-      trackers = Project.where(id: project_ids).includes(:trackers).flat_map(&:trackers).uniq.sort_by(&:position)
-      trackers.map { |tracker| { id: tracker.id, name: tracker.name } }
+      projects = Project.visible(@user).where(id: project_ids).includes(:trackers).to_a.select(&:active?)
+      trackers = projects.flat_map(&:trackers).uniq.sort_by(&:position)
+      available_project_ids_by_tracker = Hash.new { |hash, key| hash[key] = [] }
+      projects.each do |project|
+        project.trackers.each { |tracker| available_project_ids_by_tracker[tracker.id] << project.id }
+      end
+
+      TrackerMetadataBuilder.new(
+        trackers: trackers,
+        available_project_ids_by_tracker: available_project_ids_by_tracker,
+      ).build
     end
 
     def priorities_list

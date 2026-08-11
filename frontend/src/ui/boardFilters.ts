@@ -1,4 +1,4 @@
-import type { BoardData, Issue } from './types';
+import type { BoardData, Column, Issue } from './types';
 import { flattenIssueTree, nestedIssueIds } from './boardTree';
 
 export type Filters = {
@@ -17,6 +17,7 @@ export function applyBoardDataFilters(
   displayData: BoardData | null,
   showSubtasks: boolean,
   statusIds: number[],
+  trackerIds: number[] = [],
 ): BoardData | null {
   if (!displayData) return null;
 
@@ -35,13 +36,62 @@ export function applyBoardDataFilters(
       issues: flattenIssueTree(result.issues),
     };
   }
-  if (statusIds.length > 0) {
-    result = {
-      ...result,
-      columns: result.columns.filter((column) => statusIds.includes(column.id)),
-    };
-  }
+  result = { ...result, columns: buildPrimaryColumns(result, trackerIds, statusIds) };
   return result;
+}
+
+export function buildPrimaryColumns(data: BoardData, selectedTrackerIds: number[], statusIds: number[]): Column[] {
+  const statusFilter = new Set(statusIds);
+  const catalog = new Map(data.lists.trackers.map((tracker) => [tracker.id, tracker]));
+  let trackerStatusIds: Set<number> | null = null;
+
+  if (selectedTrackerIds.length > 0) {
+    const selectedTrackers = selectedTrackerIds.map((trackerId) => catalog.get(trackerId));
+    const metadataComplete = selectedTrackers.every((tracker) => (
+      tracker !== undefined && Array.isArray(tracker.workflow_status_ids)
+    ));
+
+    if (metadataComplete) {
+      const validStatusIds = new Set(data.columns.map((column) => column.id));
+      const selectedStatusIds = new Set<number>();
+      for (const tracker of selectedTrackers) {
+        for (const statusId of tracker!.workflow_status_ids ?? []) {
+          if (validStatusIds.has(statusId)) selectedStatusIds.add(statusId);
+        }
+        const defaultStatusId = tracker!.default_status_id;
+        if (defaultStatusId !== null && defaultStatusId !== undefined && validStatusIds.has(defaultStatusId)) {
+          selectedStatusIds.add(defaultStatusId);
+        }
+      }
+      if (selectedStatusIds.size > 0) trackerStatusIds = selectedStatusIds;
+    }
+  }
+
+  return data.columns.filter((column) => (
+    (!trackerStatusIds || trackerStatusIds.has(column.id))
+    && (statusFilter.size === 0 || statusFilter.has(column.id))
+  ));
+}
+
+export function withContextColumns(data: BoardData, primaryColumns: Column[], rootIssues: Issue[]): Column[] {
+  const primaryStatusIds = new Set(primaryColumns.map((column) => column.id));
+  const requiredRootStatusIds = new Set(rootIssues.map((issue) => issue.status_id));
+  return data.columns.filter((column) => primaryStatusIds.has(column.id) || requiredRootStatusIds.has(column.id));
+}
+
+export function resolvePreferredTrackerId(
+  data: BoardData,
+  selectedTrackerIds: number[],
+  targetProjectId: number | undefined,
+): number | undefined {
+  if (!targetProjectId || selectedTrackerIds.length !== 1) return undefined;
+  const tracker = data.lists.trackers.find((candidate) => candidate.id === selectedTrackerIds[0]);
+  if (!tracker || !Array.isArray(tracker.available_project_ids)) return undefined;
+  return tracker.available_project_ids.includes(targetProjectId) ? tracker.id : undefined;
+}
+
+export function defaultCreateStatusId(columns: Column[]): number {
+  return columns.find((column) => !column.is_closed)?.id ?? columns[0]?.id ?? 1;
 }
 
 export function buildVisibleIssues(

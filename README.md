@@ -31,7 +31,7 @@ Redmine Kanban helps teams keep flow healthy and visible by exposing stalled wor
 - **Aging Detection**: Highlight tasks that have not been updated for a long time. Thresholds are stored in each user's display preferences.
 - **Swimlanes**: Switch lanes by assignee or priority (or disable lanes for a single-row board).
 - **Drag & Drop**: Intuitive card movement with Redmine workflow-aware status transitions. Cards can also be grabbed from the subtask area.
-- **Advanced Filtering**: Filter by assignee, due date, priority, blocked status, and more.
+- **Advanced Filtering**: Filter by tracker, assignee, due date, priority, blocked status, and more. Selecting trackers projects the board columns to their workflow statuses.
 - **Direct Creation from Board**: Create new tickets from column headers or cells during standups.
 - **Nested Subtask Display**: View subtasks recursively (child / grandchild / deeper) either inside parent cards or as separate cards, and toggle completion.
 - **Recreate Deleted Issue**: Recreate a deleted top-level issue with the displayed content. It creates a new issue; history, comments, attachments, relations, watchers, and the original ID are not restored.
@@ -176,6 +176,8 @@ REDMINE_BASE_URL=http://127.0.0.1:3002 \
 Board data notes:
 
 - Contract version 3 returns flat `entities` exactly once per Issue plus `tree.root_ids` and `tree.children_by_parent_id`; the frontend derives recursive Canvas rows from normalized state.
+- `lists.trackers` includes additive `workflow_status_ids`, `default_status_id`, and `available_project_ids` metadata. A single selected tracker is propagated to Native Redmine Create only when it is available in the target project; incomplete metadata fails open.
+- Drag drop colors are workflow guidance from the snapshot. NOOP drops are suppressed, while allowed, denied, and unknown drops still use the existing mutation path so Redmine remains the final Workflow authority. Workflow rejection responses use `WORKFLOW_TRANSITION_NOT_ALLOWED` and trigger one targeted entity reconciliation without retrying.
 - `board_entity_limit` is the only board size request parameter. `offset`, `cursor`, `tree_parent_id`, and `issue_limit` are rejected; no partial snapshot is successful.
 - Mutation responses use contract version 3 fields (`operation_id`, `scope_fingerprint`, flat `issue_updates`/`created_issues`, `deleted_issue_ids`, `tree_changes`, and invalidations). The frontend applies these deltas to normalized state and uses the entities endpoint for targeted reconciliation.
 - `scope_fingerprint` is an opaque identity for board project, current user, sanitized project scope, primary status scope, and dependency status scope; its exact hash value is not a public compatibility contract. Plugin mutations use the same scope and admission parameters. Native Redmine iframe writes cannot produce a trusted delta, so successful issue/journal saves (including composite bulk-subtask operations) reset the current board query to one complete snapshot; a refresh failure is reported as a board loading problem, not a save failure.
