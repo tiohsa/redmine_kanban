@@ -248,7 +248,7 @@ describe('CanvasBoard cursor lifecycle', () => {
     const issue = makeIssue(1, { due_date: '2026-03-20' });
     const data = makeBoardData(issue);
     const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
-    const onCommand = vi.fn();
+    const onCommand = vi.fn(() => true);
 
     const { container } = render(
       <CanvasBoard

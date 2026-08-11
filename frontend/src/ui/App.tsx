@@ -373,8 +373,9 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
             fontSize={fontSize}
             onCommand={(command) => {
               if (command.type === 'move_issue') {
-                actions.moveIssue(command.issueId, command.statusId, command.assignedToId, command.priorityId);
+                return actions.moveIssue(command.issueId, command.statusId, command.assignedToId, command.priorityId);
               }
+              return false;
             }}
             onCreate={(ctx) => {
               const projectId = ctx.projectId ?? defaultCreateProjectId ?? undefined;

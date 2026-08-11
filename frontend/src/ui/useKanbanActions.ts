@@ -364,17 +364,18 @@ export function useKanbanActions({
   }, [beginIssueMutation, boardQueryKey, data, endIssueMutation, queryClient, reconcileColumnCounts, reconcileIssueIds, scopedUrl, setError]);
 
   const moveIssue = useCallback((issueId: number, statusId: number, assignedToId?: number | null, priorityId?: number | null) => {
-    if (!data || isIssueBusy(issueId)) return;
+    if (!data || isIssueBusy(issueId)) return false;
     const resolved = resolveBoardIssue(data, issueId);
-    if (!resolved) return;
+    if (!resolved) return false;
     if (resolved.lockVersion === null) {
       setError(data.labels.update_failed);
-      return;
+      return false;
     }
 
     setNotice(null);
     setIssueBusy(issueId, true);
     moveIssueMutation.mutate({ issueId, statusId, assignedToId, priorityId, lockVersion: resolved.lockVersion });
+    return true;
   }, [data, isIssueBusy, moveIssueMutation, setError, setIssueBusy, setNotice]);
 
   const toggleSubtask = useCallback((subtaskId: number, currentClosed: boolean) => {

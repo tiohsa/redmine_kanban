@@ -407,6 +407,27 @@ describe('buildVisibleIssues', () => {
     expect(projection.issues.every((issue) => projection.columns.some((column) => column.id === issue.status_id))).toBe(true);
   });
 
+  it('adds a presentation-only column for a promoted historical tracker status', () => {
+    const data = makeBoardData([
+      makeIssue(50, 2, 'Context parent', {
+        subtasks: [{ id: 51, subject: 'Historical child', status_id: 3, tracker_id: 1, is_closed: false }],
+      }),
+    ]);
+    data.columns = [
+      { id: 1, name: 'New', is_closed: false },
+      { id: 2, name: 'Context', is_closed: false },
+      { id: 3, name: 'Historical', is_closed: false },
+    ];
+    data.lists.trackers = [{ id: 1, name: 'Bug', workflow_status_ids: [1], default_status_id: 1 }];
+
+    const primaryColumns = buildPrimaryColumns(data, [1], [3]);
+    const projection = buildPresentationProjection(data, primaryColumns, data.issues, [3], new Set());
+
+    expect(primaryColumns).toEqual([]);
+    expect(projection.columns.map((column) => column.id)).toEqual([3]);
+    expect(projection.issues.map((issue) => issue.id)).toEqual([51]);
+  });
+
   it('promotes a visible child when its hidden parent cannot be rendered', () => {
     const data = makeBoardData([
       makeIssue(20, 2, 'Hidden parent', {

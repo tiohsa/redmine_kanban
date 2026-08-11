@@ -10,6 +10,10 @@ describe('drag interaction phases', () => {
     expect(transition('idle', 'pointerdown', 'threshold-reached', 'pointerup-dispatch')).toBe('pending-drop');
   });
 
+  it('does not enter pending drop when the command is rejected', () => {
+    expect(transition('dragging', 'pointerup-rejected')).toBe('idle');
+  });
+
   it('clears active drag on pointer cancellation', () => {
     expect(transition('dragging', 'pointercancel')).toBe('idle');
   });

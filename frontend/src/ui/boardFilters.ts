@@ -101,7 +101,14 @@ export function buildPresentationProjection(
   statusIds: number[] = [],
   hiddenStatusIds: ReadonlySet<number> = new Set(),
 ): BoardPresentationProjection {
-  const columns = withContextColumns(data, primaryColumns, rootIssues, statusIds, hiddenStatusIds);
+  // Select roots from every status the user can actually see, then close the
+  // rendered columns over those roots. Tracker metadata determines primary
+  // columns, but must not hide a filtered historical status after promotion.
+  const candidateColumnIds = new Set(data.columns
+    .filter((column) => !hiddenStatusIds.has(column.id) && (statusIds.length === 0 || statusIds.includes(column.id)))
+    .map((column) => column.id));
+  const presentationRoots = projectPresentationRoots(rootIssues, candidateColumnIds);
+  const columns = withContextColumns(data, primaryColumns, presentationRoots, statusIds, hiddenStatusIds);
   const renderedColumnIds = new Set(
     columns.filter((column) => !hiddenStatusIds.has(column.id)).map((column) => column.id),
   );

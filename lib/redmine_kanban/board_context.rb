@@ -27,6 +27,7 @@ module RedmineKanban
       else
         Array(scope_status_ids || @dependency_status_ids).map(&:to_i).select(&:positive?).uniq & all_status_ids
       end
+      @dependency_status_ids |= @scope_status_ids
       @requested_entity_limit = SnapshotLimits.requested(board_entity_limit)
       @effective_entity_limit = SnapshotLimits.effective(@requested_entity_limit)
       @server_entity_limit = SnapshotLimits.server_entity_limit

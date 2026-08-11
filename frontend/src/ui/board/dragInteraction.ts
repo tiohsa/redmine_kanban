@@ -4,6 +4,7 @@ export type DragLifecycleEvent =
   | 'pointerdown'
   | 'threshold-reached'
   | 'pointerup-dispatch'
+  | 'pointerup-rejected'
   | 'pointerup-cancel'
   | 'pointercancel'
   | 'lostpointercapture'
@@ -20,6 +21,8 @@ export function transitionDragPhase(phase: DragPhase, event: DragLifecycleEvent)
       return phase === 'pressed' ? 'dragging' : phase;
     case 'pointerup-dispatch':
       return phase === 'dragging' ? 'pending-drop' : phase;
+    case 'pointerup-rejected':
+      return phase === 'dragging' ? 'idle' : phase;
     case 'pointerup-cancel':
     case 'pointercancel':
     case 'lostpointercapture':
