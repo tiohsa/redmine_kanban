@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { fireEvent, render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BoardData, Issue } from '../types';
 import { CanvasBoard, makeSubtaskSignature, measureCardHeightCached } from './CanvasBoard';
@@ -186,6 +186,7 @@ describe('CanvasBoard cursor lifecycle', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -332,6 +333,81 @@ describe('CanvasBoard cursor lifecycle', () => {
     await waitFor(() => {
       expect(board.style.cursor).toBe('default');
     });
+  });
+
+  it('does not retain a rejected command as a pending drop', async () => {
+    const issue = makeIssue(1);
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const onCommand = vi.fn(() => false);
+    const { container } = render(
+      <CanvasBoard
+        data={data}
+        state={state}
+        canMove
+        canCreate
+        onCommand={onCommand}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onView={vi.fn()}
+        onDelete={vi.fn()}
+        onEditClick={vi.fn()}
+        labels={data.labels}
+      />,
+    );
+    const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
+    await waitFor(() => expect(canvas.width).toBeGreaterThan(0));
+
+    for (const pointerId of [1, 2]) {
+      fireEvent.pointerDown(canvas, { clientX: 200, clientY: 100, pointerId });
+      fireEvent.pointerMove(canvas, { clientX: 320, clientY: 100, pointerId });
+      fireEvent.pointerUp(canvas, { clientX: 320, clientY: 100, pointerId });
+    }
+
+    expect(onCommand).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps an accepted drop pending until its two-second fallback, then allows another drag', async () => {
+    const issue = makeIssue(1);
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const onCommand = vi.fn(() => true);
+    const { container } = render(
+      <CanvasBoard
+        data={data}
+        state={state}
+        canMove
+        canCreate
+        onCommand={onCommand}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onView={vi.fn()}
+        onDelete={vi.fn()}
+        onEditClick={vi.fn()}
+        labels={data.labels}
+      />,
+    );
+    const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
+    await waitFor(() => expect(canvas.width).toBeGreaterThan(0));
+    vi.useFakeTimers();
+
+    fireEvent.pointerDown(canvas, { clientX: 200, clientY: 100, pointerId: 1 });
+    fireEvent.pointerMove(canvas, { clientX: 320, clientY: 100, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { clientX: 320, clientY: 100, pointerId: 1 });
+    fireEvent.pointerDown(canvas, { clientX: 200, clientY: 100, pointerId: 2 });
+    fireEvent.pointerUp(canvas, { clientX: 320, clientY: 100, pointerId: 2 });
+    expect(onCommand).toHaveBeenCalledTimes(1);
+
+    await act(async () => { vi.advanceTimersByTime(1999); });
+    fireEvent.pointerDown(canvas, { clientX: 200, clientY: 100, pointerId: 3 });
+    fireEvent.pointerUp(canvas, { clientX: 320, clientY: 100, pointerId: 3 });
+    expect(onCommand).toHaveBeenCalledTimes(1);
+
+    await act(async () => { vi.advanceTimersByTime(1); });
+    fireEvent.pointerDown(canvas, { clientX: 200, clientY: 100, pointerId: 4 });
+    fireEvent.pointerMove(canvas, { clientX: 320, clientY: 100, pointerId: 4 });
+    fireEvent.pointerUp(canvas, { clientX: 320, clientY: 100, pointerId: 4 });
+    expect(onCommand).toHaveBeenCalledTimes(2);
   });
 
   it('draws workflow guidance for every rendered cell after drag threshold', async () => {

@@ -17,7 +17,7 @@ import {
   type HitResult,
   subtaskPermissions,
 } from './canvasInteraction';
-import { transitionDragPhase, type DragPhase } from './dragInteraction';
+import { transitionDragPhase, type DragLifecycleEvent, type DragPhase } from './dragInteraction';
 import { buildSubtaskKey, laneIdToAssignee, laneIdToPriority, parseCellKey, parseSubtaskKey, resolveBoardLaneId } from './keys';
 import { getMetrics } from './metrics';
 import type { BoardState } from './state';
@@ -96,7 +96,6 @@ type DragState = {
   phase: Exclude<DragPhase, 'idle'>;
   targetCellKey: string | null;
   dropTargetCellKey?: string | null;
-  dropCommittedAt?: number;
 };
 
 export type CanvasBoardHandle = {
@@ -178,6 +177,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   const scrollRef = useRef({ x: 0, y: 0 });
   const boardSizeRef = useRef({ width: 0, height: 0 });
   const dragRef = useRef<DragState | null>(null);
+  const pendingDropTimeoutRef = useRef<number | null>(null);
   const renderHandle = useRef<number | null>(null);
   const backingStoreRef = useRef<CanvasBackingStoreState>({ width: 0, height: 0, dpr: 1 });
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -203,6 +203,10 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         cancelAnimationFrame(renderHandle.current);
         renderHandle.current = null;
       }
+      if (pendingDropTimeoutRef.current !== null) {
+        window.clearTimeout(pendingDropTimeoutRef.current);
+        pendingDropTimeoutRef.current = null;
+      }
     };
   }, []);
 
@@ -214,10 +218,37 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   }, []);
 
   const clearDragState = React.useCallback(() => {
+    if (pendingDropTimeoutRef.current !== null) {
+      window.clearTimeout(pendingDropTimeoutRef.current);
+      pendingDropTimeoutRef.current = null;
+    }
     dragRef.current = null;
     setCursor(getBoardCursor({ phase: 'idle' }));
     scheduleRender();
   }, [scheduleRender]);
+
+  const transitionDragState = React.useCallback((event: DragLifecycleEvent) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const nextPhase = transitionDragPhase(drag.phase, event);
+    if (nextPhase === 'idle') {
+      clearDragState();
+      return;
+    }
+    drag.phase = nextPhase as Exclude<DragPhase, 'idle'>;
+    setCursor(getBoardCursor({ phase: drag.phase === 'pending-drop' ? 'pending-drop' : 'dragging' }));
+    scheduleRender();
+  }, [clearDragState, scheduleRender]);
+
+  const schedulePendingDropFallback = React.useCallback(() => {
+    if (pendingDropTimeoutRef.current !== null) {
+      window.clearTimeout(pendingDropTimeoutRef.current);
+    }
+    pendingDropTimeoutRef.current = window.setTimeout(() => {
+      pendingDropTimeoutRef.current = null;
+      transitionDragState('fallback-timeout');
+    }, 2000);
+  }, [transitionDragState]);
 
   const measureCtx = useMemo(() => {
     const canvas = document.createElement('canvas');
@@ -285,15 +316,12 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     if (issue) {
       const currentCell = cellKey(issue.status_id, resolveBoardLaneId(data, issue));
       if (currentCell === drag.dropTargetCellKey) {
-        clearDragState();
+        transitionDragState('target-observed');
         return;
       }
     }
 
-    const remaining = Math.max(0, 2000 - (Date.now() - (drag.dropCommittedAt ?? Date.now())));
-    const timeout = window.setTimeout(clearDragState, remaining);
-    return () => window.clearTimeout(timeout);
-  }, [state, data, busyIssueIds, clearDragState]);
+  }, [state, data, busyIssueIds, transitionDragState]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -645,14 +673,14 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       const hit = hitTest(point, rectMapRef.current, state, data);
       if (hit.kind === 'subtask_subject') onView(hit.subtaskId);
       if (hit.kind === 'card_subject') onView(hit.issueId);
-      clearDragState();
+      transitionDragState('pointerup-cancel');
       return;
     }
 
     const hit = hitTestCell(point, rectMapRef.current, data);
     const draggedIssue = state.cardsById.get(drag.issueId);
     if (!hit || !canMove || !canMoveIssue(draggedIssue)) {
-      clearDragState();
+      transitionDragState('pointerup-cancel');
       return;
     }
 
@@ -667,7 +695,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       drag.allowedStatusIds,
     );
     if (!shouldDispatchDrop(assessment)) {
-      clearDragState();
+      transitionDragState('pointerup-cancel');
       return;
     }
     const accepted = onCommand({
@@ -679,14 +707,14 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       priorityId,
     });
     if (!accepted) {
-      clearDragState();
+      transitionDragState('pointerup-rejected');
       return;
     }
 
-    drag.phase = transitionDragPhase(drag.phase, 'pointerup-dispatch') as Exclude<DragPhase, 'idle'>;
+    transitionDragState('pointerup-dispatch');
     drag.dropTargetCellKey = cellKey(hit.statusId, hit.laneId);
-    drag.dropCommittedAt = Date.now();
     setCursor(getBoardCursor({ phase: 'pending-drop' }));
+    schedulePendingDropFallback();
     scheduleRender();
     return;
   };
@@ -695,13 +723,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     clearHoverState();
     const drag = dragRef.current;
     if (!drag) return;
-    const nextPhase = transitionDragPhase(drag.phase, event);
-    if (nextPhase === 'idle') {
-      clearDragState();
-      return;
-    }
-    setCursor(getBoardCursor({ phase: 'pending-drop' }));
-    scheduleRender();
+    transitionDragState(event);
   };
 
   const handlePointerCancel = () => handlePointerLifecycle('pointercancel');

@@ -743,6 +743,32 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_nil Issue.find_by(id: grandchild.id)
   end
 
+  def test_physical_delete_normalizes_mismatched_dependency_scope_for_cascade_tombstones
+    scope_status = IssueStatus.first
+    dependency_status = IssueStatus.where.not(id: scope_status.id).first
+    skip 'requires at least two issue statuses' unless dependency_status
+    parent = build_issue(subject: 'Mismatched scope delete parent', status: scope_status)
+    child = build_issue(subject: 'Mismatched scope delete child', parent_issue_id: parent.id, status: scope_status)
+
+    delete :destroy, params: {
+      project_id: @project.identifier,
+      id: parent.id,
+      project_ids: [@project.id],
+      scope_status_ids_present: '1',
+      scope_status_ids: [scope_status.id],
+      dependency_status_ids_present: '1',
+      dependency_status_ids: [dependency_status.id],
+      lock_version: parent.lock_version
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal [parent.id, child.id].sort, json['deleted_issue_ids'].sort
+    assert_equal [], json['evicted_issue_ids']
+    assert_nil Issue.find_by(id: parent.id)
+    assert_nil Issue.find_by(id: child.id)
+  end
+
   def test_physical_delete_does_not_report_out_of_scope_descendant
     status = IssueStatus.first
     outside_status = IssueStatus.where.not(id: status.id).first
@@ -778,6 +804,33 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
       project_ids: [@project.id],
       scope_status_ids_present: '1',
       scope_status_ids: [status.id],
+      board_entity_limit: 1,
+      lock_version: parent.lock_version
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal [], json['deleted_issue_ids']
+    assert_equal true, json.dig('invalidations', 'board_snapshot')
+    assert_nil Issue.find_by(id: parent.id)
+    assert_nil Issue.find_by(id: child.id)
+  end
+
+  def test_physical_delete_mismatched_dependency_scope_overflow_invalidates_board
+    scope_status = IssueStatus.first
+    dependency_status = IssueStatus.where.not(id: scope_status.id).first
+    skip 'requires at least two issue statuses' unless dependency_status
+    parent = build_issue(subject: 'Mismatched scope overflow parent', status: scope_status)
+    child = build_issue(subject: 'Mismatched scope overflow child', parent_issue_id: parent.id, status: scope_status)
+
+    delete :destroy, params: {
+      project_id: @project.identifier,
+      id: parent.id,
+      project_ids: [@project.id],
+      scope_status_ids_present: '1',
+      scope_status_ids: [scope_status.id],
+      dependency_status_ids_present: '1',
+      dependency_status_ids: [dependency_status.id],
       board_entity_limit: 1,
       lock_version: parent.lock_version
     }

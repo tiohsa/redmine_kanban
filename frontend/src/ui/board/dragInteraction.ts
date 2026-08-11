@@ -10,7 +10,6 @@ export type DragLifecycleEvent =
   | 'lostpointercapture'
   | 'pointerleave'
   | 'target-observed'
-  | 'mutation-failed'
   | 'fallback-timeout';
 
 export function transitionDragPhase(phase: DragPhase, event: DragLifecycleEvent): DragPhase {
@@ -29,7 +28,6 @@ export function transitionDragPhase(phase: DragPhase, event: DragLifecycleEvent)
     case 'pointerleave':
       return phase === 'pending-drop' ? phase : 'idle';
     case 'target-observed':
-    case 'mutation-failed':
     case 'fallback-timeout':
       return phase === 'pending-drop' ? 'idle' : phase;
   }

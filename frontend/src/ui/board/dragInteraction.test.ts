@@ -22,9 +22,8 @@ describe('drag interaction phases', () => {
     expect(transition('pending-drop', 'lostpointercapture', 'pointerleave')).toBe('pending-drop');
   });
 
-  it('clears pending drop only after authoritative resolution, failure, or fallback', () => {
+  it('clears pending drop only after target observation or fallback', () => {
     expect(transition('pending-drop', 'target-observed')).toBe('idle');
-    expect(transition('pending-drop', 'mutation-failed')).toBe('idle');
     expect(transition('pending-drop', 'fallback-timeout')).toBe('idle');
   });
 });
