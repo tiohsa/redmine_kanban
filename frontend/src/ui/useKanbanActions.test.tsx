@@ -386,6 +386,37 @@ describe('useKanbanActions nested toggle flow', () => {
 });
 
 describe('useKanbanActions snapshot-invalidated success', () => {
+  it('reconciles the target entity once after a workflow rejection without retrying the mutation', async () => {
+    const board = makeBoardData(makeIssue(1));
+    board.columns = [
+      { id: 1, name: 'Open', is_closed: false, count: 1 },
+      { id: 2, name: 'Review', is_closed: false, count: 0 },
+    ];
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        ok: false,
+        message: 'Workflow rejected',
+        error: { code: 'WORKFLOW_TRANSITION_NOT_ALLOWED' },
+      }), { status: 422 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        ok: true,
+        scope_fingerprint: 'project:1',
+        entities: [{ ...makeIssue(1), allowed_status_ids: [1, 2], lock_version: 3 }],
+        missing_issue_ids: [],
+      }), { status: 200 }));
+    const { result, queryClient } = renderActions({ data: board });
+
+    await act(async () => { result.current.moveIssue(1, 2); });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    expect(fetchMock.mock.calls[0][0]).toContain('/issues/1/move');
+    expect(fetchMock.mock.calls[1][0]).toContain('/issues/entities');
+    expect(queryClient.getQueryData<BoardData>(['kanban', 'board'])?.issues[0]).toMatchObject({
+      status_id: 1,
+      allowed_status_ids: [1, 2],
+    });
+  });
+
   it('skips entity side effects and time entry UI when Move succeeds without an issue DTO', async () => {
     const board = makeBoardData(makeIssue(1));
     board.columns = [

@@ -29,6 +29,43 @@ export type HoverSnapshot = {
   hoveredSubtaskKey: string | null;
 };
 
+export type DropAction = 'noop' | 'dispatch';
+export type WorkflowHint = 'allowed' | 'denied' | 'unknown';
+export type DropAssessment = {
+  action: DropAction;
+  workflowHint: WorkflowHint;
+};
+
+export type DropHintVisual = {
+  glyph: '✓' | '!' | '?' | '';
+  tone: 'allowed' | 'advisory' | 'neutral' | 'noop';
+};
+
+export function assessDrop(
+  originStatusId: number,
+  originLaneId: string | number,
+  targetStatusId: number,
+  targetLaneId: string | number,
+  allowedStatusIds?: number[] | ReadonlySet<number>,
+): DropAssessment {
+  const isNoop = originStatusId === targetStatusId && originLaneId === targetLaneId;
+  let workflowHint: WorkflowHint = 'unknown';
+  if (Array.isArray(allowedStatusIds)) workflowHint = allowedStatusIds.includes(targetStatusId) ? 'allowed' : 'denied';
+  if (allowedStatusIds instanceof Set) workflowHint = allowedStatusIds.has(targetStatusId) ? 'allowed' : 'denied';
+  return { action: isNoop ? 'noop' : 'dispatch', workflowHint };
+}
+
+export function shouldDispatchDrop(assessment: DropAssessment): boolean {
+  return assessment.action === 'dispatch';
+}
+
+export function getDropHintVisual(assessment: DropAssessment): DropHintVisual {
+  if (assessment.action === 'noop') return { glyph: '', tone: 'noop' };
+  if (assessment.workflowHint === 'allowed') return { glyph: '✓', tone: 'allowed' };
+  if (assessment.workflowHint === 'denied') return { glyph: '!', tone: 'advisory' };
+  return { glyph: '?', tone: 'neutral' };
+}
+
 export function canMoveIssue(issue?: Issue | null) {
   return !!issue?.permissions?.can_move;
 }

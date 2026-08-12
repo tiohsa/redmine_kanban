@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { fireEvent, render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BoardData, Issue } from '../types';
 import { CanvasBoard, makeSubtaskSignature, measureCardHeightCached } from './CanvasBoard';
@@ -111,6 +111,12 @@ function setDevicePixelRatio(value: number) {
   });
 }
 
+function performFullDrag(canvas: HTMLCanvasElement, pointerId: number, startX = 200, endX = 320) {
+  fireEvent.pointerDown(canvas, { clientX: startX, clientY: 100, pointerId });
+  fireEvent.pointerMove(canvas, { clientX: endX, clientY: 100, pointerId });
+  fireEvent.pointerUp(canvas, { clientX: endX, clientY: 100, pointerId });
+}
+
 class ResizeObserverMock {
   constructor(private readonly callback: ResizeObserverCallback) { }
 
@@ -185,10 +191,15 @@ describe('CanvasBoard cursor lifecycle', () => {
     });
   });
 
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
-  });
+afterEach(() => {
+  if (vi.isFakeTimers()) {
+    vi.clearAllTimers();
+  }
+
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
 
   it('keeps a visible assignee representation when a long tracker consumes narrow-card width', () => {
     const layout = layoutCardMetadata(createCanvasContext(), {
@@ -244,11 +255,11 @@ describe('CanvasBoard cursor lifecycle', () => {
     expect(context.fillText).not.toHaveBeenCalledWith('...', expect.any(Number), expect.any(Number));
   });
 
-  it('resets cursor after pointercancel and keeps pending drop cursor default after lost capture', async () => {
+  it('resets active drag but keeps a committed drop across lost capture', async () => {
     const issue = makeIssue(1, { due_date: '2026-03-20' });
     const data = makeBoardData(issue);
     const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
-    const onCommand = vi.fn();
+    const onCommand = vi.fn(() => true);
 
     const { container } = render(
       <CanvasBoard
@@ -322,9 +333,204 @@ describe('CanvasBoard cursor lifecycle', () => {
       expect(board.style.cursor).toBe('default');
     });
 
+    fireEvent.pointerLeave(canvas, { clientX: 320, clientY: 100, pointerId: 2 });
+    fireEvent.pointerDown(canvas, { clientX: 200, clientY: 100, pointerId: 2 });
+    fireEvent.pointerMove(canvas, { clientX: 320, clientY: 100, pointerId: 2 });
+    fireEvent.pointerUp(canvas, { clientX: 320, clientY: 100, pointerId: 2 });
+    expect(onCommand).toHaveBeenCalledTimes(1);
+
     fireEvent.pointerMove(canvas, { clientX: 320, clientY: 100, pointerId: 2 });
     await waitFor(() => {
       expect(board.style.cursor).toBe('default');
+    });
+  });
+
+  it('does not retain a rejected command as a pending drop', async () => {
+    const issue = makeIssue(1);
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const onCommand = vi.fn(() => false);
+    const { container } = render(
+      <CanvasBoard
+        data={data}
+        state={state}
+        canMove
+        canCreate
+        onCommand={onCommand}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onView={vi.fn()}
+        onDelete={vi.fn()}
+        onEditClick={vi.fn()}
+        labels={data.labels}
+      />,
+    );
+    const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
+    await waitFor(() => expect(canvas.width).toBeGreaterThan(0));
+
+    for (const pointerId of [1, 2]) {
+      fireEvent.pointerDown(canvas, { clientX: 200, clientY: 100, pointerId });
+      fireEvent.pointerMove(canvas, { clientX: 320, clientY: 100, pointerId });
+      fireEvent.pointerUp(canvas, { clientX: 320, clientY: 100, pointerId });
+    }
+
+    expect(onCommand).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps an accepted drop pending until exactly its two-second fallback, then allows another drag', async () => {
+  const issue = makeIssue(1);
+  const data = makeBoardData(issue);
+  const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+  const onCommand = vi.fn(() => true);
+
+  const { container } = render(
+    <CanvasBoard
+      data={data}
+      state={state}
+      canMove
+      canCreate
+      onCommand={onCommand}
+      onCreate={vi.fn()}
+      onEdit={vi.fn()}
+      onView={vi.fn()}
+      onDelete={vi.fn()}
+      onEditClick={vi.fn()}
+      labels={data.labels}
+    />,
+  );
+
+  const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
+  await waitFor(() => expect(canvas.width).toBeGreaterThan(0));
+
+  vi.useFakeTimers();
+
+  // t = 0
+  performFullDrag(canvas, 1);
+  expect(onCommand).toHaveBeenCalledTimes(1);
+
+  // t = 1999
+  await act(async () => {
+    vi.advanceTimersByTime(1999);
+  });
+
+  performFullDrag(canvas, 2);
+  expect(onCommand).toHaveBeenCalledTimes(1);
+
+  // t = 2000
+  await act(async () => {
+    vi.advanceTimersByTime(1);
+  });
+
+  // fallbackによって予約されたCanvas再描画だけを処理
+  await act(async () => {
+    vi.advanceTimersToNextFrame();
+  });
+
+  performFullDrag(canvas, 3);
+  expect(onCommand).toHaveBeenCalledTimes(2);
+});
+
+  it('separates target observation, previous timer cancellation, and the next drop fallback', async () => {
+    const issue = makeIssue(1);
+    const data = makeBoardData(issue);
+    const oldState = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const onCommand = vi.fn(() => true);
+    const props = {
+      data,
+      canMove: true,
+      canCreate: true,
+      onCommand,
+      onCreate: vi.fn(),
+      onEdit: vi.fn(),
+      onView: vi.fn(),
+      onDelete: vi.fn(),
+      onEditClick: vi.fn(),
+      labels: data.labels,
+    };
+    const { container, rerender } = render(<CanvasBoard {...props} state={oldState} />);
+    const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
+    await waitFor(() => expect(canvas.width).toBeGreaterThan(0));
+    vi.useFakeTimers();
+    const clearTimeoutSpy = vi.spyOn(window, 'clearTimeout');
+
+    performFullDrag(canvas, 1);
+    expect(onCommand).toHaveBeenCalledTimes(1);
+
+    await act(async () => { vi.advanceTimersByTime(500); });
+    clearTimeoutSpy.mockClear();
+    const committedIssue = makeIssue(1, { status_id: 2 });
+    const committedData = makeBoardData(committedIssue);
+    await act(async () => {
+      rerender(
+        <CanvasBoard
+          {...props}
+          data={committedData}
+          labels={committedData.labels}
+          state={buildBoardState(committedData, committedData.issues, 'updated_desc', new Map())}
+        />,
+      );
+    });
+    expect(clearTimeoutSpy).toHaveBeenCalledTimes(1);
+
+    // The test's RAF stub is a 0ms timeout; flush only that render callback,
+    // never all pending timers (which could run fallback A).
+    await act(async () => { vi.advanceTimersToNextTimer(); });
+    performFullDrag(canvas, 2, 320, 200);
+    expect(onCommand).toHaveBeenCalledTimes(2);
+
+    await act(async () => { vi.advanceTimersByTime(1500); });
+    performFullDrag(canvas, 3, 320, 200);
+    expect(onCommand).toHaveBeenCalledTimes(2);
+
+    await act(async () => { vi.advanceTimersByTime(499); });
+    // Flush the final render callback and then B's own fallback timer.
+    await act(async () => { vi.advanceTimersToNextTimer(); });
+    await act(async () => { vi.advanceTimersToNextTimer(); });
+    performFullDrag(canvas, 4, 320, 200);
+    expect(onCommand).toHaveBeenCalledTimes(3);
+  });
+
+  it('draws workflow guidance for every rendered cell after drag threshold', async () => {
+    const issue = makeIssue(1, { allowed_status_ids: [1, 2] });
+    const baseData = makeBoardData(issue);
+    const data = {
+      ...baseData,
+      columns: [
+        { id: 1, name: 'New', is_closed: false, count: 1 },
+        { id: 2, name: 'Doing', is_closed: false, count: 0 },
+        { id: 3, name: 'Blocked', is_closed: false, count: 0 },
+        { id: 4, name: 'Done', is_closed: true, count: 0 },
+      ],
+    };
+    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const context = createCanvasContextWithSpies();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+
+    const { container } = render(
+      <CanvasBoard
+        data={data}
+        state={state}
+        canMove
+        canCreate
+        onCommand={vi.fn()}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onView={vi.fn()}
+        onDelete={vi.fn()}
+        onEditClick={vi.fn()}
+        labels={data.labels}
+      />,
+    );
+
+    const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
+    await waitFor(() => expect(canvas.width).toBeGreaterThan(0));
+    fireEvent.pointerDown(canvas, { clientX: 200, clientY: 100, pointerId: 1 });
+    fireEvent.pointerMove(canvas, { clientX: 240, clientY: 100, pointerId: 1 });
+
+    await waitFor(() => {
+      expect(context.fillText).toHaveBeenCalledWith('✓', expect.any(Number), expect.any(Number));
+      expect(context.fillText).toHaveBeenCalledWith('!', expect.any(Number), expect.any(Number));
+      expect(context.fillText).not.toHaveBeenCalledWith('×', expect.any(Number), expect.any(Number));
     });
   });
 

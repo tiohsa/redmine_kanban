@@ -1,4 +1,4 @@
-import type { BoardData, Issue } from './types';
+import type { BoardData, Column, Issue } from './types';
 import { flattenIssueTree, nestedIssueIds } from './boardTree';
 
 export type Filters = {
@@ -13,10 +13,16 @@ export type Filters = {
   trackerIds: number[];
 };
 
+export type BoardPresentationProjection = {
+  columns: Column[];
+  issues: Issue[];
+};
+
 export function applyBoardDataFilters(
   displayData: BoardData | null,
   showSubtasks: boolean,
   statusIds: number[],
+  trackerIds: number[] = [],
 ): BoardData | null {
   if (!displayData) return null;
 
@@ -35,13 +41,135 @@ export function applyBoardDataFilters(
       issues: flattenIssueTree(result.issues),
     };
   }
-  if (statusIds.length > 0) {
-    result = {
-      ...result,
-      columns: result.columns.filter((column) => statusIds.includes(column.id)),
-    };
-  }
+  result = { ...result, columns: buildPrimaryColumns(result, trackerIds, statusIds) };
   return result;
+}
+
+export function buildPrimaryColumns(data: BoardData, selectedTrackerIds: number[], statusIds: number[]): Column[] {
+  const statusFilter = new Set(statusIds);
+  const catalog = new Map(data.lists.trackers.map((tracker) => [tracker.id, tracker]));
+  let trackerStatusIds: Set<number> | null = null;
+
+  if (selectedTrackerIds.length > 0) {
+    const selectedTrackers = selectedTrackerIds.map((trackerId) => catalog.get(trackerId));
+    const metadataComplete = selectedTrackers.every((tracker) => (
+      tracker !== undefined && Array.isArray(tracker.workflow_status_ids)
+    ));
+
+    if (metadataComplete) {
+      const validStatusIds = new Set(data.columns.map((column) => column.id));
+      const selectedStatusIds = new Set<number>();
+      for (const tracker of selectedTrackers) {
+        for (const statusId of tracker!.workflow_status_ids ?? []) {
+          if (validStatusIds.has(statusId)) selectedStatusIds.add(statusId);
+        }
+        const defaultStatusId = tracker!.default_status_id;
+        if (defaultStatusId !== null && defaultStatusId !== undefined && validStatusIds.has(defaultStatusId)) {
+          selectedStatusIds.add(defaultStatusId);
+        }
+      }
+      if (selectedStatusIds.size > 0) trackerStatusIds = selectedStatusIds;
+    }
+  }
+
+  return data.columns.filter((column) => (
+    (!trackerStatusIds || trackerStatusIds.has(column.id))
+    && (statusFilter.size === 0 || statusFilter.has(column.id))
+  ));
+}
+
+export function withContextColumns(
+  data: BoardData,
+  primaryColumns: Column[],
+  rootIssues: Issue[],
+  statusIds: number[] = [],
+  hiddenStatusIds: ReadonlySet<number> = new Set(),
+): Column[] {
+  const primaryStatusIds = new Set(primaryColumns.map((column) => column.id));
+  const requiredRootStatusIds = new Set(rootIssues.map((issue) => issue.status_id));
+  const statusFilter = new Set(statusIds);
+  return data.columns.filter((column) => (
+    (primaryStatusIds.has(column.id) || (requiredRootStatusIds.has(column.id) && !hiddenStatusIds.has(column.id)))
+    && (statusFilter.size === 0 || statusFilter.has(column.id))
+  ));
+}
+
+export function buildPresentationProjection(
+  data: BoardData,
+  primaryColumns: Column[],
+  rootIssues: Issue[],
+  statusIds: number[] = [],
+  hiddenStatusIds: ReadonlySet<number> = new Set(),
+): BoardPresentationProjection {
+  // Select roots from every status the user can actually see, then close the
+  // rendered columns over those roots. Tracker metadata determines primary
+  // columns, but must not hide a filtered historical status after promotion.
+  const candidateColumnIds = new Set(data.columns
+    .filter((column) => !hiddenStatusIds.has(column.id) && (statusIds.length === 0 || statusIds.includes(column.id)))
+    .map((column) => column.id));
+  const presentationRoots = projectPresentationRoots(rootIssues, candidateColumnIds);
+  const columns = withContextColumns(data, primaryColumns, presentationRoots, statusIds, hiddenStatusIds);
+  const renderedColumnIds = new Set(
+    columns.filter((column) => !hiddenStatusIds.has(column.id)).map((column) => column.id),
+  );
+
+  return {
+    columns,
+    issues: projectPresentationRoots(rootIssues, renderedColumnIds),
+  };
+}
+
+export function projectPresentationRoots(rootIssues: Issue[], renderedColumnIds: ReadonlySet<number>): Issue[] {
+  const roots: Issue[] = [];
+  const seenRootIds = new Set<number>();
+
+  const visit = (issue: Issue) => {
+    if (renderedColumnIds.has(issue.status_id)) {
+      if (!seenRootIds.has(issue.id)) {
+        seenRootIds.add(issue.id);
+        roots.push(issue);
+      }
+      return;
+    }
+
+    for (const child of issue.subtasks ?? []) {
+      visit(child as Issue);
+    }
+  };
+
+  for (const issue of rootIssues) visit(issue);
+  return roots;
+}
+
+export function resolvePreferredTrackerId(
+  data: BoardData,
+  selectedTrackerIds: number[],
+  targetProjectId: number | undefined,
+): number | undefined {
+  if (!targetProjectId || selectedTrackerIds.length !== 1) return undefined;
+  const tracker = data.lists.trackers.find((candidate) => candidate.id === selectedTrackerIds[0]);
+  if (!tracker || !Array.isArray(tracker.available_project_ids)) return undefined;
+  return tracker.available_project_ids.includes(targetProjectId) ? tracker.id : undefined;
+}
+
+export function defaultCreateStatusId(columns: Column[], preferredStatusId?: number): number | undefined {
+  if (preferredStatusId !== undefined && columns.some((column) => column.id === preferredStatusId)) {
+    return preferredStatusId;
+  }
+  return columns.find((column) => !column.is_closed)?.id ?? columns[0]?.id;
+}
+
+export function resolveCreateStatusId(
+  data: BoardData,
+  candidateColumns: Column[],
+  selectedTrackerIds: number[],
+  targetProjectId: number | undefined,
+): number | undefined {
+  const preferredTrackerId = resolvePreferredTrackerId(data, selectedTrackerIds, targetProjectId);
+  const preferredStatusId = preferredTrackerId === undefined
+    ? undefined
+    : data.lists.trackers.find((tracker) => tracker.id === preferredTrackerId)?.default_status_id ?? undefined;
+  return defaultCreateStatusId(candidateColumns, preferredStatusId);
 }
 
 export function buildVisibleIssues(
@@ -51,13 +179,19 @@ export function buildVisibleIssues(
   pendingDeleteIssue: Issue | null,
 ): Issue[] {
   let visible = filterIssues(filteredData?.issues ?? [], filteredData, filters)
-    .filter((issue) => !hiddenStatusIds.has(issue.status_id));
+    .filter((issue) => !hiddenStatusIds.has(issue.status_id) || hasVisibleDescendant(issue, hiddenStatusIds));
 
   if (pendingDeleteIssue) {
     visible = visible.filter((issue) => issue.id !== pendingDeleteIssue.id);
   }
 
   return visible;
+}
+
+function hasVisibleDescendant(issue: Issue, hiddenStatusIds: ReadonlySet<number>): boolean {
+  return (issue.subtasks ?? []).some((child) => (
+    !hiddenStatusIds.has(child.status_id) || hasVisibleDescendant(child as Issue, hiddenStatusIds)
+  ));
 }
 
 function startOfWeek(date: Date): Date {

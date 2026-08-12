@@ -4,7 +4,7 @@ import type { BoardApiResponse, BoardData, Issue } from './types';
 import { getJson, isHttpError } from './http';
 import { CanvasBoard, type CanvasBoardHandle } from './board/CanvasBoard';
 import { buildBoardState } from './board/state';
-import { applyBoardDataFilters, buildVisibleIssues } from './boardFilters';
+import { applyBoardDataFilters, buildPresentationProjection, buildVisibleIssues, resolveCreateStatusId, resolvePreferredTrackerId } from './boardFilters';
 import { buildBoardDataUrl, buildBoardQueryKey, effectiveDependencyStatusIds, effectiveScopeStatusIds } from './boardQuery';
 import { IframeEditDialog } from './IframeEditDialog';
 import { KanbanIssueModal } from './KanbanIssueModal';
@@ -46,6 +46,10 @@ export function resolveDefaultCreateProjectId(
   if (selectedCreatableProjectId) return selectedCreatableProjectId;
   if (fallbackProjectId && creatableProjectIds.has(fallbackProjectId)) return fallbackProjectId;
   return null;
+}
+
+export function canCreateInBoard(projectId: number | null, statusId: number | undefined): boolean {
+  return projectId !== null && statusId !== undefined;
 }
 
 export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props) {
@@ -227,13 +231,34 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     setIframeTimeEntryUrl: dialogs.setIframeTimeEntryUrl,
   });
 
-  const filteredData = useMemo(
-    () => applyBoardDataFilters(displayData, showSubtasks, filters.statusIds),
-    [displayData, filters.statusIds, showSubtasks],
+  const primaryFilteredData = useMemo(
+    () => applyBoardDataFilters(displayData, showSubtasks, filters.statusIds, filters.trackerIds),
+    [displayData, filters.statusIds, filters.trackerIds, showSubtasks],
   );
   const issues = useMemo(
-    () => buildVisibleIssues(filteredData, filters, hiddenStatusIds, actions.pendingDeleteIssue),
-    [actions.pendingDeleteIssue, filteredData, filters, hiddenStatusIds],
+    () => buildVisibleIssues(primaryFilteredData, filters, hiddenStatusIds, actions.pendingDeleteIssue),
+    [actions.pendingDeleteIssue, filters, hiddenStatusIds, primaryFilteredData],
+  );
+  const presentation = useMemo(
+    () => {
+      if (!primaryFilteredData || !displayData) return null;
+      return buildPresentationProjection(
+        displayData,
+        primaryFilteredData.columns,
+        issues,
+        filters.statusIds,
+        hiddenStatusIds,
+      );
+    }, [displayData, filters.statusIds, hiddenStatusIds, issues, primaryFilteredData],
+  );
+  const filteredData = useMemo(
+    () => {
+      if (!primaryFilteredData || !presentation) return null;
+      return {
+        ...primaryFilteredData,
+        columns: presentation.columns,
+      };
+    }, [presentation, primaryFilteredData],
   );
   const priorityRank = useMemo(() => {
     const rank = new Map<number, number>();
@@ -246,16 +271,16 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     if (!filteredData) return null;
     return buildBoardState(
       filteredData,
-      issues,
+      presentation?.issues ?? [],
       sortKey,
       priorityRank,
       filters.assigneeIds,
       filters.priority,
       filters.priorityFilterEnabled,
     );
-  }, [filteredData, issues, priorityRank, sortKey, filters.assigneeIds, filters.priority, filters.priorityFilterEnabled]);
+  }, [filteredData, presentation?.issues, priorityRank, sortKey, filters.assigneeIds, filters.priority, filters.priorityFilterEnabled]);
 
-  const canMove = issues.some((issue) => issue.permissions?.can_move);
+  const canMove = (presentation?.issues ?? []).some((issue) => issue.permissions?.can_move);
   const selectedProjectIds = useMemo(
     () => (filters.projectIds.length > 0 ? filters.projectIds : data?.meta.project_id ? [data.meta.project_id] : []),
     [data?.meta.project_id, filters.projectIds],
@@ -264,7 +289,16 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     () => resolveDefaultCreateProjectId(selectedProjectIds, creatableProjectIds, data?.meta.project_id),
     [creatableProjectIds, data?.meta.project_id, selectedProjectIds],
   );
-  const canCreate = defaultCreateProjectId !== null;
+  const createStatusId = useMemo(
+    () => resolveCreateStatusId(
+      toolbarData,
+      primaryFilteredData?.columns ?? [],
+      filters.trackerIds,
+      defaultCreateProjectId ?? undefined,
+    ),
+    [defaultCreateProjectId, filters.trackerIds, primaryFilteredData?.columns, toolbarData],
+  );
+  const canCreate = canCreateInBoard(defaultCreateProjectId, createStatusId);
 
   return (
     <div className={`rk-root${fullWindow ? ' rk-root-fullwindow' : ''}`}>
@@ -301,9 +335,12 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
           serverEntityLimit={toolbarData.meta.server_entity_limit}
           canCreate={canCreate}
           onCreate={() => {
-            if (defaultCreateProjectId === null) return;
-            const defaultStatus = toolbarData.columns.find((column) => !column.is_closed)?.id ?? toolbarData.columns[0]?.id ?? 1;
-            dialogs.openCreate({ statusId: defaultStatus, projectId: defaultCreateProjectId });
+            if (defaultCreateProjectId === null || createStatusId === undefined) return;
+            dialogs.openCreate({
+              statusId: createStatusId,
+              projectId: defaultCreateProjectId,
+              preferredTrackerId: data ? resolvePreferredTrackerId(data, filters.trackerIds, defaultCreateProjectId) : undefined,
+            });
           }}
           onScrollToTop={() => boardRef.current?.scrollToTop()}
           timeEntryOnClose={timeEntryOnClose}
@@ -336,15 +373,19 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
             fontSize={fontSize}
             onCommand={(command) => {
               if (command.type === 'move_issue') {
-                actions.moveIssue(command.issueId, command.statusId, command.assignedToId, command.priorityId);
+                return actions.moveIssue(command.issueId, command.statusId, command.assignedToId, command.priorityId);
               }
+              return false;
             }}
             onCreate={(ctx) => {
+              const projectId = ctx.projectId ?? defaultCreateProjectId ?? undefined;
               dialogs.openCreate({
                 ...ctx,
-                projectId: ctx.projectId ?? defaultCreateProjectId ?? undefined,
+                projectId,
+                preferredTrackerId: data ? resolvePreferredTrackerId(data, filters.trackerIds, projectId) : undefined,
               });
             }}
+            defaultCreateStatusId={createStatusId}
             onEdit={dialogs.openEdit}
             onView={dialogs.openView}
             onDelete={actions.requestDelete}

@@ -116,6 +116,7 @@ describe('IframeEditDialog edit success detection', () => {
 
     expect(getActiveSaveForm(doc, 'create', '/projects/demo/issues/new')?.target).toBe('new-issue');
     expect(getActiveSaveForm(doc, 'edit', '/issues/123/edit')?.target).toBe('issue');
+    expect(getActiveSaveForm(doc, 'create', '/issues/123/edit')?.target).toBe('issue');
   });
 
   it('clicks the submit button before falling back to requestSubmit or submit', () => {

@@ -28,7 +28,9 @@ export function KanbanIssueModal({ data, baseUrl, ctx, onClose, onSaved, onDelet
   const defaultLinkUrl = isEdit
     ? issue?.urls.issue_edit
     : buildDefaultIssueCreateUrl(baseUrl, data.meta.project_id, data.meta.lane_type, ctx);
-  const defaultTracker = data.lists.trackers?.[0]?.id ?? '';
+  const defaultTracker = ctx.preferredTrackerId && data.lists.trackers.some((tracker) => tracker.id === ctx.preferredTrackerId)
+    ? ctx.preferredTrackerId
+    : data.lists.trackers?.[0]?.id ?? '';
   const defaultAssignee = (() => {
     if (isEdit) return issue?.assigned_to_id ? String(issue.assigned_to_id) : '';
     if (data.meta.lane_type !== 'assignee') return '';

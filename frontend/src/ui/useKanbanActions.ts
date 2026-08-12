@@ -6,7 +6,7 @@ import { getJson, isHttpError, postJson } from './http';
 import { applyAncestorIssueUpdates, applyEntityReconciliation, applyMutationResponse, invalidateBoardSnapshot, isBoardSnapshotInvalidated, unresolvedInvalidationIds, useIssueMutation, type EntityReconciliationOptions } from './useIssueMutation';
 import { findIssueInBoard } from './kanbanShared';
 import { applyLocalIssuePatch } from './boardState';
-import { findSubtask, resolveAssigneeName, resolveMutationError, resolvePriorityName, resolveSubtaskStatus, resolveBoardIssue, type IssueMutationResult, type MovePayload, type UpdatePayload } from './kanbanShared';
+import { findSubtask, isWorkflowTransitionError, resolveAssigneeName, resolveMutationError, resolvePriorityName, resolveSubtaskStatus, resolveBoardIssue, type IssueMutationResult, type MovePayload, type UpdatePayload } from './kanbanShared';
 import { discardBulkIdempotencyKey, getOrCreateBulkIdempotencyKey, stableSerialize, storageKeyForBulkSignature } from './bulkIdempotency';
 import { buildBulkCreateRequest, buildRestoreIssuePayload, isBulkCreateInput } from './kanbanActionPayloads';
 import { buildBoardCountsUrl, buildBoardEntitiesUrl, buildBoardMutationUrl, effectiveDependencyStatusIds, effectiveScopeStatusIds } from './boardQuery';
@@ -201,8 +201,9 @@ export function useKanbanActions({
         : applyMutationResponse(prev, result, { excludeIssueId: payload.issueId });
       return applyAncestorIssueUpdates(options.applyTarget || options.applyNonTarget ? next : prev, result.ancestor_updates);
     },
-    onError: (error) => {
+    onError: (error, payload) => {
       setError(resolveMutationError(error, data?.labels, data?.labels.move_failed));
+      if (isWorkflowTransitionError(error)) void reconcileIssueIds([payload.issueId]);
     },
     onSuccess: (result) => {
       if (result.warning) setNotice(result.warning);
@@ -253,6 +254,9 @@ export function useKanbanActions({
       void reconcileIssueIds(unresolvedInvalidationIds(result));
       void reconcileIssueIds(result.invalidations?.parent_ids ?? []);
       void reconcileColumnCounts(Boolean(result.invalidations?.column_counts));
+    },
+    onError: (error, payload) => {
+      if (isWorkflowTransitionError(error)) void reconcileIssueIds([payload.issueId]);
     },
     onMutateIssue: beginIssueMutation,
     onSettledMutation: endIssueMutation,
@@ -360,17 +364,18 @@ export function useKanbanActions({
   }, [beginIssueMutation, boardQueryKey, data, endIssueMutation, queryClient, reconcileColumnCounts, reconcileIssueIds, scopedUrl, setError]);
 
   const moveIssue = useCallback((issueId: number, statusId: number, assignedToId?: number | null, priorityId?: number | null) => {
-    if (!data || isIssueBusy(issueId)) return;
+    if (!data || isIssueBusy(issueId)) return false;
     const resolved = resolveBoardIssue(data, issueId);
-    if (!resolved) return;
+    if (!resolved) return false;
     if (resolved.lockVersion === null) {
       setError(data.labels.update_failed);
-      return;
+      return false;
     }
 
     setNotice(null);
     setIssueBusy(issueId, true);
     moveIssueMutation.mutate({ issueId, statusId, assignedToId, priorityId, lockVersion: resolved.lockVersion });
+    return true;
   }, [data, isIssueBusy, moveIssueMutation, setError, setIssueBusy, setNotice]);
 
   const toggleSubtask = useCallback((subtaskId: number, currentClosed: boolean) => {

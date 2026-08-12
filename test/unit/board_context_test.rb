@@ -38,6 +38,19 @@ class RedmineKanbanBoardContextTest < ActiveSupport::TestCase
     assert_equal statuses, context.dependency_status_ids
   end
 
+  def test_dependency_scope_includes_explicit_primary_scope
+    statuses = IssueStatus.sorted.limit(2).pluck(:id)
+    context = RedmineKanban::BoardContext.new(
+      project: @project,
+      user: @user,
+      scope_status_ids: [statuses.first],
+      dependency_status_ids: [statuses.last]
+    )
+
+    assert_equal [statuses.first], context.scope_status_ids
+    assert_equal statuses.sort, context.dependency_status_ids.sort
+  end
+
   def test_scope_fingerprint_includes_board_and_status_scopes_but_normalizes_order
     statuses = IssueStatus.sorted.limit(3).pluck(:id)
     first = RedmineKanban::BoardContext.new(
