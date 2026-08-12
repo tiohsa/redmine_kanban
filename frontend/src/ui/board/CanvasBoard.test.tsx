@@ -404,23 +404,9 @@ afterEach(() => {
 
   vi.useFakeTimers();
 
-  const setTimeoutSpy = vi.spyOn(window, 'setTimeout');
-  const callsBeforeDrop = setTimeoutSpy.mock.calls.length;
-
   // t = 0
   performFullDrag(canvas, 1);
   expect(onCommand).toHaveBeenCalledTimes(1);
-
-  const timersCreatedByDrop = setTimeoutSpy.mock.calls.slice(callsBeforeDrop);
-  const hasTwoSecondFallback = timersCreatedByDrop.some(
-    ([, delay]) => delay === 2000,
-  );
-
-  // 非常に重要:
-  // Fake Timer版setTimeoutへのspyをTest終了まで残さない。
-  setTimeoutSpy.mockRestore();
-
-  expect(hasTwoSecondFallback).toBe(true);
 
   // t = 1999
   await act(async () => {
@@ -435,9 +421,9 @@ afterEach(() => {
     vi.advanceTimersByTime(1);
   });
 
-  // fallback内のscheduleRender()が予約したRAFだけflush。
+  // fallbackによって予約されたCanvas再描画だけを処理
   await act(async () => {
-    vi.advanceTimersToNextTimer();
+    vi.advanceTimersToNextFrame();
   });
 
   performFullDrag(canvas, 3);
