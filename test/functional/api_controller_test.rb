@@ -725,6 +725,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     parent = build_issue(subject: 'Physical delete parent', status: status)
     child = build_issue(subject: 'Physical delete child', parent_issue_id: parent.id, status: status)
     grandchild = build_issue(subject: 'Physical delete grandchild', parent_issue_id: child.id, status: status)
+    parent.reload
 
     delete :destroy, params: {
       project_id: @project.identifier,
@@ -749,6 +750,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     skip 'requires at least two issue statuses' unless dependency_status
     parent = build_issue(subject: 'Mismatched scope delete parent', status: scope_status)
     child = build_issue(subject: 'Mismatched scope delete child', parent_issue_id: parent.id, status: scope_status)
+    parent.reload
 
     delete :destroy, params: {
       project_id: @project.identifier,
@@ -776,6 +778,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     parent = build_issue(subject: 'Scoped delete parent', status: status)
     visible_child = build_issue(subject: 'Scoped delete child', parent_issue_id: parent.id, status: status)
     outside_child = build_issue(subject: 'Out of scope child', parent_issue_id: parent.id, status: outside_status)
+    parent.reload
 
     delete :destroy, params: {
       project_id: @project.identifier,
@@ -797,6 +800,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     status = IssueStatus.first
     parent = build_issue(subject: 'Overflow delete parent', status: status)
     child = build_issue(subject: 'Overflow delete child', parent_issue_id: parent.id, status: status)
+    parent.reload
 
     delete :destroy, params: {
       project_id: @project.identifier,
@@ -822,6 +826,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     skip 'requires at least two issue statuses' unless dependency_status
     parent = build_issue(subject: 'Mismatched scope overflow parent', status: scope_status)
     child = build_issue(subject: 'Mismatched scope overflow child', parent_issue_id: parent.id, status: scope_status)
+    parent.reload
 
     delete :destroy, params: {
       project_id: @project.identifier,
