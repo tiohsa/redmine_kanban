@@ -191,11 +191,15 @@ describe('CanvasBoard cursor lifecycle', () => {
     });
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
-  });
+afterEach(() => {
+  if (vi.isFakeTimers()) {
+    vi.clearAllTimers();
+  }
+
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
 
   it('keeps a visible assignee representation when a long tracker consumes narrow-card width', () => {
     const layout = layoutCardMetadata(createCanvasContext(), {
@@ -373,42 +377,72 @@ describe('CanvasBoard cursor lifecycle', () => {
     expect(onCommand).toHaveBeenCalledTimes(2);
   });
 
-  it('keeps an accepted drop pending until its two-second fallback, then allows another drag', async () => {
-    const issue = makeIssue(1);
-    const data = makeBoardData(issue);
-    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
-    const onCommand = vi.fn(() => true);
-    const { container } = render(
-      <CanvasBoard
-        data={data}
-        state={state}
-        canMove
-        canCreate
-        onCommand={onCommand}
-        onCreate={vi.fn()}
-        onEdit={vi.fn()}
-        onView={vi.fn()}
-        onDelete={vi.fn()}
-        onEditClick={vi.fn()}
-        labels={data.labels}
-      />,
-    );
-    const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
-    await waitFor(() => expect(canvas.width).toBeGreaterThan(0));
-    vi.useFakeTimers();
+  it('keeps an accepted drop pending until exactly its two-second fallback, then allows another drag', async () => {
+  const issue = makeIssue(1);
+  const data = makeBoardData(issue);
+  const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+  const onCommand = vi.fn(() => true);
 
-    performFullDrag(canvas, 1);
-    expect(onCommand).toHaveBeenCalledTimes(1);
+  const { container } = render(
+    <CanvasBoard
+      data={data}
+      state={state}
+      canMove
+      canCreate
+      onCommand={onCommand}
+      onCreate={vi.fn()}
+      onEdit={vi.fn()}
+      onView={vi.fn()}
+      onDelete={vi.fn()}
+      onEditClick={vi.fn()}
+      labels={data.labels}
+    />,
+  );
 
-    await act(async () => { vi.advanceTimersByTime(1999); });
-    performFullDrag(canvas, 2);
-    expect(onCommand).toHaveBeenCalledTimes(1);
+  const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
+  await waitFor(() => expect(canvas.width).toBeGreaterThan(0));
 
-    await act(async () => { vi.advanceTimersByTime(1); });
-    await act(async () => { vi.runOnlyPendingTimers(); });
-    performFullDrag(canvas, 3);
-    expect(onCommand).toHaveBeenCalledTimes(2);
+  vi.useFakeTimers();
+
+  const setTimeoutSpy = vi.spyOn(window, 'setTimeout');
+  const callsBeforeDrop = setTimeoutSpy.mock.calls.length;
+
+  // t = 0
+  performFullDrag(canvas, 1);
+  expect(onCommand).toHaveBeenCalledTimes(1);
+
+  const timersCreatedByDrop = setTimeoutSpy.mock.calls.slice(callsBeforeDrop);
+  const hasTwoSecondFallback = timersCreatedByDrop.some(
+    ([, delay]) => delay === 2000,
+  );
+
+  // 非常に重要:
+  // Fake Timer版setTimeoutへのspyをTest終了まで残さない。
+  setTimeoutSpy.mockRestore();
+
+  expect(hasTwoSecondFallback).toBe(true);
+
+  // t = 1999
+  await act(async () => {
+    vi.advanceTimersByTime(1999);
   });
+
+  performFullDrag(canvas, 2);
+  expect(onCommand).toHaveBeenCalledTimes(1);
+
+  // t = 2000
+  await act(async () => {
+    vi.advanceTimersByTime(1);
+  });
+
+  // fallback内のscheduleRender()が予約したRAFだけflush。
+  await act(async () => {
+    vi.advanceTimersToNextTimer();
+  });
+
+  performFullDrag(canvas, 3);
+  expect(onCommand).toHaveBeenCalledTimes(2);
+});
 
   it('separates target observation, previous timer cancellation, and the next drop fallback', async () => {
     const issue = makeIssue(1);
