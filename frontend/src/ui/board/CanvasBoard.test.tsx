@@ -111,6 +111,12 @@ function setDevicePixelRatio(value: number) {
   });
 }
 
+function performFullDrag(canvas: HTMLCanvasElement, pointerId: number, startX = 200, endX = 320) {
+  fireEvent.pointerDown(canvas, { clientX: startX, clientY: 100, pointerId });
+  fireEvent.pointerMove(canvas, { clientX: endX, clientY: 100, pointerId });
+  fireEvent.pointerUp(canvas, { clientX: endX, clientY: 100, pointerId });
+}
+
 class ResizeObserverMock {
   constructor(private readonly callback: ResizeObserverCallback) { }
 
@@ -391,22 +397,62 @@ describe('CanvasBoard cursor lifecycle', () => {
     await waitFor(() => expect(canvas.width).toBeGreaterThan(0));
     vi.useFakeTimers();
 
-    fireEvent.pointerDown(canvas, { clientX: 200, clientY: 100, pointerId: 1 });
-    fireEvent.pointerMove(canvas, { clientX: 320, clientY: 100, pointerId: 1 });
-    fireEvent.pointerUp(canvas, { clientX: 320, clientY: 100, pointerId: 1 });
-    fireEvent.pointerDown(canvas, { clientX: 200, clientY: 100, pointerId: 2 });
-    fireEvent.pointerUp(canvas, { clientX: 320, clientY: 100, pointerId: 2 });
+    performFullDrag(canvas, 1);
     expect(onCommand).toHaveBeenCalledTimes(1);
 
     await act(async () => { vi.advanceTimersByTime(1999); });
-    fireEvent.pointerDown(canvas, { clientX: 200, clientY: 100, pointerId: 3 });
-    fireEvent.pointerUp(canvas, { clientX: 320, clientY: 100, pointerId: 3 });
+    performFullDrag(canvas, 2);
     expect(onCommand).toHaveBeenCalledTimes(1);
 
     await act(async () => { vi.advanceTimersByTime(1); });
-    fireEvent.pointerDown(canvas, { clientX: 200, clientY: 100, pointerId: 4 });
-    fireEvent.pointerMove(canvas, { clientX: 320, clientY: 100, pointerId: 4 });
-    fireEvent.pointerUp(canvas, { clientX: 320, clientY: 100, pointerId: 4 });
+    await act(async () => { vi.runOnlyPendingTimers(); });
+    performFullDrag(canvas, 3);
+    expect(onCommand).toHaveBeenCalledTimes(2);
+  });
+
+  it('clears pending on an observed target and cancels its previous fallback timer', async () => {
+    const issue = makeIssue(1);
+    const data = makeBoardData(issue);
+    const oldState = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const onCommand = vi.fn(() => true);
+    const props = {
+      data,
+      canMove: true,
+      canCreate: true,
+      onCommand,
+      onCreate: vi.fn(),
+      onEdit: vi.fn(),
+      onView: vi.fn(),
+      onDelete: vi.fn(),
+      onEditClick: vi.fn(),
+      labels: data.labels,
+    };
+    const { container, rerender } = render(<CanvasBoard {...props} state={oldState} />);
+    const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
+    await waitFor(() => expect(canvas.width).toBeGreaterThan(0));
+    vi.useFakeTimers();
+
+    performFullDrag(canvas, 1);
+    expect(onCommand).toHaveBeenCalledTimes(1);
+
+    const committedIssue = makeIssue(1, { status_id: 2 });
+    const committedData = makeBoardData(committedIssue);
+    rerender(
+      <CanvasBoard
+        {...props}
+        data={committedData}
+        labels={committedData.labels}
+        state={buildBoardState(committedData, committedData.issues, 'updated_desc', new Map())}
+      />,
+    );
+
+    await act(async () => { vi.advanceTimersByTime(1999); });
+    await act(async () => { vi.runOnlyPendingTimers(); });
+    performFullDrag(canvas, 2, 320, 200);
+    expect(onCommand).toHaveBeenCalledTimes(2);
+
+    await act(async () => { vi.advanceTimersByTime(2); });
+    performFullDrag(canvas, 3, 320, 200);
     expect(onCommand).toHaveBeenCalledTimes(2);
   });
 
