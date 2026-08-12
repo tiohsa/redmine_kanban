@@ -410,7 +410,7 @@ describe('CanvasBoard cursor lifecycle', () => {
     expect(onCommand).toHaveBeenCalledTimes(2);
   });
 
-  it('clears pending on an observed target and cancels its previous fallback timer', async () => {
+  it('separates target observation, previous timer cancellation, and the next drop fallback', async () => {
     const issue = makeIssue(1);
     const data = makeBoardData(issue);
     const oldState = buildBoardState(data, data.issues, 'updated_desc', new Map());
@@ -431,29 +431,43 @@ describe('CanvasBoard cursor lifecycle', () => {
     const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
     await waitFor(() => expect(canvas.width).toBeGreaterThan(0));
     vi.useFakeTimers();
+    const clearTimeoutSpy = vi.spyOn(window, 'clearTimeout');
 
     performFullDrag(canvas, 1);
     expect(onCommand).toHaveBeenCalledTimes(1);
 
+    await act(async () => { vi.advanceTimersByTime(500); });
+    clearTimeoutSpy.mockClear();
     const committedIssue = makeIssue(1, { status_id: 2 });
     const committedData = makeBoardData(committedIssue);
-    rerender(
-      <CanvasBoard
-        {...props}
-        data={committedData}
-        labels={committedData.labels}
-        state={buildBoardState(committedData, committedData.issues, 'updated_desc', new Map())}
-      />,
-    );
+    await act(async () => {
+      rerender(
+        <CanvasBoard
+          {...props}
+          data={committedData}
+          labels={committedData.labels}
+          state={buildBoardState(committedData, committedData.issues, 'updated_desc', new Map())}
+        />,
+      );
+    });
+    expect(clearTimeoutSpy).toHaveBeenCalledTimes(1);
 
-    await act(async () => { vi.advanceTimersByTime(1999); });
-    await act(async () => { vi.runOnlyPendingTimers(); });
+    // The test's RAF stub is a 0ms timeout; flush only that render callback,
+    // never all pending timers (which could run fallback A).
+    await act(async () => { vi.advanceTimersToNextTimer(); });
     performFullDrag(canvas, 2, 320, 200);
     expect(onCommand).toHaveBeenCalledTimes(2);
 
-    await act(async () => { vi.advanceTimersByTime(2); });
+    await act(async () => { vi.advanceTimersByTime(1500); });
     performFullDrag(canvas, 3, 320, 200);
     expect(onCommand).toHaveBeenCalledTimes(2);
+
+    await act(async () => { vi.advanceTimersByTime(499); });
+    // Flush the final render callback and then B's own fallback timer.
+    await act(async () => { vi.advanceTimersToNextTimer(); });
+    await act(async () => { vi.advanceTimersToNextTimer(); });
+    performFullDrag(canvas, 4, 320, 200);
+    expect(onCommand).toHaveBeenCalledTimes(3);
   });
 
   it('draws workflow guidance for every rendered cell after drag threshold', async () => {
