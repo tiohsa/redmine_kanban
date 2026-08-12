@@ -69,7 +69,7 @@ export function getActiveSaveForm(
   if (!issueForm) return null;
   return {
     form: issueForm,
-    target: mode === 'create' || currentUrl.includes('/issues/new') ? 'new-issue' : 'issue',
+    target: currentUrl.includes('/issues/new') ? 'new-issue' : 'issue',
   };
 }
 

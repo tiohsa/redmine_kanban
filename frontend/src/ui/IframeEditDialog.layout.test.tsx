@@ -246,6 +246,58 @@ describe('IframeEditDialog layout variants', () => {
     expect(nativeClick).toHaveBeenCalledOnce();
   });
 
+  it('shows save action when a newly created issue is opened for editing in the same dialog', async () => {
+    const { container } = render(
+      <IframeEditDialog
+        url="/projects/demo/issues/new"
+        issueId={0}
+        mode="create"
+        labels={labels}
+        baseUrl="/projects/demo/kanban"
+        queryKey={['kanban', 'board']}
+        onClose={() => {}}
+        onSuccess={() => {}}
+      />,
+    );
+
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    const doc = document.implementation.createHTMLDocument('create iframe');
+    doc.body.innerHTML = '<div id="content"><form id="issue-form"><button type="submit">Create</button></form></div>';
+    const iframeWindow = {
+      location: { href: 'http://example.com/projects/demo/issues/new' },
+      document: doc,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      $: vi.fn(() => ({ off: vi.fn() })),
+    };
+    Object.defineProperty(iframe, 'contentWindow', { value: iframeWindow, configurable: true });
+    Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+    const nativeSubmit = doc.querySelector('button') as HTMLButtonElement;
+    const nativeClick = vi.spyOn(nativeSubmit, 'click').mockImplementation(() => undefined);
+
+    fireEvent.load(iframe);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'チケットを作成' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'チケットを作成' }));
+    expect(nativeClick).toHaveBeenCalledOnce();
+
+    iframeWindow.location.href = 'http://example.com/issues/42';
+    doc.body.innerHTML = '<div id="content"><div class="issue details">Created issue</div></div>';
+    fireEvent.load(iframe);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'チケットを編集' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'チケットを編集' }));
+    expect(iframeWindow.location.href).toBe('http://example.com/issues/42/edit');
+
+    doc.body.innerHTML = '<div id="content"><form id="issue-form"><button type="submit">Save</button></form></div>';
+    fireEvent.load(iframe);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '保存' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'チケットを作成' })).toBeNull();
+    });
+  });
+
   it('shows edit action initially and save action when an issue-show dialog has subtask input', async () => {
     const { container } = render(
       <IframeEditDialog

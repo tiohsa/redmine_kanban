@@ -480,7 +480,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
     ? (hasSubtaskInput ? labels.save : labels.edit_issue)
     : effectiveSaveTarget === 'journal'
       ? (isSubmitting ? labels.saving_comment : labels.save_comment)
-      : effectiveSaveTarget === 'new-issue' || mode === 'create'
+      : effectiveSaveTarget === 'new-issue'
         ? (isSubmitting ? labels.creating : (labels.create_issue ?? labels.create))
         : (isSubmitting ? labels.saving : labels.save);
   const showPrimaryAction = dialogMode === 'issue-show' || saveTarget !== null || isSubmitting;
