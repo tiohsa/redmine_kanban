@@ -718,6 +718,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     json = JSON.parse(@response.body)
     assert_equal [issue.id], json['deleted_issue_ids']
     assert_equal [], json['evicted_issue_ids']
+    refute json.key?('http_status')
   end
 
   def test_physical_delete_returns_board_visible_cascade_tombstones

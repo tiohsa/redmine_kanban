@@ -114,69 +114,19 @@ module RedmineKanban
 
     def destroy
       lock_version = params.dig(:issue, :lock_version) || params[:lock_version]
-      if lock_version.blank?
-        render json: { ok: false, message: I18n.t('redmine_kanban.error_lock_version_required') }, status: :unprocessable_entity
-        return
-      end
-
-      result = nil
       board_context = mutation_board_context
-      membership_resolver = RedmineKanban::BoardMembershipResolver.new(board_context: board_context)
-      deletion_candidate_ids = []
-      deletion_delta_overflow = false
-      deleted_parent_id = @issue.parent_id
-      affected_ancestor_ids = @issue.ancestors.select { |ancestor| ancestor.visible?(User.current) }.map(&:id)
-      Issue.transaction do
-        locked_issue = Issue.lock.find_by(id: @issue.id)
-        unless locked_issue && locked_issue.lock_version.to_i == lock_version.to_i
-          result = { ok: false, message: I18n.t('redmine_kanban.error_conflict') }
-          raise ActiveRecord::Rollback
-        end
-
-        unless permission_policy.can_delete_issue?(locked_issue, @project)
-          result = { ok: false, message: I18n.t('redmine_kanban.error_permission_denied') }
-          raise ActiveRecord::Rollback
-        end
-
-        candidate_result = membership_resolver.deletion_candidate_ids(
-          [locked_issue.id],
-          limit: board_context.effective_entity_limit
-        )
-        deletion_delta_overflow = candidate_result[:overflow]
-        unless deletion_delta_overflow
-          deletion_candidate_ids = Issue.lock
-                                             .where(id: candidate_result[:ids])
-                                             .order(id: :asc)
-                                             .pluck(:id)
-        end
-
-        result = locked_issue.destroy ? { ok: true } : { ok: false, message: I18n.t('redmine_kanban.error_delete_failed') }
-        raise ActiveRecord::Rollback unless result[:ok]
-
-        unless deletion_delta_overflow
-          surviving_ids = Issue.where(id: deletion_candidate_ids).pluck(:id)
-          deletion_candidate_ids -= surviving_ids
-        end
-      end
-      if result[:ok]
-        operation_id = params[:operation_id] || params.dig(:issue, :operation_id)
-        affected_ancestors = Issue.visible(User.current).where(id: affected_ancestor_ids).to_a
-        result = MutationResultBuilder.new(board_context: board_context, operation_id: operation_id).build(
-          deleted_issue_ids: deletion_delta_overflow ? [] : deletion_candidate_ids,
-          issue_updates: affected_ancestors,
-          invalidations: {
-            issue_ids: affected_ancestor_ids,
-            parent_ids: [deleted_parent_id].compact,
-            column_counts: true,
-            board_snapshot: deletion_delta_overflow
-          }
-        )
-      end
+      operation_id = params[:operation_id] || params.dig(:issue, :operation_id)
+      result = IssueDestroyer.new(
+        project: @project,
+        issue: @issue,
+        user: User.current,
+        board_context: board_context,
+        operation_id: operation_id
+      ).destroy(lock_version: lock_version)
       result = enforce_mutation_response_limit(result) if result[:ok]
       status = result[:ok] ? :ok : (result[:message] == I18n.t('redmine_kanban.error_permission_denied') ? :forbidden : :conflict)
+      status = :unprocessable_entity if result[:message] == I18n.t('redmine_kanban.error_lock_version_required')
       render json: result, status: status
-    rescue ActiveRecord::StaleObjectError
-      render json: { ok: false, message: I18n.t('redmine_kanban.error_conflict') }, status: :conflict
     end
 
     private
