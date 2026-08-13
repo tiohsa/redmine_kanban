@@ -2,64 +2,42 @@
 
 ## Project Overview
 
-Redmine plugin that provides a Kanban board with WIP limits, aging detection, and drag-and-drop.
+A Redmine plugin that adds a Kanban board with WIP limits, aging visualization, and drag-and-drop support.
 
-- **Backend**: Ruby on Rails (Redmine plugin convention)
-- **Frontend**: React 18 + TypeScript + Vite (compiled to `assets/`)
-- **E2E**: Playwright
-- **Container**: Docker Compose
+* Backend: Ruby on Rails following Redmine plugin conventions
+* Frontend: React 18, TypeScript strict mode, Vite, Vitest
+* E2E: Playwright (Chromium)
+* Compatibility targets: Redmine 7.0 / 6.1, with a Redmine 6.0 compatibility smoke test
+* Runtime environment: Docker Compose, Node.js 20+
 
-### Directory Structure
+## Structure and Editing Boundaries
 
-```
-redmine_kanban/
-├── init.rb                 # Plugin registration
-├── app/
-│   ├── controllers/        # Rails controllers (redmine_kanban namespace)
-│   └── views/              # ERB templates
-├── lib/
-│   └── redmine_kanban/     # Service classes, helpers
-├── frontend/               # React/TypeScript source
-│   ├── src/
-│   │   ├── main.tsx
-│   │   └── ui/             # React components
-│   ├── package.json
-│   └── vite.config.ts
-├── test/
-│   ├── unit/               # Ruby unit tests
-│   └── functional/         # Ruby functional tests
-├── e2e/
-│   ├── tests/              # Playwright specs
-│   ├── playwright.config.js
-│   └── setup_redmine.rb    # Seed data for E2E
-└── .github/
-    └── workflows/
-        └── e2e-kanban.yml  # CI workflow
-```
+* `init.rb`: Plugin registration, permissions, and project menu.
+* `config/routes.rb`: Routing for the Kanban UI and JSON API.
+* `app/controllers/redmine_kanban/`: Rails entry points. Keep controllers thin and place business logic under `lib/redmine_kanban/`.
+* `app/views/redmine_kanban/`: ERB views on the Redmine side.
+* `lib/redmine_kanban/`: Service layer for board snapshots, permissions, Issue mutations, DTOs, and related logic. Everything must live under the `RedmineKanban` namespace.
+* `frontend/src/main.tsx`: SPA entry point.
+* `frontend/src/ui/`: React UI, normalized board state, queries/mutations, and dialogs.
+* `frontend/src/ui/board/`: Canvas board, drag state machine, geometry calculations, and rendering helpers.
+* `frontend/src/ui/hooks/`: Independent mutation hooks.
+* `frontend/src/ui/styles.css`: SPA styles.
+* `test/unit/`, `test/functional/`: Rails Minitest. These are not RSpec tests.
+* `e2e/tests/`: Playwright scenarios. `e2e/setup_redmine.rb` creates fixtures.
+* `script/ci/`: Wrappers for running the same validations as CI locally. Prefer these over duplicating raw commands whenever possible.
+* `assets/`: Tracked Vite-generated artifacts. Do not edit them directly. Modify the source under `frontend/`, build it, and include the generated JS/CSS/fonts in the same change.
 
----
+## Setup and Development
 
-## Dev Environment Setup
-
-### Prerequisites
-
-- Docker & Docker Compose
-- Node.js 20+ / pnpm
-
-### Start Redmine (Docker Compose)
+The Redmine application root is two directory levels above this directory. The normal local stack is started from there.
 
 ```bash
-# From the repository root (two levels above this plugin)
 docker compose up -d
 ```
 
-Redmine is available at `http://localhost:3002` (login: `admin` / `admin`).
+Redmine is available at `http://localhost:3002`. The development login is `admin` / `admin`.
 
----
-
-## Build Commands
-
-### Frontend
+Initialize and build the frontend:
 
 ```bash
 cd frontend
@@ -67,177 +45,163 @@ pnpm install
 pnpm run build
 ```
 
-Build output:
+CI uses `npm ci` and `package-lock.json`. Even when using pnpm, do not unintentionally leave multiple lockfiles inconsistent when changing dependencies.
 
-- JS  → `assets/javascripts/redmine_kanban_spa.js`
-- CSS → `assets/stylesheets/redmine_kanban_spa.css`
-
-After rebuilding, restart Redmine:
-
-```bash
-# From repo root
-docker compose restart redmine
-```
-
-### Watch mode (during development)
+Use the following for watch mode / the development server:
 
 ```bash
 cd frontend
 pnpm run build:watch
+pnpm run dev
 ```
 
----
+After building the frontend, run `docker compose restart redmine` from the Redmine root before verifying the change in a real browser.
 
-## Testing Instructions
+## Validation Commands
 
-### Frontend unit tests
+Standard validation for frontend changes:
 
 ```bash
-cd frontend
-pnpm run test -- --run       # single run
-pnpm run test                # watch mode
+bash script/ci/frontend-static.sh all
 ```
 
-### Type checking
+Individual arguments can be `build`, `lint`, `typecheck`, or `test`.
+
+When running them directly, use commands equivalent to:
 
 ```bash
-cd frontend
-pnpm run typecheck
+npm --prefix frontend run typecheck
+npm --prefix frontend run lint
+npm --prefix frontend run test -- --run
+npm --prefix frontend run build
 ```
 
-### Backend (Ruby) unit/functional tests
+To narrow tests, use:
 
 ```bash
-# Start Redmine and prepare the test dependencies in Docker
+npm --prefix frontend run test -- --run <path-or-pattern>
+```
+
+When changing UI behavior, also add or update the colocated `*.test.ts` / `*.test.tsx` tests. When changing Canvas drag/drop behavior, also update the state-machine tests under `frontend/src/ui/board/`.
+
+Run the complete Ruby test suite from the Redmine application root, inside the Redmine container. This plugin does not have its own standalone `Gemfile`.
+
+```bash
 docker compose up -d --wait
 docker compose exec -T redmine bundle config unset without
 docker compose exec -T redmine bundle install --jobs 4 --retry 3
 docker compose exec -T redmine bundle exec rails test plugins/redmine_kanban/test
 ```
 
-The plugin uses Rails' Minitest runner, not RSpec, and does not contain its own `Gemfile`. The container may exclude the `development` and `test` groups through Bundler's `without` setting, so remove that setting and install the test dependencies before running the suite. Repeat the dependency setup after recreating the container.
+After recreating the container, prepare the test dependencies again.
 
-### E2E (Playwright) — local
+Within CI containers, use `script/ci/ruby-full.sh`. Use `script/ci/snapshot-contract.sh` for snapshot resource-contract validation.
+
+Changes affecting membership handling or SQL dialect behavior must also run the PostgreSQL validations defined by `.github/e2e/docker-compose.postgres.yml` and `script/ci/postgres-*.sh`.
+
+Basic E2E procedure:
 
 ```bash
-# 1. Install E2E dependencies
-npm install --prefix e2e
+npm ci --prefix e2e
 npx --prefix e2e playwright install chromium
-
-# 2. Start Redmine stack
-docker compose -f .github/e2e/docker-compose.yml up -d
-
-# 3. Initialize Redmine (first run only)
+docker compose -f .github/e2e/docker-compose.yml up -d --wait --wait-timeout 600
 docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
   bundle exec rake db:migrate redmine:plugins:migrate RAILS_ENV=production
 docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
   env REDMINE_LANG=en bundle exec rake redmine:load_default_data RAILS_ENV=production
 docker compose -f .github/e2e/docker-compose.yml exec -T --user redmine redmine \
   bundle exec rails runner -e production plugins/redmine_kanban/e2e/setup_redmine.rb
-
-# Optional: seed the 1,505-child truncation fixture used by the tree E2E.
-docker compose -f .github/e2e/docker-compose.yml exec -T --user redmine redmine \
-  env REDMINE_KANBAN_E2E_TREE_FIXTURE=1 bundle exec rails runner -e production plugins/redmine_kanban/e2e/setup_redmine.rb
-
-# 4. Run E2E
 REDMINE_BASE_URL=http://127.0.0.1:3002 \
-  npx --prefix e2e playwright test -c e2e/playwright.config.js
+  bash script/ci/e2e-full.sh
 ```
 
----
+Purpose-specific wrappers:
 
-## Code Style
+* `script/ci/native-mutation-e2e.sh`: Mutation lifecycle including the native iframe.
+* `script/ci/large-data-e2e.sh`: Large-data gate using the 1,505-child fixture. Seed it first with `REDMINE_KANBAN_E2E_TREE_FIXTURE=1`.
+* `script/ci/compatibility-smoke.sh`: Redmine 6.0 compatibility smoke test.
 
-### Frontend (TypeScript/React)
+If any validation cannot be run, explicitly state the unexecuted command and the reason in the final report.
 
-- Language: TypeScript (strict mode via `tsconfig.json`)
-- Components: React functional components with hooks
-- Run type check before committing: `pnpm run typecheck`
-- No dedicated linter config — follow existing code conventions
+## Coding Conventions
 
-### Backend (Ruby)
+### TypeScript / React
 
-- Follow Redmine plugin conventions
-- Namespace all controllers/models under `RedmineKanban` module
-- Controller files live in `app/controllers/redmine_kanban/`
+* Preserve strict mode in `frontend/tsconfig.json`.
+* Use React functional components and hooks, and reuse existing query/mutation/state helpers.
+* Do not bypass asynchronous response freshness, scope fingerprints, or normalized snapshot application ordering with custom local state.
+* Drag/drop lifecycle handling must pass through the state-machine boundary under `frontend/src/ui/board/`.
+* The ESLint flat configuration is `frontend/eslint.config.js`. Before adding a new suppression, check whether the issue can instead be resolved through proper typing or control flow.
 
----
+### Ruby / Rails
 
-## Architecture Notes
+* Place controllers and services under the `RedmineKanban` namespace, and use Redmine's permission / visibility / workflow APIs.
+* Normalize API params using the existing `BoardContext`, `ParamNormalizer`, and `ArrayParamNormalizer`.
+* Do not partially select `User` records in queries that later call `User#name`. Missing attributes such as `firstname` can cause `ActiveModel::MissingAttributeError`; load complete objects instead.
+* In mutations, capture status / done-ratio changes immediately after saving. Do not infer them after a reload triggered by priority propagation.
+* API contract changes must include corresponding functional tests and frontend type/state tests in the same change.
 
-### Frontend Build Pipeline
+## Board Snapshot Contract
 
-`frontend/src/main.tsx` is the entry point. Vite compiles it as a UMD library:
+* The current API contract version is 3. `BoardData` and mutation serializers must use the same `BoardContext`.
+* `meta.project_ids`, `scope_status_ids`, `dependency_status_ids`, and `scope_fingerprint` are part of the authorization, membership, and asynchronous-response freshness contract and must be propagated into mutation / reconciliation queries.
+* `/data` returns a complete flat snapshot in `entities`, together with the relationships in `tree.root_ids` / `tree.children_by_parent_id`. `meta.complete` is `true`. The frontend must normalize this representation and must not treat recursive Issue copies as the source of truth.
+* The default requested limit is 1,500 entities, the server maximum is 5,000, the response maximum is 8 MiB, and the snapshot query limit is 20. Environment variables are `REDMINE_KANBAN_MAX_BOARD_ENTITIES`, `REDMINE_KANBAN_MAX_RESPONSE_BYTES`, and `REDMINE_KANBAN_MAX_BOARD_QUERIES`.
+* If the scope exceeds the entity limit, do not return a partial snapshot; return `BOARD_SCOPE_TOO_LARGE`. Exceeding the query limit must return the structured error `BOARD_QUERY_LIMIT_EXCEEDED`, and exceeding the response-byte limit must return `BOARD_RESPONSE_TOO_LARGE`.
+* Mutation responses are flat deltas: `issue_updates`, `created_issues`, `deleted_issue_ids`, `evicted_issue_ids`, `tree_changes`, `column_counts`, and targeted `invalidations`. Do not refetch the entire board after a normal successful mutation.
+* If scope or response limits are exceeded after a mutation, do not roll back the domain update. Return `invalidations.board_snapshot: true`. The frontend must discard the stale complete snapshot and refetch it.
+* Bulk create supports at most 50 non-empty subtasks. A 51st subtask must produce a 422 response before any idempotency claim or transaction is started.
+* Recreate-after-delete applies only to domain-level top-level Issues (`parent_id` absent). Copy editable fields currently shown in the UI, including `done_ratio`, but do not copy the original ID, history, comments, attachments, relations, or watchers.
+* With `REDMINE_KANBAN_PERF_LOG=1`, SQL count, entity / row counts, JSON bytes, and elapsed time can be recorded. Use `script/benchmark_tree.rb` to measure snapshot resource metrics.
 
-```
-frontend/src/main.tsx → assets/javascripts/redmine_kanban_spa.js
-```
+## API and Permissions
 
-The `process.env` is replaced at build time for production. In test mode, no substitution is performed.
+Current endpoints in `config/routes.rb`:
 
-### Board Context and Tree Contract
+| Method | Path                                           | Purpose                          |
+| ------ | ---------------------------------------------- | -------------------------------- |
+| GET    | `/projects/:project_id/kanban/data`            | Complete board snapshot          |
+| GET    | `/projects/:project_id/kanban/bootstrap`       | Initial-display metadata         |
+| GET    | `/projects/:project_id/kanban/issues/entities` | Issue entity reconciliation      |
+| GET    | `/projects/:project_id/kanban/counts`          | Column-count reconciliation      |
+| GET    | `/projects/:project_id/kanban/trackers`        | Tracker metadata                 |
+| PATCH  | `/projects/:project_id/kanban/issues/:id/move` | Move a card                      |
+| PATCH  | `/projects/:project_id/kanban/issues/:id`      | Update an Issue                  |
+| DELETE | `/projects/:project_id/kanban/issues/:id`      | Delete an Issue                  |
+| POST   | `/projects/:project_id/kanban/issues`          | Create an Issue                  |
+| POST   | `/projects/:project_id/kanban/issues/bulk`     | Bulk-create a parent/subtask set |
 
-- `BoardData` and all mutation serializers use `BoardContext`; callers preserve the sanitized `meta.project_ids` scope in mutation query parameters.
-- Recursive board responses serialize canonical roots only. A root already reachable from another root on the current page is represented once in `subtasks`.
-- The complete response is bounded to 1,500 unique nodes. Optional `meta.tree` exposes `node_limit`, unique/serialized node counts, duplicate roots eliminated, loaded node/DB row counts, and incomplete/recoverable parent IDs when a subtree is truncated by node, depth, or query limits. `unexpanded_parent_ids` remains diagnostic metadata for depth/query-limit causes.
-- A child is removed from the root list only when it is actually present in the serialized parent tree. Truncated, unexpanded, or not-yet-loaded children remain reachable as roots. The frontend recovers a recoverable parent with `/kanban/issues?tree_parent_id=<id>` or a signed cursor when available; subtree pages use deterministic `id ASC` ordering and do not overwrite root pagination metadata. The legacy offset parameter remains backend-compatible but is not used by active frontend paths.
-- Root pages use signed `updated_on DESC, id DESC` cursors. Mutation responses use contract version 2 flat deltas (`issue_updates`, `created_issues`, `deleted_issue_ids`, `tree_changes`, and targeted invalidations), and normal mutation success does not trigger a full-board refresh.
-- Set `REDMINE_KANBAN_PERF_LOG=1` to log SQL count, node counts, JSON bytes, and elapsed time for a board response.
-- `script/benchmark_tree.rb` emits root/unique/serialized nodes, DB rows, SQL count, duplicate count, JSON bytes, elapsed time, node limit, and truncation for a seeded project.
+Permission boundaries in `init.rb`:
 
-### Mutation and Recreate Contract
+* `view_redmine_kanban`: Read access to the UI, snapshot, bootstrap, entities, counts, trackers, and related resources.
+* `manage_redmine_kanban`: `move` / `create` / `update` / `destroy` / `bulk_create`.
 
-- `IssueMover` and `IssueUpdater` capture status/done-ratio changes immediately after save, before Priority propagation can reload the record.
-- Recreate-after-delete is only available for domain top-level Issues (`parent_id` absent), never based on Canvas card/subtask representation. It copies displayed editable fields including `done_ratio`, but not the original ID, history, comments, attachments, relations, or watchers.
-- Bulk create accepts at most 50 non-empty subtasks server-side. A 51st valid row returns 422 before an idempotency claim or transaction starts.
+When adding or changing an endpoint, verify consistency across `config/routes.rb`, `init.rb`, the controller action, functional tests, and the frontend URL builder.
 
-### Backend API Endpoints
+## CI and Compatibility
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET    | `/projects/:id/kanban/data` | Board data |
-| GET    | `/projects/:id/kanban/issues/entities` | Flat Issue entity reconciliation |
-| GET    | `/projects/:id/kanban/counts` | Column count reconciliation |
-| PATCH  | `/projects/:id/kanban/issues/:id/move` | Move card |
-| POST   | `/projects/:id/kanban/issues` | Create ticket |
-| POST   | `/projects/:id/kanban/issues/bulk` | Create parent/subtasks atomically |
-| PATCH  | `/projects/:id/kanban/issues/:id` | Update ticket |
-| DELETE | `/projects/:id/kanban/issues/:id` | Delete ticket |
+`.github/workflows/e2e-kanban.yml` validates the following on pushes to `main` / `master` and on pull requests:
 
-### Permissions
+* Frontend build / ESLint / typecheck / Vitest
+* Redmine 7.0 Ruby unit/API tests and snapshot resource gate
+* PostgreSQL membership integration in addition to MariaDB
+* Full E2E on Redmine 7.0 / 6.1
+* Large snapshot resource gate on Redmine 7.0
+* Redmine 6.0 compatibility smoke test
 
-Defined in `init.rb`:
+When introducing APIs specific to Redmine, Rails, or a DB adapter, do not break this compatibility matrix.
 
-- `view_redmine_kanban` — read-only access (kanban#show, api#index, ai_analysis#analyze)
-- `manage_redmine_kanban` — write access (api#move, api#create, api#update, api#destroy, api#bulk_create)
+## Agent Working Rules
 
-CI also runs frontend state-machine tests, deterministic tree resource gates, full E2E on Redmine 7.0 and 6.1, and a Redmine 6.0 compatibility smoke test.
-
----
-
-## CI
-
-GitHub Actions: `.github/workflows/e2e-kanban.yml`
-
-Triggered on push/PR to `main`/`master`.
-
-Steps:
-
-1. Frontend unit tests (`npm --prefix frontend run test -- --run`)
-2. Start Redmine via Docker Compose
-3. Migrate DB and load default data
-4. Seed E2E data (`e2e/setup_redmine.rb`)
-5. Run Playwright smoke tests
-
----
-
-## Common Pitfalls
-
-- **Always run `pnpm run build` after editing frontend code** and restart Redmine before verifying changes in the browser.
-- **`User#name` requires full attributes** — avoid `.select(:id, :firstname, :lastname)` on User queries; load the full object instead (see known bug with `ActiveModel::MissingAttributeError`).
-- **pnpm is preferred** but `npm` also works (both `package-lock.json` and `pnpm-lock.yaml` are committed).
+* Before editing, read the relevant files and existing tests, and preserve the user's uncommitted changes.
+* Keep changes within the requested scope. Obtain confirmation before making broad refactors, dependency upgrades, DB migrations, API-breaking changes, changes involving secrets, or deploy/network operations.
+* Whenever frontend source is changed, always build it and update the tracked `assets/`. Never manually edit generated artifacts only.
+* When behavior changes, add or update focused tests at the same layer. Snapshot/mutation contract changes must be validated on both the backend and frontend.
+* After making changes, inspect `git diff` to ensure that unintended lockfile changes, generated artifacts, or user changes have not been mixed in.
+* In the final report, briefly list changed files, key decisions, validations performed, and validations not performed.
 
 <!-- headroom:rtk-instructions -->
+
 # RTK (Rust Token Killer) - Token-Optimized Commands
 
 When running shell commands, **always prefix with `rtk`**. This reduces context
@@ -277,7 +241,8 @@ rtk pip list            rtk pnpm install        rtk npm run <script>
 
 ## Rules
 
-- In command chains, prefix each segment: `rtk git add . && rtk git commit -m "msg"`
-- For debugging, use raw command without rtk prefix
-- `rtk proxy <cmd>` runs command without filtering but tracks usage
+* In command chains, prefix each segment: `rtk git add . && rtk git commit -m "msg"`
+* For debugging, use raw command without rtk prefix
+* `rtk proxy <cmd>` runs command without filtering but tracks usage
+
 <!-- /headroom:rtk-instructions -->
