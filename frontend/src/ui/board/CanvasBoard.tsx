@@ -38,6 +38,7 @@ type RectMap = {
   cells: Map<string, Rect>;
   addButtons: Map<string, Rect>;
   deleteButtons: Map<number, Rect>;
+  workTimerButtons: Map<number, Rect>;
 
   subtaskRows: Map<string, Rect>; // key: "issueId:subtaskId"
   subtaskChecks: Map<string, Rect>; // key: "issueId:subtaskId"
@@ -113,6 +114,8 @@ type Props = {
   onView: (issueId: number) => void;
   onDelete: (issueId: number) => void;
   onEditClick: (editUrl: string) => void;
+  onWorkTimer?: (issueId: number) => void;
+  timerSession?: { issueId: number | string; state: 'running' | 'expired' | 'stopped_pending_record' } | null;
   onSubtaskToggle?: (subtaskId: number, currentClosed: boolean) => void;
   onPriorityClick?: (issueId: number, currentPriorityId: number, x: number, y: number) => void;
   onDateClick?: (issueId: number, currentDate: string | null, x: number, y: number) => void;
@@ -138,6 +141,8 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   onView,
   onDelete,
   onEditClick,
+  onWorkTimer,
+  timerSession,
   onSubtaskToggle,
   onPriorityClick,
   onDateClick,
@@ -158,6 +163,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     cells: new Map(),
     addButtons: new Map(),
     deleteButtons: new Map(),
+    workTimerButtons: new Map(),
 
     subtaskRows: new Map(),
     subtaskChecks: new Map(),
@@ -422,6 +428,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       cells: new Map(),
       addButtons: new Map(),
       deleteButtons: new Map(),
+      workTimerButtons: new Map(),
 
       subtaskRows: new Map(),
       subtaskChecks: new Map(),
@@ -461,7 +468,8 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       metrics,
       fontSize,
       cardHeightCacheRef.current,
-      busyIssueIds
+      busyIssueIds,
+      timerSession,
     );
 
     if (laneType !== 'none') {
@@ -542,6 +550,13 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         const issue = state.cardsById.get(hit.issueId);
         if (!canEditIssue(issue)) return;
         onEdit(hit.issueId);
+        return;
+      }
+      case 'work_timer': {
+        if (isBusy(hit.issueId)) return;
+        const issue = state.cardsById.get(hit.issueId);
+        if (!issue?.can_log_time || !onWorkTimer) return;
+        onWorkTimer(hit.issueId);
         return;
       }
       case 'add':
@@ -1135,7 +1150,8 @@ function drawCells(
   metrics: ReturnType<typeof getMetrics>,
   fontSize: number,
   cardHeightCache: CardHeightCache,
-  busyIssueIds?: Set<number>
+  busyIssueIds?: Set<number>,
+  timerSession?: { issueId: number | string; state: 'running' | 'expired' | 'stopped_pending_record' } | null,
 ) {
   const columns = state.columnOrder;
 
@@ -1247,7 +1263,7 @@ function drawCells(
 
           const isUpdating = busyIssueIds?.has(issue.id) ?? false;
           rectMap.cards.set(issue.id, cardRect);
-        drawCard(ctx, cardRect, issue, data, trackerCatalog, theme, canMove, labels, metrics, fontSize, rectMap, hover, isUpdating, hoveredCardIssueId, hoveredSubtaskKey);
+        drawCard(ctx, cardRect, issue, data, trackerCatalog, theme, canMove, labels, metrics, fontSize, rectMap, hover, isUpdating, hoveredCardIssueId, hoveredSubtaskKey, timerSession);
       }
     });
   });
@@ -1270,7 +1286,8 @@ function drawCard(
   hover?: { kind: 'card_subject' | 'subtask_subject'; id: string } | null,
   isUpdating?: boolean,
   hoveredCardIssueId?: number | null,
-  hoveredSubtaskKey?: string | null
+  hoveredSubtaskKey?: string | null,
+  timerSession?: { issueId: number | string; state: 'running' | 'expired' | 'stopped_pending_record' } | null,
 ) {
   const column = data.columns.find((c) => c.id === issue.status_id);
   const isClosed = !!column?.is_closed;
@@ -1774,7 +1791,8 @@ function drawCard(
     let buttonRightX = x + w - 4;
     const canEditCard = canEditIssue(issue);
     const canDeleteCard = canDeleteIssue(issue);
-    const actionButtonCount = Number(canEditCard) + Number(canDeleteCard);
+    const canLogTime = issue.can_log_time === true;
+    const actionButtonCount = Number(canLogTime) + Number(canEditCard) + Number(canDeleteCard);
 
     if (isActionIconsVisible && actionButtonCount > 0) {
       const overlayPadX = 3;
@@ -1819,7 +1837,17 @@ function drawCard(
       rectMap.editButtons.set(issue.id, editRect);
       ctx.fillStyle = theme.textSecondary;
       ctx.fillText('edit', editRect.x, editRect.y + editRect.height / 2);
+      buttonRightX -= actionIconSize;
+    }
 
+    if ((isActionIconsVisible || String(timerSession?.issueId) === String(issue.id)) && canLogTime) {
+      const timerRect = { x: buttonRightX - actionIconSize, y: y + 4, width: actionIconSize, height: actionIconSize };
+      rectMap.workTimerButtons.set(issue.id, timerRect);
+      ctx.fillStyle = timerSession?.state === 'expired' && String(timerSession.issueId) === String(issue.id) ? theme.danger : theme.primary;
+      const icon = String(timerSession?.issueId) === String(issue.id)
+        ? timerSession?.state === 'stopped_pending_record' ? 'pending_actions' : timerSession?.state === 'expired' ? 'timer_off' : 'timer'
+        : 'play_arrow';
+      ctx.fillText(icon, timerRect.x, timerRect.y + timerRect.height / 2);
     }
   }
   ctx.restore();
@@ -1925,6 +1953,9 @@ function hitTest(
   state: BoardState,
   data: BoardData
 ): HitResult {
+  for (const [issueId, rect] of rectMap.workTimerButtons) {
+    if (pointInRect(point, rect)) return { kind: 'work_timer', issueId };
+  }
   for (const [key, rect] of rectMap.subtaskEditButtons) {
     if (pointInRect(point, rect)) {
       const { issueId, subtaskId } = parseSubtaskKey(key);

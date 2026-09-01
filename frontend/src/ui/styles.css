@@ -66,6 +66,13 @@
   background-color: var(--rk-bg-main);
 }
 
+.rk-work-timer { position: fixed; right: 16px; bottom: 16px; z-index: 20; display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; box-shadow: 0 8px 24px rgba(15, 23, 42, .18); font-size: 12px; }
+.rk-work-timer button { border: 1px solid #94a3b8; border-radius: 4px; background: #fff; cursor: pointer; padding: 3px 6px; }
+.rk-work-timer-modal { width: min(420px, 92vw); display: grid; gap: 14px; padding: 20px; border-radius: 8px; background: #fff; box-shadow: 0 10px 30px rgba(15, 23, 42, .25); }
+.rk-work-timer-modal h2, .rk-work-timer-modal p { margin: 0; }
+.rk-work-timer-modal label { display: flex; gap: 6px; align-items: center; }
+.rk-work-timer-modal div { display: flex; justify-content: flex-end; gap: 8px; }
+
 .rk-popup-host {
   position: fixed;
   top: 16px;
