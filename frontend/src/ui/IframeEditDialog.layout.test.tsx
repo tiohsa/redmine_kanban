@@ -642,6 +642,58 @@ describe('IframeEditDialog layout variants', () => {
     expect(screen.queryByText('子チケット一括登録 (1行に1件名)')).toBeNull();
   });
 
+  it('does not mark a submitting time entry as unknown when callback props change', async () => {
+    const onTimeEntrySubmitting = vi.fn().mockResolvedValue(true);
+    const onTimeEntryUnknown = vi.fn();
+    const { container, rerender } = render(
+      <IframeEditDialog
+        url="/issues/1/time_entries/new"
+        issueId={1}
+        mode="time_entry"
+        labels={labels}
+        baseUrl="/projects/demo/kanban"
+        queryKey={['kanban', 'board']}
+        onClose={() => {}}
+        onSuccess={() => {}}
+        onTimeEntrySubmitting={onTimeEntrySubmitting}
+        onTimeEntryUnknown={onTimeEntryUnknown}
+      />,
+    );
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    const doc = document.implementation.createHTMLDocument('iframe');
+    doc.body.innerHTML = '<form id="new_time_entry"><button type="submit">Save</button></form>';
+    const iframeWindow = {
+      location: { href: 'http://example.com/issues/1/time_entries/new' },
+      document: doc,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    Object.defineProperty(iframe, 'contentWindow', { value: iframeWindow, configurable: true });
+    Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+    fireEvent.load(iframe);
+    await screen.findByRole('button', { name: labels.save });
+
+    fireEvent.click(screen.getByRole('button', { name: labels.save }));
+    await waitFor(() => expect(onTimeEntrySubmitting).toHaveBeenCalledOnce());
+
+    rerender(
+      <IframeEditDialog
+        url="/issues/1/time_entries/new"
+        issueId={1}
+        mode="time_entry"
+        labels={labels}
+        baseUrl="/projects/demo/kanban"
+        queryKey={['kanban', 'board']}
+        onClose={() => {}}
+        onSuccess={() => {}}
+        onTimeEntrySubmitting={onTimeEntrySubmitting}
+        onTimeEntryUnknown={vi.fn()}
+      />,
+    );
+
+    expect(onTimeEntryUnknown).not.toHaveBeenCalled();
+  });
+
   it('shrinks dialog height for short iframe content', async () => {
     const { container } = render(
       <IframeEditDialog

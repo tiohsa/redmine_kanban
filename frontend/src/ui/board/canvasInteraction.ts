@@ -10,6 +10,7 @@ export type HitResult =
   | { kind: 'subtask_row'; issueId: number; subtaskId: number }
   | { kind: 'subtask_edit'; issueId: number; subtaskId: number }
   | { kind: 'subtask_delete'; issueId: number; subtaskId: number }
+  | { kind: 'subtask_work_timer'; issueId: number; subtaskId: number }
   | { kind: 'subtask_area'; issueId: number }
   | { kind: 'card_subject'; issueId: number }
   | { kind: 'edit'; issueId: number }
@@ -100,6 +101,7 @@ export function getHoverSnapshot(hit: HitResult): HoverSnapshot {
     case 'subtask_check':
     case 'subtask_edit':
     case 'subtask_delete':
+    case 'subtask_work_timer':
       hoveredSubtaskKey = `${hit.issueId}:${hit.subtaskId}`;
       break;
     default:

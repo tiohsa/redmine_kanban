@@ -28,6 +28,10 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
   )
 
   FakePolicy = Struct.new(:allowed) do
+    def can_log_time?(_project)
+      allowed
+    end
+
     def can_move_issue?(_issue_project, _board_project = _issue_project)
       allowed
     end
@@ -108,6 +112,12 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
     assert_equal 7, payload[:tracker_id]
   end
 
+  def test_subtask_payload_includes_time_entry_permission
+    child = fake_issue(id: 2, parent_id: 1, subject: 'Time entry child')
+
+    assert presenter_for(1 => [child]).send(:subtask_to_h, child)[:can_log_time]
+  end
+
   def test_permissions_use_board_project_for_cards_and_subtasks
     board_project = Object.new
     issue_project = FakeProject.new(2, 'Issue project')
@@ -119,6 +129,7 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
       calls << [:move, actual_issue_project, actual_board_project]
       true
     end
+    policy.define_singleton_method(:can_log_time?) { |_project| true }
     policy.define_singleton_method(:can_update_issue?) do |actual_issue_project, actual_board_project|
       calls << [:update, actual_issue_project, actual_board_project]
       true

@@ -402,7 +402,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
             onView={dialogs.openView}
             onDelete={actions.requestDelete}
             onEditClick={dialogs.openIssueUrl}
-            timerSession={workTimer.session ? { issueId: workTimer.session.issueId, state: workTimer.session.state } : null}
+            timerSession={workTimer.session ? { sessionId: workTimer.session.sessionId, issueId: workTimer.session.issueId, state: workTimer.session.state } : null}
             onWorkTimer={(issueId) => {
               if (!data) return;
               const issue = findIssueForAction(data, issueId);
@@ -431,8 +431,8 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
         ) : null}
       </div>
 
-      <GlobalTimer labels={toolbarData.labels} session={workTimer.session} onExtend={(minutes) => { void workTimer.extendTimer(minutes); }} onStop={() => { void workTimer.stopTimer().then((context) => { if (context) setWorkTimeEntry(context); }); }} onRecord={() => { void workTimer.record().then((context) => { if (context) setWorkTimeEntry(context); }); }} />
-      <TimerStartModal labels={toolbarData.labels} startIssue={workTimer.startIssue} onCloseStart={() => workTimer.setStartIssue(null)} onStart={(minutes, autoStop) => { void workTimer.start(minutes, autoStop); }} />
+      <GlobalTimer labels={toolbarData.labels} session={workTimer.session} onExtend={(minutes) => { void workTimer.extendTimer(minutes); }} onStop={() => { void workTimer.stopTimer().then((context) => { if (context) setWorkTimeEntry(context); }); }} onRecord={() => { void workTimer.record().then((context) => { if (context) setWorkTimeEntry(context); }); }} onResolveUnknown={(resolution) => { const attempt = workTimer.session?.recordingAttempt; if (attempt && workTimer.session) void workTimer.lifecycle.resolve({ origin: 'timer', sessionId: workTimer.session.sessionId, issueId: workTimer.session.issueId, attemptId: attempt.id }, resolution); }} />
+      <TimerStartModal labels={toolbarData.labels} startIssue={workTimer.startIssue} autoStop={workTimer.preferences.autoStop} onCloseStart={() => workTimer.setStartIssue(null)} onStart={(minutes, autoStop) => { void workTimer.start(minutes, autoStop); }} />
 
       {data && dialogs.modal ? (
         <KanbanIssueModal
@@ -573,18 +573,18 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
 
       {workTimeEntry && data ? (
         <IframeEditDialog
-          url={`/issues/${workTimeEntry.issueId}/time_entries/new?time_entry[hours]=${encodeURIComponent(workTimeEntry.hours)}`}
+          url={`${timerInstanceKey}/issues/${workTimeEntry.issueId}/time_entries/new?time_entry[hours]=${encodeURIComponent(workTimeEntry.hours)}`}
           issueId={Number(workTimeEntry.issueId)}
           mode="time_entry"
           labels={data.labels}
           baseUrl={baseUrl}
           queryKey={boardQueryKey}
-          onClose={() => { void workTimer.lifecycle.cancel(workTimeEntry); setWorkTimeEntry(null); }}
+          onClose={() => { void workTimer.lifecycle.close(workTimeEntry); setWorkTimeEntry(null); }}
           onSuccess={(message) => { setNotice(message); setWorkTimeEntry(null); }}
-          onTimeEntrySubmitting={() => { void workTimer.lifecycle.submitting(workTimeEntry); }}
-          onTimeEntryValidationError={() => { void workTimer.lifecycle.validationError(workTimeEntry); }}
-          onTimeEntryUnknown={() => { void workTimer.lifecycle.unknown(workTimeEntry); }}
-          onTimeEntrySuccess={() => { void workTimer.lifecycle.complete(workTimeEntry); }}
+          onTimeEntrySubmitting={() => workTimer.lifecycle.submitting(workTimeEntry)}
+          onTimeEntryValidationError={() => workTimer.lifecycle.validationError(workTimeEntry)}
+          onTimeEntryUnknown={() => workTimer.lifecycle.unknown(workTimeEntry)}
+          onTimeEntrySuccess={() => workTimer.lifecycle.complete(workTimeEntry)}
         />
       ) : null}
 
