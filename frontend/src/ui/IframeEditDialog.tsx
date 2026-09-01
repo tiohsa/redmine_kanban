@@ -85,10 +85,10 @@ type Props = {
   onClose: () => void;
   onSuccess: (message: string, issueId?: number) => void;
   onNativeWriteComplete?: () => void;
-  onTimeEntrySubmitting?: () => void;
-  onTimeEntryValidationError?: () => void;
-  onTimeEntryUnknown?: () => void;
-  onTimeEntrySuccess?: () => void;
+  onTimeEntrySubmitting?: () => Promise<boolean> | boolean;
+  onTimeEntryValidationError?: () => Promise<boolean> | boolean;
+  onTimeEntryUnknown?: () => Promise<boolean> | boolean;
+  onTimeEntrySuccess?: () => Promise<boolean> | boolean;
 };
 
 export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = 'edit', labels, baseUrl, queryKey, projectIds = [], scopeStatusIds = [], dependencyStatusIds = scopeStatusIds, boardEntityLimit = 1500, onClose, onSuccess, onNativeWriteComplete, onTimeEntrySubmitting, onTimeEntryValidationError, onTimeEntryUnknown, onTimeEntrySuccess }: Props) {
@@ -125,6 +125,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
   const dialogResizeCleanupRef = useRef<(() => void) | null>(null);
   const parentAttributesRef = useRef<Record<string, number | undefined>>({});
   const parentTrackerChangeCleanupRef = useRef<(() => void) | null>(null);
+  const onTimeEntryUnknownRef = useRef(onTimeEntryUnknown);
 
   const bulkMutation = useBulkSubtaskMutation(baseUrl, queryKey, projectIds, scopeStatusIds, dependencyStatusIds, boardEntityLimit, true);
   const hasSubtaskInput = useMemo(
@@ -151,6 +152,14 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
   useEffect(() => {
     isSubmittingRef.current = isSubmitting;
   }, [isSubmitting]);
+
+  useEffect(() => {
+    onTimeEntryUnknownRef.current = onTimeEntryUnknown;
+  }, [onTimeEntryUnknown]);
+
+  useEffect(() => () => {
+    if (mode === 'time_entry' && isSubmittingRef.current && saveTargetRef.current === 'time_entry') void onTimeEntryUnknownRef.current?.();
+  }, [mode]);
 
   const measureDialogHeight = useCallback(() => {
     const doc = iframeRef.current?.contentDocument;
@@ -210,8 +219,9 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
       setSaveTarget(null);
       saveTargetRef.current = null;
       setDialogMode('form');
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
-      onTimeEntrySuccess?.();
+      await onTimeEntrySuccess?.();
       onSuccess(labels.successful_update, targetIssueId);
       return;
     }
@@ -268,7 +278,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
     onNativeWriteComplete?.();
   }, [bulkMutation, labels, mode, onNativeWriteComplete, onSuccess, onTimeEntrySuccess, subtasks]);
 
-  const submitIssueForm = useCallback((form: HTMLFormElement, target: SaveTarget) => {
+  const submitIssueForm = useCallback(async (form: HTMLFormElement, target: SaveTarget) => {
     const formData = new FormData(form);
     const getVal = (name: string) => readNumericFormValue(formData, form, name);
 
@@ -280,6 +290,10 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
       assigned_to_id: getVal('issue[assigned_to_id]'),
     };
 
+    if (target === 'time_entry' && onTimeEntrySubmitting && !await onTimeEntrySubmitting()) {
+      setIframeError(labels.timer_conflict ?? 'Unable to secure the work timer session.');
+      return;
+    }
     setDialogMode('saving');
     successHandlingRef.current = false;
     saveTransitionRef.current = false;
@@ -288,7 +302,6 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
     saveTargetRef.current = target;
     isSubmittingRef.current = true;
     setIsSubmitting(true);
-    if (target === 'time_entry') onTimeEntrySubmitting?.();
     if (iframeRef.current?.contentWindow) {
       iframeRef.current.contentWindow.onbeforeunload = null;
       try {
@@ -301,7 +314,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
       }
     }
     submitForm(form);
-  }, [onTimeEntrySubmitting, projectId]);
+  }, [labels.timer_conflict, onTimeEntrySubmitting, projectId]);
 
   useEffect(() => {
     handleSuccessRef.current = (targetIssueId: number) => {
@@ -345,7 +358,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
         setSaveTarget(activeSaveForm?.target ?? null);
         if (activeSaveForm?.target === 'issue' && submitSubtasksAfterEditLoadRef.current) {
           submitSubtasksAfterEditLoadRef.current = false;
-          submitIssueForm(activeSaveForm.form, activeSaveForm.target);
+          void submitIssueForm(activeSaveForm.form, activeSaveForm.target);
         } else if (activeSaveForm?.target === 'journal') {
           setDialogMode('form');
         } else if (isIssueShowUrl(nextCurrentUrl)) {
@@ -383,7 +396,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
           fallbackIssueId: issueId,
         });
         if (outcome.type === 'error') {
-          if (saveTargetRef.current === 'time_entry' || mode === 'time_entry') onTimeEntryValidationError?.();
+          if (saveTargetRef.current === 'time_entry' || mode === 'time_entry') void onTimeEntryValidationError?.();
           setDialogMode('error');
           setIsSubmitting(false);
           setSaveTarget(null);
@@ -404,7 +417,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
       console.warn('Cannot access iframe content:', err);
       setIframeError(null);
       if (isSubmittingRef.current) {
-        if (saveTargetRef.current === 'time_entry' || mode === 'time_entry') onTimeEntryUnknown?.();
+        if (saveTargetRef.current === 'time_entry' || mode === 'time_entry') void onTimeEntryUnknown?.();
         setIsSubmitting(false);
       }
     } finally {
@@ -479,7 +492,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
 
     const { form, target } = activeSaveForm;
 
-    submitIssueForm(form, target);
+    void submitIssueForm(form, target);
   };
 
   const effectiveSaveTarget = saveTargetRef.current ?? saveTarget;

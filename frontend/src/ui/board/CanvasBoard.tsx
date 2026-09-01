@@ -45,6 +45,7 @@ type RectMap = {
   subtaskSubjects: Map<string, Rect>; // key: "issueId:subtaskId"
   subtaskEditButtons: Map<string, Rect>; // key: "issueId:subtaskId"
   subtaskDeleteButtons: Map<string, Rect>; // key: "issueId:subtaskId"
+  subtaskWorkTimerButtons: Map<string, Rect>; // key: "issueId:subtaskId"
   subtaskAreas: Map<number, Rect>; // key: issueId - entire subtask area for hit exclusion
   cardSubjects: Map<number, Rect>; // key: issueId
   editButtons: Map<number, Rect>;
@@ -115,7 +116,7 @@ type Props = {
   onDelete: (issueId: number) => void;
   onEditClick: (editUrl: string) => void;
   onWorkTimer?: (issueId: number) => void;
-  timerSession?: { issueId: number | string; state: 'running' | 'expired' | 'stopped_pending_record' } | null;
+  timerSession?: { sessionId?: string; issueId: number | string; state: 'running' | 'expired' | 'stopped_pending_record' } | null;
   onSubtaskToggle?: (subtaskId: number, currentClosed: boolean) => void;
   onPriorityClick?: (issueId: number, currentPriorityId: number, x: number, y: number) => void;
   onDateClick?: (issueId: number, currentDate: string | null, x: number, y: number) => void;
@@ -170,6 +171,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     subtaskSubjects: new Map(),
     subtaskEditButtons: new Map(),
     subtaskDeleteButtons: new Map(),
+    subtaskWorkTimerButtons: new Map(),
     subtaskAreas: new Map(),
     cardSubjects: new Map(),
     editButtons: new Map(),
@@ -300,7 +302,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   }, []);
   useEffect(() => {
     scheduleRender();
-  }, [size, state, data.meta, trackerCatalog, canCreate, canMove, theme, fontSize, defaultCreateStatusId, scheduleRender]);
+  }, [size, state, data.meta, trackerCatalog, canCreate, canMove, theme, fontSize, defaultCreateStatusId, timerSession?.sessionId, timerSession?.issueId, timerSession?.state, scheduleRender]);
 
   useEffect(() => {
     const onViewportChange = () => {
@@ -435,6 +437,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       subtaskSubjects: new Map(),
       subtaskEditButtons: new Map(),
       subtaskDeleteButtons: new Map(),
+      subtaskWorkTimerButtons: new Map(),
       subtaskAreas: new Map(),
       cardSubjects: new Map(),
       editButtons: new Map(),
@@ -539,6 +542,14 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         const issue = state.cardsById.get(hit.issueId);
         if (!subtaskPermissions(issue, hit.subtaskId)?.can_delete) return;
         onDelete(hit.subtaskId);
+        return;
+      }
+      case 'subtask_work_timer': {
+        if (isBusy(hit.subtaskId)) return;
+        const issue = state.cardsById.get(hit.issueId);
+        const subtask = findSubtaskInTree(issue?.subtasks, hit.subtaskId);
+        if (!subtask?.can_log_time || !onWorkTimer) return;
+        onWorkTimer(hit.subtaskId);
         return;
       }
       case 'card_subject':
@@ -1151,7 +1162,7 @@ function drawCells(
   fontSize: number,
   cardHeightCache: CardHeightCache,
   busyIssueIds?: Set<number>,
-  timerSession?: { issueId: number | string; state: 'running' | 'expired' | 'stopped_pending_record' } | null,
+  timerSession?: { sessionId?: string; issueId: number | string; state: 'running' | 'expired' | 'stopped_pending_record' } | null,
 ) {
   const columns = state.columnOrder;
 
@@ -1287,7 +1298,7 @@ function drawCard(
   isUpdating?: boolean,
   hoveredCardIssueId?: number | null,
   hoveredSubtaskKey?: string | null,
-  timerSession?: { issueId: number | string; state: 'running' | 'expired' | 'stopped_pending_record' } | null,
+  timerSession?: { sessionId?: string; issueId: number | string; state: 'running' | 'expired' | 'stopped_pending_record' } | null,
 ) {
   const column = data.columns.find((c) => c.id === issue.status_id);
   const isClosed = !!column?.is_closed;
@@ -1731,9 +1742,10 @@ function drawCard(
       const isSubtaskActionVisible = hoveredSubtaskKey === subtaskKey;
       if (isSubtaskActionVisible && rectMap) {
         const actionIconSize = 20;
+        const canLogTimeSubtask = subtask.can_log_time === true;
         const canEditSubtask = !!subtask.permissions?.can_edit;
         const canDeleteSubtask = !!subtask.permissions?.can_delete;
-        const actionCount = Number(canEditSubtask) + Number(canDeleteSubtask);
+        const actionCount = Number(canLogTimeSubtask) + Number(canEditSubtask) + Number(canDeleteSubtask);
         if (actionCount === 0) return;
         let subtaskButtonRightX = x + w - 6;
         const overlayPadX = 3;
@@ -1775,6 +1787,20 @@ function drawCard(
           rectMap.subtaskEditButtons.set(subtaskKey, subtaskEditRect);
           ctx.fillStyle = theme.textSecondary;
           ctx.fillText('edit', subtaskEditRect.x, subtaskEditRect.y + subtaskEditRect.height / 2);
+          subtaskButtonRightX -= actionIconSize;
+        }
+
+        if (canLogTimeSubtask) {
+          const subtaskTimerRect = {
+            x: subtaskButtonRightX - actionIconSize,
+            y: sy - 2,
+            width: actionIconSize,
+            height: actionIconSize,
+          };
+          rectMap.subtaskWorkTimerButtons.set(subtaskKey, subtaskTimerRect);
+          const isSubtaskTimer = String(timerSession?.issueId) === String(subtask.id);
+          ctx.fillStyle = isSubtaskTimer && timerSession?.state === 'expired' ? theme.danger : theme.primary;
+          ctx.fillText(isSubtaskTimer ? (timerSession?.state === 'stopped_pending_record' ? 'pending_actions' : 'timer') : 'play_arrow', subtaskTimerRect.x, subtaskTimerRect.y + subtaskTimerRect.height / 2);
         }
         ctx.restore();
       }
@@ -1841,7 +1867,7 @@ function drawCard(
     }
 
     if ((isActionIconsVisible || String(timerSession?.issueId) === String(issue.id)) && canLogTime) {
-      const timerRect = { x: buttonRightX - actionIconSize, y: y + 4, width: actionIconSize, height: actionIconSize };
+      const timerRect = { x: x + w - 4 - actionIconSize * 3, y: y + 4, width: actionIconSize, height: actionIconSize };
       rectMap.workTimerButtons.set(issue.id, timerRect);
       ctx.fillStyle = timerSession?.state === 'expired' && String(timerSession.issueId) === String(issue.id) ? theme.danger : theme.primary;
       const icon = String(timerSession?.issueId) === String(issue.id)
@@ -1955,6 +1981,12 @@ function hitTest(
 ): HitResult {
   for (const [issueId, rect] of rectMap.workTimerButtons) {
     if (pointInRect(point, rect)) return { kind: 'work_timer', issueId };
+  }
+  for (const [key, rect] of rectMap.subtaskWorkTimerButtons) {
+    if (pointInRect(point, rect)) {
+      const { issueId, subtaskId } = parseSubtaskKey(key);
+      return { kind: 'subtask_work_timer', issueId, subtaskId };
+    }
   }
   for (const [key, rect] of rectMap.subtaskEditButtons) {
     if (pointInRect(point, rect)) {

@@ -16,6 +16,7 @@ export type Subtask = {
   id: number;
   subject: string;
   status_id: number;
+  can_log_time?: boolean;
   status_is_closed?: boolean;
   tracker_id?: number | null;
   description?: string;

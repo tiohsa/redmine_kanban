@@ -111,6 +111,7 @@ module RedmineKanban
         id: issue.id,
         subject: issue.subject,
         status_id: issue.status_id,
+        can_log_time: permission_policy.can_log_time?(issue.project),
         status_is_closed: issue.status.is_closed?,
         tracker_id: issue.tracker_id,
         description: issue.respond_to?(:description) ? issue.description : '',

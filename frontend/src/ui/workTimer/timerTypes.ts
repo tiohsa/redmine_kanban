@@ -7,3 +7,4 @@ export type TimerSegment = { startedAt: number; stoppedAt?: number };
 export type TimerRecordingAttempt = { id: string; ownerTabId: string; openedAt: number; phase: TimerRecordingPhase };
 export type TimerSession = { version: number; sessionId: string; revision: number; issueId: number | string; subject: string; autoStop: boolean; deadlineAt?: number; segments: TimerSegment[]; state: TimerState; notifiedDeadlineAt?: number; notifiedType?: 'running_expired' | 'stopped'; recordingAttempt?: TimerRecordingAttempt; userId?: number; createdAt: number; updatedAt: number };
 export type TimerRecordingContext = { origin: 'timer'; sessionId: string; issueId: number | string; attemptId: string };
+export type TimerPreferences = { autoStop: boolean };
