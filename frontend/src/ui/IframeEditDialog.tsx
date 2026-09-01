@@ -85,9 +85,13 @@ type Props = {
   onClose: () => void;
   onSuccess: (message: string, issueId?: number) => void;
   onNativeWriteComplete?: () => void;
+  onTimeEntrySubmitting?: () => void;
+  onTimeEntryValidationError?: () => void;
+  onTimeEntryUnknown?: () => void;
+  onTimeEntrySuccess?: () => void;
 };
 
-export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = 'edit', labels, baseUrl, queryKey, projectIds = [], scopeStatusIds = [], dependencyStatusIds = scopeStatusIds, boardEntityLimit = 1500, onClose, onSuccess, onNativeWriteComplete }: Props) {
+export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = 'edit', labels, baseUrl, queryKey, projectIds = [], scopeStatusIds = [], dependencyStatusIds = scopeStatusIds, boardEntityLimit = 1500, onClose, onSuccess, onNativeWriteComplete, onTimeEntrySubmitting, onTimeEntryValidationError, onTimeEntryUnknown, onTimeEntrySuccess }: Props) {
   const [subtasks, setSubtasks] = useState<SubtaskCreateInput[]>([]);
   const [subtaskValidationError, setSubtaskValidationError] = useState<string | null>(null);
   const [trackerOptions, setTrackerOptions] = useState<Array<{ id: number; name: string }>>([]);
@@ -207,8 +211,8 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
       saveTargetRef.current = null;
       setDialogMode('form');
       setIsSubmitting(false);
+      onTimeEntrySuccess?.();
       onSuccess(labels.successful_update, targetIssueId);
-      onClose();
       return;
     }
 
@@ -262,7 +266,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
     saveTargetRef.current = null;
     setIsSubmitting(false);
     onNativeWriteComplete?.();
-  }, [bulkMutation, labels, mode, onClose, onNativeWriteComplete, onSuccess, subtasks]);
+  }, [bulkMutation, labels, mode, onNativeWriteComplete, onSuccess, onTimeEntrySuccess, subtasks]);
 
   const submitIssueForm = useCallback((form: HTMLFormElement, target: SaveTarget) => {
     const formData = new FormData(form);
@@ -284,6 +288,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
     saveTargetRef.current = target;
     isSubmittingRef.current = true;
     setIsSubmitting(true);
+    if (target === 'time_entry') onTimeEntrySubmitting?.();
     if (iframeRef.current?.contentWindow) {
       iframeRef.current.contentWindow.onbeforeunload = null;
       try {
@@ -296,7 +301,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
       }
     }
     submitForm(form);
-  }, [projectId]);
+  }, [onTimeEntrySubmitting, projectId]);
 
   useEffect(() => {
     handleSuccessRef.current = (targetIssueId: number) => {
@@ -378,6 +383,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
           fallbackIssueId: issueId,
         });
         if (outcome.type === 'error') {
+          if (saveTargetRef.current === 'time_entry' || mode === 'time_entry') onTimeEntryValidationError?.();
           setDialogMode('error');
           setIsSubmitting(false);
           setSaveTarget(null);
@@ -398,6 +404,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
       console.warn('Cannot access iframe content:', err);
       setIframeError(null);
       if (isSubmittingRef.current) {
+        if (saveTargetRef.current === 'time_entry' || mode === 'time_entry') onTimeEntryUnknown?.();
         setIsSubmitting(false);
       }
     } finally {
@@ -406,7 +413,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
         measureDialogHeight();
       });
     }
-  }, [bindIframeSizeObservers, handleSuccess, issueId, measureDialogHeight, mode, onClose, submitIssueForm, url]);
+  }, [bindIframeSizeObservers, handleSuccess, issueId, measureDialogHeight, mode, onClose, onTimeEntryUnknown, onTimeEntryValidationError, submitIssueForm, url]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

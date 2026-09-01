@@ -13,6 +13,7 @@ export type HitResult =
   | { kind: 'subtask_area'; issueId: number }
   | { kind: 'card_subject'; issueId: number }
   | { kind: 'edit'; issueId: number }
+  | { kind: 'work_timer'; issueId: number }
   | { kind: 'cell'; statusId: number; laneId: string | number }
   | { kind: 'visibility'; statusId: number }
   | { kind: 'priority'; issueId: number }
@@ -87,6 +88,7 @@ export function getHoverSnapshot(hit: HitResult): HoverSnapshot {
     case 'card':
     case 'card_subject':
     case 'edit':
+    case 'work_timer':
     case 'delete':
     case 'priority':
     case 'date':
