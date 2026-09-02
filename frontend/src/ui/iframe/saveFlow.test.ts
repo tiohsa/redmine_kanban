@@ -34,4 +34,24 @@ describe('resolveSaveLoadOutcome', () => {
       fallbackIssueId: 42,
     })).toEqual({ type: 'error' });
   });
+
+  it('completes a time entry when Redmine returns the new form with a success notice', () => {
+    expect(resolveSaveLoadOutcome({
+      doc: doc('<div id="flash_notice">Created</div><form id="new_time_entry"></form>'),
+      currentUrl: '/issues/12/time_entries/new',
+      saveTarget: 'time_entry',
+      mode: 'time_entry',
+      fallbackIssueId: 12,
+    })).toEqual({ type: 'success', issueId: 12 });
+  });
+
+  it('keeps a time entry submit pending when the new form has no success notice', () => {
+    expect(resolveSaveLoadOutcome({
+      doc: doc('<form id="new_time_entry"></form>'),
+      currentUrl: '/issues/12/time_entries/new',
+      saveTarget: 'time_entry',
+      mode: 'time_entry',
+      fallbackIssueId: 12,
+    })).toEqual({ type: 'release-submit-lock' });
+  });
 });

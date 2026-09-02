@@ -18,6 +18,13 @@ describe('work timer domain', () => {
     expect(extend(stopped, 10, 100_000).segments).toEqual([{ startedAt: 1_000, stoppedAt: 61_000 }, { startedAt: 100_000 }]);
   });
 
+  it('makes stop idempotent so only one tab can claim the pending transition', () => {
+    const started = createTimerSession(1, 'Issue', 5, false, 10, 1_000);
+    const stopped = stop(started, 61_000);
+    expect(stopped.state).toBe('stopped_pending_record');
+    expect(stop(stopped, 62_000)).toBe(stopped);
+  });
+
   it('only permits the recording state machine transitions', () => {
     const stopped = stop(createTimerSession(1, 'Issue', 5, false, 10, 1_000), 61_000);
     const editing = beginRecording(stopped, 'tab', 62_000)!;
