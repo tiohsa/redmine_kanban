@@ -55,10 +55,10 @@ describe('work timer storage', () => {
     const result = await mutate(scope, () => createTimerSession(1, 'Issue', 30, true, 7));
     expect(result).toMatchObject({ applied: false, lock: 'storage_error' });
   });
-  it('fails closed when the Web Locks API rejects', async () => {
+  it('falls back to the lease when the Web Locks API rejects', async () => {
     vi.stubGlobal('navigator', { locks: { request: vi.fn().mockRejectedValue(new Error('unavailable')) } });
     const result = await mutate(scope, () => createTimerSession(1, 'Issue', 30, true, 7));
-    expect(result).toMatchObject({ applied: false, lock: 'storage_error' });
-    expect(load(scope)).toBeNull();
+    expect(result).toMatchObject({ applied: true, lock: 'acquired' });
+    expect(load(scope)?.issueId).toBe(1);
   });
 });
