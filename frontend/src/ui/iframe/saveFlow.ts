@@ -3,6 +3,7 @@ import {
   findJournalEditForm,
   getActiveSaveForm,
   hasRedmineFormError,
+  hasRedmineSuccessNotice,
   shouldTreatEditLoadAsSuccess,
   type IframeMode,
   type SaveTarget,
@@ -37,7 +38,9 @@ export function resolveSaveLoadOutcome({
     return { type: 'success', issueId: extractIssueIdFromUrl(currentUrl) ?? fallbackIssueId };
   }
   if (saveTarget === 'time_entry') {
-    return currentUrl.includes('/time_entries/new')
+    // Redmine's "create and continue" returns to the same new-form URL.
+    // Its success flash is the only reliable indication that the POST completed.
+    return currentUrl.includes('/time_entries/new') && !hasRedmineSuccessNotice(doc)
       ? { type: 'release-submit-lock' }
       : { type: 'success', issueId: fallbackIssueId };
   }

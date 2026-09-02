@@ -740,6 +740,51 @@ describe('IframeEditDialog layout variants', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: labels.saving })).toBeTruthy());
   });
 
+  it('keeps a successful time entry locked when TimerSession cleanup fails', async () => {
+    const onTimeEntrySubmitting = vi.fn().mockResolvedValue(true);
+    const onTimeEntrySuccess = vi.fn().mockResolvedValue(false);
+    const onSuccess = vi.fn();
+    const { container } = render(
+      <IframeEditDialog
+        url="/issues/1/time_entries/new"
+        issueId={1}
+        mode="time_entry"
+        labels={labels}
+        baseUrl="/projects/demo/kanban"
+        queryKey={['kanban', 'board']}
+        onClose={() => {}}
+        onSuccess={onSuccess}
+        onTimeEntrySubmitting={onTimeEntrySubmitting}
+        onTimeEntrySuccess={onTimeEntrySuccess}
+      />,
+    );
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    const doc = document.implementation.createHTMLDocument('iframe');
+    doc.body.innerHTML = '<form id="new_time_entry"><button type="submit">Save</button></form>';
+    const iframeWindow = {
+      location: { href: 'http://example.com/issues/1/time_entries/new' },
+      document: doc,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    Object.defineProperty(iframe, 'contentWindow', { value: iframeWindow, configurable: true });
+    Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+    vi.spyOn(doc.querySelector('button') as HTMLButtonElement, 'click').mockImplementation(() => undefined);
+
+    fireEvent.load(iframe);
+    fireEvent.click(await screen.findByRole('button', { name: labels.save }));
+    await waitFor(() => expect(onTimeEntrySubmitting).toHaveBeenCalledOnce());
+
+    iframeWindow.location.href = 'http://example.com/issues/1';
+    doc.body.innerHTML = '<div id="flash_notice">Created</div>';
+    fireEvent.load(iframe);
+
+    await waitFor(() => expect(onTimeEntrySuccess).toHaveBeenCalledOnce());
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(screen.getByTestId('issue-dialog-error').textContent).toContain('Timer state synchronization failed');
+    expect((screen.getByRole('button', { name: labels.saving }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it('shrinks dialog height for short iframe content', async () => {
     const { container } = render(
       <IframeEditDialog

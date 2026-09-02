@@ -12,6 +12,7 @@ import {
   getActiveSaveForm,
   getRedmineFormErrorMessage,
   hasRedmineFormError,
+  hasRedmineSuccessNotice,
   isIssueShowUrl,
   readNumericFormValue,
   shouldTreatEditLoadAsSuccess,
@@ -38,6 +39,7 @@ export {
   findJournalEditForm,
   getActiveSaveForm,
   hasRedmineFormError,
+  hasRedmineSuccessNotice,
   isIssueShowUrl,
   shouldTreatEditLoadAsSuccess,
   submitForm,
@@ -224,12 +226,21 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
     }
 
     if (completedSaveTarget === 'time_entry' || mode === 'time_entry') {
+      try {
+        const synchronized = await onTimeEntrySuccess?.();
+        if (synchronized === false) {
+          setIframeError(labels.timer_sync_failed ?? 'Timer state synchronization failed. Retry synchronization before submitting again.');
+          return;
+        }
+      } catch {
+        setIframeError(labels.timer_sync_failed ?? 'Timer state synchronization failed. Retry synchronization before submitting again.');
+        return;
+      }
       setSaveTarget(null);
       saveTargetRef.current = null;
       setDialogMode('form');
       isSubmittingRef.current = false;
       setIsSubmitting(false);
-      await onTimeEntrySuccess?.();
       onSuccess(labels.successful_update, targetIssueId);
       return;
     }
@@ -355,6 +366,23 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
       }
 
       if (doc) {
+        // A successful Time Entry redirect must be resolved before optional
+        // iframe decoration.  Otherwise an observer/style error can turn a
+        // confirmed Redmine POST into the conservative `unknown` state.
+        if (isSubmittingRef.current) {
+          const outcome = resolveSaveLoadOutcome({
+            doc,
+            currentUrl: nextCurrentUrl,
+            saveTarget: saveTargetRef.current,
+            mode,
+            fallbackIssueId: issueId,
+          });
+          if (outcome.type === 'success') {
+            void handleSuccess(outcome.issueId);
+            return;
+          }
+        }
+
         iframeSubmitCleanupRef.current?.();
         iframeSubmitCleanupRef.current = null;
         if (mode === 'time_entry') {

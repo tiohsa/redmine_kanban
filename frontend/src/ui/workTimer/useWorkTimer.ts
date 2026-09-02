@@ -25,7 +25,27 @@ export function useWorkTimer({ scope, onError, labels }: Options) {
     return result;
   }, [change]);
   const extendTimer = useCallback(async (minutes: TimerIntervalMinutes) => (await change(current => extend(tick(current), minutes))).session, [change]);
-  const stopTimer = useCallback(async () => { const next = (await change(current => stop(tick(current)))).session; if (!next) return null; if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && next.state === 'stopped_pending_record') new Notification(labels.work_timer ?? 'Work timer', { body: `${next.subject}: ${labels.timer_pending ?? 'Work time not recorded'}` }); const recording = (await change(current => beginRecording(current, getTabId()))).session; return recording?.recordingAttempt ? { origin: 'timer' as const, sessionId: recording.sessionId, issueId: recording.issueId, attemptId: recording.recordingAttempt.id, hours: recordedHours(recording) } : null; }, [change, labels]);
+  const stopTimer = useCallback(async () => {
+    const id = session?.sessionId;
+    if (!id) return null;
+
+    let shouldNotify = false;
+    const stopped = await mutate(scope, (current) => {
+      if (!current || current.sessionId !== id || current.state === 'stopped_pending_record') return undefined;
+      const next = stop(tick(current));
+      shouldNotify = next.state === 'stopped_pending_record';
+      return next;
+    });
+    setSession(stopped.session);
+    const next = stopped.session;
+    if (!next || !stopped.applied) return null;
+    if (shouldNotify && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      new Notification(labels.work_timer ?? 'Work timer', { body: `${next.subject}: ${labels.timer_pending ?? 'Work time not recorded'}` });
+    }
+
+    const recording = (await change(current => beginRecording(current, getTabId()))).session;
+    return recording?.recordingAttempt ? { origin: 'timer' as const, sessionId: recording.sessionId, issueId: recording.issueId, attemptId: recording.recordingAttempt.id, hours: recordedHours(recording) } : null;
+  }, [change, labels, scope, session?.sessionId]);
   const record = useCallback(async () => { const next = (await change(current => beginRecording(current, getTabId()))).session; return next?.recordingAttempt ? { origin: 'timer' as const, sessionId: next.sessionId, issueId: next.issueId, attemptId: next.recordingAttempt.id, hours: recordedHours(next) } : null; }, [change]);
   const recover = useCallback(async () => {
     const current = load(scope);

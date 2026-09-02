@@ -21,6 +21,7 @@ import { useKanbanPreferences } from './useKanbanPreferences';
 import { useWorkTimer } from './workTimer/useWorkTimer';
 import { GlobalTimer, TimerStartModal } from './workTimer/WorkTimer';
 import type { TimerRecordingContext } from './workTimer/timerTypes';
+import { buildWorkTimerTimeEntryUrl } from './workTimer/timeEntryUrl';
 
 type Props = { dataUrl: string; initialCurrentUserId: number; initialLabels?: Record<string, string> };
 
@@ -573,7 +574,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
 
       {workTimeEntry && data ? (
         <IframeEditDialog
-          url={`${timerInstanceKey}/issues/${workTimeEntry.issueId}/time_entries/new?time_entry[hours]=${encodeURIComponent(workTimeEntry.hours)}`}
+          url={buildWorkTimerTimeEntryUrl(timerInstanceKey, workTimeEntry.issueId, workTimeEntry.hours)}
           issueId={Number(workTimeEntry.issueId)}
           mode="time_entry"
           labels={data.labels}
