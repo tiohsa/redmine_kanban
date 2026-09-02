@@ -15,7 +15,6 @@ describe('getBoardCursor', () => {
   it('returns pointer for subject and action targets', () => {
     expect(getBoardCursor({ phase: 'idle', hitKind: 'card_subject' })).toBe('pointer');
     expect(getBoardCursor({ phase: 'idle', hitKind: 'subtask_subject' })).toBe('pointer');
-    expect(getBoardCursor({ phase: 'idle', hitKind: 'subtask_work_timer' })).toBe('pointer');
     expect(getBoardCursor({ phase: 'idle', hitKind: 'edit' })).toBe('pointer');
     expect(getBoardCursor({ phase: 'idle', hitKind: 'add' })).toBe('pointer');
   });

@@ -694,6 +694,52 @@ describe('IframeEditDialog layout variants', () => {
     expect(onTimeEntryUnknown).not.toHaveBeenCalled();
   });
 
+  it('intercepts native submits during preparation and permits only the reserved submit', async () => {
+    let releaseReservation!: (value: boolean) => void;
+    const reservation = new Promise<boolean>((resolve) => { releaseReservation = resolve; });
+    const onTimeEntrySubmitting = vi.fn(() => reservation);
+    const { container } = render(
+      <IframeEditDialog
+        url="/issues/1/time_entries/new"
+        issueId={1}
+        mode="time_entry"
+        labels={labels}
+        baseUrl="/projects/demo/kanban"
+        queryKey={['kanban', 'board']}
+        onClose={() => {}}
+        onSuccess={() => {}}
+        onTimeEntrySubmitting={onTimeEntrySubmitting}
+      />,
+    );
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    const doc = document.implementation.createHTMLDocument('iframe');
+    doc.body.innerHTML = '<form id="new_time_entry"><button type="submit">Save</button></form>';
+    const iframeWindow = {
+      location: { href: 'http://example.com/issues/1/time_entries/new' },
+      document: doc,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    Object.defineProperty(iframe, 'contentWindow', { value: iframeWindow, configurable: true });
+    Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+    fireEvent.load(iframe);
+
+    const save = await screen.findByRole('button', { name: labels.save });
+    fireEvent.click(save);
+    await waitFor(() => expect(onTimeEntrySubmitting).toHaveBeenCalledOnce());
+
+    const firstNativeSubmit = new Event('submit', { bubbles: true, cancelable: true });
+    const secondNativeSubmit = new Event('submit', { bubbles: true, cancelable: true });
+    doc.querySelector('form')?.dispatchEvent(firstNativeSubmit);
+    doc.querySelector('form')?.dispatchEvent(secondNativeSubmit);
+    expect(firstNativeSubmit.defaultPrevented).toBe(true);
+    expect(secondNativeSubmit.defaultPrevented).toBe(true);
+    expect(onTimeEntrySubmitting).toHaveBeenCalledOnce();
+
+    releaseReservation(true);
+    await waitFor(() => expect(screen.getByRole('button', { name: labels.saving })).toBeTruthy());
+  });
+
   it('shrinks dialog height for short iframe content', async () => {
     const { container } = render(
       <IframeEditDialog

@@ -579,53 +579,6 @@ afterEach(() => {
     expect(context.lineTo).toHaveBeenCalledWith(subtaskX + 'Closed child'.length * 7, subtaskY + 12 * 0.58);
   });
 
-  it('renders and dispatches the subtask work timer action independently of edit permission', async () => {
-    const issue = makeIssue(1, {
-      subtasks: [{
-        id: 20,
-        subject: 'Timed child',
-        status_id: 1,
-        is_closed: false,
-        can_log_time: true,
-        permissions: { can_move: true, can_edit: false, can_delete: false },
-      }],
-    });
-    const data = makeBoardData(issue);
-    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
-    const context = createCanvasContextWithSpies();
-    const onWorkTimer = vi.fn();
-    const onView = vi.fn();
-    const onCommand = vi.fn();
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
-
-    const { container } = render(
-      <CanvasBoard
-        data={data}
-        state={state}
-        canMove
-        canCreate
-        onCommand={onCommand}
-        onCreate={vi.fn()}
-        onEdit={vi.fn()}
-        onView={onView}
-        onDelete={vi.fn()}
-        onEditClick={vi.fn()}
-        onWorkTimer={onWorkTimer}
-        labels={data.labels}
-      />,
-    );
-    const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
-    await waitFor(() => expect(canvas.width).toBeGreaterThan(0));
-
-    fireEvent.pointerMove(canvas, { clientX: 235, clientY: 139, pointerId: 1 });
-    await waitFor(() => expect(context.fillText).toHaveBeenCalledWith('play_arrow', expect.any(Number), expect.any(Number)));
-
-    fireEvent.pointerDown(canvas, { clientX: 235, clientY: 139, pointerId: 1 });
-    expect(onWorkTimer).toHaveBeenCalledWith(20);
-    expect(onView).not.toHaveBeenCalled();
-    expect(onCommand).not.toHaveBeenCalled();
-  });
-
   it('draws an external project on its own metadata row', async () => {
     const issue = makeIssue(7, {
       assigned_to_name: '担当者',

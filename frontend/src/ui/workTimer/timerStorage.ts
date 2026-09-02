@@ -10,5 +10,79 @@ function migrate(value: unknown): TimerSession | null { if (isTimerSession(value
 export function load(scope: TimerScope): TimerSession | null { try { const raw = localStorage.getItem(keysFor(scope).session); const value = raw ? migrate(JSON.parse(raw)) : null; return value && (value.userId === undefined || value.userId === scope.userId) ? value : null; } catch { return null; } }
 export function loadPreferences(scope: TimerScope): { autoStop: boolean } { try { const raw = localStorage.getItem(keysFor(scope).preferences); const value = raw ? JSON.parse(raw) as { autoStop?: unknown } : null; return typeof value?.autoStop === 'boolean' ? { autoStop: value.autoStop } : { autoStop: false }; } catch { return { autoStop: false }; } }
 export function savePreferences(scope: TimerScope, preferences: { autoStop: boolean }) { try { localStorage.setItem(keysFor(scope).preferences, JSON.stringify(preferences)); } catch { /* Preference storage is non-critical. */ } }
-async function lock<T>(scope: TimerScope, fn: () => T): Promise<{ result?: T; status: 'acquired' | 'locked' | 'storage_error' }> { const name = keysFor(scope).lock; if (navigator.locks?.request) { try { return { result: await navigator.locks.request(name, { mode: 'exclusive' }, fn), status: 'acquired' }; } catch { return { status: 'storage_error' }; } } const owner = getTabId(); for (let retries = 0; retries < 20; retries += 1) { try { const existing = JSON.parse(localStorage.getItem(name) || 'null') as { owner?: string; until?: number } | null; if (!existing || !existing.until || existing.until < Date.now() || existing.owner === owner) { localStorage.setItem(name, JSON.stringify({ owner, until: Date.now() + 2000 })); const claimed = JSON.parse(localStorage.getItem(name) || 'null'); if (claimed?.owner === owner) { try { return { result: fn(), status: 'acquired' }; } finally { localStorage.removeItem(name); } } } } catch { return { status: 'storage_error' }; } await new Promise((resolve) => setTimeout(resolve, 10)); } return { status: 'locked' }; }
+type LockStatus = 'acquired' | 'locked' | 'storage_error';
+type LockResult<T> = { result?: T; status: LockStatus };
+type Lease = { owner?: string; until?: number };
+
+async function localStorageLock<T>(name: string, fn: () => T): Promise<LockResult<T>> {
+  const owner = getTabId();
+  for (let retries = 0; retries < 20; retries += 1) {
+    try {
+      const existing = JSON.parse(localStorage.getItem(name) || 'null') as Lease | null;
+      if (!existing || !existing.until || existing.until < Date.now() || existing.owner === owner) {
+        localStorage.setItem(name, JSON.stringify({ owner, until: Date.now() + 2000 }));
+        const claimed = JSON.parse(localStorage.getItem(name) || 'null') as Lease | null;
+        if (claimed?.owner === owner) {
+          try { return { result: fn(), status: 'acquired' }; } finally {
+            try {
+              const current = JSON.parse(localStorage.getItem(name) || 'null') as Lease | null;
+              if (current?.owner === owner) localStorage.removeItem(name);
+            } catch { /* The lease will expire if storage becomes unavailable. */ }
+          }
+        }
+      }
+    } catch { return { status: 'storage_error' }; }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return { status: 'locked' };
+}
+
+async function indexedDbLock<T>(name: string, fn: () => T): Promise<LockResult<T> | null> {
+  if (typeof indexedDB === 'undefined') return null;
+  const owner = getTabId();
+  try {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('redmine_canvas_gantt_timer_locks', 1);
+      request.onupgradeneeded = () => request.result.createObjectStore('locks');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error ?? new Error('IndexedDB unavailable'));
+    });
+    const acquired = await new Promise<boolean>((resolve, reject) => {
+      const transaction = database.transaction('locks', 'readwrite');
+      const store = transaction.objectStore('locks');
+      const request = store.get(name);
+      request.onsuccess = () => {
+        const existing = request.result as Lease | undefined;
+        if (existing?.until && existing.until >= Date.now() && existing.owner !== owner) return resolve(false);
+        store.put({ owner, until: Date.now() + 2000 }, name);
+        resolve(true);
+      };
+      request.onerror = () => reject(request.error ?? new Error('IndexedDB read failed'));
+    });
+    database.close();
+    if (!acquired) return { status: 'locked' };
+    try { return { result: fn(), status: 'acquired' }; } finally {
+      const cleanup = indexedDB.open('redmine_canvas_gantt_timer_locks', 1);
+      cleanup.onsuccess = () => {
+        const transaction = cleanup.result.transaction('locks', 'readwrite');
+        const store = transaction.objectStore('locks');
+        const request = store.get(name);
+        request.onsuccess = () => { if ((request.result as Lease | undefined)?.owner === owner) store.delete(name); };
+        transaction.oncomplete = () => cleanup.result.close();
+      };
+    }
+  } catch { return { status: 'storage_error' }; }
+}
+
+async function lock<T>(scope: TimerScope, fn: () => T): Promise<LockResult<T>> {
+  const name = keysFor(scope).lock;
+  if (navigator.locks?.request) {
+    try { return { result: await navigator.locks.request(name, { mode: 'exclusive' }, fn), status: 'acquired' }; } catch { /* Try the shared fallback chain. */ }
+  }
+  const indexed = await indexedDbLock(name, fn);
+  if (indexed) {
+    if (indexed.status === 'acquired' || indexed.status === 'locked') return indexed;
+  }
+  return localStorageLock(name, fn);
+}
 export async function mutate(scope: TimerScope, updater: (session: TimerSession | null) => TimerSession | null | undefined): Promise<{ session: TimerSession | null; applied: boolean; lock: 'acquired' | 'locked' | 'storage_error' }> { const locked = await lock(scope, () => { const current = load(scope); const next = updater(current); if (next === undefined) return { session: current, applied: false }; try { const key = keysFor(scope).session; if (next === null) localStorage.removeItem(key); else localStorage.setItem(key, JSON.stringify({ ...next, revision: (current?.revision ?? 0) + 1, updatedAt: Date.now() })); return { session: next === null ? null : load(scope), applied: true }; } catch { return { session: current, applied: false }; } }); return locked.result ? { ...locked.result, lock: locked.status } : { session: load(scope), applied: false, lock: locked.status }; }

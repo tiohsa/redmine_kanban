@@ -28,7 +28,16 @@ export const resolveUnknown = (session: TimerSession, attemptId: string, resolut
 export function recoverRecording(session: TimerSession, ownerTabId: string): TimerSession | undefined {
   const attempt = session.recordingAttempt;
   if (!attempt) return undefined;
+  if (attempt.ownerTabId !== ownerTabId) return undefined;
   if (attempt.phase === 'submitting') return { ...session, recordingAttempt: { ...attempt, phase: 'unknown' }, updatedAt: Date.now() };
-  if (attempt.phase === 'editing' && attempt.ownerTabId === ownerTabId) return clearRecording(session, attempt.id, 'editing');
+  if (attempt.phase === 'editing') return clearRecording(session, attempt.id, 'editing');
+  return undefined;
+}
+
+export function takeOverRecording(session: TimerSession, attemptId: string, ownerTabId: string): TimerSession | undefined {
+  const attempt = session.recordingAttempt;
+  if (!attempt || attempt.id !== attemptId || attempt.ownerTabId === ownerTabId) return undefined;
+  if (attempt.phase === 'submitting') return { ...session, recordingAttempt: { ...attempt, ownerTabId, phase: 'unknown' }, updatedAt: Date.now() };
+  if (attempt.phase === 'editing') return clearRecording(session, attempt.id, 'editing');
   return undefined;
 }

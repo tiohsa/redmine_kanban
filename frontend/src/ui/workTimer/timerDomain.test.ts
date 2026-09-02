@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { beginRecording, beginSubmission, cancelRecording, completeRecording, createTimerSession, elapsed, extend, markUnknown, markValidationError, recoverRecording, resolveUnknown, stop, tick } from './timerDomain';
+import { beginRecording, beginSubmission, cancelRecording, completeRecording, createTimerSession, elapsed, extend, markUnknown, markValidationError, recoverRecording, resolveUnknown, stop, takeOverRecording, tick } from './timerDomain';
 
 describe('work timer domain', () => {
   it('auto-stops exactly at its deadline and retains the recorded segment', () => {
@@ -40,5 +40,14 @@ describe('work timer domain', () => {
     expect(recoverRecording(localEditing, 'tab-b')).toBeUndefined();
     const submitting = beginSubmission(localEditing, localEditing.recordingAttempt!.id)!;
     expect(recoverRecording(submitting, 'tab-a')?.recordingAttempt?.phase).toBe('unknown');
+    expect(recoverRecording(submitting, 'tab-b')).toBeUndefined();
+  });
+
+  it('requires explicit takeover for a remote attempt and never returns submitting to pending', () => {
+    const stopped = stop(createTimerSession(1, 'Issue', 5, false, 10, 1_000), 61_000);
+    const editing = beginRecording(stopped, 'tab-a', 62_000)!;
+    expect(takeOverRecording(editing, editing.recordingAttempt!.id, 'tab-b')?.recordingAttempt).toBeUndefined();
+    const submitting = beginSubmission(editing, editing.recordingAttempt!.id)!;
+    expect(takeOverRecording(submitting, submitting.recordingAttempt!.id, 'tab-b')).toMatchObject({ recordingAttempt: { ownerTabId: 'tab-b', phase: 'unknown' } });
   });
 });
