@@ -66,12 +66,107 @@
   background-color: var(--rk-bg-main);
 }
 
-.rk-work-timer { position: fixed; right: 16px; bottom: 16px; z-index: 20; display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; box-shadow: 0 8px 24px rgba(15, 23, 42, .18); font-size: 12px; }
-.rk-work-timer button { border: 1px solid #94a3b8; border-radius: 4px; background: #fff; cursor: pointer; padding: 3px 6px; }
-.rk-work-timer-modal { width: min(420px, 92vw); display: grid; gap: 14px; padding: 20px; border-radius: 8px; background: #fff; box-shadow: 0 10px 30px rgba(15, 23, 42, .25); }
-.rk-work-timer-modal h2, .rk-work-timer-modal p { margin: 0; }
-.rk-work-timer-modal label { display: flex; gap: 6px; align-items: center; }
-.rk-work-timer-modal div { display: flex; justify-content: flex-end; gap: 8px; }
+.rk-root {
+  --rk-timer-surface-running: #181d22;
+  --rk-timer-surface-pending: #fffcf0;
+  --rk-timer-primary: #181d22;
+  --rk-timer-danger: #ff454d;
+  --rk-timer-blue: #1f5cff;
+  --rk-timer-green: #42e986;
+  --rk-timer-warning: #b77900;
+  --rk-timer-border: #d6dae0;
+  --rk-timer-radius: 20px;
+  --rk-timer-button-radius: 9999px;
+  --rk-timer-shadow: 0 10px 30px rgba(15, 23, 42, .2), 0 2px 8px rgba(15, 23, 42, .08);
+}
+
+.rk-work-timer { position: fixed; right: 24px; bottom: 20px; z-index: 2000; display: flex; align-items: center; gap: 14px; box-sizing: border-box; max-width: min(660px, calc(100vw - 32px)); padding: 11px 17px; border-radius: var(--rk-timer-radius); box-shadow: var(--rk-timer-shadow); font-size: 13px; }
+.rk-work-timer-running { color: #fff; border: 1px solid rgba(255, 255, 255, .14); background: var(--rk-timer-surface-running); }
+.rk-work-timer-pending { color: var(--rk-text-primary); border: 1px solid #e4a72b; background: var(--rk-timer-surface-pending); }
+.rk-work-timer-status-icon { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; }
+.rk-work-timer-details { display: flex; flex: 1 1 auto; min-width: 150px; flex-direction: column; }
+.rk-work-timer-subject { overflow: hidden; font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.rk-work-timer-time { display: flex; align-items: center; gap: 8px; margin-top: 2px; color: rgba(255, 255, 255, .72); font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace; font-size: 12px; font-variant-numeric: tabular-nums; }
+.rk-work-timer-pending .rk-work-timer-time { color: var(--rk-timer-warning); }
+.rk-work-timer-remaining { color: var(--rk-timer-green); font-weight: 700; }
+.rk-work-timer-overrun { color: #ff6b70; font-weight: 700; }
+.rk-work-timer-warning { color: var(--rk-timer-warning); font-weight: 600; }
+.rk-work-timer-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; }
+.rk-work-timer-extend { position: relative; display: flex; }
+.rk-timer-button { display: inline-flex; min-height: 30px; align-items: center; justify-content: center; box-sizing: border-box; padding: 0 14px; border: 0; border-radius: var(--rk-timer-button-radius); font: inherit; font-size: 12px; font-weight: 650; line-height: 1; white-space: nowrap; cursor: pointer; transition: transform .12s ease, background-color .12s ease, box-shadow .12s ease; }
+.rk-timer-button:hover { transform: translateY(-1px); }
+.rk-timer-button:focus-visible { outline: 3px solid rgba(31, 92, 255, .28); outline-offset: 2px; }
+.rk-timer-button-primary { color: #fff; background: var(--rk-timer-primary); box-shadow: 0 2px 5px rgba(0, 0, 0, .12); }
+.rk-timer-button-light { color: #262b31; background: #f1f1f1; }
+.rk-timer-button-secondary { color: #24292f; border: 1px solid #c8cdd3; background: #fff; }
+.rk-timer-button-dark-secondary { color: #fff; border: 1px solid rgba(255, 255, 255, .24); background: rgba(255, 255, 255, .1); }
+.rk-timer-button-icon { width: 30px; padding: 0; color: #fff; border: 1px solid rgba(255, 255, 255, .24); background: rgba(255, 255, 255, .1); }
+.rk-timer-button-danger { color: #fff; background: var(--rk-timer-danger); box-shadow: 0 2px 5px rgba(255, 69, 77, .28); }
+.rk-timer-button-danger-outline { color: #c52d35; border: 1px solid #ef9da1; background: #fff5f5; }
+.rk-work-timer-extend-menu { position: absolute; right: 0; bottom: calc(100% + 9px); z-index: 2100; display: grid; min-width: 104px; gap: 3px; padding: 6px; color: #24292f; border: 1px solid var(--rk-timer-border); border-radius: 13px; background: #fff; box-shadow: var(--rk-timer-shadow); }
+.rk-work-timer-extend-menu button { padding: 7px 12px; color: inherit; border: 0; border-radius: 8px; background: transparent; font: inherit; font-size: 12px; text-align: left; white-space: nowrap; cursor: pointer; }
+.rk-work-timer-extend-menu button:hover { background: #f0f2f5; }
+
+.rk-work-timer-icon circle { stroke-width: 1.5; }
+.rk-work-timer-icon path { stroke-linecap: round; stroke-linejoin: round; stroke-width: 3.5; }
+.rk-work-timer-icon-start circle { fill: #fff; stroke: #c7ccd4; }
+.rk-work-timer-icon-start .rk-work-timer-icon-fill { fill: #252b33; stroke: none; }
+.rk-work-timer-icon-running circle { fill: #f3f7ff; stroke: #8ab1ff; }
+.rk-work-timer-icon-running path { stroke: #1456f0; }
+.rk-work-timer-icon-pending circle { fill: #fff9e8; stroke: #f5c553; }
+.rk-work-timer-icon-pending path { stroke: #bd8500; }
+
+.rk-work-timer-backdrop { z-index: 2500; }
+.rk-work-timer-modal { display: flex; width: min(550px, calc(100vw - 32px)); box-sizing: border-box; flex-direction: column; gap: 19px; padding: 24px; color: #24292f; border: 1px solid rgba(15, 23, 42, .1); border-radius: 18px; background: #fff; box-shadow: var(--rk-timer-shadow); }
+.rk-work-timer-modal-header { min-width: 0; }
+.rk-work-timer-eyebrow { display: flex; align-items: center; gap: 7px; color: #6c737d; font-size: 12px; font-weight: 650; }
+.rk-work-timer-eyebrow-warning { color: var(--rk-timer-warning); }
+.rk-work-timer-modal h2 { overflow: hidden; margin: 6px 0 0; font-size: 16px; font-weight: 750; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.rk-work-timer-modal p { margin: 0; }
+.rk-work-timer-duration { min-width: 0; margin: 0; padding: 0; border: 0; }
+.rk-work-timer-duration legend { margin-bottom: 9px; color: #5d6570; font-size: 12px; font-weight: 650; }
+.rk-work-timer-duration-options { display: flex; gap: 8px; overflow-x: auto; padding: 1px 1px 4px; }
+.rk-work-timer-duration-button { flex: 0 0 auto; min-width: 64px; height: 32px; padding: 0 14px; color: #31363d; border: 1px solid var(--rk-timer-border); border-radius: var(--rk-timer-button-radius); background: #fff; font: inherit; font-size: 13px; font-weight: 550; cursor: pointer; }
+.rk-work-timer-duration-button.is-selected { color: #fff; border-color: var(--rk-timer-blue); background: var(--rk-timer-blue); font-weight: 750; box-shadow: 0 3px 8px rgba(31, 92, 255, .22); }
+.rk-work-timer-autostop { display: flex; align-items: center; gap: 8px; color: #4e5660; font-size: 13px; cursor: pointer; }
+.rk-work-timer-autostop input { width: 16px; height: 16px; margin: 0; accent-color: var(--rk-timer-blue); }
+.rk-work-timer-modal-footer { display: flex; justify-content: flex-end; gap: 9px; margin-top: 3px; }
+.rk-pending-work-modal { width: min(696px, calc(100vw - 32px)); gap: 20px; padding: 25px 30px 24px; border-radius: 18px; }
+.rk-pending-work-header { display: flex; min-width: 0; align-items: flex-start; gap: 12px; }
+.rk-pending-work-header > div { min-width: 0; }
+.rk-pending-work-modal .rk-pending-work-header h2 { margin: 0; color: #b84700; font-size: 17px; font-weight: 750; line-height: 1.35; }
+.rk-pending-work-header p { overflow: hidden; margin-top: 3px !important; color: #252a31; font-size: 14px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.rk-pending-work-elapsed { display: flex; min-height: 62px; align-items: center; justify-content: space-between; box-sizing: border-box; padding: 13px 20px; color: #626b78; border: 1px solid #dce1e8; border-radius: 14px; background: #f7f8fa; }
+.rk-pending-work-elapsed strong { color: #20242a; font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace; font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.rk-pending-work-section { display: flex; flex-direction: column; box-sizing: border-box; gap: 8px; padding: 15px 16px; border: 1px solid #dce1e8; border-radius: 14px; background: #f7f8fa; }
+.rk-pending-work-section p { color: #5c6674; font-size: 14px; line-height: 1.5; }
+.rk-pending-work-record-button { display: flex; width: 100%; min-height: 48px; align-items: center; justify-content: center; gap: 7px; box-sizing: border-box; color: #2b2f35; border: 1px solid #d5d9df; border-radius: var(--rk-timer-button-radius); background: #fff; box-shadow: 0 2px 5px rgba(15, 23, 42, .14); font: inherit; font-size: 15px; font-weight: 750; cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease, transform .12s ease; }
+.rk-pending-work-record-button:hover { border-color: #9eb9ff; box-shadow: 0 3px 9px rgba(31, 92, 255, .15); transform: translateY(-1px); }
+.rk-pending-work-record-button:focus-visible, .rk-pending-work-resume-button:focus-visible, .rk-pending-work-discard-button:focus-visible { outline: 3px solid rgba(31, 92, 255, .24); outline-offset: 2px; }
+.rk-pending-work-separator { display: flex; align-items: center; gap: 12px; color: #515966; font-size: 12px; }
+.rk-pending-work-separator span { height: 1px; flex: 1; background: #dce1e8; }
+.rk-pending-work-separator b { font-weight: 650; }
+.rk-pending-work-resume-section h3 { margin: 0; color: #252a31; font-size: 15px; font-weight: 750; }
+.rk-pending-work-resume-options { display: flex; flex-wrap: nowrap; gap: 8px; margin-top: 2px; overflow-x: auto; padding: 1px 0 2px; }
+.rk-pending-work-resume-button { min-width: 64px; height: 36px; flex: 0 0 auto; padding: 0 15px; color: #2b3037; border: 1px solid #d6dbe1; border-radius: var(--rk-timer-button-radius); background: #fff; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; transition: color .12s ease, border-color .12s ease, background-color .12s ease; }
+.rk-pending-work-resume-button:hover { color: var(--rk-timer-blue); border-color: #9eb9ff; background: #f4f7ff; }
+.rk-pending-work-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding-top: 16px; border-top: 1px solid #dce1e8; }
+.rk-pending-work-footer .rk-timer-button-light { min-width: 86px; min-height: 36px; color: #333940; font-size: 14px; }
+.rk-pending-work-discard-button { display: inline-flex; align-items: center; gap: 5px; padding: 7px 12px; color: #c7272f; border: 0; border-radius: var(--rk-timer-button-radius); background: transparent; font: inherit; font-size: 14px; font-weight: 750; cursor: pointer; }
+.rk-pending-work-discard-button .rk-icon { color: #e07176; font-size: 16px; }
+.rk-pending-work-state-card, .rk-pending-work-discard-confirm { display: flex; flex-direction: column; gap: 12px; padding: 16px; color: var(--rk-timer-warning); border: 1px solid #e5b651; border-radius: 14px; background: #fff9e8; font-weight: 650; }
+.rk-pending-work-discard-confirm { color: #a5242b; border-color: #efb4b7; background: #fff5f5; }
+.rk-pending-work-state-actions, .rk-pending-work-discard-confirm > div { display: flex; justify-content: flex-end; gap: 8px; }
+.rk-other-timer-modal p { font-weight: 650; }
+
+@media (max-width: 720px) {
+  .rk-work-timer { right: 16px; bottom: 16px; left: 16px; max-width: none; flex-wrap: wrap; }
+  .rk-work-timer-details { min-width: calc(100% - 46px); }
+  .rk-work-timer-actions { width: 100%; justify-content: flex-end; flex-wrap: wrap; }
+  .rk-pending-work-modal { gap: 16px; padding: 22px 18px 18px; }
+  .rk-pending-work-header p { white-space: normal; }
+  .rk-pending-work-resume-options { padding-bottom: 5px; }
+}
 
 .rk-popup-host {
   position: fixed;

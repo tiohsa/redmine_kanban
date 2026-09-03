@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { beginRecording, beginSubmission, cancelRecording, completeRecording, createTimerSession, elapsed, extend, markUnknown, markValidationError, recoverRecording, resolveUnknown, stop, takeOverRecording, tick } from './timerDomain';
+import { beginRecording, beginSubmission, cancelRecording, completeRecording, createTimerSession, elapsed, extend, markUnknown, markValidationError, recoverRecording, resolveUnknown, stop, stopAndBeginRecording, takeOverRecording, tick } from './timerDomain';
 
 describe('work timer domain', () => {
   it('auto-stops exactly at its deadline and retains the recorded segment', () => {
@@ -23,6 +23,13 @@ describe('work timer domain', () => {
     const stopped = stop(started, 61_000);
     expect(stopped.state).toBe('stopped_pending_record');
     expect(stop(stopped, 62_000)).toBe(stopped);
+  });
+
+  it('stops and claims recording as one atomic domain transition', () => {
+    const started = createTimerSession(1, 'Issue', 5, false, 10, 1_000);
+    const claimed = stopAndBeginRecording(started, 'tab-a', 61_000)!;
+    expect(claimed).toMatchObject({ state: 'stopped_pending_record', recordingAttempt: { ownerTabId: 'tab-a', phase: 'editing' } });
+    expect(stopAndBeginRecording(claimed, 'tab-b', 62_000)).toBeUndefined();
   });
 
   it('only permits the recording state machine transitions', () => {

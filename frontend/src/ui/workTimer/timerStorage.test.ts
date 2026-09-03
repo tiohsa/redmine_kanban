@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createTimerSession } from './timerDomain';
-import { keysFor, load, loadPreferences, mutate, savePreferences } from './timerStorage';
+import { createTimerSession, stopAndBeginRecording } from './timerDomain';
+import { getTabId, keysFor, load, loadPreferences, mutate, savePreferences } from './timerStorage';
 
 describe('work timer storage', () => {
   const scope = { instanceKey: 'https://example.test/redmine', userId: 7 };
@@ -27,6 +27,15 @@ describe('work timer storage', () => {
     expect(second.applied).toBe(false);
     expect(load(scope)?.issueId).toBe(1);
   });
+  it('allows only one tab to own an atomic stop-and-record transition', async () => {
+    await mutate(scope, () => createTimerSession(1, 'One', 30, false, 7, 1_000));
+    const [tabA, tabB] = await Promise.all([
+      mutate(scope, current => current ? stopAndBeginRecording(current, 'tab-a', 2_000) : undefined),
+      mutate(scope, current => current ? stopAndBeginRecording(current, 'tab-b', 2_000) : undefined),
+    ]);
+    expect([tabA, tabB].filter(result => result.applied)).toHaveLength(1);
+    expect(load(scope)?.recordingAttempt?.ownerTabId).toMatch(/^tab-[ab]$/);
+  });
   it('rejects malformed version 4 sessions', () => {
     localStorage.setItem(keysFor(scope).session, JSON.stringify({ version: 4, sessionId: 'x', revision: 1, issueId: 1, subject: 'Issue', autoStop: true, segments: [], state: 'running', createdAt: 1, updatedAt: 1 }));
     expect(load(scope)).toBeNull();
@@ -34,7 +43,7 @@ describe('work timer storage', () => {
   it('migrates Gantt v2/v3 sessions and legacy recording attempts', () => {
     const legacy = { ...createTimerSession(1, 'Issue', 30, true, 7), version: 3, recordingAttemptId: 'legacy-attempt', state: 'stopped_pending_record' as const, segments: [{ startedAt: 1, stoppedAt: 2 }] };
     localStorage.setItem(keysFor(scope).session, JSON.stringify(legacy));
-    expect(load(scope)).toMatchObject({ version: 4, recordingAttempt: { id: 'legacy-attempt', ownerTabId: 'legacy-timer-tab', phase: 'unknown' } });
+    expect(load(scope)).toMatchObject({ version: 4, recordingAttempt: { id: 'legacy-attempt', ownerTabId: 'legacy-owner', phase: 'unknown' } });
   });
   it('shares the Gantt auto-stop preference key', () => {
     expect(loadPreferences(scope)).toEqual({ autoStop: false });
@@ -44,7 +53,7 @@ describe('work timer storage', () => {
   });
   it('fails closed when the lease is held by another tab', async () => {
     vi.stubGlobal('navigator', {});
-    localStorage.setItem(keysFor(scope).lock, JSON.stringify({ owner: 'other-tab', until: Date.now() + 10_000 }));
+    localStorage.setItem(keysFor(scope).lock, JSON.stringify({ token: 'other-tab', expiresAt: Date.now() + 10_000 }));
     const result = await mutate(scope, () => createTimerSession(1, 'Issue', 30, true, 7));
     expect(result).toMatchObject({ applied: false, lock: 'locked' });
     expect(load(scope)).toBeNull();
@@ -60,5 +69,9 @@ describe('work timer storage', () => {
     const result = await mutate(scope, () => createTimerSession(1, 'Issue', 30, true, 7));
     expect(result).toMatchObject({ applied: true, lock: 'acquired' });
     expect(load(scope)?.issueId).toBe(1);
+  });
+  it('keeps a stable in-memory tab id when sessionStorage is unavailable', () => {
+    vi.stubGlobal('sessionStorage', { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } });
+    expect(getTabId()).toBe(getTabId());
   });
 });

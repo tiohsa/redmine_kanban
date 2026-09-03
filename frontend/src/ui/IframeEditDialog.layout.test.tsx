@@ -713,7 +713,7 @@ describe('IframeEditDialog layout variants', () => {
     );
     const iframe = container.querySelector('iframe') as HTMLIFrameElement;
     const doc = document.implementation.createHTMLDocument('iframe');
-    doc.body.innerHTML = '<form id="new_time_entry"><button type="submit">Save</button></form>';
+    doc.body.innerHTML = '<form id="search-form"><button type="submit">Search</button></form><form id="new_time_entry"><button type="submit">Save</button></form>';
     const iframeWindow = {
       location: { href: 'http://example.com/issues/1/time_entries/new' },
       document: doc,
@@ -724,14 +724,18 @@ describe('IframeEditDialog layout variants', () => {
     Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
     fireEvent.load(iframe);
 
+    const unrelatedSubmit = new Event('submit', { bubbles: true, cancelable: true });
+    doc.querySelector('#search-form')?.dispatchEvent(unrelatedSubmit);
+    expect(unrelatedSubmit.defaultPrevented).toBe(false);
+
     const save = await screen.findByRole('button', { name: labels.save });
     fireEvent.click(save);
     await waitFor(() => expect(onTimeEntrySubmitting).toHaveBeenCalledOnce());
 
     const firstNativeSubmit = new Event('submit', { bubbles: true, cancelable: true });
     const secondNativeSubmit = new Event('submit', { bubbles: true, cancelable: true });
-    doc.querySelector('form')?.dispatchEvent(firstNativeSubmit);
-    doc.querySelector('form')?.dispatchEvent(secondNativeSubmit);
+    doc.querySelector('#new_time_entry')?.dispatchEvent(firstNativeSubmit);
+    doc.querySelector('#new_time_entry')?.dispatchEvent(secondNativeSubmit);
     expect(firstNativeSubmit.defaultPrevented).toBe(true);
     expect(secondNativeSubmit.defaultPrevented).toBe(true);
     expect(onTimeEntrySubmitting).toHaveBeenCalledOnce();

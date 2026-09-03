@@ -13,6 +13,7 @@ import {
   getRedmineFormErrorMessage,
   hasRedmineFormError,
   hasRedmineSuccessNotice,
+  isTimeEntryForm,
   isIssueShowUrl,
   readNumericFormValue,
   shouldTreatEditLoadAsSuccess,
@@ -40,6 +41,7 @@ export {
   getActiveSaveForm,
   hasRedmineFormError,
   hasRedmineSuccessNotice,
+  isTimeEntryForm,
   isIssueShowUrl,
   shouldTreatEditLoadAsSuccess,
   submitForm,
@@ -388,7 +390,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
         if (mode === 'time_entry') {
           const handleNativeSubmit = (event: Event) => {
             const form = event.target instanceof HTMLFormElement ? event.target : null;
-            if (!form) return;
+            if (!form || !isTimeEntryForm(form)) return;
             if (nativeSubmitBypassRef.current) return;
             event.preventDefault();
             event.stopImmediatePropagation();
@@ -485,6 +487,15 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
           // Keep the submit lock while the iframe is still showing the form
           // that initiated this save. Redmine can reload that form before
           // navigating to the saved issue, and another click must not submit it again.
+        } else if (outcome.type === 'unknown' && (saveTargetRef.current === 'time_entry' || mode === 'time_entry')) {
+          void (async () => {
+            const synchronized = await onTimeEntryUnknown?.();
+            if (synchronized === false) {
+              setIframeError(labels.timer_sync_failed ?? 'Timer state synchronization failed. Retry synchronization before submitting again.');
+              return;
+            }
+            setIsSubmitting(false);
+          })();
         } else {
           setIsSubmitting(false);
         }

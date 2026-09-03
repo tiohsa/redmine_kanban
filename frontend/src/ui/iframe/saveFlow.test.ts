@@ -45,13 +45,33 @@ describe('resolveSaveLoadOutcome', () => {
     })).toEqual({ type: 'success', issueId: 12 });
   });
 
-  it('keeps a time entry submit pending when the new form has no success notice', () => {
+  it('marks a time entry result unknown when the new form has no success notice', () => {
     expect(resolveSaveLoadOutcome({
       doc: doc('<form id="new_time_entry"></form>'),
       currentUrl: '/issues/12/time_entries/new',
       saveTarget: 'time_entry',
       mode: 'time_entry',
       fallbackIssueId: 12,
-    })).toEqual({ type: 'release-submit-lock' });
+    })).toEqual({ type: 'unknown' });
+  });
+
+  it.each(['/login', '/error', '/plugins/other/result'])('does not accept an unexpected time entry redirect: %s', (currentUrl) => {
+    expect(resolveSaveLoadOutcome({
+      doc: doc('<main>Unexpected page</main>'),
+      currentUrl,
+      saveTarget: 'time_entry',
+      mode: 'time_entry',
+      fallbackIssueId: 12,
+    })).toEqual({ type: 'unknown' });
+  });
+
+  it('accepts the configured Redmine issue redirect after a time entry save', () => {
+    expect(resolveSaveLoadOutcome({
+      doc: doc('<main>Issue</main>'),
+      currentUrl: '/issues/12',
+      saveTarget: 'time_entry',
+      mode: 'time_entry',
+      fallbackIssueId: 12,
+    })).toEqual({ type: 'success', issueId: 12 });
   });
 });
