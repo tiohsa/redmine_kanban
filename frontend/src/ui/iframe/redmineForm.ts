@@ -78,6 +78,10 @@ export function getActiveSaveForm(
   };
 }
 
+export function isTimeEntryForm(form: HTMLFormElement): boolean {
+  return form.matches('form#new_time_entry');
+}
+
 export function submitForm(form: HTMLFormElement): void {
   const submitButton = form.querySelector<HTMLElement>('input[type="submit"], button[type="submit"]');
   if (submitButton) {

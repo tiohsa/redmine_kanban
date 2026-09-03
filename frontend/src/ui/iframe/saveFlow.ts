@@ -4,6 +4,7 @@ import {
   getActiveSaveForm,
   hasRedmineFormError,
   hasRedmineSuccessNotice,
+  isIssueShowUrl,
   shouldTreatEditLoadAsSuccess,
   type IframeMode,
   type SaveTarget,
@@ -12,6 +13,7 @@ import {
 export type SaveLoadOutcome =
   | { type: 'error' }
   | { type: 'success'; issueId: number }
+  | { type: 'unknown' }
   | { type: 'keep-submitting' }
   | { type: 'release-submit-lock' };
 
@@ -38,11 +40,11 @@ export function resolveSaveLoadOutcome({
     return { type: 'success', issueId: extractIssueIdFromUrl(currentUrl) ?? fallbackIssueId };
   }
   if (saveTarget === 'time_entry') {
-    // Redmine's "create and continue" returns to the same new-form URL.
-    // Its success flash is the only reliable indication that the POST completed.
-    return currentUrl.includes('/time_entries/new') && !hasRedmineSuccessNotice(doc)
-      ? { type: 'release-submit-lock' }
-      : { type: 'success', issueId: fallbackIssueId };
+    // Allow only confirmed Redmine outcomes. Login, error, plugin, and other
+    // unexpected pages must not delete a possibly unrecorded TimerSession.
+    if (currentUrl.includes('/time_entries/new') && hasRedmineSuccessNotice(doc)) return { type: 'success', issueId: fallbackIssueId };
+    if (isIssueShowUrl(currentUrl)) return { type: 'success', issueId: fallbackIssueId };
+    return { type: 'unknown' };
   }
   if (saveTarget === 'journal' && !findJournalEditForm(doc)) {
     return { type: 'success', issueId: fallbackIssueId };

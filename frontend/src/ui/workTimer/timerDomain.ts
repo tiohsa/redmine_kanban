@@ -9,6 +9,10 @@ export function tick(session: TimerSession, now = Date.now()): TimerSession { if
 export function stop(session: TimerSession, now = Date.now()): TimerSession { if (session.state === 'stopped_pending_record') return session; const segments: TimerSegment[] = session.segments.map((segment, index) => index === session.segments.length - 1 && !segment.stoppedAt ? { ...segment, stoppedAt: now } : segment); return { ...session, state: 'stopped_pending_record', segments, updatedAt: now }; }
 export function extend(session: TimerSession, minutes: TimerIntervalMinutes, now = Date.now()): TimerSession { if (session.recordingAttempt) return session; if (session.state === 'stopped_pending_record') return { ...session, state: 'running', segments: [...session.segments, { startedAt: now }], deadlineAt: now + minutes * 60000, updatedAt: now }; return { ...session, state: 'running', deadlineAt: (session.state === 'running' ? session.deadlineAt ?? now : now) + minutes * 60000, updatedAt: now }; }
 export function beginRecording(session: TimerSession, ownerTabId: string, now = Date.now()): TimerSession | undefined { if (session.state !== 'stopped_pending_record' || session.recordingAttempt) return undefined; return { ...session, recordingAttempt: { id: timerId(), ownerTabId, openedAt: now, phase: 'editing' }, updatedAt: now }; }
+export function stopAndBeginRecording(session: TimerSession, ownerTabId: string, now = Date.now()): TimerSession | undefined {
+  if (session.state === 'stopped_pending_record' || session.recordingAttempt) return undefined;
+  return beginRecording(stop(tick(session, now), now), ownerTabId, now);
+}
 function updateRecording(session: TimerSession, attemptId: string, from: 'editing' | 'submitting' | 'unknown', phase: 'editing' | 'submitting' | 'unknown'): TimerSession | undefined {
   if (!session.recordingAttempt || session.recordingAttempt.id !== attemptId || session.recordingAttempt.phase !== from) return undefined;
   return { ...session, recordingAttempt: { ...session.recordingAttempt, phase }, updatedAt: Date.now() };

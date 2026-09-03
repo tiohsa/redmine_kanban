@@ -19,7 +19,7 @@ import { invalidateBoardSnapshot } from './useIssueMutation';
 import { useKanbanDialogs } from './useKanbanDialogs';
 import { useKanbanPreferences } from './useKanbanPreferences';
 import { useWorkTimer } from './workTimer/useWorkTimer';
-import { GlobalTimer, TimerStartModal } from './workTimer/WorkTimer';
+import { GlobalTimer, OtherNoticeModal, TimerStartModal } from './workTimer/WorkTimer';
 import type { TimerRecordingContext } from './workTimer/timerTypes';
 import { buildWorkTimerTimeEntryUrl } from './workTimer/timeEntryUrl';
 
@@ -432,8 +432,9 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
         ) : null}
       </div>
 
-      <GlobalTimer labels={toolbarData.labels} session={workTimer.session} remoteOwner={workTimer.remoteOwner} onRecover={() => { void workTimer.recover(); }} onExtend={(minutes) => { void workTimer.extendTimer(minutes); }} onStop={() => { void workTimer.stopTimer().then((context) => { if (context) setWorkTimeEntry(context); }); }} onRecord={() => { void workTimer.record().then((context) => { if (context) setWorkTimeEntry(context); }); }} onResolveUnknown={(resolution) => { const attempt = workTimer.session?.recordingAttempt; if (attempt && workTimer.session) void workTimer.lifecycle.resolve({ origin: 'timer', sessionId: workTimer.session.sessionId, issueId: workTimer.session.issueId, attemptId: attempt.id }, resolution); }} />
+      <GlobalTimer labels={toolbarData.labels} session={workTimer.session} remoteOwner={workTimer.remoteOwner} onRecover={() => { void workTimer.recover(); }} onExtend={(minutes) => { void workTimer.extendTimer(minutes); }} onResume={(minutes) => { void workTimer.extendTimer(minutes); }} onDiscard={() => { void workTimer.discard(); }} onStop={() => { void workTimer.stopTimer().then((context) => { if (context) setWorkTimeEntry(context); }); }} onRecord={() => { void workTimer.record().then((context) => { if (context) setWorkTimeEntry(context); }); }} onResolveUnknown={(resolution) => { const attempt = workTimer.session?.recordingAttempt; if (attempt && workTimer.session) void workTimer.lifecycle.resolve({ origin: 'timer', sessionId: workTimer.session.sessionId, issueId: workTimer.session.issueId, attemptId: attempt.id }, resolution); }} />
       <TimerStartModal labels={toolbarData.labels} startIssue={workTimer.startIssue} autoStop={workTimer.preferences.autoStop} onCloseStart={() => workTimer.setStartIssue(null)} onStart={(minutes, autoStop) => { void workTimer.start(minutes, autoStop); }} />
+      <OtherNoticeModal labels={toolbarData.labels} session={workTimer.conflictSession} onClose={() => workTimer.setConflictSession(null)} />
 
       {data && dialogs.modal ? (
         <KanbanIssueModal
