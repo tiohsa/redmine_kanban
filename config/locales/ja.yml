@@ -238,3 +238,8 @@ ja:
     label_board_scope_too_large: "対象のIssueが最大表示件数の%{limit}件を超えています。フィルタを絞るか、最大表示件数を変更してください。"
     label_board_response_too_large: "ボードのレスポンスが安全上限（%{bytes} bytes）を超えています。"
     label_board_server_limit_suffix: "サーバーの安全上限は%{limit}件です。"
+    label_timer_confirm: "確認して続行"
+    label_timer_recover_confirm: "別のタブで作業時間を編集していないことを確認してから続行してください。"
+    label_timer_recover_submitting_confirm: "登録リクエストは送信済みの可能性があります。別のタブを使用していないことを確認してください。復旧後は登録結果不明として扱います。"
+    label_timer_recorded_confirm: "Redmineでこの作業時間が登録済みであることを確認しましたか？ タイマーを削除します。"
+    label_timer_unregistered_confirm: "Redmineでこの作業時間が未登録であることを確認しましたか？ 登録済みの場合、再入力すると二重登録になります。"

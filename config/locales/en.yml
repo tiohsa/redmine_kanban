@@ -238,3 +238,8 @@ en:
     label_board_scope_too_large: "The number of Issues exceeds the maximum display count of %{limit}. Narrow the filters or change the maximum display count."
     label_board_response_too_large: "The board response exceeds the safety limit (%{bytes} bytes)."
     label_board_server_limit_suffix: "The server safety limit is %{limit} issues."
+    label_timer_confirm: "Confirm"
+    label_timer_recover_confirm: "Confirm that you are not editing a time entry in another tab before continuing."
+    label_timer_recover_submitting_confirm: "The request may already have been sent. Confirm that the other tab is no longer in use. Recovery will leave the result unknown."
+    label_timer_recorded_confirm: "Have you verified in Redmine that this work time was recorded? This will clear the timer."
+    label_timer_unregistered_confirm: "Have you verified in Redmine that this work time was not recorded? Entering it again could otherwise create a duplicate."

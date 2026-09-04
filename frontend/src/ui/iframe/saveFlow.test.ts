@@ -12,6 +12,7 @@ describe('resolveSaveLoadOutcome', () => {
       saveTarget: 'issue',
       mode: 'edit',
       fallbackIssueId: 12,
+      operation: { origin: 'time_entry_on_close', issueId: 12, url: '/issues/12/time_entries/new' },
     })).toEqual({ type: 'keep-submitting' });
   });
 
@@ -42,6 +43,7 @@ describe('resolveSaveLoadOutcome', () => {
       saveTarget: 'time_entry',
       mode: 'time_entry',
       fallbackIssueId: 12,
+      operation: { origin: 'time_entry_on_close', issueId: 12, url: '/issues/12/time_entries/new' },
     })).toEqual({ type: 'success', issueId: 12 });
   });
 
@@ -52,6 +54,7 @@ describe('resolveSaveLoadOutcome', () => {
       saveTarget: 'time_entry',
       mode: 'time_entry',
       fallbackIssueId: 12,
+      operation: { origin: 'time_entry_on_close', issueId: 12, url: '/issues/12/time_entries/new' },
     })).toEqual({ type: 'unknown' });
   });
 
@@ -67,6 +70,7 @@ describe('resolveSaveLoadOutcome', () => {
       saveTarget: 'time_entry',
       mode: 'time_entry',
       fallbackIssueId: 12,
+      operation: { origin: 'time_entry_on_close', issueId: 12, url: '/issues/12/time_entries/new' },
     })).toEqual({ type: 'unknown' });
   });
 
@@ -77,6 +81,7 @@ describe('resolveSaveLoadOutcome', () => {
       saveTarget: 'time_entry',
       mode: 'time_entry',
       fallbackIssueId: 12,
+      operation: { origin: 'time_entry_on_close', issueId: 12, url: '/issues/12/time_entries/new' },
     })).toEqual({ type: 'success', issueId: 12 });
   });
 
@@ -84,7 +89,7 @@ describe('resolveSaveLoadOutcome', () => {
     expect(resolveSaveLoadOutcome({
       doc: doc('<div id="flash_notice">Created</div>'),
       currentUrl: `https://example.test${path}`,
-      initialUrl: 'https://example.test/redmine/issues/12/time_entries/new?back_url=%2Fredmine%2Fissues%2F12',
+      operation: { origin: 'work_timer', issueId: 12, url: 'https://example.test/redmine/issues/12/time_entries/new?back_url=%2Fredmine%2Fissues%2F12', recording: { origin: 'timer', scope: { instanceKey: 'https://example.test/redmine', userId: 7 }, sessionId: 's', issueId: 12, attemptId: 'a', ownerTabId: 'tab' } },
       saveTarget: 'time_entry', mode: 'time_entry', fallbackIssueId: 12,
     })).toEqual({ type: 'success', issueId: 12 });
   });
@@ -93,7 +98,7 @@ describe('resolveSaveLoadOutcome', () => {
     expect(resolveSaveLoadOutcome({
       doc: doc('<div id="flash_notice">Created</div>'),
       currentUrl,
-      initialUrl: 'https://example.test/redmine/issues/12/time_entries/new',
+      operation: { origin: 'time_entry_on_close', issueId: 12, url: 'https://example.test/redmine/issues/12/time_entries/new' },
       saveTarget: 'time_entry', mode: 'time_entry', fallbackIssueId: 12,
     })).toEqual({ type: 'unknown' });
   });

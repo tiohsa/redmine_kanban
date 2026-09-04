@@ -100,7 +100,9 @@ describe('WorkTimer UI', () => {
     expect(screen.queryByTestId('pending-work-record-button')).toBeNull();
     if (phase === 'unknown') {
       fireEvent.click(screen.getByRole('button', { name: 'Re-enter' }));
-      expect(actions.onResolveUnknown).toHaveBeenCalledWith('unregistered');
+      expect(actions.onResolveUnknown).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByTestId('pending-work-operation-confirm'));
+      expect(actions.onResolveUnknown).toHaveBeenCalled();
     }
   });
 
@@ -113,6 +115,23 @@ describe('WorkTimer UI', () => {
     render(<GlobalTimer labels={labels} session={session} remoteOwner {...actions} />);
     fireEvent.click(screen.getByTestId('global-timer-manage-button'));
     fireEvent.click(screen.getByRole('button', { name: 'Recover in this tab' }));
+    expect(actions.onRecover).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('pending-work-operation-confirm'));
     expect(actions.onRecover).toHaveBeenCalledOnce();
   });
+  it.each(['recorded', 'unregistered'] as const)('keeps the confirmed snapshot when state changes during %s confirmation', action => {
+    const actions = callbacks();
+    const session = { ...stop(createTimerSession(2, 'Pending', 30, false, 7, 1000), 9000), recordingAttempt: { id: 'old', ownerTabId: 'a', openedAt: 9000, phase: 'unknown' as const } };
+    const { rerender } = render(<GlobalTimer labels={labels} session={session} remoteOwner {...actions} />);
+    fireEvent.click(screen.getByTestId('global-timer-manage-button'));
+    fireEvent.click(screen.getByRole('button', { name: action === 'recorded' ? 'Mark recorded' : 'Re-enter' }));
+    expect(actions.onResolveUnknown).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }));
+    expect(actions.onResolveUnknown).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: action === 'recorded' ? 'Mark recorded' : 'Re-enter' }));
+    rerender(<GlobalTimer labels={labels} session={{ ...session, recordingAttempt: { ...session.recordingAttempt, id: 'new' } }} remoteOwner {...actions} />);
+    fireEvent.click(screen.getByTestId('pending-work-operation-confirm'));
+    expect(actions.onResolveUnknown).toHaveBeenCalledWith(action, session);
+  });
+
 });

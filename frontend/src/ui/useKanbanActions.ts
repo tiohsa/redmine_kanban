@@ -1,3 +1,4 @@
+import { createTimeEntryOperation, type TimeEntryOperation } from './iframe/timeEntryOperation';
 import { useCallback, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { QueryKey } from '@tanstack/react-query';
@@ -21,7 +22,7 @@ type Args = {
   isWorkTimerIssue?: (issueId: number) => boolean;
   setNotice: (value: string | null) => void;
   setError: (value: string | null) => void;
-  setIframeTimeEntryUrl: (value: string | null) => void;
+  setIframeTimeEntryOperation: (value: TimeEntryOperation | null) => void;
 };
 
 type DeleteResponse = {
@@ -46,7 +47,7 @@ export function useKanbanActions({
   isWorkTimerIssue = () => false,
   setNotice,
   setError,
-  setIframeTimeEntryUrl,
+  setIframeTimeEntryOperation,
 }: Args) {
   const [busyIssueIds, setBusyIssueIds] = useState<Set<number>>(new Set());
   const [pendingDeleteIssue, setPendingDeleteIssue] = useState<Issue | null>(null);
@@ -217,7 +218,7 @@ export function useKanbanActions({
       const issue = result.issue;
       if (timeEntryOnClose && !isWorkTimerIssue(issue?.id ?? 0) && issue && data?.columns.find((column) => column.id === issue.status_id)?.is_closed) {
         if (issue.can_log_time) {
-          setIframeTimeEntryUrl(`/issues/${issue.id}/time_entries/new`);
+          setIframeTimeEntryOperation(createTimeEntryOperation(baseUrl.replace(/\/projects\/[^/]+\/kanban\/?$/, ''), issue.id));
         } else {
           setNotice(data?.labels.time_entry_permission_required ?? null);
         }

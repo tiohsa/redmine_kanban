@@ -3,7 +3,7 @@ const { test, expect } = require('@playwright/test');
 test.describe.configure({ mode: 'serial' });
 
 function nativeProjectIdentifier() {
-  return process.env.REDMINE_KANBAN_NATIVE_PROJECT || 'ecookbook';
+  return process.env.REDMINE_KANBAN_NATIVE_PROJECT || 'kanban-native';
 }
 
 function nativeProjectPath(baseURL) {
@@ -13,8 +13,9 @@ function nativeProjectPath(baseURL) {
 async function adminLogin(page, baseURL) {
   await page.goto(`${baseURL}/login`);
   await page.locator('#username').fill('admin');
-  await page.locator('#password').fill('admin1234');
+  await page.locator('#password').fill(process.env.REDMINE_PASSWORD || 'admin1234');
   await page.getByRole('button', { name: /login|sign in/i }).click();
+  await page.waitForURL(url => !url.pathname.endsWith('/login'));
 }
 
 async function boardSnapshot(page, baseURL, limit = 5000) {
@@ -64,17 +65,19 @@ async function removeIssuesWithSubjectPrefix(page, baseURL, prefix) {
   const { payload } = await boardSnapshot(page, baseURL);
   const issueIds = (payload.entities || [])
     .filter((issue) => issue.subject.startsWith(prefix))
-    .map((issue) => issue.id);
+    .map((issue) => ({ id: issue.id, lockVersion: issue.lock_version }));
   if (issueIds.length === 0) return;
 
   await page.evaluate(async ({ baseURL: root, issueIds: ids, projectIdentifier }) => {
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
-    for (const issueId of ids) {
-      await fetch(`${root}/projects/${projectIdentifier}/kanban/issues/${issueId}`, {
+    for (const issue of ids) {
+      const response = await fetch(`${root}/projects/${projectIdentifier}/kanban/issues/${issue.id}`, {
         method: 'DELETE',
         credentials: 'same-origin',
-        headers: { 'X-CSRF-Token': csrfToken },
+        headers: { 'X-CSRF-Token': csrfToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ issue: { lock_version: issue.lockVersion } }),
       });
+      if (!response.ok) throw new Error(`Fixture cleanup failed: ${response.status}`);
     }
   }, { baseURL, issueIds, projectIdentifier: nativeProjectIdentifier() });
 }
@@ -138,6 +141,7 @@ test('native create at the admission limit leaves the board without a stale comp
   const subjectPrefix = 'Kanban E2E native create ';
   await adminLogin(page, redmineBase);
   await removeIssuesWithSubjectPrefix(page, redmineBase, subjectPrefix);
+  await removeIssuesWithSubjectPrefix(page, redmineBase, 'Time Entry operation E2E ');
   await page.goto(`${projectPath}/kanban`);
   await expect(page.locator('.rk-canvas-board')).toBeVisible();
 
@@ -179,4 +183,54 @@ test('native create at the admission limit leaves the board without a stale comp
   const created = persisted.entities.find((issue) => issue.subject === subject);
   expect(created).toBeTruthy();
   await removeIssuesWithSubjectPrefix(page, redmineBase, subjectPrefix);
+});
+
+
+test('timeEntryOnClose saves the target issue through the shared native dialog', async ({ page, baseURL }) => {
+  const root = baseURL || 'http://127.0.0.1:3002';
+  await adminLogin(page, root);
+  await page.goto(`${nativeProjectPath(root)}/kanban`);
+  const { payload } = await boardSnapshot(page, root);
+  const open = payload.columns.find(column => !column.is_closed);
+  const created = await page.evaluate(async ({ endpoint, trackerId, statusId }) => {
+    const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content }, body: JSON.stringify({ issue: { subject: `Time Entry operation E2E ${Date.now()}`, tracker_id: trackerId, status_id: statusId } }) });
+    return response.json();
+  }, { endpoint: `${nativeProjectPath(root)}/kanban/issues`, trackerId: payload.lists.trackers[0].id, statusId: open.id });
+  const issue = created.issue ?? created.created_issues?.[0];
+  expect(issue).toBeTruthy();
+  try {
+    const closed = payload.columns.find(column => column.is_closed && issue.allowed_status_ids.includes(column.id));
+    expect(closed).toBeTruthy();
+    await page.evaluate(({ userId, path }) => { localStorage.setItem(`rk_time_entry_on_close:user:${userId}`, '1'); localStorage.setItem(`rk_lane_type:${path}:user:${userId}`, 'none'); }, { userId: payload.meta.current_user_id, path: `${nativeProjectPath(root)}/kanban`.replace(root, '') });
+    // Keep the real mutation and native Redmine form, with a small deterministic board viewport.
+    await page.route('**/kanban/data?*', async route => {
+      const response = await route.fetch();
+      const board = await response.json();
+      const target = board.entities.find(candidate => candidate.id === issue.id);
+      await route.fulfill({ response, json: { ...board, entities: [target], issues: [],
+        tree: { root_ids: [issue.id], children_by_parent_id: {} },
+        columns: [open, closed], lanes: [], meta: { ...board.meta, lane_type: 'none', entity_count: 1 } } });
+    });
+    await page.reload();
+    await expect(page.locator('.rk-canvas-board')).toBeVisible();
+    const canvas = page.locator('canvas.rk-canvas');
+    const box = await canvas.boundingBox();
+    const move = page.waitForResponse(response => response.url().includes(`/issues/${issue.id}/move`) && response.request().method() === 'PATCH');
+    await page.mouse.move(box.x + 18, box.y + 80);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 400, box.y + 80, { steps: 20 });
+    await page.mouse.up();
+    expect((await move).ok()).toBeTruthy();
+    const iframe = page.locator('iframe.rk-iframe-dialog-frame');
+    await expect(iframe).toBeVisible();
+    const form = page.frameLocator('iframe.rk-iframe-dialog-frame');
+    await form.locator('#time_entry_hours').fill('0.02');
+    await form.locator('#time_entry_activity_id').selectOption({ index: 1 });
+    const saved = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/time_entries'));
+    await page.locator('[data-testid="issue-dialog-footer"] .rk-btn-primary').click();
+    expect((await saved).status()).toBe(302);
+    await expect(iframe).toHaveCount(0);
+  } finally {
+    await removeIssuesWithSubjectPrefix(page, root, issue.subject);
+  }
 });

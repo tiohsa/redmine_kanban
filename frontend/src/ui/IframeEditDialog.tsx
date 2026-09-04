@@ -1,3 +1,5 @@
+import { canSubmitTimeEntry, type TimeEntryOperation } from './iframe/timeEntryOperation';
+import { mutationSucceeded, type TimerMutationResult } from './workTimer/timerStorage';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { applyLinkTargetBlank, getCleanDialogStyles, type CleanDialogStyleVariant } from './board/iframeStyles';
 import { IssueDialogHeader } from './IssueDialogHeader';
@@ -74,11 +76,8 @@ export function formatBulkSubtaskError(error: unknown, fallback: string): string
 }
 
 type Props = {
-  url: string;
-  issueId: number;
   issueTitle?: string;
   projectId?: number;
-  mode?: 'create' | 'edit' | 'time_entry';
   labels: Record<string, string>;
   baseUrl: string;
   queryKey: readonly unknown[];
@@ -89,13 +88,15 @@ type Props = {
   onClose: () => void;
   onSuccess: (message: string, issueId?: number) => void;
   onNativeWriteComplete?: () => void;
-  onTimeEntrySubmitting?: () => Promise<boolean> | boolean;
-  onTimeEntryValidationError?: () => Promise<boolean> | boolean;
-  onTimeEntryUnknown?: () => Promise<boolean> | boolean;
-  onTimeEntrySuccess?: () => Promise<boolean> | boolean;
-};
+  onTimeEntrySubmitting?: () => Promise<TimerMutationResult> | TimerMutationResult;
+  onTimeEntryValidationError?: () => Promise<TimerMutationResult> | TimerMutationResult;
+  onTimeEntryUnknown?: () => Promise<TimerMutationResult> | TimerMutationResult;
+  onTimeEntrySuccess?: () => Promise<TimerMutationResult> | TimerMutationResult;
+} & ({ mode: 'time_entry'; timeEntryOperation: TimeEntryOperation; url?: never; issueId?: never } | { mode?: 'create' | 'edit'; url: string; issueId: number; timeEntryOperation?: never });
 
-export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = 'edit', labels, baseUrl, queryKey, projectIds = [], scopeStatusIds = [], dependencyStatusIds = scopeStatusIds, boardEntityLimit = 1500, onClose, onSuccess, onNativeWriteComplete, onTimeEntrySubmitting, onTimeEntryValidationError, onTimeEntryUnknown, onTimeEntrySuccess }: Props) {
+export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, timeEntryOperation, issueTitle, projectId, mode = 'edit', labels, baseUrl, queryKey, projectIds = [], scopeStatusIds = [], dependencyStatusIds = scopeStatusIds, boardEntityLimit = 1500, onClose, onSuccess, onNativeWriteComplete, onTimeEntrySubmitting, onTimeEntryValidationError, onTimeEntryUnknown, onTimeEntrySuccess }: Props) {
+  const url = timeEntryOperation?.url ?? navigationUrl!;
+  const issueId = timeEntryOperation?.issueId ?? targetIssueId!;
   const [subtasks, setSubtasks] = useState<SubtaskCreateInput[]>([]);
   const [subtaskValidationError, setSubtaskValidationError] = useState<string | null>(null);
   const [trackerOptions, setTrackerOptions] = useState<Array<{ id: number; name: string }>>([]);
@@ -119,6 +120,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
   const saveTargetRef = useRef<SaveTarget>(null);
   const submitPreparationRef = useRef(false);
   const nativeSubmitBypassRef = useRef(false);
+  const timeEntryUncertainRef = useRef(false);
   const iframeSubmitCleanupRef = useRef<(() => void) | null>(null);
   const dialogClosingRef = useRef(false);
   const submitSubtasksAfterEditLoadRef = useRef(false);
@@ -230,7 +232,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
     if (completedSaveTarget === 'time_entry' || mode === 'time_entry') {
       try {
         const synchronized = await onTimeEntrySuccess?.();
-        if (synchronized === false) {
+        if (synchronized && !mutationSucceeded(synchronized)) {
           setIframeError(labels.timer_sync_failed ?? 'Timer state synchronization failed. Retry synchronization before submitting again.');
           return;
         }
@@ -300,7 +302,11 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
   }, [bulkMutation, labels, mode, onNativeWriteComplete, onSuccess, onTimeEntrySuccess, subtasks]);
 
   const submitIssueForm = useCallback(async (form: HTMLFormElement, target: SaveTarget) => {
-    if (target === 'time_entry' && (submitPreparationRef.current || isSubmittingRef.current)) return;
+    if (target === 'time_entry' && (submitPreparationRef.current || isSubmittingRef.current || timeEntryUncertainRef.current)) return;
+    if (target === 'time_entry' && (!timeEntryOperation || !canSubmitTimeEntry(timeEntryOperation, form, iframeRef.current?.contentWindow?.location.href ?? url))) {
+      setIframeError(labels.timer_conflict ?? 'Invalid Time Entry operation.');
+      return;
+    }
     if (target === 'time_entry') submitPreparationRef.current = true;
     const formData = new FormData(form);
     const getVal = (name: string) => readNumericFormValue(formData, form, name);
@@ -313,7 +319,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
       assigned_to_id: getVal('issue[assigned_to_id]'),
     };
 
-    if (target === 'time_entry' && onTimeEntrySubmitting && !await onTimeEntrySubmitting()) {
+    if (target === 'time_entry' && onTimeEntrySubmitting && (await onTimeEntrySubmitting()).outcome !== 'applied') {
       submitPreparationRef.current = false;
       setIframeError(labels.timer_conflict ?? 'Unable to secure the work timer session.');
       return;
@@ -348,7 +354,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
     } finally {
       nativeSubmitBypassRef.current = false;
     }
-  }, [labels.timer_conflict, onTimeEntrySubmitting, projectId]);
+  }, [labels.timer_conflict, onTimeEntrySubmitting, projectId, timeEntryOperation, url]);
 
   useEffect(() => {
     handleSuccessRef.current = (targetIssueId: number) => {
@@ -378,7 +384,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
             saveTarget: saveTargetRef.current,
             mode,
             fallbackIssueId: issueId,
-            initialUrl: iframe.src,
+            operation: timeEntryOperation,
           });
           if (outcome.type === 'success') {
             void handleSuccess(outcome.issueId);
@@ -390,8 +396,9 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
         iframeSubmitCleanupRef.current = null;
         if (mode === 'time_entry') {
           const handleNativeSubmit = (event: Event) => {
-            const form = event.target instanceof HTMLFormElement ? event.target : null;
-            if (!form || !isTimeEntryForm(form)) return;
+            // Native iframe forms belong to a different Window realm.
+            const form = event.target as HTMLFormElement | null;
+            if (!form || form.tagName !== 'FORM' || !isTimeEntryForm(form)) return;
             if (nativeSubmitBypassRef.current) return;
             event.preventDefault();
             event.stopImmediatePropagation();
@@ -461,13 +468,13 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
           saveTarget: saveTargetRef.current,
           mode,
           fallbackIssueId: issueId,
-          initialUrl: iframe.src,
+          operation: timeEntryOperation,
         });
         if (outcome.type === 'error') {
           if (saveTargetRef.current === 'time_entry' || mode === 'time_entry') {
             void (async () => {
               const synchronized = await onTimeEntryValidationError?.();
-              if (synchronized === false) {
+              if (synchronized && !mutationSucceeded(synchronized)) {
                 setIframeError(labels.timer_sync_failed ?? 'Timer state synchronization failed. Retry synchronization before submitting again.');
                 return;
               }
@@ -491,8 +498,10 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
           // navigating to the saved issue, and another click must not submit it again.
         } else if (outcome.type === 'unknown' && (saveTargetRef.current === 'time_entry' || mode === 'time_entry')) {
           void (async () => {
+            timeEntryUncertainRef.current = true;
+            setIframeError(labels.timer_unknown ?? 'The time entry result is unknown. Check Redmine before entering it again.');
             const synchronized = await onTimeEntryUnknown?.();
-            if (synchronized === false) {
+            if (synchronized && !mutationSucceeded(synchronized)) {
               setIframeError(labels.timer_sync_failed ?? 'Timer state synchronization failed. Retry synchronization before submitting again.');
               return;
             }
@@ -509,8 +518,10 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
       if (isSubmittingRef.current) {
         if (saveTargetRef.current === 'time_entry' || mode === 'time_entry') {
           void (async () => {
+            timeEntryUncertainRef.current = true;
+            setIframeError(labels.timer_unknown ?? 'The time entry result is unknown. Check Redmine before entering it again.');
             const synchronized = await onTimeEntryUnknown?.();
-            if (synchronized === false) {
+            if (synchronized && !mutationSucceeded(synchronized)) {
               setIframeError(labels.timer_sync_failed ?? 'Timer state synchronization failed. Retry synchronization before submitting again.');
               return;
             }
@@ -526,7 +537,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
         measureDialogHeight();
       });
     }
-  }, [bindIframeSizeObservers, handleSuccess, issueId, labels.timer_sync_failed, measureDialogHeight, mode, onTimeEntryUnknown, onTimeEntryValidationError, requestClose, submitIssueForm, url]);
+  }, [bindIframeSizeObservers, handleSuccess, issueId, labels.timer_sync_failed, measureDialogHeight, mode, onTimeEntryUnknown, onTimeEntryValidationError, requestClose, submitIssueForm, url, timeEntryOperation, labels.timer_unknown]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

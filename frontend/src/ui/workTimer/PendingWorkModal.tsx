@@ -13,8 +13,8 @@ type Props = {
   onRecord: () => void;
   onResume: (minutes: TimerIntervalMinutes) => void;
   onDiscard: () => void;
-  onRecover: () => void;
-  onResolveUnknown: (resolution: 'recorded' | 'unregistered') => void;
+  onRecover: (expected: TimerSession) => void;
+  onResolveUnknown: (resolution: 'recorded' | 'unregistered', expected: TimerSession) => void;
 };
 
 const duration = (milliseconds: number) => {
@@ -25,17 +25,19 @@ const minuteLabel = (labels: Record<string, string>, minutes: number) => `+${(la
 
 export function PendingWorkModal({ labels, session, remoteOwner, onClose, onRecord, onResume, onDiscard, onRecover, onResolveUnknown }: Props) {
   const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = useState(false);
+  const [confirmation, setConfirmation] = useState<{ action: 'recover' | 'recorded' | 'unregistered'; expected: TimerSession } | null>(null);
   const phase = session.recordingAttempt?.phase;
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
-      if (isDiscardConfirmOpen) setIsDiscardConfirmOpen(false);
+      if (confirmation) setConfirmation(null);
+      else if (isDiscardConfirmOpen) setIsDiscardConfirmOpen(false);
       else onClose();
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [isDiscardConfirmOpen, onClose]);
+  }, [confirmation, isDiscardConfirmOpen, onClose]);
 
   const elapsedText = duration(elapsed(session));
   const notice = recordingStatusLabel(labels, session.recordingAttempt);
@@ -56,15 +58,34 @@ export function PendingWorkModal({ labels, session, remoteOwner, onClose, onReco
           <strong data-testid="pending-work-elapsed-value">{elapsedText}</strong>
         </div>
 
-        {notice ? (
+        {confirmation ? (
+          <div className="rk-pending-work-discard-confirm" role="alertdialog" aria-label={labels.timer_confirm ?? 'Confirm recording action'}>
+            <p>{confirmation.action === 'recover'
+              ? (confirmation.expected.recordingAttempt?.phase === 'submitting'
+                ? (labels.timer_recover_submitting_confirm ?? 'The request may already have been sent. Confirm that the other tab is no longer in use. Recovery will leave the result unknown.')
+                : (labels.timer_recover_confirm ?? 'Confirm that you are not editing a time entry in another tab before continuing.'))
+              : confirmation.action === 'recorded'
+                ? (labels.timer_recorded_confirm ?? 'Have you verified in Redmine that this work time was recorded? This will clear the timer.')
+                : (labels.timer_unregistered_confirm ?? 'Have you verified in Redmine that this work time was not recorded? Entering it again could otherwise create a duplicate.')}</p>
+            <div>
+              <button type="button" className="rk-timer-button rk-timer-button-secondary" onClick={() => setConfirmation(null)}>{labels.cancel ?? 'Cancel'}</button>
+              <button type="button" className="rk-timer-button rk-timer-button-primary" data-testid="pending-work-operation-confirm" onClick={() => {
+                const { action, expected } = confirmation;
+                setConfirmation(null);
+                if (action === 'recover') onRecover(expected);
+                else onResolveUnknown(action, expected);
+              }}>{labels.timer_confirm ?? 'Confirm'}</button>
+            </div>
+          </div>
+        ) : notice ? (
           <div className="rk-pending-work-state-card">
             <p>{notice}</p>
             {remoteOwner && phase !== 'unknown' ? <p>{labels.timer_other_tab ?? 'Work time is being entered in another tab.'}</p> : null}
             <div className="rk-pending-work-state-actions">
               {phase === 'unknown' ? <>
-                <button type="button" className="rk-timer-button rk-timer-button-primary" onClick={() => onResolveUnknown('recorded')}>{labels.timer_mark_recorded ?? 'Mark recorded'}</button>
-                <button type="button" className="rk-timer-button rk-timer-button-secondary" onClick={() => onResolveUnknown('unregistered')}>{labels.timer_reenter ?? 'Re-enter'}</button>
-              </> : remoteOwner ? <button type="button" className="rk-timer-button rk-timer-button-primary" onClick={onRecover}>{labels.timer_recover ?? 'Recover in this tab'}</button> : null}
+                <button type="button" className="rk-timer-button rk-timer-button-primary" onClick={() => setConfirmation({ action: 'recorded', expected: session })}>{labels.timer_mark_recorded ?? 'Mark recorded'}</button>
+                <button type="button" className="rk-timer-button rk-timer-button-secondary" onClick={() => setConfirmation({ action: 'unregistered', expected: session })}>{labels.timer_reenter ?? 'Re-enter'}</button>
+              </> : remoteOwner ? <button type="button" className="rk-timer-button rk-timer-button-primary" onClick={() => setConfirmation({ action: 'recover', expected: session })}>{labels.timer_recover ?? 'Recover in this tab'}</button> : null}
             </div>
           </div>
         ) : isDiscardConfirmOpen ? (

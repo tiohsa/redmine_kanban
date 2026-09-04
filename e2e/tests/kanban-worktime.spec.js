@@ -5,6 +5,7 @@ async function adminLogin(page, baseURL) {
   await page.locator('#username').fill('admin');
   await page.locator('#password').fill(process.env.REDMINE_PASSWORD || 'admin1234');
   await page.getByRole('button', { name: /login|sign in/i }).click();
+  await page.waitForURL(url => !url.pathname.endsWith('/login'));
 }
 
 async function prepareBoard(page, redmineBase) {
@@ -142,7 +143,10 @@ test('successful Worktime registration clears TimerSession without nesting Kanba
   }, { key: sessionKey, issueId: issue.id, subject: issue.subject, userId: data.meta.current_user_id, timestamp: now });
   await page.reload();
 
+  await expect(page.locator('.rk-canvas-board')).toBeVisible();
   const nestedKanbanNavigations = [];
+  const boardReads = [];
+  page.on('request', request => { if (new URL(request.url()).pathname.endsWith('/kanban/data')) boardReads.push(request.url()); });
   page.on('framenavigated', (frame) => {
     if (frame !== page.mainFrame() && frame.url().includes('/projects/ecookbook/kanban')) {
       nestedKanbanNavigations.push(frame.url());
@@ -157,6 +161,7 @@ test('successful Worktime registration clears TimerSession without nesting Kanba
 
   const timeEntry = page.frameLocator('iframe.rk-iframe-dialog-frame');
   await timeEntry.locator('#time_entry_hours').fill('0.02');
+  await timeEntry.locator('#time_entry_activity_id').selectOption({ index: 1 });
   const createResponse = page.waitForResponse((response) => (
     response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/time_entries')
   ));
@@ -167,4 +172,37 @@ test('successful Worktime registration clears TimerSession without nesting Kanba
   await expect(page.locator('.rk-work-timer')).toHaveCount(0);
   expect(await page.evaluate((key) => localStorage.getItem(key), sessionKey)).toBeNull();
   expect(nestedKanbanNavigations).toEqual([]);
+  expect(boardReads).toEqual([]);
+});
+
+
+test('confirmed recovery prevents the old tab from submitting its native form', async ({ page, context, baseURL }) => {
+  const root = baseURL || 'http://127.0.0.1:3002';
+  await adminLogin(page, root);
+  const { boardUrl, data, issue, sessionKey } = await prepareBoard(page, root);
+  await seedSession(page, sessionKey, issue, data.meta.current_user_id, 'stopped_pending_record');
+  const pageB = await context.newPage();
+  await Promise.all([page.reload(), pageB.goto(boardUrl)]);
+  await page.getByTestId('global-timer-record-button').click();
+  const frame = page.locator('iframe.rk-iframe-dialog-frame');
+  await expect(frame).toBeVisible();
+  await page.frameLocator('iframe.rk-iframe-dialog-frame').locator('#time_entry_hours').fill('0.02');
+  await expect(pageB.getByTestId('global-timer-pending-text')).toContainText(/Entering work time|作業時間を入力中/);
+  await pageB.getByTestId('global-timer-manage-button').click();
+  await pageB.getByRole('button', { name: /Recover in this tab|このタブで復旧/ }).click();
+  expect(await pageB.evaluate(key => JSON.parse(localStorage.getItem(key)).recordingAttempt.phase, sessionKey)).toBe('editing');
+  await pageB.getByTestId('pending-work-operation-confirm').click();
+  await expect.poll(() => pageB.evaluate(key => JSON.parse(localStorage.getItem(key)).recordingAttempt, sessionKey)).toBeUndefined();
+  const posts = [];
+  page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/time_entries')) posts.push(request.url()); });
+  await page.locator('[data-testid="issue-dialog-footer"] .rk-btn-primary').click();
+  await expect(page.getByTestId('issue-dialog-error')).toBeVisible();
+  const prevented = await page.frameLocator('iframe.rk-iframe-dialog-frame').locator('#new_time_entry').evaluate(form => {
+    const event = new Event('submit', { bubbles: true, cancelable: true });
+    form.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(prevented).toBe(true);
+  expect(posts).toEqual([]);
+  expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).recordingAttempt, sessionKey)).toBeUndefined();
 });
