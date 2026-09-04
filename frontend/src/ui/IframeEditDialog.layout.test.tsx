@@ -624,8 +624,7 @@ describe('IframeEditDialog layout variants', () => {
   it('uses the same compact chrome for time entry dialogs', () => {
     render(
       <IframeEditDialog
-        url="/issues/1/time_entries/new"
-        issueId={1}
+        timeEntryOperation={{ origin: 'time_entry_on_close', issueId: 1, url: '/issues/1/time_entries/new' }}
         mode="time_entry"
         labels={labels}
         baseUrl="/projects/demo/kanban"
@@ -643,12 +642,11 @@ describe('IframeEditDialog layout variants', () => {
   });
 
   it('does not mark a submitting time entry as unknown when callback props change', async () => {
-    const onTimeEntrySubmitting = vi.fn().mockResolvedValue(true);
+    const onTimeEntrySubmitting = vi.fn().mockResolvedValue({ outcome: 'applied' });
     const onTimeEntryUnknown = vi.fn();
     const { container, rerender } = render(
       <IframeEditDialog
-        url="/issues/1/time_entries/new"
-        issueId={1}
+        timeEntryOperation={{ origin: 'time_entry_on_close', issueId: 1, url: '/issues/1/time_entries/new' }}
         mode="time_entry"
         labels={labels}
         baseUrl="/projects/demo/kanban"
@@ -663,7 +661,7 @@ describe('IframeEditDialog layout variants', () => {
     const doc = document.implementation.createHTMLDocument('iframe');
     doc.body.innerHTML = '<form id="new_time_entry"><button type="submit">Save</button></form>';
     const iframeWindow = {
-      location: { href: 'http://example.com/issues/1/time_entries/new' },
+      location: { href: iframe.src },
       document: doc,
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
@@ -678,8 +676,7 @@ describe('IframeEditDialog layout variants', () => {
 
     rerender(
       <IframeEditDialog
-        url="/issues/1/time_entries/new"
-        issueId={1}
+        timeEntryOperation={{ origin: 'time_entry_on_close', issueId: 1, url: '/issues/1/time_entries/new' }}
         mode="time_entry"
         labels={labels}
         baseUrl="/projects/demo/kanban"
@@ -695,13 +692,12 @@ describe('IframeEditDialog layout variants', () => {
   });
 
   it('intercepts native submits during preparation and permits only the reserved submit', async () => {
-    let releaseReservation!: (value: boolean) => void;
-    const reservation = new Promise<boolean>((resolve) => { releaseReservation = resolve; });
+    let releaseReservation!: (value: import('./workTimer/timerStorage').TimerMutationResult) => void;
+    const reservation = new Promise<import('./workTimer/timerStorage').TimerMutationResult>((resolve) => { releaseReservation = resolve; });
     const onTimeEntrySubmitting = vi.fn(() => reservation);
     const { container } = render(
       <IframeEditDialog
-        url="/issues/1/time_entries/new"
-        issueId={1}
+        timeEntryOperation={{ origin: 'time_entry_on_close', issueId: 1, url: '/issues/1/time_entries/new' }}
         mode="time_entry"
         labels={labels}
         baseUrl="/projects/demo/kanban"
@@ -715,7 +711,7 @@ describe('IframeEditDialog layout variants', () => {
     const doc = document.implementation.createHTMLDocument('iframe');
     doc.body.innerHTML = '<form id="search-form"><button type="submit">Search</button></form><form id="new_time_entry"><button type="submit">Save</button></form>';
     const iframeWindow = {
-      location: { href: 'http://example.com/issues/1/time_entries/new' },
+      location: { href: iframe.src },
       document: doc,
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
@@ -740,18 +736,17 @@ describe('IframeEditDialog layout variants', () => {
     expect(secondNativeSubmit.defaultPrevented).toBe(true);
     expect(onTimeEntrySubmitting).toHaveBeenCalledOnce();
 
-    releaseReservation(true);
+    releaseReservation({ outcome: 'applied', session: null, applied: true, lock: 'acquired' });
     await waitFor(() => expect(screen.getByRole('button', { name: labels.saving })).toBeTruthy());
   });
 
   it('keeps a successful time entry locked when TimerSession cleanup fails', async () => {
-    const onTimeEntrySubmitting = vi.fn().mockResolvedValue(true);
-    const onTimeEntrySuccess = vi.fn().mockResolvedValue(false);
+    const onTimeEntrySubmitting = vi.fn().mockResolvedValue({ outcome: 'applied' });
+    const onTimeEntrySuccess = vi.fn().mockResolvedValue({ outcome: 'storage_error' });
     const onSuccess = vi.fn();
     const { container } = render(
       <IframeEditDialog
-        url="/issues/1/time_entries/new"
-        issueId={1}
+        timeEntryOperation={{ origin: 'time_entry_on_close', issueId: 1, url: '/issues/1/time_entries/new' }}
         mode="time_entry"
         labels={labels}
         baseUrl="/projects/demo/kanban"

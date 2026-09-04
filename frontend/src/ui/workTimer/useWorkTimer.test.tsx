@@ -38,4 +38,18 @@ describe('useWorkTimer recording ownership', () => {
     expect(result.current.remoteOwner).toBe(true);
     expect(load(scope)?.recordingAttempt?.ownerTabId).toBe('other-tab');
   });
+  it('completes idempotently but never treats a storage read error as completion', async () => {
+    const { result } = renderHook(() => useWorkTimer({ scope, labels: {}, onError: vi.fn() }));
+    await act(async () => {
+      const context = (await result.current.record())!;
+      expect(await result.current.lifecycle.submitting(context)).toMatchObject({ outcome: 'applied' });
+      expect(await result.current.lifecycle.complete(context)).toMatchObject({ outcome: 'applied' });
+      expect(await result.current.lifecycle.complete(context)).toMatchObject({ outcome: 'already_completed' });
+      const originalRead = Storage.prototype.getItem;
+      const read = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (this: Storage, key: string) { if (key === keysFor(scope).session) throw new Error('blocked'); return originalRead.call(this, key); });
+      expect(await result.current.lifecycle.complete(context)).toMatchObject({ outcome: 'storage_error' });
+      read.mockRestore();
+    });
+  });
+
 });

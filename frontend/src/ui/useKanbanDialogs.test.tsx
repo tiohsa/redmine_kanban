@@ -151,3 +151,11 @@ describe('useKanbanDialogs issue resolution', () => {
     });
   });
 });
+
+
+it('retains the issue identity with the Time Entry URL in dialog state', () => {
+  const { result } = renderHook(() => useKanbanDialogs('/redmine/projects/test/kanban', null, undefined));
+  const operation = { origin: 'time_entry_on_close' as const, issueId: 12, url: '/redmine/issues/12/time_entries/new' };
+  act(() => result.current.setIframeTimeEntryOperation(operation));
+  expect(result.current.iframeTimeEntryOperation).toEqual(operation);
+});

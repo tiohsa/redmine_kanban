@@ -53,12 +53,12 @@ function renderActions(options: {
   refresh?: () => Promise<void>;
   setError?: (value: string | null) => void;
   timeEntryOnClose?: boolean;
-  setIframeTimeEntryUrl?: (value: string | null) => void;
+  setIframeTimeEntryOperation?: (value: import('./iframe/timeEntryOperation').TimeEntryOperation | null) => void;
 } = {}) {
   const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   const setError = options.setError ?? vi.fn();
   const refresh = options.refresh ?? vi.fn(async () => undefined);
-  const setIframeTimeEntryUrl = options.setIframeTimeEntryUrl ?? vi.fn();
+  const setIframeTimeEntryOperation = options.setIframeTimeEntryOperation ?? vi.fn();
   const data = options.data ?? makeBoardData();
   queryClient.setQueryData(['kanban', 'board'], data);
   const hook = renderHook(
@@ -70,11 +70,11 @@ function renderActions(options: {
       timeEntryOnClose: options.timeEntryOnClose ?? false,
       setNotice: vi.fn(),
       setError,
-      setIframeTimeEntryUrl,
+      setIframeTimeEntryOperation,
     }),
     { wrapper: createWrapper(queryClient) },
   );
-  return { ...hook, setError, refresh, queryClient, setIframeTimeEntryUrl };
+  return { ...hook, setError, refresh, queryClient, setIframeTimeEntryOperation };
 }
 
 afterEach(() => {
@@ -297,7 +297,7 @@ describe('useKanbanActions nested toggle flow', () => {
         timeEntryOnClose: false,
         setNotice: vi.fn(),
         setError: vi.fn(),
-        setIframeTimeEntryUrl: vi.fn(),
+        setIframeTimeEntryOperation: vi.fn(),
       }),
       {
         initialProps: { data: initial },
@@ -367,7 +367,7 @@ describe('useKanbanActions nested toggle flow', () => {
         timeEntryOnClose: false,
         setNotice: vi.fn(),
         setError: vi.fn(),
-        setIframeTimeEntryUrl: vi.fn(),
+        setIframeTimeEntryOperation: vi.fn(),
       }),
       { wrapper: createWrapper(queryClient) },
     );
@@ -423,20 +423,20 @@ describe('useKanbanActions snapshot-invalidated success', () => {
       { id: 1, name: 'Open', is_closed: false, count: 1 },
       { id: 2, name: 'Closed', is_closed: true, count: 0 },
     ];
-    const setIframeTimeEntryUrl = vi.fn();
+    const setIframeTimeEntryOperation = vi.fn();
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       ok: true,
       contract_version: 3,
       invalidations: { board_snapshot: true },
     }), { status: 200 }));
-    const { result, queryClient } = renderActions({ data: board, timeEntryOnClose: true, setIframeTimeEntryUrl });
+    const { result, queryClient } = renderActions({ data: board, timeEntryOnClose: true, setIframeTimeEntryOperation });
     const resetQueries = vi.spyOn(queryClient, 'resetQueries');
 
     await act(async () => { result.current.moveIssue(1, 2); });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
     expect(resetQueries).toHaveBeenCalledWith({ queryKey: ['kanban', 'board'] });
-    expect(setIframeTimeEntryUrl).not.toHaveBeenCalled();
+    expect(setIframeTimeEntryOperation).not.toHaveBeenCalled();
     expect(fetchMock.mock.calls[0][0]).toContain('/issues/1/move');
   });
 
@@ -446,16 +446,16 @@ describe('useKanbanActions snapshot-invalidated success', () => {
       { id: 1, name: 'Open', is_closed: false, count: 1 },
       { id: 2, name: 'Closed', is_closed: true, count: 0 },
     ];
-    const setIframeTimeEntryUrl = vi.fn();
+    const setIframeTimeEntryOperation = vi.fn();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       ok: true,
       contract_version: 3,
       issue: { ...makeIssue(1), status_id: 2, can_log_time: true, lock_version: 4 },
       invalidations: { board_snapshot: false },
     }), { status: 200 }));
-    const { result } = renderActions({ data: board, timeEntryOnClose: true, setIframeTimeEntryUrl });
+    const { result } = renderActions({ data: board, timeEntryOnClose: true, setIframeTimeEntryOperation });
 
     await act(async () => { result.current.moveIssue(1, 2); });
-    await waitFor(() => expect(setIframeTimeEntryUrl).toHaveBeenCalledWith('/issues/1/time_entries/new'));
+    await waitFor(() => expect(setIframeTimeEntryOperation).toHaveBeenCalledWith(expect.objectContaining({ origin: 'time_entry_on_close', issueId: 1 })));
   });
 });

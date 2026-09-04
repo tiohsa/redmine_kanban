@@ -1,3 +1,4 @@
+import { timeEntryIdentity, type TimeEntryOperation } from './timeEntryOperation';
 import { extractIssueIdFromUrl } from '../utils/url';
 import {
   findJournalEditForm,
@@ -22,14 +23,14 @@ export function resolveSaveLoadOutcome({
   saveTarget,
   mode,
   fallbackIssueId,
-  initialUrl,
+  operation,
 }: {
   doc: Document;
   currentUrl: string;
   saveTarget: SaveTarget;
   mode: IframeMode;
   fallbackIssueId: number;
-  initialUrl?: string;
+  operation?: TimeEntryOperation;
 }): SaveLoadOutcome {
   if (hasRedmineFormError(doc)) return { type: 'error' };
 
@@ -44,11 +45,12 @@ export function resolveSaveLoadOutcome({
     // Allow only confirmed Redmine outcomes. Login, error, plugin, and other
     // unexpected pages must not delete a possibly unrecorded TimerSession.
     try {
-      const initial = new URL(initialUrl ?? `/issues/${fallbackIssueId}/time_entries/new`, 'http://redmine-kanban.local');
+      if (!operation) return { type: 'unknown' };
+      const identity = timeEntryIdentity(operation);
+      if (!identity || operation.issueId !== fallbackIssueId) return { type: 'unknown' };
+      const { initial, instancePath } = identity;
       const current = new URL(currentUrl, initial);
-      const match = initial.pathname.match(/^(.*?)\/(?:issues\/\d+\/|projects\/[^/]+\/)?time_entries\/new\/?$/);
-      if (!match || current.origin !== initial.origin) return { type: 'unknown' };
-      const instancePath = match[1];
+      if (current.origin !== initial.origin) return { type: 'unknown' };
       const issuePath = `${instancePath}/issues/${fallbackIssueId}`;
       if (current.pathname === issuePath) return { type: 'success', issueId: fallbackIssueId };
       const newFormPaths = [initial.pathname, `${instancePath}/time_entries/new`, `${issuePath}/time_entries/new`];

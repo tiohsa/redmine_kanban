@@ -21,7 +21,7 @@ admin.must_change_passwd = false if admin.respond_to?(:must_change_passwd=)
 admin.save!
 
 project = Project.find_or_initialize_by(identifier: 'ecookbook')
-required_modules = ['issue_tracking', 'redmine_kanban']
+required_modules = ['issue_tracking', 'time_tracking', 'redmine_kanban']
 if project.new_record?
   project.name = 'eCookbook'
   project.is_public = true

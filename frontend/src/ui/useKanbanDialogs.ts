@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import type { TimeEntryOperation } from './iframe/timeEntryOperation';
 import type { BoardData } from './types';
 import { buildDefaultIssueCreateUrl, type ModalContext } from './issueDialog';
 import { buildIssueTitle, resolveBoardIssue } from './kanbanShared';
@@ -27,7 +28,7 @@ export function useKanbanDialogs(
   const [modal, setModal] = useState<ModalContext | null>(null);
   const [iframeEditContext, setIframeEditContext] = useState<IframeEditContext | null>(null);
   const [iframeCreateContext, setIframeCreateContext] = useState<IframeCreateContext | null>(null);
-  const [iframeTimeEntryUrl, setIframeTimeEntryUrl] = useState<string | null>(null);
+  const [iframeTimeEntryOperation, setIframeTimeEntryOperation] = useState<TimeEntryOperation | null>(null);
   const [priorityPopup, setPriorityPopup] = useState<PriorityPopupState | null>(null);
   const [datePopup, setDatePopup] = useState<DatePopupState | null>(null);
   const [progressPopup, setProgressPopup] = useState<ProgressPopupState | null>(null);
@@ -106,8 +107,8 @@ export function useKanbanDialogs(
     setIframeEditContext,
     iframeCreateContext,
     setIframeCreateContext,
-    iframeTimeEntryUrl,
-    setIframeTimeEntryUrl,
+    iframeTimeEntryOperation,
+    setIframeTimeEntryOperation,
     priorityPopup,
     setPriorityPopup,
     datePopup,

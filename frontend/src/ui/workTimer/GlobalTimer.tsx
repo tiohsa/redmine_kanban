@@ -8,7 +8,7 @@ import { recordingStatusLabel } from './recordingStatusLabel';
 type Props = {
   labels: Record<string, string>; session: TimerSession | null; remoteOwner: boolean;
   onExtend: (minutes: TimerIntervalMinutes) => void; onStop: () => void; onRecord: () => void; onResume: (minutes: TimerIntervalMinutes) => void; onDiscard: () => void;
-  onResolveUnknown: (resolution: 'recorded' | 'unregistered') => void; onRecover: () => void;
+  onResolveUnknown: (resolution: 'recorded' | 'unregistered', expected: TimerSession) => void; onRecover: (expected: TimerSession) => void;
 };
 const duration = (milliseconds: number) => { const seconds = Math.floor(Math.max(0, milliseconds) / 1000); return `${Math.floor(seconds / 3600)}:${String(Math.floor(seconds / 60) % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`; };
 const minuteLabel = (labels: Record<string, string>, minutes: number) => `+${(labels.timer_minutes ?? '%{count} min').replace('%{count}', String(minutes))}`;
@@ -53,6 +53,6 @@ export function GlobalTimer({ labels, session, onExtend, onStop, onRecord, onRes
         </>}
       </div>
     </aside>
-    {isManageOpen && isPending ? <PendingWorkModal labels={labels} session={session} remoteOwner={remoteOwner} onClose={() => setIsManageOpen(false)} onRecord={() => { setIsManageOpen(false); onRecord(); }} onResume={(minutes) => { setIsManageOpen(false); onResume(minutes); }} onDiscard={() => { setIsManageOpen(false); onDiscard(); }} onRecover={() => { setIsManageOpen(false); onRecover(); }} onResolveUnknown={(resolution) => { setIsManageOpen(false); onResolveUnknown(resolution); }} /> : null}
+    {isManageOpen && isPending ? <PendingWorkModal labels={labels} session={session} remoteOwner={remoteOwner} onClose={() => setIsManageOpen(false)} onRecord={() => { setIsManageOpen(false); onRecord(); }} onResume={(minutes) => { setIsManageOpen(false); onResume(minutes); }} onDiscard={() => { setIsManageOpen(false); onDiscard(); }} onRecover={(expected) => { setIsManageOpen(false); onRecover(expected); }} onResolveUnknown={(resolution, expected) => { setIsManageOpen(false); onResolveUnknown(resolution, expected); }} /> : null}
   </>;
 }

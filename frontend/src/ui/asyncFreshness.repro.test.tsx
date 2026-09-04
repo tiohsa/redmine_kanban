@@ -197,7 +197,7 @@ describe('async freshness authority', () => {
         timeEntryOnClose: false,
         setNotice: vi.fn(),
         setError: vi.fn(),
-        setIframeTimeEntryUrl: vi.fn(),
+        setIframeTimeEntryOperation: vi.fn(),
       }),
       { wrapper: createWrapper(queryClient) },
     );
@@ -234,7 +234,7 @@ describe('async freshness authority', () => {
         timeEntryOnClose: false,
         setNotice: vi.fn(),
         setError: vi.fn(),
-        setIframeTimeEntryUrl: vi.fn(),
+        setIframeTimeEntryOperation: vi.fn(),
       }),
       { wrapper: createWrapper(queryClient) },
     );
@@ -276,7 +276,7 @@ describe('async freshness authority', () => {
         timeEntryOnClose: false,
         setNotice: vi.fn(),
         setError: vi.fn(),
-        setIframeTimeEntryUrl: vi.fn(),
+        setIframeTimeEntryOperation: vi.fn(),
       }),
       { wrapper: createWrapper(queryClient) },
     );
@@ -325,7 +325,7 @@ describe('async freshness authority', () => {
         timeEntryOnClose: false,
         setNotice: vi.fn(),
         setError: vi.fn(),
-        setIframeTimeEntryUrl: vi.fn(),
+        setIframeTimeEntryOperation: vi.fn(),
       }),
       { wrapper: createWrapper(queryClient) },
     );
@@ -366,7 +366,7 @@ describe('async freshness authority', () => {
         timeEntryOnClose: false,
         setNotice: vi.fn(),
         setError: vi.fn(),
-        setIframeTimeEntryUrl: vi.fn(),
+        setIframeTimeEntryOperation: vi.fn(),
       }),
       { wrapper: createWrapper(queryClient) },
     );
@@ -405,7 +405,7 @@ describe('async freshness authority', () => {
         timeEntryOnClose: false,
         setNotice: vi.fn(),
         setError: vi.fn(),
-        setIframeTimeEntryUrl: vi.fn(),
+        setIframeTimeEntryOperation: vi.fn(),
       }),
       { wrapper: createWrapper(queryClient) },
     );
@@ -441,7 +441,7 @@ describe('async freshness authority', () => {
         timeEntryOnClose: false,
         setNotice: vi.fn(),
         setError: vi.fn(),
-        setIframeTimeEntryUrl: vi.fn(),
+        setIframeTimeEntryOperation: vi.fn(),
       }),
       { wrapper: createWrapper(queryClient) },
     );
