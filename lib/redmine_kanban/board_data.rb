@@ -172,6 +172,8 @@ module RedmineKanban
       timer_elapsed: "redmine_kanban.label_timer_elapsed",
       timer_remaining: "redmine_kanban.label_timer_remaining",
       timer_pending: "redmine_kanban.label_timer_pending",
+      timer_editing: "redmine_kanban.label_timer_editing",
+      timer_submitting: "redmine_kanban.label_timer_submitting",
       timer_auto_stop: "redmine_kanban.label_timer_auto_stop",
       timer_duration: "redmine_kanban.label_timer_duration",
       timer_minutes: "redmine_kanban.label_timer_minutes",

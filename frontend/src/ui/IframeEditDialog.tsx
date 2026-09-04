@@ -378,6 +378,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
             saveTarget: saveTargetRef.current,
             mode,
             fallbackIssueId: issueId,
+            initialUrl: iframe.src,
           });
           if (outcome.type === 'success') {
             void handleSuccess(outcome.issueId);
@@ -460,6 +461,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
           saveTarget: saveTargetRef.current,
           mode,
           fallbackIssueId: issueId,
+          initialUrl: iframe.src,
         });
         if (outcome.type === 'error') {
           if (saveTargetRef.current === 'time_entry' || mode === 'time_entry') {

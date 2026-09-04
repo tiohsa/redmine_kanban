@@ -40,7 +40,13 @@ export function useWorkTimer({ scope, onError, labels }: Options) {
     }
     return { origin: 'timer' as const, sessionId: next.sessionId, issueId: next.issueId, attemptId: next.recordingAttempt.id, hours: recordedHours(next) };
   }, [labels, scope, session?.sessionId]);
-  const record = useCallback(async () => { const next = (await change(current => beginRecording(current, getTabId()))).session; return next?.recordingAttempt ? { origin: 'timer' as const, sessionId: next.sessionId, issueId: next.issueId, attemptId: next.recordingAttempt.id, hours: recordedHours(next) } : null; }, [change]);
+  const record = useCallback(async () => {
+    const ownerTabId = getTabId();
+    const result = await change(current => beginRecording(current, ownerTabId));
+    const next = result.session;
+    if (!result.applied || !next?.recordingAttempt || next.recordingAttempt.ownerTabId !== ownerTabId) return null;
+    return { origin: 'timer' as const, sessionId: next.sessionId, issueId: next.issueId, attemptId: next.recordingAttempt.id, hours: recordedHours(next) };
+  }, [change]);
   const recover = useCallback(async () => {
     const current = load(scope);
     const attempt = current?.recordingAttempt;

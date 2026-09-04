@@ -3,6 +3,7 @@ import { elapsed } from './timerDomain';
 import { TIMER_INTERVAL_MINUTES } from './timerTypes';
 import type { TimerIntervalMinutes, TimerSession } from './timerTypes';
 import { WorkTimerIcon } from './WorkTimerIcon';
+import { recordingStatusLabel } from './recordingStatusLabel';
 
 type Props = {
   labels: Record<string, string>;
@@ -37,11 +38,7 @@ export function PendingWorkModal({ labels, session, remoteOwner, onClose, onReco
   }, [isDiscardConfirmOpen, onClose]);
 
   const elapsedText = duration(elapsed(session));
-  const notice = phase === 'unknown'
-    ? (labels.timer_unknown ?? 'Could not confirm whether work time was recorded.')
-    : remoteOwner
-      ? (labels.timer_other_tab ?? 'Work time is being entered in another tab.')
-      : null;
+  const notice = recordingStatusLabel(labels, session.recordingAttempt);
 
   return (
     <div className="rk-modal-backdrop rk-work-timer-backdrop" role="dialog" aria-modal="true" aria-labelledby="rk-pending-work-title" data-testid="pending-work-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -62,11 +59,12 @@ export function PendingWorkModal({ labels, session, remoteOwner, onClose, onReco
         {notice ? (
           <div className="rk-pending-work-state-card">
             <p>{notice}</p>
+            {remoteOwner && phase !== 'unknown' ? <p>{labels.timer_other_tab ?? 'Work time is being entered in another tab.'}</p> : null}
             <div className="rk-pending-work-state-actions">
               {phase === 'unknown' ? <>
                 <button type="button" className="rk-timer-button rk-timer-button-primary" onClick={() => onResolveUnknown('recorded')}>{labels.timer_mark_recorded ?? 'Mark recorded'}</button>
                 <button type="button" className="rk-timer-button rk-timer-button-secondary" onClick={() => onResolveUnknown('unregistered')}>{labels.timer_reenter ?? 'Re-enter'}</button>
-              </> : <button type="button" className="rk-timer-button rk-timer-button-primary" onClick={onRecover}>{labels.timer_recover ?? 'Recover in this tab'}</button>}
+              </> : remoteOwner ? <button type="button" className="rk-timer-button rk-timer-button-primary" onClick={onRecover}>{labels.timer_recover ?? 'Recover in this tab'}</button> : null}
             </div>
           </div>
         ) : isDiscardConfirmOpen ? (

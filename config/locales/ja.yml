@@ -174,6 +174,8 @@ ja:
     label_timer_elapsed: "経過"
     label_timer_remaining: "残り"
     label_timer_pending: "未登録の作業時間があります"
+    label_timer_editing: "作業時間を入力中"
+    label_timer_submitting: "作業時間を登録処理中"
     label_timer_auto_stop: "時間になったら自動停止"
     label_timer_duration: "予定工数"
     label_timer_minutes: "%{count}分"

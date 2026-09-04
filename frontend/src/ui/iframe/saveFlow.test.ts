@@ -55,9 +55,14 @@ describe('resolveSaveLoadOutcome', () => {
     })).toEqual({ type: 'unknown' });
   });
 
-  it.each(['/login', '/error', '/plugins/other/result'])('does not accept an unexpected time entry redirect: %s', (currentUrl) => {
+  it.each([
+    '/login', '/error', '/plugins/other/result', '/issues/99',
+    '/login?back_url=/issues/12', '/login?back_url=/time_entries/new',
+    '/plugins/other/time_entries/new/preview', '/plugins/other/issues/12',
+    '/time_entries/new/preview', '/error#/time_entries/new',
+  ])('does not accept an unexpected time entry redirect: %s', (currentUrl) => {
     expect(resolveSaveLoadOutcome({
-      doc: doc('<main>Unexpected page</main>'),
+      doc: doc('<div id="flash_notice">Unrelated success</div><main>Unexpected page</main>'),
       currentUrl,
       saveTarget: 'time_entry',
       mode: 'time_entry',
@@ -73,5 +78,23 @@ describe('resolveSaveLoadOutcome', () => {
       mode: 'time_entry',
       fallbackIssueId: 12,
     })).toEqual({ type: 'success', issueId: 12 });
+  });
+
+  it.each(['/redmine/issues/12?tab=history#change-1', '/redmine/time_entries/new', '/redmine/issues/12/time_entries/new'])('accepts confirmed outcomes for a subdirectory installation: %s', (path) => {
+    expect(resolveSaveLoadOutcome({
+      doc: doc('<div id="flash_notice">Created</div>'),
+      currentUrl: `https://example.test${path}`,
+      initialUrl: 'https://example.test/redmine/issues/12/time_entries/new?back_url=%2Fredmine%2Fissues%2F12',
+      saveTarget: 'time_entry', mode: 'time_entry', fallbackIssueId: 12,
+    })).toEqual({ type: 'success', issueId: 12 });
+  });
+
+  it.each(['https://other.test/redmine/issues/12', 'https://example.test/other/issues/12'])('rejects a different Redmine instance: %s', (currentUrl) => {
+    expect(resolveSaveLoadOutcome({
+      doc: doc('<div id="flash_notice">Created</div>'),
+      currentUrl,
+      initialUrl: 'https://example.test/redmine/issues/12/time_entries/new',
+      saveTarget: 'time_entry', mode: 'time_entry', fallbackIssueId: 12,
+    })).toEqual({ type: 'unknown' });
   });
 });

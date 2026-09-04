@@ -87,6 +87,28 @@ test('simultaneous stops across tabs create only one recording owner', async ({ 
   await expect.poll(async () => (await page.locator('iframe.rk-iframe-dialog-frame').count()) + (await pageB.locator('iframe.rk-iframe-dialog-frame').count())).toBe(1);
 });
 
+test('simultaneous pending record requests open only the owner tab form', async ({ page, context, baseURL }) => {
+  const redmineBase = baseURL || 'http://127.0.0.1:3002';
+  await adminLogin(page, redmineBase);
+  const { boardUrl, data, issue, sessionKey } = await prepareBoard(page, redmineBase);
+  await seedSession(page, sessionKey, issue, data.meta.current_user_id, 'stopped_pending_record');
+  const pageB = await context.newPage();
+  await Promise.all([page.reload(), pageB.goto(boardUrl)]);
+  await Promise.all([expect(page.getByTestId('global-timer-record-button')).toBeVisible(), expect(pageB.getByTestId('global-timer-record-button')).toBeVisible()]);
+
+  await Promise.all([page, pageB].map(tab => tab.evaluate(() => {
+    document.querySelector('[data-testid="global-timer-record-button"]').click();
+  })));
+
+  await expect.poll(async () => (await page.locator('iframe.rk-iframe-dialog-frame').count()) + (await pageB.locator('iframe.rk-iframe-dialog-frame').count())).toBe(1);
+  for (const tab of [page, pageB]) {
+    await expect(tab.getByTestId('global-timer-pending-text')).toContainText(/Entering work time|作業時間を入力中/);
+    if (await tab.locator('iframe.rk-iframe-dialog-frame').count()) {
+      expect(await tab.evaluate((key) => JSON.parse(localStorage.getItem(key)).recordingAttempt.ownerTabId === sessionStorage.getItem('redmine_canvas_gantt_timer_tab_id'), sessionKey)).toBe(true);
+    }
+  }
+});
+
 test('successful Worktime registration clears TimerSession without nesting Kanban', async ({ page, baseURL }) => {
   const redmineBase = baseURL || 'http://127.0.0.1:3002';
   const boardUrl = `${redmineBase}/projects/ecookbook/kanban`;
