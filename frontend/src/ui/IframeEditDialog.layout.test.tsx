@@ -766,7 +766,7 @@ describe('IframeEditDialog layout variants', () => {
     const doc = document.implementation.createHTMLDocument('iframe');
     doc.body.innerHTML = '<form id="new_time_entry"><button type="submit">Save</button></form>';
     const iframeWindow = {
-      location: { href: 'http://example.com/issues/1/time_entries/new' },
+      location: { href: iframe.src },
       document: doc,
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
@@ -779,7 +779,7 @@ describe('IframeEditDialog layout variants', () => {
     fireEvent.click(await screen.findByRole('button', { name: labels.save }));
     await waitFor(() => expect(onTimeEntrySubmitting).toHaveBeenCalledOnce());
 
-    iframeWindow.location.href = 'http://example.com/issues/1';
+    iframeWindow.location.href = new URL('/issues/1', iframe.src).href;
     doc.body.innerHTML = '<div id="flash_notice">Created</div>';
     fireEvent.load(iframe);
 

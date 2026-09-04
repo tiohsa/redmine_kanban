@@ -12,6 +12,7 @@ const labels = {
   timer_resume: 'タイマーを再開（+15分）', timer_discard: '破棄', timer_discard_confirm: 'この未登録作業時間を破棄しますか？',
   timer_pending_record_desc: 'Redmineの作業時間入力フォームを開いて、この作業時間を登録します。', timer_or: 'または',
   timer_pending_resume_section: '作業を続ける', timer_pending_resume_desc: 'タイマーを再開し、記録前に作業時間を追加します。',
+  timer_editing: '作業時間を入力中', timer_submitting: '作業時間を登録処理中', timer_unknown: '作業時間の登録結果を確認できませんでした。',
   cancel: 'キャンセル', close: '閉じる',
 };
 const callbacks = () => ({ onExtend: vi.fn(), onStop: vi.fn(), onRecord: vi.fn(), onResume: vi.fn(), onDiscard: vi.fn(), onResolveUnknown: vi.fn(), onRecover: vi.fn() });
@@ -82,5 +83,36 @@ describe('WorkTimer UI', () => {
     expect(screen.getByTestId('global-timer').className).toContain('rk-work-timer-running');
     expect(screen.getByTestId('global-timer-overrun').textContent).toBe('超過 0:00:01');
     expect(screen.getByRole('button', { name: 'タイマーを停止' })).toBeTruthy();
+  });
+
+  it.each(['editing', 'submitting', 'unknown'] as const)('shows the %s recording state without offering resume or discard', (phase) => {
+    const actions = callbacks();
+    const session = {
+      ...stop(createTimerSession(2, 'Pending task', 30, false, 7, 1_000), 9_000),
+      recordingAttempt: { id: 'attempt', ownerTabId: 'this-tab', openedAt: 9_000, phase },
+    };
+    render(<GlobalTimer labels={labels} session={session} remoteOwner={false} {...actions} />);
+    expect(screen.getByTestId('global-timer-pending-text').textContent).toContain(labels[`timer_${phase}`]);
+    fireEvent.click(screen.getByTestId('global-timer-manage-button'));
+    expect(within(screen.getByTestId('pending-work-modal')).getByText(labels[`timer_${phase}`])).toBeTruthy();
+    expect(screen.queryByTestId('pending-work-resume-options')).toBeNull();
+    expect(screen.queryByTestId('pending-work-discard-button')).toBeNull();
+    expect(screen.queryByTestId('pending-work-record-button')).toBeNull();
+    if (phase === 'unknown') {
+      fireEvent.click(screen.getByRole('button', { name: 'Re-enter' }));
+      expect(actions.onResolveUnknown).toHaveBeenCalledWith('unregistered');
+    }
+  });
+
+  it('keeps recovery available for a recording owned by another tab', () => {
+    const actions = callbacks();
+    const session = {
+      ...stop(createTimerSession(2, 'Pending task', 30, false, 7, 1_000), 9_000),
+      recordingAttempt: { id: 'attempt', ownerTabId: 'other-tab', openedAt: 9_000, phase: 'submitting' as const },
+    };
+    render(<GlobalTimer labels={labels} session={session} remoteOwner {...actions} />);
+    fireEvent.click(screen.getByTestId('global-timer-manage-button'));
+    fireEvent.click(screen.getByRole('button', { name: 'Recover in this tab' }));
+    expect(actions.onRecover).toHaveBeenCalledOnce();
   });
 });

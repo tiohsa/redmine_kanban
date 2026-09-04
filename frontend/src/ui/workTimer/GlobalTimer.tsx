@@ -3,6 +3,7 @@ import { PendingWorkModal } from './PendingWorkModal';
 import { TIMER_INTERVAL_MINUTES } from './timerTypes';
 import type { TimerIntervalMinutes, TimerSession } from './timerTypes';
 import { WorkTimerIcon } from './WorkTimerIcon';
+import { recordingStatusLabel } from './recordingStatusLabel';
 
 type Props = {
   labels: Record<string, string>; session: TimerSession | null; remoteOwner: boolean;
@@ -32,7 +33,7 @@ export function GlobalTimer({ labels, session, onExtend, onStop, onRecord, onRes
       <div className="rk-work-timer-details">
         <strong className="rk-work-timer-subject" title={`#${session.issueId} ${session.subject}`} data-testid="global-timer-subject">#{session.issueId} {session.subject}</strong>
         <div className="rk-work-timer-time">
-          {isPending ? <span className="rk-work-timer-warning" data-testid="global-timer-pending-text">{session.recordingAttempt?.phase === 'unknown' ? (labels.timer_unknown ?? 'Recording result needs confirmation') : (labels.timer_pending ?? 'There is unrecorded work time')}: <b>{duration(elapsed)}</b></span> : <>
+          {isPending ? <span className="rk-work-timer-warning" data-testid="global-timer-pending-text">{recordingStatusLabel(labels, session.recordingAttempt) ?? (labels.timer_pending ?? 'There is unrecorded work time')}: <b>{duration(elapsed)}</b></span> : <>
             <span className={isExpired ? 'rk-work-timer-overrun' : 'rk-work-timer-remaining'} data-testid={isExpired ? 'global-timer-overrun' : 'global-timer-remaining'}>{isExpired ? (labels.timer_overrun ?? 'Overrun') : (labels.timer_remaining ?? 'Remaining')} {duration(isExpired ? overrun : remaining)}</span>
             <span aria-hidden="true">/</span><span data-testid="global-timer-elapsed">{labels.timer_elapsed ?? 'Elapsed'} {duration(elapsed)}</span>
           </>}
