@@ -38,17 +38,17 @@ export function canSubmitTimeEntry(operation: TimeEntryOperation, form: HTMLForm
   const identity = timeEntryIdentity(operation);
   if (!identity) return false;
   try {
+    if (!form.matches('form#new_time_entry')) return false;
     const { initial, instancePath } = identity;
     const current = new URL(currentUrl, initial);
     const issuePath = `${instancePath}/issues/${operation.issueId}`;
     const paths = [initial.pathname, `${instancePath}/time_entries`, `${issuePath}/time_entries`, `${instancePath}/time_entries/new`];
     if (current.origin !== initial.origin || !paths.includes(current.pathname)) return false;
     const action = form.getAttribute('action');
-    if (action) {
-      const target = new URL(action, current);
-      if (target.origin !== initial.origin || ![`${instancePath}/time_entries`, `${issuePath}/time_entries`].includes(target.pathname)) return false;
-    }
+    if (!action || !action.trim()) return false;
+    const target = new URL(action, current);
+    if (target.origin !== initial.origin || ![`${instancePath}/time_entries`, `${issuePath}/time_entries`].includes(target.pathname)) return false;
     const issueFields = new FormData(form).getAll('time_entry[issue_id]');
-    return issueFields.every(value => Number(value) === operation.issueId);
+    return issueFields.length > 0 && issueFields.every(value => Number(value) === operation.issueId);
   } catch { return false; }
 }

@@ -659,7 +659,7 @@ describe('IframeEditDialog layout variants', () => {
     );
     const iframe = container.querySelector('iframe') as HTMLIFrameElement;
     const doc = document.implementation.createHTMLDocument('iframe');
-    doc.body.innerHTML = '<form id="new_time_entry"><button type="submit">Save</button></form>';
+    doc.body.innerHTML = '<form id="new_time_entry" action="/issues/1/time_entries"><input name="time_entry[issue_id]" value="1"><button type="submit">Save</button></form>';
     const iframeWindow = {
       location: { href: iframe.src },
       document: doc,
@@ -709,7 +709,7 @@ describe('IframeEditDialog layout variants', () => {
     );
     const iframe = container.querySelector('iframe') as HTMLIFrameElement;
     const doc = document.implementation.createHTMLDocument('iframe');
-    doc.body.innerHTML = '<form id="search-form"><button type="submit">Search</button></form><form id="new_time_entry"><button type="submit">Save</button></form>';
+    doc.body.innerHTML = '<form id="search-form"><button type="submit">Search</button></form><form id="new_time_entry" action="/issues/1/time_entries"><input name="time_entry[issue_id]" value="1"><button type="submit">Save</button></form>';
     const iframeWindow = {
       location: { href: iframe.src },
       document: doc,
@@ -759,7 +759,7 @@ describe('IframeEditDialog layout variants', () => {
     );
     const iframe = container.querySelector('iframe') as HTMLIFrameElement;
     const doc = document.implementation.createHTMLDocument('iframe');
-    doc.body.innerHTML = '<form id="new_time_entry"><button type="submit">Save</button></form>';
+    doc.body.innerHTML = '<form id="new_time_entry" action="/issues/1/time_entries"><input name="time_entry[issue_id]" value="1"><button type="submit">Save</button></form>';
     const iframeWindow = {
       location: { href: iframe.src },
       document: doc,
