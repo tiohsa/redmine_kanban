@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PendingWorkModal } from './PendingWorkModal';
 import { TIMER_INTERVAL_MINUTES } from './timerTypes';
 import type { TimerIntervalMinutes, TimerSession } from './timerTypes';
@@ -9,16 +9,24 @@ type Props = {
   labels: Record<string, string>; session: TimerSession | null; remoteOwner: boolean;
   onExtend: (minutes: TimerIntervalMinutes) => void; onStop: () => void; onRecord: () => void; onResume: (minutes: TimerIntervalMinutes) => void; onDiscard: () => void;
   onResolveUnknown: (resolution: 'recorded' | 'unregistered', expected: TimerSession) => void; onRecover: (expected: TimerSession) => void;
+  openPendingRequest?: number;
 };
 const duration = (milliseconds: number) => { const seconds = Math.floor(Math.max(0, milliseconds) / 1000); return `${Math.floor(seconds / 3600)}:${String(Math.floor(seconds / 60) % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`; };
 const minuteLabel = (labels: Record<string, string>, minutes: number) => `+${(labels.timer_minutes ?? '%{count} min').replace('%{count}', String(minutes))}`;
 
-export function GlobalTimer({ labels, session, onExtend, onStop, onRecord, onResume, onDiscard, onResolveUnknown, onRecover, remoteOwner }: Props) {
+export function GlobalTimer({ labels, session, onExtend, onStop, onRecord, onResume, onDiscard, onResolveUnknown, onRecover, remoteOwner, openPendingRequest }: Props) {
   const [now, setNow] = useState(Date.now());
   const [isExtendMenuOpen, setIsExtendMenuOpen] = useState(false);
   const [isManageOpen, setIsManageOpen] = useState(false);
+  const lastPendingRequest = useRef(0);
   useEffect(() => { if (!session || session.state === 'stopped_pending_record') return; setNow(Date.now()); const id = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(id); }, [session]);
   useEffect(() => { if (!session) setIsManageOpen(false); }, [session]);
+  useEffect(() => {
+    if (!openPendingRequest || openPendingRequest === lastPendingRequest.current) return;
+    if (session?.state !== 'stopped_pending_record') return;
+    lastPendingRequest.current = openPendingRequest;
+    setIsManageOpen(true);
+  }, [openPendingRequest, session?.state]);
   if (!session) return null;
   const elapsed = session.segments.reduce((total, part) => total + Math.max(0, (part.stoppedAt ?? now) - part.startedAt), 0);
   const remaining = session.deadlineAt ? Math.max(0, session.deadlineAt - now) : 0;

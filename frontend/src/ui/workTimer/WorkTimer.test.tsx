@@ -116,8 +116,95 @@ describe('WorkTimer UI', () => {
     fireEvent.click(screen.getByTestId('global-timer-manage-button'));
     fireEvent.click(screen.getByRole('button', { name: 'Recover in this tab' }));
     expect(actions.onRecover).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }));
+    expect(actions.onRecover).not.toHaveBeenCalled();
+    expect(screen.getByTestId('pending-work-modal')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Recover in this tab' }));
     fireEvent.click(screen.getByTestId('pending-work-operation-confirm'));
     expect(actions.onRecover).toHaveBeenCalledOnce();
+  });
+
+  it('closes only the confirmation panel when its backdrop is clicked', () => {
+    const actions = callbacks();
+    const session = {
+      ...stop(createTimerSession(2, 'Pending task', 30, false, 7, 1_000), 9_000),
+      recordingAttempt: { id: 'attempt', ownerTabId: 'other-tab', openedAt: 9_000, phase: 'submitting' as const },
+    };
+    render(<GlobalTimer labels={labels} session={session} remoteOwner {...actions} />);
+    fireEvent.click(screen.getByTestId('global-timer-manage-button'));
+    fireEvent.click(screen.getByRole('button', { name: 'Recover in this tab' }));
+    expect(screen.getByTestId('pending-work-operation-confirm')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('pending-work-modal-backdrop'));
+
+    expect(screen.queryByTestId('pending-work-operation-confirm')).toBeNull();
+    expect(screen.getByTestId('pending-work-modal')).toBeTruthy();
+    expect(actions.onRecover).not.toHaveBeenCalled();
+  });
+
+  it.each(['recorded', 'unregistered'] as const)('closes the %s confirmation panel from its backdrop', (action) => {
+    const actions = callbacks();
+    const session = {
+      ...stop(createTimerSession(2, 'Pending task', 30, false, 7, 1_000), 9_000),
+      recordingAttempt: { id: 'attempt', ownerTabId: 'this-tab', openedAt: 9_000, phase: 'unknown' as const },
+    };
+    render(<GlobalTimer labels={labels} session={session} remoteOwner={false} {...actions} />);
+    fireEvent.click(screen.getByTestId('global-timer-manage-button'));
+    fireEvent.click(screen.getByRole('button', { name: action === 'recorded' ? 'Mark recorded' : 'Re-enter' }));
+    fireEvent.click(screen.getByTestId('pending-work-modal-backdrop'));
+    expect(screen.queryByTestId('pending-work-operation-confirm')).toBeNull();
+    expect(screen.getByTestId('pending-work-modal')).toBeTruthy();
+  });
+
+  it('closes discard confirmation from the backdrop while keeping the modal open', () => {
+    const actions = callbacks();
+    const session = stop(createTimerSession(2, 'Pending task', 30, false, 7, 1_000), 9_000);
+    render(<GlobalTimer labels={labels} session={session} remoteOwner={false} {...actions} />);
+    fireEvent.click(screen.getByTestId('global-timer-manage-button'));
+    fireEvent.click(screen.getByTestId('pending-work-discard-button'));
+    fireEvent.click(screen.getByTestId('pending-work-modal-backdrop'));
+    expect(screen.queryByTestId('pending-work-discard-confirm-panel')).toBeNull();
+    expect(screen.getByTestId('pending-work-modal')).toBeTruthy();
+  });
+
+  it.each(['recover', 'recorded', 'unregistered', 'discard'] as const)('closes only the %s confirmation panel with Escape', (action) => {
+    const actions = callbacks();
+    const session = action === 'recover'
+      ? { ...stop(createTimerSession(2, 'Pending task', 30, false, 7, 1_000), 9_000), recordingAttempt: { id: 'attempt', ownerTabId: 'other-tab', openedAt: 9_000, phase: 'submitting' as const } }
+      : action === 'discard'
+        ? stop(createTimerSession(2, 'Pending task', 30, false, 7, 1_000), 9_000)
+        : { ...stop(createTimerSession(2, 'Pending task', 30, false, 7, 1_000), 9_000), recordingAttempt: { id: 'attempt', ownerTabId: 'this-tab', openedAt: 9_000, phase: 'unknown' as const } };
+    render(<GlobalTimer labels={labels} session={session} remoteOwner={action === 'recover'} {...actions} />);
+    fireEvent.click(screen.getByTestId('global-timer-manage-button'));
+    if (action === 'recover') fireEvent.click(screen.getByRole('button', { name: 'Recover in this tab' }));
+    else if (action === 'discard') fireEvent.click(screen.getByTestId('pending-work-discard-button'));
+    else fireEvent.click(screen.getByRole('button', { name: action === 'recorded' ? 'Mark recorded' : 'Re-enter' }));
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(screen.getByTestId('pending-work-modal')).toBeTruthy();
+    expect(screen.queryByTestId('pending-work-operation-confirm')).toBeNull();
+    expect(screen.queryByTestId('pending-work-discard-confirm-panel')).toBeNull();
+    expect(actions.onRecover).not.toHaveBeenCalled();
+    expect(actions.onResolveUnknown).not.toHaveBeenCalled();
+    expect(actions.onDiscard).not.toHaveBeenCalled();
+  });
+
+  it('opens the shared pending modal for a card management request', () => {
+    const actions = callbacks();
+    const session = stop(createTimerSession(2, 'Pending task', 30, false, 7, 1_000), 9_000);
+    render(<GlobalTimer labels={labels} session={session} remoteOwner={false} openPendingRequest={1} {...actions} />);
+    expect(screen.getByTestId('pending-work-modal')).toBeTruthy();
+  });
+
+  it('waits for the pending session before consuming a card management request', () => {
+    const actions = callbacks();
+    const running = createTimerSession(2, 'Pending task', 30, false, 7, 1_000);
+    const pending = stop(running, 9_000);
+    const { rerender } = render(<GlobalTimer labels={labels} session={running} remoteOwner={false} openPendingRequest={1} {...actions} />);
+    expect(screen.queryByTestId('pending-work-modal')).toBeNull();
+    rerender(<GlobalTimer labels={labels} session={pending} remoteOwner={false} openPendingRequest={1} {...actions} />);
+    expect(screen.getByTestId('pending-work-modal')).toBeTruthy();
   });
   it.each(['recorded', 'unregistered'] as const)('keeps the confirmed snapshot when state changes during %s confirmation', action => {
     const actions = callbacks();

@@ -88,14 +88,14 @@ async function lock<T>(scope: TimerScope, update: () => T): Promise<LockResult<T
   if (executed) return { status: 'storage_error' };
   return localStorageLock(name, fn);
 }
-export type TimerMutationOutcome = 'applied' | 'semantic_conflict' | 'locked' | 'storage_error' | 'absent' | 'already_completed';
+export type TimerMutationOutcome = 'applied' | 'semantic_conflict' | 'locked' | 'storage_error' | 'absent' | 'already_completed' | 'already_satisfied';
 export type TimerMutationResult = { session: TimerSession | null; outcome: TimerMutationOutcome; applied: boolean; lock: LockStatus };
-export const mutationSucceeded = (result: { outcome: TimerMutationOutcome }) => result.outcome === 'applied' || result.outcome === 'already_completed';
+export const mutationSucceeded = (result: { outcome: TimerMutationOutcome }) => result.outcome === 'applied' || result.outcome === 'already_completed' || result.outcome === 'already_satisfied';
 
 export async function mutate(
   scope: TimerScope,
   updater: (session: TimerSession | null) => TimerSession | null | undefined,
-  options: { absentOutcome?: 'absent' | 'already_completed' } = {},
+  options: { absentOutcome?: 'absent' | 'already_completed'; unchangedOutcome?: 'already_satisfied' } = {},
 ): Promise<TimerMutationResult> {
   const locked = await lock(scope, () => {
     const read = readSession(scope);
@@ -103,6 +103,7 @@ export async function mutate(
     const current = read.session;
     if (!current && options.absentOutcome) return { session: null, outcome: options.absentOutcome, applied: false };
     const next = updater(current);
+    if (next === current && current && options.unchangedOutcome) return { session: current, outcome: options.unchangedOutcome, applied: false };
     if (next === undefined || next === current) return { session: current, outcome: current ? 'semantic_conflict' as const : 'absent' as const, applied: false };
     const persisted = next === null ? null : { ...next, revision: (current?.revision ?? 0) + 1, updatedAt: Date.now() };
     try {

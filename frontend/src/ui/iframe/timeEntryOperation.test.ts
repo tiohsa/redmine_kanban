@@ -27,6 +27,7 @@ describe('Time Entry operation identity', () => {
 it('checks the native form target and issue before allowing a POST', () => {
   const operation = createTimeEntryOperation(window.location.origin + '/redmine', 12);
   const form = document.createElement('form');
+  form.id = 'new_time_entry';
   form.action = '/redmine/time_entries';
   form.innerHTML = '<input name="time_entry[issue_id]" value="12">';
   expect(canSubmitTimeEntry(operation, form, operation.url)).toBe(true);
@@ -34,5 +35,47 @@ it('checks the native form target and issue before allowing a POST', () => {
   expect(canSubmitTimeEntry(operation, form, operation.url)).toBe(false);
   form.querySelector('input')!.value = '12';
   form.action = '/other/time_entries';
+  expect(canSubmitTimeEntry(operation, form, operation.url)).toBe(false);
+});
+
+it('rejects a Time Entry form without positive Issue identity evidence', () => {
+  const operation = createTimeEntryOperation(window.location.origin + '/redmine', 12);
+  const form = document.createElement('form');
+  form.id = 'new_time_entry';
+  form.action = '/redmine/time_entries';
+  expect(canSubmitTimeEntry(operation, form, operation.url)).toBe(false);
+});
+
+it('rejects a form without an explicit allowed action', () => {
+  const operation = createTimeEntryOperation(window.location.origin + '/redmine', 12);
+  const form = document.createElement('form');
+  form.id = 'new_time_entry';
+  form.innerHTML = '<input name="time_entry[issue_id]" value="12">';
+  expect(canSubmitTimeEntry(operation, form, operation.url)).toBe(false);
+});
+
+it('rejects whitespace-only action on the generic Time Entry route', () => {
+  const operation = createTimeEntryOperation(window.location.origin + '/redmine', 12);
+  const form = document.createElement('form');
+  form.id = 'new_time_entry';
+  form.setAttribute('action', '   ');
+  form.innerHTML = '<input name="time_entry[issue_id]" value="12">';
+  expect(canSubmitTimeEntry(operation, form, '/redmine/time_entries')).toBe(false);
+});
+
+it('rejects mixed Issue identity fields even when one matches', () => {
+  const operation = createTimeEntryOperation(window.location.origin + '/redmine', 12);
+  const form = document.createElement('form');
+  form.id = 'new_time_entry';
+  form.action = '/redmine/time_entries';
+  form.innerHTML = '<input name="time_entry[issue_id]" value="12"><input name="time_entry[issue_id]" value="99">';
+  expect(canSubmitTimeEntry(operation, form, operation.url)).toBe(false);
+});
+
+it('rejects a non-Time-Entry form even with a matching Issue field', () => {
+  const operation = createTimeEntryOperation(window.location.origin + '/redmine', 12);
+  const form = document.createElement('form');
+  form.action = '/redmine/time_entries';
+  form.innerHTML = '<input name="time_entry[issue_id]" value="12">';
   expect(canSubmitTimeEntry(operation, form, operation.url)).toBe(false);
 });

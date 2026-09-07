@@ -114,6 +114,56 @@ describe('recording commands and canonical outcomes', () => {
     expect((await command(second, 'complete')).outcome).toBe('applied');
   });
 
+  it('treats closing an already unknown attempt as an idempotent no-op', async () => {
+    const context = await seed();
+    await command(context, 'submitting');
+    await command(context, 'unknown');
+    const before = localStorage.getItem(keysFor(scope).session);
+    const get = vi.spyOn(Storage.prototype, 'getItem');
+    const set = vi.spyOn(Storage.prototype, 'setItem');
+
+    const result = await command(context, 'close');
+
+    expect(result).toMatchObject({ outcome: 'already_satisfied', applied: false, session: { recordingAttempt: { phase: 'unknown' } } });
+    expect(get.mock.calls.filter(([key]) => key === keysFor(scope).session)).toHaveLength(1);
+    expect(localStorage.getItem(keysFor(scope).session)).toBe(before);
+    expect(set.mock.calls.filter(([key]) => key === keysFor(scope).session)).toHaveLength(0);
+  });
+
+  it.each(['sessionId', 'attemptId', 'ownerTabId', 'issueId', 'scope', 'phase'] as const)('never treats a stale %s as satisfied when closing unknown', async field => {
+    const context = await seed();
+    await command(context, 'submitting');
+    await command(context, 'unknown');
+    const before = localStorage.getItem(keysFor(scope).session);
+    const stale = field === 'scope' ? { ...context, scope: { ...scope, userId: 8 } }
+      : field === 'phase' ? context : { ...context, [field]: 'stale' };
+    const set = vi.spyOn(Storage.prototype, 'setItem');
+
+    expect((await command(stale, 'close', field === 'phase' ? 'editing' : undefined)).outcome).toBe('semantic_conflict');
+    expect(localStorage.getItem(keysFor(scope).session)).toBe(before);
+    expect(set.mock.calls.filter(([key]) => key === keysFor(scope).session)).toHaveLength(0);
+  });
+
+  it('enforces the remaining recording command postconditions', async () => {
+    const editing = await seed();
+    expect((await command(editing, 'unknown')).outcome).toBe('semantic_conflict');
+    expect((await command(editing, 'close')).outcome).toBe('applied');
+
+    await mutate(scope, current => beginRecording(current!, 'tab-a'));
+    const submitting = recordingContext(scope, load(scope)!)!;
+    expect((await command(submitting, 'submitting')).outcome).toBe('applied');
+    expect((await command(submitting, 'close')).session?.recordingAttempt?.phase).toBe('unknown');
+    const unknownAfterClose = recordingContext(scope, load(scope)!)!;
+    expect((await command(unknownAfterClose, 'submitting')).outcome).toBe('semantic_conflict');
+    expect((await command(submitting, 'complete')).outcome).toBe('semantic_conflict');
+
+    const unknown = recordingContext(scope, load(scope)!)!;
+    expect((await command(unknown, 'unknown')).outcome).toBe('semantic_conflict');
+    expect((await command(unknown, 'unregistered', 'unknown')).outcome).toBe('applied');
+    await mutate(scope, () => null);
+    expect((await command(unknown, 'complete')).outcome).toBe('already_completed');
+  });
+
   it('retries locks at most three times and never retries semantic conflict or storage error', async () => {
     const context = await seed();
     vi.useFakeTimers();

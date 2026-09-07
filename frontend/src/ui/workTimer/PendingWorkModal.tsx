@@ -43,7 +43,12 @@ export function PendingWorkModal({ labels, session, remoteOwner, onClose, onReco
   const notice = recordingStatusLabel(labels, session.recordingAttempt);
 
   return (
-    <div className="rk-modal-backdrop rk-work-timer-backdrop" role="dialog" aria-modal="true" aria-labelledby="rk-pending-work-title" data-testid="pending-work-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className="rk-modal-backdrop rk-work-timer-backdrop" role="dialog" aria-modal="true" aria-labelledby="rk-pending-work-title" data-testid="pending-work-modal-backdrop" onClick={(event) => {
+      if (event.target !== event.currentTarget) return;
+      if (confirmation) setConfirmation(null);
+      else if (isDiscardConfirmOpen) setIsDiscardConfirmOpen(false);
+      else onClose();
+    }}>
       <section className="rk-work-timer-modal rk-pending-work-modal" data-testid="pending-work-modal">
         <header className="rk-pending-work-header">
           <WorkTimerIcon state="pending" size={30} />
