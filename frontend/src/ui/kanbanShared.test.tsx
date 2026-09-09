@@ -66,8 +66,8 @@ describe('buildDisplayData with category swimlanes', () => {
 
   function categoryBoard(): BoardData {
     const data = makeBoardData([
-      makeIssue(10, { category_id: 6, category_name: 'Gestion' }),
-      makeIssue(11, { category_id: 8, category_name: 'Estado del arte' }),
+      makeIssue(10, { category_id: 6, category_name: 'Documentation' }),
+      makeIssue(11, { category_id: 8, category_name: 'Research' }),
       makeIssue(12, { category_id: null }),
     ]);
     return {
@@ -75,8 +75,8 @@ describe('buildDisplayData with category swimlanes', () => {
       lists: {
         ...data.lists,
         categories: [
-          { id: 6, name: 'Gestion', project_id: 3 },
-          { id: 8, name: 'Estado del arte', project_id: 3 },
+          { id: 6, name: 'Documentation', project_id: 1 },
+          { id: 8, name: 'Research', project_id: 1 },
         ],
       },
       labels: { not_set: '(not set)' },
@@ -88,7 +88,7 @@ describe('buildDisplayData with category swimlanes', () => {
 
     expect(result.meta.lane_type).toBe('category');
     expect(result.lanes.map((lane) => lane.id)).toEqual([6, 8, 'no_category']);
-    expect(result.lanes.map((lane) => lane.name)).toEqual(['Gestion', 'Estado del arte', '(not set)']);
+    expect(result.lanes.map((lane) => lane.name)).toEqual(['Documentation', 'Research', '(not set)']);
     expect(result.lanes.map((lane) => lane.category_id)).toEqual([6, 8, null]);
   });
 
