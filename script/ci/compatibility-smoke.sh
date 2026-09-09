@@ -7,4 +7,4 @@ export REDMINE_KANBAN_NATIVE_PROJECT="${REDMINE_KANBAN_NATIVE_PROJECT:-kanban-na
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$PLUGIN_ROOT"
 
-exec npx --prefix e2e playwright test -c e2e/playwright.config.js e2e/tests/kanban-smoke.spec.js e2e/tests/kanban-native-mutation.spec.js "$@"
+exec npx --prefix e2e playwright test -c e2e/playwright.config.js e2e/tests/kanban-smoke.spec.js e2e/tests/kanban-native-mutation.spec.js e2e/tests/kanban-worktime.spec.js "$@"

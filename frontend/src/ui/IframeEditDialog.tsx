@@ -102,6 +102,7 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
   const [trackerOptions, setTrackerOptions] = useState<Array<{ id: number; name: string }>>([]);
   const [parentTrackerId, setParentTrackerId] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [cleanupFailed, setCleanupFailed] = useState(false);
   const [isSaveTransitioning, setIsSaveTransitioning] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [currentUrl, setCurrentUrl] = useState(url);
@@ -121,6 +122,7 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
   const submitPreparationRef = useRef(false);
   const nativeSubmitBypassRef = useRef(false);
   const timeEntryUncertainRef = useRef(false);
+  const timeEntryConfirmedRef = useRef(false);
   const iframeSubmitCleanupRef = useRef<(() => void) | null>(null);
   const dialogClosingRef = useRef(false);
   const submitSubtasksAfterEditLoadRef = useRef(false);
@@ -172,7 +174,7 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
   }, [onTimeEntryUnknown]);
 
   useEffect(() => () => {
-    if (mode === 'time_entry' && isSubmittingRef.current && saveTargetRef.current === 'time_entry') void onTimeEntryUnknownRef.current?.();
+    if (mode === 'time_entry' && isSubmittingRef.current && saveTargetRef.current === 'time_entry' && !timeEntryConfirmedRef.current) void onTimeEntryUnknownRef.current?.();
   }, [mode]);
 
   const measureDialogHeight = useCallback(() => {
@@ -189,6 +191,12 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
     ));
   }, []);
 
+  const getSafeSaveForm = useCallback((doc: Document, currentUrl: string) => {
+    const active = getActiveSaveForm(doc, mode, currentUrl);
+    if (mode === 'time_entry' && (!active || !timeEntryOperation || !canSubmitTimeEntry(timeEntryOperation, active.form, currentUrl))) return null;
+    return active;
+  }, [mode, timeEntryOperation]);
+
   const bindIframeSizeObservers = useCallback((doc: Document) => {
     iframeSizeObserverCleanupRef.current?.();
 
@@ -201,7 +209,7 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
         if (isSubmittingRef.current && saveTargetRef.current === 'journal' && !hasRedmineFormError(doc) && !findJournalEditForm(doc)) {
           handleSuccessRef.current?.(issueId);
         } else if (!isSubmittingRef.current) {
-          const activeSaveForm = getActiveSaveForm(doc, mode, iframeRef.current?.contentWindow?.location.href ?? currentUrl);
+          const activeSaveForm = getSafeSaveForm(doc, iframeRef.current?.contentWindow?.location.href ?? currentUrl);
           setSaveTarget(activeSaveForm?.target ?? null);
           if (activeSaveForm?.target === 'journal') {
             setDialogMode('form');
@@ -209,7 +217,7 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
         }
       },
     );
-  }, [currentUrl, issueId, measureDialogHeight, mode]);
+  }, [currentUrl, getSafeSaveForm, issueId, measureDialogHeight]);
 
   const handleSuccess = useCallback(async (targetIssueId: number) => {
     if (successHandlingRef.current) return;
@@ -230,14 +238,18 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
     }
 
     if (completedSaveTarget === 'time_entry' || mode === 'time_entry') {
+      timeEntryConfirmedRef.current = true;
+      setCleanupFailed(false);
       try {
         const synchronized = await onTimeEntrySuccess?.();
         if (synchronized && !mutationSucceeded(synchronized)) {
-          setIframeError(labels.timer_sync_failed ?? 'Timer state synchronization failed. Retry synchronization before submitting again.');
+          setCleanupFailed(true);
+          setIframeError(labels.timer_saved_sync_failed ?? 'Time was saved in Redmine. Timer state synchronization failed.');
           return;
         }
       } catch {
-        setIframeError(labels.timer_sync_failed ?? 'Timer state synchronization failed. Retry synchronization before submitting again.');
+        setCleanupFailed(true);
+        setIframeError(labels.timer_saved_sync_failed ?? 'Time was saved in Redmine. Timer state synchronization failed.');
         return;
       }
       setSaveTarget(null);
@@ -302,7 +314,7 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
   }, [bulkMutation, labels, mode, onNativeWriteComplete, onSuccess, onTimeEntrySuccess, subtasks]);
 
   const submitIssueForm = useCallback(async (form: HTMLFormElement, target: SaveTarget) => {
-    if (target === 'time_entry' && (submitPreparationRef.current || isSubmittingRef.current || timeEntryUncertainRef.current)) return;
+    if (target === 'time_entry' && (submitPreparationRef.current || isSubmittingRef.current || timeEntryUncertainRef.current || timeEntryConfirmedRef.current)) return;
     if (target === 'time_entry' && (!timeEntryOperation || !canSubmitTimeEntry(timeEntryOperation, form, iframeRef.current?.contentWindow?.location.href ?? url))) {
       setIframeError(labels.timer_conflict ?? 'Invalid Time Entry operation.');
       return;
@@ -363,6 +375,7 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
   }, [handleSuccess]);
 
   const handleLoad = useCallback((e: React.SyntheticEvent<HTMLIFrameElement, Event>) => {
+    if (timeEntryConfirmedRef.current) return;
     const iframe = e.currentTarget;
     iframeRef.current = iframe;
 
@@ -428,7 +441,7 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
       const errorMessage = getRedmineFormErrorMessage(doc);
       setIframeError(errorMessage);
       if (!isSubmittingRef.current) {
-        const activeSaveForm = getActiveSaveForm(doc, mode, nextCurrentUrl);
+        const activeSaveForm = getSafeSaveForm(doc, nextCurrentUrl);
         setSaveTarget(activeSaveForm?.target ?? null);
         if (activeSaveForm?.target === 'issue' && submitSubtasksAfterEditLoadRef.current) {
           submitSubtasksAfterEditLoadRef.current = false;
@@ -480,7 +493,10 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
               }
               setDialogMode('error');
               setIsSubmitting(false);
-              setSaveTarget(null);
+              const currentDoc = iframe.contentDocument;
+              const retryTarget = currentDoc ? getSafeSaveForm(currentDoc, iframe.contentWindow?.location.href ?? nextCurrentUrl)?.target ?? null : null;
+              setSaveTarget(retryTarget);
+              isSubmittingRef.current = false;
               saveTargetRef.current = null;
             })();
           } else {
@@ -537,7 +553,7 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
         measureDialogHeight();
       });
     }
-  }, [bindIframeSizeObservers, handleSuccess, issueId, labels.timer_sync_failed, measureDialogHeight, mode, onTimeEntryUnknown, onTimeEntryValidationError, requestClose, submitIssueForm, url, timeEntryOperation, labels.timer_unknown]);
+  }, [bindIframeSizeObservers, getSafeSaveForm, handleSuccess, issueId, labels.timer_sync_failed, measureDialogHeight, mode, onTimeEntryUnknown, onTimeEntryValidationError, requestClose, submitIssueForm, url, timeEntryOperation, labels.timer_unknown]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -600,7 +616,7 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
       return;
     }
 
-    const activeSaveForm = getActiveSaveForm(iframeRef.current.contentDocument, mode, currentUrl);
+    const activeSaveForm = getSafeSaveForm(iframeRef.current.contentDocument, iframeRef.current.contentWindow.location.href);
     if (!activeSaveForm) return;
 
     const { form, target } = activeSaveForm;
@@ -776,6 +792,14 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
           >
             {labels.cancel}
           </button>
+          {cleanupFailed ? (
+            <button type="button" className="rk-btn rk-btn-primary" onClick={() => {
+              successHandlingRef.current = false;
+              void handleSuccess(issueId);
+            }}>
+              {labels.timer_retry_sync ?? 'Retry synchronization'}
+            </button>
+          ) : null}
           {showPrimaryAction ? (
             <button
               type="button"

@@ -740,6 +740,110 @@ describe('IframeEditDialog layout variants', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: labels.saving })).toBeTruthy());
   });
 
+  const validTimeEntryForm = '<form id="new_time_entry" action="/time_entries"><input name="time_entry[issue_id]" value="1"><input name="time_entry[hours]" value="-1"><button type="submit">Save</button></form>';
+
+  async function openTimeEntry() {
+    const onTimeEntrySubmitting = vi.fn().mockResolvedValue({ outcome: 'applied' });
+    const onTimeEntryValidationError = vi.fn().mockResolvedValue({ outcome: 'applied' });
+    const onTimeEntrySuccess = vi.fn().mockResolvedValue({ outcome: 'applied' });
+    const onTimeEntryUnknown = vi.fn();
+    const onSuccess = vi.fn();
+    const view = render(<IframeEditDialog
+      timeEntryOperation={{ origin: 'time_entry_on_close', issueId: 1, url: '/issues/1/time_entries/new' }}
+      mode="time_entry" labels={labels} baseUrl="/projects/demo/kanban" queryKey={['kanban', 'board']}
+      onClose={() => {}} onSuccess={onSuccess} onTimeEntrySubmitting={onTimeEntrySubmitting}
+      onTimeEntryValidationError={onTimeEntryValidationError} onTimeEntrySuccess={onTimeEntrySuccess}
+      onTimeEntryUnknown={onTimeEntryUnknown}
+    />);
+    const iframe = view.container.querySelector('iframe') as HTMLIFrameElement;
+    const doc = document.implementation.createHTMLDocument('iframe');
+    doc.body.innerHTML = validTimeEntryForm;
+    const iframeWindow = { location: { href: iframe.src }, document: doc, addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    Object.defineProperty(iframe, 'contentWindow', { value: iframeWindow, configurable: true });
+    Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+    const submit = vi.spyOn(doc.querySelector('button') as HTMLButtonElement, 'click').mockImplementation(() => undefined);
+    fireEvent.load(iframe);
+    fireEvent.click(await screen.findByRole('button', { name: labels.save }));
+    await waitFor(() => expect(submit).toHaveBeenCalledOnce());
+    return { ...view, iframe, doc, iframeWindow, submit, onTimeEntrySubmitting, onTimeEntryValidationError, onTimeEntrySuccess, onTimeEntryUnknown, onSuccess };
+  }
+
+  it('restores Save after validation and submits the corrected form once before completing', async () => {
+    const state = await openTimeEntry();
+    state.iframeWindow.location.href = new URL('/time_entries', state.iframe.src).href;
+    state.doc.body.innerHTML = '<div id="errorExplanation">Hours is invalid</div>' + validTimeEntryForm;
+    const retrySubmit = vi.spyOn(state.doc.querySelector('button') as HTMLButtonElement, 'click').mockImplementation(() => undefined);
+    fireEvent.load(state.iframe);
+    await waitFor(() => expect(state.onTimeEntryValidationError).toHaveBeenCalledOnce());
+    const save = await screen.findByRole('button', { name: labels.save });
+    expect((save as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByRole('button', { name: labels.saving })).toBeNull();
+    expect(state.onTimeEntrySuccess).not.toHaveBeenCalled();
+    expect(state.onTimeEntryUnknown).not.toHaveBeenCalled();
+    (state.doc.querySelector('[name="time_entry[hours]"]') as HTMLInputElement).value = '0.02';
+    fireEvent.click(save);
+    fireEvent.click(save);
+    await waitFor(() => expect(retrySubmit).toHaveBeenCalledOnce());
+    expect(state.onTimeEntrySubmitting).toHaveBeenCalledTimes(2);
+    state.iframeWindow.location.href = new URL('/issues/1', state.iframe.src).href;
+    state.doc.body.innerHTML = '<div id="flash_notice">Created</div>';
+    fireEvent.load(state.iframe);
+    await waitFor(() => expect(state.onSuccess).toHaveBeenCalledOnce());
+    expect(state.onTimeEntrySuccess).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['missing form', '<p>No form</p>'],
+    ['missing action', validTimeEntryForm.replace(' action="/time_entries"', '')],
+    ['empty action', validTimeEntryForm.replace('action="/time_entries"', 'action=""')],
+    ['foreign origin', validTimeEntryForm.replace('action="/time_entries"', 'action="https://other.example/time_entries"')],
+    ['wrong issue', validTimeEntryForm.replace('value="1"', 'value="2"')],
+    ['missing issue', validTimeEntryForm.replace('name="time_entry[issue_id]"', 'name="other"')],
+    ['mixed issues', validTimeEntryForm.replace('</form>', '<input name="time_entry[issue_id]" value="2"></form>')],
+    ['login form', '<form action="/login"><input name="username"></form>'],
+    ['issue form', '<form id="issue-form" action="/issues/1"></form>'],
+  ])('does not restore Save after validation with %s, including observer updates', async (_name, html) => {
+    const state = await openTimeEntry();
+    state.iframeWindow.location.href = new URL('/time_entries', state.iframe.src).href;
+    state.doc.body.innerHTML = '<div id="errorExplanation">Invalid</div>' + html;
+    fireEvent.load(state.iframe);
+    await waitFor(() => expect(state.onTimeEntryValidationError).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.queryByRole('button', { name: labels.saving })).toBeNull());
+    state.doc.body.appendChild(state.doc.createElement('span'));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(screen.queryByRole('button', { name: labels.save })).toBeNull();
+    expect(state.onTimeEntrySubmitting).toHaveBeenCalledOnce();
+    expect(state.onTimeEntrySuccess).not.toHaveBeenCalled();
+    expect(state.onTimeEntryUnknown).not.toHaveBeenCalled();
+  });
+
+  it.each(['applied', 'already_completed', 'already_satisfied'])('retries only cleanup after confirmed success (%s)', async outcome => {
+    const state = await openTimeEntry();
+    state.onTimeEntrySuccess.mockResolvedValue({ outcome: 'storage_error' });
+    state.iframeWindow.location.href = new URL('/issues/1', state.iframe.src).href;
+    state.doc.body.innerHTML = '<div id="flash_notice">Created</div>';
+    fireEvent.load(state.iframe);
+    const retry = await screen.findByRole('button', { name: 'Retry synchronization' });
+    state.iframeWindow.location.href = new URL('/login', state.iframe.src).href;
+    state.doc.body.innerHTML = '<form action="/login"></form>';
+    fireEvent.load(state.iframe);
+    expect(state.onTimeEntryUnknown).not.toHaveBeenCalled();
+    fireEvent.click(retry);
+    await waitFor(() => expect(state.onTimeEntrySuccess).toHaveBeenCalledTimes(2));
+    expect(state.onSuccess).not.toHaveBeenCalled();
+    state.onTimeEntrySuccess.mockResolvedValue({ outcome: 'semantic_conflict' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry synchronization' }));
+    await waitFor(() => expect(state.onTimeEntrySuccess).toHaveBeenCalledTimes(3));
+    expect(state.onSuccess).not.toHaveBeenCalled();
+    state.onTimeEntrySuccess.mockResolvedValue({ outcome });
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry synchronization' }));
+    await waitFor(() => expect(state.onSuccess).toHaveBeenCalledOnce());
+    expect(state.submit).toHaveBeenCalledOnce();
+    expect(state.onTimeEntrySubmitting).toHaveBeenCalledOnce();
+    state.unmount();
+    expect(state.onTimeEntryUnknown).not.toHaveBeenCalled();
+  });
+
   it('keeps a successful time entry locked when TimerSession cleanup fails', async () => {
     const onTimeEntrySubmitting = vi.fn().mockResolvedValue({ outcome: 'applied' });
     const onTimeEntrySuccess = vi.fn().mockResolvedValue({ outcome: 'storage_error' });
@@ -780,7 +884,7 @@ describe('IframeEditDialog layout variants', () => {
 
     await waitFor(() => expect(onTimeEntrySuccess).toHaveBeenCalledOnce());
     expect(onSuccess).not.toHaveBeenCalled();
-    expect(screen.getByTestId('issue-dialog-error').textContent).toContain('Timer state synchronization failed');
+    expect(screen.getByTestId('issue-dialog-error').textContent).toContain('Time was saved in Redmine. Timer state synchronization failed');
     expect((screen.getByRole('button', { name: labels.saving }) as HTMLButtonElement).disabled).toBe(true);
   });
 

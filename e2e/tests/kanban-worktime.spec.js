@@ -176,6 +176,74 @@ test('successful Worktime registration clears TimerSession without nesting Kanba
 });
 
 
+test('validation retry preserves the recording attempt until corrected hours are saved', async ({ page, baseURL }) => {
+  const redmineBase = baseURL || 'http://127.0.0.1:3002';
+  await adminLogin(page, redmineBase);
+  const { sessionKey, issue, data } = await prepareBoard(page, redmineBase);
+  await seedSession(page, sessionKey, issue, data.meta.current_user_id, 'stopped_pending_record');
+  await page.reload();
+  await page.getByRole('button', { name: /record work time|作業時間を記録/i }).click();
+  const iframe = page.locator('iframe.rk-iframe-dialog-frame');
+  const form = page.frameLocator('iframe.rk-iframe-dialog-frame');
+  const save = page.locator('[data-testid="issue-dialog-footer"] .rk-btn-primary');
+  await form.locator('#time_entry_hours').fill('-1');
+  await form.locator('#time_entry_activity_id').selectOption({ index: 1 });
+  const posts = [];
+  page.on('request', request => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/time_entries')) posts.push(request.url());
+  });
+  const before = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), sessionKey);
+  await save.click();
+  await expect(form.locator('#errorExplanation')).toBeVisible();
+  await expect(save).toBeEnabled();
+  const after = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), sessionKey);
+  expect(after.sessionId).toBe(before.sessionId);
+  expect(after.recordingAttempt.id).toBe(before.recordingAttempt.id);
+  expect(after.recordingAttempt.phase).toBe('editing');
+  await form.locator('#time_entry_hours').fill('0.02');
+  const response = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/time_entries'));
+  await save.click();
+  expect((await response).status()).toBe(302);
+  await expect(iframe).toHaveCount(0);
+  expect(await page.evaluate(key => localStorage.getItem(key), sessionKey)).toBeNull();
+  expect(posts).toHaveLength(2);
+});
+
+test('cleanup retry synchronizes TimerSession without another Time Entry POST', async ({ page, baseURL }) => {
+  const redmineBase = baseURL || 'http://127.0.0.1:3002';
+  await adminLogin(page, redmineBase);
+  const { sessionKey, issue, data } = await prepareBoard(page, redmineBase);
+  await seedSession(page, sessionKey, issue, data.meta.current_user_id, 'stopped_pending_record');
+  await page.reload();
+  await page.getByRole('button', { name: /record work time|作業時間を記録/i }).click();
+  const form = page.frameLocator('iframe.rk-iframe-dialog-frame');
+  await form.locator('#time_entry_hours').fill('0.02');
+  await form.locator('#time_entry_activity_id').selectOption({ index: 1 });
+  await page.evaluate(key => {
+    const original = Storage.prototype.removeItem;
+    window.restoreTimerStorage = () => { Storage.prototype.removeItem = original; };
+    Storage.prototype.removeItem = function (target) {
+      if (target === key) throw new Error('Simulated timer cleanup failure');
+      return original.call(this, target);
+    };
+  }, sessionKey);
+  const posts = [];
+  page.on('request', request => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/time_entries')) posts.push(request.url());
+  });
+  await page.locator('[data-testid="issue-dialog-footer"] .rk-btn-primary').click();
+  const retry = page.getByRole('button', { name: /retry synchronization|再同期/i });
+  await expect(retry).toBeVisible();
+  await retry.click();
+  await expect(retry).toBeVisible();
+  expect(await page.evaluate(key => localStorage.getItem(key), sessionKey)).not.toBeNull();
+  await page.evaluate(() => window.restoreTimerStorage());
+  await retry.click();
+  await expect(page.locator('iframe.rk-iframe-dialog-frame')).toHaveCount(0);
+  expect(await page.evaluate(key => localStorage.getItem(key), sessionKey)).toBeNull();
+  expect(posts).toHaveLength(1);
+});
+
 test('confirmed recovery prevents the old tab from submitting its native form', async ({ page, context, baseURL }) => {
   const root = baseURL || 'http://127.0.0.1:3002';
   await adminLogin(page, root);

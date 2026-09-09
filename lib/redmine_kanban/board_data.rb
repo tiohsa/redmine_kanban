@@ -206,6 +206,8 @@ module RedmineKanban
       timer_recorded_confirm: "redmine_kanban.label_timer_recorded_confirm",
       timer_unregistered_confirm: "redmine_kanban.label_timer_unregistered_confirm",
       timer_sync_failed: "redmine_kanban.label_timer_sync_failed",
+      timer_saved_sync_failed: "redmine_kanban.label_timer_saved_sync_failed",
+      timer_retry_sync: "redmine_kanban.label_timer_retry_sync",
       invalid_priority_id: "redmine_kanban.label_invalid_priority_id",
       date_update_failed: "redmine_kanban.label_date_update_failed",
       progress_update_failed: "redmine_kanban.label_progress_update_failed",
