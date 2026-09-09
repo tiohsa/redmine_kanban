@@ -202,6 +202,8 @@ ja:
     label_timer_other_tab: "別のタブで作業時間を入力しています。"
     label_timer_recover: "このタブで復旧"
     label_timer_sync_failed: "タイマー状態の同期に失敗しました。再同期が完了するまで送信できません。"
+    label_timer_saved_sync_failed: "作業時間は Redmine に登録されました。タイマー状態の同期に失敗しました。"
+    label_timer_retry_sync: "再同期"
     label_invalid_priority_id: "優先度IDが不正です"
     label_date_update_failed: "期日の更新に失敗しました"
     label_progress_update_failed: "進捗の更新に失敗しました"

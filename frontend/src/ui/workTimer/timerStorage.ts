@@ -1,6 +1,7 @@
 import { TIMER_SESSION_VERSION, timerId } from './timerDomain';
 import type { TimerSession } from './timerTypes';
 export type TimerScope = { instanceKey: string; userId: number };
+// Shared intentionally with redmine_canvas_gantt. Coordinate storage key changes across both plugins.
 const sessionBase = 'redmine_canvas_gantt_timer_session'; const prefsBase = 'redmine_canvas_gantt_timer_preferences'; const tabBase = 'redmine_canvas_gantt_timer_tab_id';
 let fallbackTabId: string | null = null;
 const suffix = (scope: TimerScope) => `${encodeURIComponent(scope.instanceKey)}:user:${scope.userId}`;

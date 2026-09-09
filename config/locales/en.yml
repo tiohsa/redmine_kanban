@@ -202,6 +202,8 @@ en:
     label_timer_other_tab: "Work time is being entered in another tab."
     label_timer_recover: "Recover in this tab"
     label_timer_sync_failed: "Timer state synchronization failed. Retry synchronization before submitting again."
+    label_timer_saved_sync_failed: "Time was saved in Redmine. Timer state synchronization failed."
+    label_timer_retry_sync: "Retry synchronization"
     label_invalid_priority_id: "Invalid priority ID"
     label_date_update_failed: "Date update failed"
     label_progress_update_failed: "Progress update failed"
