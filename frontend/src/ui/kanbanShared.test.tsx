@@ -61,6 +61,57 @@ function makeBoardData(issues: Issue[]): BoardData {
   };
 }
 
+describe('buildDisplayData with category swimlanes', () => {
+  const aging = { warnDays: 3, dangerDays: 7, excludeClosed: true };
+
+  function categoryBoard(): BoardData {
+    const data = makeBoardData([
+      makeIssue(10, { category_id: 6, category_name: 'Gestion' }),
+      makeIssue(11, { category_id: 8, category_name: 'Estado del arte' }),
+      makeIssue(12, { category_id: null }),
+    ]);
+    return {
+      ...data,
+      lists: {
+        ...data.lists,
+        categories: [
+          { id: 6, name: 'Gestion', project_id: 3 },
+          { id: 8, name: 'Estado del arte', project_id: 3 },
+        ],
+      },
+      labels: { not_set: '(not set)' },
+    };
+  }
+
+  it('builds one lane per category plus an uncategorised lane', () => {
+    const result = buildDisplayData(categoryBoard(), 'category', aging);
+
+    expect(result.meta.lane_type).toBe('category');
+    expect(result.lanes.map((lane) => lane.id)).toEqual([6, 8, 'no_category']);
+    expect(result.lanes.map((lane) => lane.name)).toEqual(['Gestion', 'Estado del arte', '(not set)']);
+    expect(result.lanes.map((lane) => lane.category_id)).toEqual([6, 8, null]);
+  });
+
+  it('never lanes by assignee while laning by category', () => {
+    const result = buildDisplayData(categoryBoard(), 'category', aging);
+
+    expect(result.lanes.every((lane) => lane.assigned_to_id === null)).toBe(true);
+  });
+
+  it('yields only the uncategorised lane when the project defines no categories', () => {
+    const result = buildDisplayData(makeBoardData([makeIssue(10)]), 'category', aging);
+
+    expect(result.lanes.map((lane) => lane.id)).toEqual(['no_category']);
+  });
+
+  it('leaves the issues untouched', () => {
+    const board = categoryBoard();
+    const result = buildDisplayData(board, 'category', aging);
+
+    expect(result.issues).toBe(board.issues);
+  });
+});
+
 describe('resolveBoardIssue', () => {
   it('resolves top-level issues with existing urls', () => {
     const data = makeBoardData([makeIssue(10, { subject: 'Top level', project: { id: 3, name: 'Subproject' } })]);

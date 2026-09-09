@@ -151,6 +151,7 @@ en:
     label_help_subtask_desc: "Quickly toggle subtasks between completed and uncompleted by clicking their checkboxes. This works whether subtasks are shown inside parent cards or as separate cards."
     label_kanban: "Kanban"
     label_lane_type: "Swimlane"
+    label_category: "Category"
     label_none: "None"
     label_aging_warn_days: "Aging (Warning) days"
     label_aging_danger_days: "Aging (Danger) days"

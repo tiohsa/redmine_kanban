@@ -10,6 +10,7 @@ export type Lane = {
   name: string;
   assigned_to_id?: number | null;
   priority_id?: number | null;
+  category_id?: number | null;
 };
 
 export type Subtask = {
@@ -25,6 +26,8 @@ export type Subtask = {
   due_date?: string | null;
   priority_id?: number | null;
   priority_name?: string | null;
+  category_id?: number | null;
+  category_name?: string | null;
   is_closed: boolean;
   lock_version?: number;
   updated_on?: string | null;
@@ -73,6 +76,8 @@ export type Issue = {
   due_date?: string | null;
   priority_id?: number | null;
   priority_name?: string | null;
+  category_id?: number | null;
+  category_name?: string | null;
   start_date?: string | null;
   updated_on?: string | null;
   aging_days?: number;
@@ -91,6 +96,7 @@ export type Lists = {
   assignees: { id: number | null; name: string }[];
   trackers: TrackerListItem[];
   priorities: { id: number; name: string }[];
+  categories?: { id: number; name: string; project_id?: number }[];
   projects: ProjectListItem[];
   viewable_projects: ProjectListItem[];
   creatable_projects: ProjectListItem[];
@@ -106,7 +112,7 @@ export type Meta = {
   can_move: boolean;
   can_create: boolean;
   can_delete: boolean;
-  lane_type: 'none' | 'assignee' | 'priority';
+  lane_type: 'none' | 'assignee' | 'priority' | 'category';
   aging_warn_days: number;
   aging_danger_days: number;
   aging_exclude_closed: boolean;

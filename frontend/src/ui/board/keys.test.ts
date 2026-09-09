@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BoardData, Issue } from '../types';
-import { buildSubtaskKey, laneIdToAssignee, laneIdToPriority, parseCellKey, parseSubtaskKey, resolveBoardLaneId } from './keys';
+import { buildSubtaskKey, laneIdToAssignee, laneIdToCategory, laneIdToPriority, parseCellKey, parseSubtaskKey, resolveBoardLaneId } from './keys';
 
 const baseData: BoardData = {
   ok: true,
@@ -49,5 +49,30 @@ describe('board keys helpers', () => {
     expect(resolveBoardLaneId({ ...baseData, meta: { ...baseData.meta, lane_type: 'priority' } }, { ...baseIssue, priority_id: 4 })).toBe(4);
     expect(laneIdToAssignee({ ...baseData, meta: { ...baseData.meta, lane_type: 'assignee' } }, 'unassigned', 3)).toBeNull();
     expect(laneIdToPriority({ ...baseData, meta: { ...baseData.meta, lane_type: 'priority' } }, 'no_priority', 2)).toBeNull();
+  });
+
+  const categoryData: BoardData = { ...baseData, meta: { ...baseData.meta, lane_type: 'category' } };
+
+  it('parses cell keys for the uncategorised lane', () => {
+    expect(parseCellKey('7:no_category', categoryData)).toEqual([7, 'no_category']);
+    expect(parseCellKey('7:12', categoryData)).toEqual([7, 12]);
+  });
+
+  it('resolves the lane id from the issue category', () => {
+    expect(resolveBoardLaneId(categoryData, { ...baseIssue, category_id: 12 })).toBe(12);
+    expect(resolveBoardLaneId(categoryData, { ...baseIssue, category_id: null })).toBe('no_category');
+    expect(resolveBoardLaneId(categoryData, baseIssue)).toBe('no_category');
+  });
+
+  it('maps a category lane id back to a category id', () => {
+    expect(laneIdToCategory(categoryData, 12, null)).toBe(12);
+    expect(laneIdToCategory(categoryData, 'no_category', 5)).toBeNull();
+  });
+
+  it('leaves the category untouched when the board is not laned by category', () => {
+    const assigneeData: BoardData = { ...baseData, meta: { ...baseData.meta, lane_type: 'assignee' } };
+    expect(laneIdToCategory(assigneeData, 'unassigned', 7)).toBe(7);
+    expect(laneIdToPriority(categoryData, 12, 3)).toBe(3);
+    expect(laneIdToAssignee(categoryData, 12, 4)).toBe(4);
   });
 });

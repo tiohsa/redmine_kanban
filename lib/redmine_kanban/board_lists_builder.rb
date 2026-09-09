@@ -11,6 +11,7 @@ module RedmineKanban
         assignees: assignees_list,
         trackers: trackers_list,
         priorities: priorities_list,
+        categories: categories_list,
         projects: projects_list,
         viewable_projects: viewable_projects_list,
         creatable_projects: creatable_projects_list,
@@ -54,6 +55,12 @@ module RedmineKanban
 
     def priorities_list
       IssuePriority.active.sorted.to_a.map { |priority| { id: priority.id, name: priority.name } }
+    end
+
+    def categories_list
+      IssueCategory.where(project_id: @project_ids)
+                   .sort_by { |category| [category.name.to_s.downcase, category.project_id] }
+                   .map { |category| { id: category.id, name: category.name, project_id: category.project_id } }
     end
 
     def project_catalog
