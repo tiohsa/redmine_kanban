@@ -24,7 +24,7 @@ export async function runRecordingCommand(scope: TimerScope, context: TimerRecor
       case 'submitting': return beginSubmission(current, context.attemptId);
       case 'validationError': return markValidationError(current, context.attemptId);
       case 'cancel': return cancelRecording(current, context.attemptId);
-      case 'unknown': return markUnknown(current, context.attemptId);
+      case 'unknown': return attempt.phase === 'unknown' ? current : markUnknown(current, context.attemptId);
       case 'complete': return completeRecording(current, context.attemptId);
       case 'close':
         if (attempt.phase === 'editing') return cancelRecording(current, context.attemptId);
@@ -34,7 +34,7 @@ export async function runRecordingCommand(scope: TimerScope, context: TimerRecor
       case 'recover': return takeOverRecording(current, context.attemptId, tabId);
       case 'recorded': case 'unregistered': return resolveUnknown(current, context.attemptId, command);
     }
-  }, { absentOutcome: command === 'complete' ? 'already_completed' : 'absent', unchangedOutcome: command === 'close' ? 'already_satisfied' : undefined });
+  }, { absentOutcome: command === 'complete' ? 'already_completed' : 'absent', unchangedOutcome: command === 'close' || command === 'unknown' ? 'already_satisfied' : undefined });
   let result = await execute();
   for (let retry = 0; retry < 2 && result.outcome === 'locked'; retry += 1) {
     await new Promise(resolve => setTimeout(resolve, 50 * (retry + 1)));

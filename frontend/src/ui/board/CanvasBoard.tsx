@@ -43,6 +43,7 @@ type RectMap = {
   subtaskRows: Map<string, Rect>; // key: "issueId:subtaskId"
   subtaskChecks: Map<string, Rect>; // key: "issueId:subtaskId"
   subtaskSubjects: Map<string, Rect>; // key: "issueId:subtaskId"
+  subtaskWorkTimerButtons: Map<string, Rect>;
   subtaskEditButtons: Map<string, Rect>; // key: "issueId:subtaskId"
   subtaskDeleteButtons: Map<string, Rect>; // key: "issueId:subtaskId"
   subtaskAreas: Map<number, Rect>; // key: issueId - entire subtask area for hit exclusion
@@ -169,6 +170,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     subtaskChecks: new Map(),
     subtaskSubjects: new Map(),
     subtaskEditButtons: new Map(),
+    subtaskWorkTimerButtons: new Map(),
     subtaskDeleteButtons: new Map(),
     subtaskAreas: new Map(),
     cardSubjects: new Map(),
@@ -434,6 +436,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       subtaskChecks: new Map(),
       subtaskSubjects: new Map(),
       subtaskEditButtons: new Map(),
+      subtaskWorkTimerButtons: new Map(),
       subtaskDeleteButtons: new Map(),
       subtaskAreas: new Map(),
       cardSubjects: new Map(),
@@ -527,6 +530,14 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         if (isBusy(hit.subtaskId)) return;
         onView(hit.subtaskId);
         return;
+      case 'subtask_work_timer': {
+        if (isBusy(hit.subtaskId)) return;
+        const issue = state.cardsById.get(hit.issueId);
+        const subtask = findSubtaskInTree(issue?.subtasks, hit.subtaskId);
+        if (subtask?.can_log_time !== true || !onWorkTimer) return;
+        onWorkTimer(hit.subtaskId);
+        return;
+      }
       case 'subtask_edit': {
         if (isBusy(hit.subtaskId)) return;
         const issue = state.cardsById.get(hit.issueId);
@@ -1729,13 +1740,18 @@ function drawCard(
       }
 
       const isSubtaskActionVisible = hoveredSubtaskKey === subtaskKey;
-      if (isSubtaskActionVisible && rectMap) {
+      const isActiveSubtaskTimer = String(timerSession?.issueId) === String(subtask.id);
+      const canLogSubtaskTime = subtask.can_log_time === true;
+      if ((isSubtaskActionVisible || (isActiveSubtaskTimer && canLogSubtaskTime)) && rectMap) {
         const actionIconSize = 20;
-        const canEditSubtask = !!subtask.permissions?.can_edit;
-        const canDeleteSubtask = !!subtask.permissions?.can_delete;
-        const actionCount = Number(canEditSubtask) + Number(canDeleteSubtask);
+        const canEditSubtask = isSubtaskActionVisible && !!subtask.permissions?.can_edit;
+        const canDeleteSubtask = isSubtaskActionVisible && !!subtask.permissions?.can_delete;
+        const actionCount = Number(canLogSubtaskTime) + Number(canEditSubtask) + Number(canDeleteSubtask);
         if (actionCount === 0) return;
-        let subtaskButtonRightX = x + w - 6;
+        const hiddenActionSlots = !isSubtaskActionVisible
+          ? Number(!!subtask.permissions?.can_edit) + Number(!!subtask.permissions?.can_delete)
+          : 0;
+        let subtaskButtonRightX = x + w - 6 - hiddenActionSlots * actionIconSize;
         const overlayPadX = 3;
         const overlayPadY = 2;
         const overlayRect = {
@@ -1776,6 +1792,12 @@ function drawCard(
           ctx.fillStyle = theme.textSecondary;
           ctx.fillText('edit', subtaskEditRect.x, subtaskEditRect.y + subtaskEditRect.height / 2);
           subtaskButtonRightX -= actionIconSize;
+        }
+
+        if (canLogSubtaskTime) {
+          const timerRect = { x: subtaskButtonRightX - actionIconSize, y: sy - 2, width: actionIconSize, height: actionIconSize };
+          rectMap.subtaskWorkTimerButtons.set(subtaskKey, timerRect);
+          drawWorkTimerAction(ctx, timerRect, subtask.id, timerSession, theme);
         }
 
         ctx.restore();
@@ -1850,11 +1872,7 @@ function drawCard(
       const timerRightX = buttonRightX - hiddenActionSlots * actionIconSize;
       const timerRect = { x: timerRightX - actionIconSize, y: y + 4, width: actionIconSize, height: actionIconSize };
       rectMap.workTimerButtons.set(issue.id, timerRect);
-      ctx.fillStyle = timerSession?.state === 'expired' && String(timerSession.issueId) === String(issue.id) ? theme.danger : theme.primary;
-      const icon = String(timerSession?.issueId) === String(issue.id)
-        ? timerSession?.state === 'stopped_pending_record' ? 'pending_actions' : timerSession?.state === 'expired' ? 'timer_off' : 'timer'
-        : 'play_arrow';
-      ctx.fillText(icon, timerRect.x, timerRect.y + timerRect.height / 2);
+      drawWorkTimerAction(ctx, timerRect, issue.id, timerSession, theme);
     }
   }
   ctx.restore();
@@ -1863,6 +1881,21 @@ function drawCard(
 
   // No visual indicator for isUpdating to avoid "flash" effect after drop.
   // The logic to block interaction while updating is still active in hit testing.
+}
+
+function drawWorkTimerAction(
+  ctx: CanvasRenderingContext2D,
+  rect: Rect,
+  issueId: number,
+  session: { issueId: number | string; state: 'running' | 'expired' | 'stopped_pending_record' } | null | undefined,
+  theme: CanvasTheme,
+) {
+  const active = String(session?.issueId) === String(issueId);
+  ctx.fillStyle = active && session?.state === 'expired' ? theme.danger : theme.primary;
+  const icon = active
+    ? session?.state === 'stopped_pending_record' ? 'pending_actions' : session?.state === 'expired' ? 'timer_off' : 'timer'
+    : 'play_arrow';
+  ctx.fillText(icon, rect.x, rect.y + rect.height / 2);
 }
 
 function drawProgressDonut(
@@ -1962,6 +1995,12 @@ function hitTest(
 ): HitResult {
   for (const [issueId, rect] of rectMap.workTimerButtons) {
     if (pointInRect(point, rect)) return { kind: 'work_timer', issueId };
+  }
+  for (const [key, rect] of rectMap.subtaskWorkTimerButtons) {
+    if (pointInRect(point, rect)) {
+      const { issueId, subtaskId } = parseSubtaskKey(key);
+      return { kind: 'subtask_work_timer', issueId, subtaskId };
+    }
   }
   for (const [key, rect] of rectMap.subtaskEditButtons) {
     if (pointInRect(point, rect)) {

@@ -274,3 +274,46 @@ test('confirmed recovery prevents the old tab from submitting its native form', 
   expect(posts).toEqual([]);
   expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).recordingAttempt, sessionKey)).toBeUndefined();
 });
+
+for (const subject of ['Kanban E2E nested child', 'Kanban E2E grandchild']) {
+  test(`nested Worktime keeps the target issue through Stop and Time Entry: ${subject}`, async ({ page, baseURL }) => {
+    const redmineBase = baseURL || 'http://127.0.0.1:3002';
+    await adminLogin(page, redmineBase);
+    const { data, sessionKey } = await prepareBoard(page, redmineBase);
+    const issue = data.entities.find(candidate => candidate.subject === subject);
+    expect(issue, 'Run e2e/setup_redmine.rb to prepare the nested fixtures').toBeTruthy();
+    expect(issue.can_log_time).toBe(true);
+    await seedSession(page, sessionKey, issue, data.meta.current_user_id);
+    await page.reload();
+    await expect(page.getByTestId('global-timer')).toContainText(`#${issue.id}`);
+    await page.getByTestId('global-timer-stop-button').click();
+    const iframe = page.locator('iframe.rk-iframe-dialog-frame');
+    await expect(iframe).toHaveAttribute('src', new RegExp(`/issues/${issue.id}/time_entries/new`));
+    await expect(page.frameLocator('iframe.rk-iframe-dialog-frame').locator('#time_entry_issue_id')).toHaveValue(String(issue.id));
+    expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).issueId, sessionKey)).toBe(issue.id);
+  });
+}
+
+test('an unexpected error response keeps the recording unknown and prevents resubmission', async ({ page, baseURL }) => {
+  const redmineBase = baseURL || 'http://127.0.0.1:3002';
+  await adminLogin(page, redmineBase);
+  const { issue, data, sessionKey } = await prepareBoard(page, redmineBase);
+  await seedSession(page, sessionKey, issue, data.meta.current_user_id, 'stopped_pending_record');
+  await page.reload();
+  await page.getByTestId('global-timer-record-button').click();
+  const form = page.frameLocator('iframe.rk-iframe-dialog-frame');
+  await form.locator('#time_entry_hours').fill('0.02');
+  await form.locator('#time_entry_activity_id').selectOption({ index: 1 });
+  let posts = 0;
+  await page.route('**/time_entries', async route => {
+    if (route.request().method() !== 'POST') return route.continue();
+    posts += 1;
+    return route.fulfill({ status: 500, contentType: 'text/html', body: '<div class="flash error">Unexpected proxy error</div>' });
+  });
+  await page.locator('[data-testid="issue-dialog-footer"] .rk-btn-primary').click();
+  await expect.poll(() => page.evaluate(key => JSON.parse(localStorage.getItem(key)).recordingAttempt.phase, sessionKey)).toBe('unknown');
+  await expect(page.locator('[data-testid="issue-dialog-footer"] .rk-btn-primary')).toHaveCount(0);
+  await page.locator('.rk-issue-dialog-close').click();
+  await expect.poll(() => page.evaluate(key => JSON.parse(localStorage.getItem(key)).recordingAttempt.phase, sessionKey)).toBe('unknown');
+  expect(posts).toBe(1);
+});

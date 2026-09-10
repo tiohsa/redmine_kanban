@@ -515,6 +515,7 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
         } else if (outcome.type === 'unknown' && (saveTargetRef.current === 'time_entry' || mode === 'time_entry')) {
           void (async () => {
             timeEntryUncertainRef.current = true;
+            setSaveTarget(null);
             setIframeError(labels.timer_unknown ?? 'The time entry result is unknown. Check Redmine before entering it again.');
             const synchronized = await onTimeEntryUnknown?.();
             if (synchronized && !mutationSucceeded(synchronized)) {
@@ -535,6 +536,7 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
         if (saveTargetRef.current === 'time_entry' || mode === 'time_entry') {
           void (async () => {
             timeEntryUncertainRef.current = true;
+            setSaveTarget(null);
             setIframeError(labels.timer_unknown ?? 'The time entry result is unknown. Check Redmine before entering it again.');
             const synchronized = await onTimeEntryUnknown?.();
             if (synchronized && !mutationSucceeded(synchronized)) {

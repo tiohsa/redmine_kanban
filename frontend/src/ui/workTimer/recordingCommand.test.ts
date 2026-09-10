@@ -139,7 +139,20 @@ describe('recording commands and canonical outcomes', () => {
       : field === 'phase' ? context : { ...context, [field]: 'stale' };
     const set = vi.spyOn(Storage.prototype, 'setItem');
 
-    expect((await command(stale, 'close', field === 'phase' ? 'editing' : undefined)).outcome).toBe('semantic_conflict');
+    for (const operation of ['close', 'unknown'] as const) {
+      expect((await command(stale, operation, field === 'phase' ? 'editing' : undefined)).outcome).toBe('semantic_conflict');
+    }
+    expect(localStorage.getItem(keysFor(scope).session)).toBe(before);
+    expect(set.mock.calls.filter(([key]) => key === keysFor(scope).session)).toHaveLength(0);
+  });
+
+  it.each([['unknown', 'unknown'], ['close', 'unknown'], ['unknown', 'close']] as const)('makes %s then %s idempotent for the same attempt', async (first, second) => {
+    const context = await seed();
+    await command(context, 'submitting');
+    expect((await command(context, first)).outcome).toBe('applied');
+    const before = localStorage.getItem(keysFor(scope).session);
+    const set = vi.spyOn(Storage.prototype, 'setItem');
+    expect(await command(context, second)).toMatchObject({ outcome: 'already_satisfied', session: { recordingAttempt: { phase: 'unknown' } } });
     expect(localStorage.getItem(keysFor(scope).session)).toBe(before);
     expect(set.mock.calls.filter(([key]) => key === keysFor(scope).session)).toHaveLength(0);
   });
@@ -158,7 +171,7 @@ describe('recording commands and canonical outcomes', () => {
     expect((await command(submitting, 'complete')).outcome).toBe('semantic_conflict');
 
     const unknown = recordingContext(scope, load(scope)!)!;
-    expect((await command(unknown, 'unknown')).outcome).toBe('semantic_conflict');
+    expect((await command(unknown, 'unknown')).outcome).toBe('already_satisfied');
     expect((await command(unknown, 'unregistered', 'unknown')).outcome).toBe('applied');
     await mutate(scope, () => null);
     expect((await command(unknown, 'complete')).outcome).toBe('already_completed');
