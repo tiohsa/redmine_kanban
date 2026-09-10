@@ -71,10 +71,20 @@ parent_issue = Issue.find_or_create_by!(
   issue.status = status
 end
 
-Issue.find_or_create_by!(
+child_issue = Issue.find_or_create_by!(
   project: project,
   subject: 'Kanban E2E nested child',
   parent: parent_issue
+) do |issue|
+  issue.author = admin
+  issue.tracker = tracker
+  issue.status = status
+end
+
+Issue.find_or_create_by!(
+  project: project,
+  subject: 'Kanban E2E grandchild',
+  parent: child_issue
 ) do |issue|
   issue.author = admin
   issue.tracker = tracker

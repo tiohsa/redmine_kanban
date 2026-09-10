@@ -802,19 +802,19 @@ describe('IframeEditDialog layout variants', () => {
     ['mixed issues', validTimeEntryForm.replace('</form>', '<input name="time_entry[issue_id]" value="2"></form>')],
     ['login form', '<form action="/login"><input name="username"></form>'],
     ['issue form', '<form id="issue-form" action="/issues/1"></form>'],
-  ])('does not restore Save after validation with %s, including observer updates', async (_name, html) => {
+  ])('marks invalid error pages unknown with %s, including observer updates', async (_name, html) => {
     const state = await openTimeEntry();
     state.iframeWindow.location.href = new URL('/time_entries', state.iframe.src).href;
     state.doc.body.innerHTML = '<div id="errorExplanation">Invalid</div>' + html;
     fireEvent.load(state.iframe);
-    await waitFor(() => expect(state.onTimeEntryValidationError).toHaveBeenCalledOnce());
+    await waitFor(() => expect(state.onTimeEntryUnknown).toHaveBeenCalledOnce());
     await waitFor(() => expect(screen.queryByRole('button', { name: labels.saving })).toBeNull());
     state.doc.body.appendChild(state.doc.createElement('span'));
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(screen.queryByRole('button', { name: labels.save })).toBeNull();
     expect(state.onTimeEntrySubmitting).toHaveBeenCalledOnce();
     expect(state.onTimeEntrySuccess).not.toHaveBeenCalled();
-    expect(state.onTimeEntryUnknown).not.toHaveBeenCalled();
+    expect(state.onTimeEntryValidationError).not.toHaveBeenCalled();
   });
 
   it.each(['applied', 'already_completed', 'already_satisfied'])('retries only cleanup after confirmed success (%s)', async outcome => {

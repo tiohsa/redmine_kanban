@@ -103,3 +103,33 @@ describe('resolveSaveLoadOutcome', () => {
     })).toEqual({ type: 'unknown' });
   });
 });
+
+describe('Time Entry error identity', () => {
+  const operation = { origin: 'time_entry_on_close' as const, issueId: 12, url: 'https://example.test/redmine/issues/12/time_entries/new' };
+  const form = '<form id="new_time_entry" action="/redmine/time_entries"><input name="time_entry[issue_id]" value="12"></form>';
+  const error = '<div class="flash error">Unexpected error</div>';
+  const resolve = (currentUrl: string, html = error + form) => resolveSaveLoadOutcome({
+    doc: doc(html), currentUrl, operation, saveTarget: 'time_entry', mode: 'time_entry', fallbackIssueId: 12,
+  });
+
+  it.each(['/error', '/login', '/plugins/other/error', '/redmine/unknown', '/redmine/issues/99/time_entries/new',
+    '/other/time_entries', 'https://other.test/redmine/time_entries', '/redmine/issues/12'])('keeps errors at %s unknown even with a matching form', path => {
+    expect(resolve(new URL(path, operation.url).href)).toEqual({ type: 'unknown' });
+  });
+  it.each(['/redmine/time_entries', '/redmine/issues/12/time_entries', '/redmine/time_entries/new', '/redmine/issues/12/time_entries/new'])('accepts a verified validation form at %s', path => {
+    expect(resolve(new URL(path, operation.url).href)).toEqual({ type: 'error' });
+  });
+  it.each([
+    error, error + form.replace('value="12"', 'value="99"'),
+    error + form.replace('/redmine/time_entries', '/other/time_entries'),
+    error + form.replace('new_time_entry', 'other_form'),
+  ])('rejects incomplete or mismatched validation identity', html => {
+    expect(resolve(operation.url, html)).toEqual({ type: 'unknown' });
+  });
+  it('rejects missing and mismatched operation identity', () => {
+    for (const candidate of [undefined, { ...operation, issueId: 99 }]) {
+      expect(resolveSaveLoadOutcome({ doc: doc(error + form), currentUrl: operation.url, operation: candidate,
+        saveTarget: 'time_entry', mode: 'time_entry', fallbackIssueId: 12 })).toEqual({ type: 'unknown' });
+    }
+  });
+});

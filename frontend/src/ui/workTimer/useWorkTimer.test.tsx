@@ -94,4 +94,23 @@ describe('useWorkTimer recording ownership', () => {
     });
   });
 
+  it.each(['storage_error', 'locked', 'semantic_conflict'] as const)('preserves the actual start failure: %s', async outcome => {
+    localStorage.clear();
+    const onError = vi.fn();
+    const { result } = renderHook(() => useWorkTimer({ scope, labels: { timer_sync_failed: 'sync failed', timer_conflict: 'conflict' }, onError }));
+    await act(async () => { result.current.open({ id: 1, subject: 'Issue', can_log_time: true } as Issue); });
+    if (outcome === 'locked') localStorage.setItem(keysFor(scope).lock, JSON.stringify({ token: 'other', expiresAt: Date.now() + 10000 }));
+    if (outcome === 'semantic_conflict') await mutate(scope, () => createTimerSession(2, 'Other', 5, false, 7));
+    const original = Storage.prototype.setItem;
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (outcome === 'storage_error' && key === keysFor(scope).session) throw new Error('denied');
+      original.call(this, key, value);
+    });
+    onError.mockClear();
+    try {
+      await act(async () => { expect((await result.current.start(5, false)).outcome).toBe(outcome); });
+      expect(onError.mock.calls).toEqual([[outcome === 'semantic_conflict' ? 'conflict' : 'sync failed']]);
+    } finally { spy.mockRestore(); }
+  });
+
 });
