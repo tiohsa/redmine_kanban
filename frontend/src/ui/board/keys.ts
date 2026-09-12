@@ -15,6 +15,7 @@ export function parseCellKey(key: string, data: BoardData): [number, string | nu
   if (data.meta.lane_type === 'none') return [statusId, 'none'];
   if (lane === 'unassigned') return [statusId, 'unassigned'];
   if (lane === 'no_priority') return [statusId, 'no_priority'];
+  if (lane === 'no_category') return [statusId, 'no_category'];
   const parsedLane = Number(lane);
   return [statusId, Number.isFinite(parsedLane) ? parsedLane : lane];
 }
@@ -22,6 +23,7 @@ export function parseCellKey(key: string, data: BoardData): [number, string | nu
 export function resolveBoardLaneId(data: BoardData, issue: Issue): string | number {
   if (data.meta.lane_type === 'assignee') return issue.assigned_to_id ?? 'unassigned';
   if (data.meta.lane_type === 'priority') return issue.priority_id ?? 'no_priority';
+  if (data.meta.lane_type === 'category') return issue.category_id ?? 'no_category';
   return 'none';
 }
 
@@ -43,6 +45,17 @@ export function laneIdToPriority(
 ): number | null | undefined {
   if (data.meta.lane_type !== 'priority') return fallback;
   if (laneId === 'no_priority') return null;
+  const parsed = Number(laneId);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function laneIdToCategory(
+  data: BoardData,
+  laneId: string | number,
+  fallback: number | null,
+): number | null | undefined {
+  if (data.meta.lane_type !== 'category') return fallback;
+  if (laneId === 'no_category') return null;
   const parsed = Number(laneId);
   return Number.isFinite(parsed) ? parsed : null;
 }

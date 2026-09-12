@@ -4,7 +4,7 @@ import type { Filters } from './boardFilters';
 import { buildProjectScopeFromDataUrl, makeScopedStorageKey, readScopedBooleanWithLegacy, readScopedNumberSetWithLegacy, readScopedValueWithLegacy } from './utils/storage';
 import type { FitMode } from './kanbanShared';
 
-export type LaneType = 'none' | 'assignee' | 'priority';
+export type LaneType = 'none' | 'assignee' | 'priority' | 'category';
 export const DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT = 1500;
 export const MAXIMUM_BOARD_ENTITY_COUNT = 2_147_483_647;
 
@@ -143,7 +143,7 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
     const legacyLaneType = laneType === null ? readStorageValue(legacyLaneTypeStorageKey) : null;
     const resolvedLaneType = laneType ?? legacyLaneType;
     setLaneType(
-      resolvedLaneType === 'none' || resolvedLaneType === 'priority' || resolvedLaneType === 'assignee'
+      resolvedLaneType === 'none' || resolvedLaneType === 'priority' || resolvedLaneType === 'assignee' || resolvedLaneType === 'category'
         ? resolvedLaneType
         : readScopedBooleanWithLegacy(
             priorityLaneStorageKey!,

@@ -99,6 +99,7 @@ export function DisplaySettingsPopover({
             { id: 'none', name: labels.none },
             { id: 'assignee', name: labels.assignee },
             { id: 'priority', name: labels.issue_priority },
+            { id: 'category', name: labels.category },
           ]} onChange={(value) => onChangeLaneType(value as LaneType)} />
           <SettingsSelect label={labels.aging_warn_days} value={String(agingWarnDays)} options={[0, 1, 3, 5, 7, 14, 30].map((value) => ({ id: String(value), name: String(value) }))} onChange={(value) => onChangeAgingWarnDays(Number(value))} selectClassName="rk-settings-aging-days-select" />
           <SettingsSelect label={labels.aging_danger_days} value={String(agingDangerDays)} options={[1, 3, 5, 7, 14, 30, 60].map((value) => ({ id: String(value), name: String(value) }))} onChange={(value) => onChangeAgingDangerDays(Number(value))} selectClassName="rk-settings-aging-days-select" />

@@ -224,6 +224,24 @@ export function buildDisplayData(
     return { ...data, meta, lanes: [{ id: 'none', name: data.labels.all, assigned_to_id: null }] };
   }
 
+  if (laneType === 'category') {
+    const categoryLanes: Lane[] = [
+      ...(data.lists.categories ?? []).map((category) => ({
+        id: category.id,
+        name: category.name,
+        category_id: category.id,
+        assigned_to_id: null,
+      })),
+      {
+        id: 'no_category',
+        name: data.labels.not_set,
+        category_id: null,
+        assigned_to_id: null,
+      },
+    ];
+    return { ...data, meta, lanes: categoryLanes };
+  }
+
   const prioritiesHighToLow = [...(data.lists.priorities ?? [])].reverse();
   const priorityLanes: Lane[] = [
     ...prioritiesHighToLow.map((priority) => ({

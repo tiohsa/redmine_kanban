@@ -47,6 +47,7 @@ module RedmineKanban
       issue_description: "redmine_kanban.label_issue_description",
       stagnation: "redmine_kanban.label_stagnation",
       not_set: "redmine_kanban.label_not_set",
+      category: "redmine_kanban.label_category",
       this_week: "redmine_kanban.label_this_week",
       within_3_days: "redmine_kanban.label_within_3_days",
       within_1_week: "redmine_kanban.label_within_1_week",
@@ -376,7 +377,7 @@ module RedmineKanban
     def fetch_issues(issue_ids)
       Issue.visible(@user)
            .where(id: issue_ids, project_id: @project_ids)
-           .includes(:assigned_to, :author, :priority, :status, :project, :tracker)
+           .includes(:assigned_to, :author, :priority, :status, :project, :tracker, :category)
            .order(updated_on: :desc, id: :desc)
            .to_a
     end

@@ -151,6 +151,7 @@ ja:
     label_help_subtask_desc: "子チケットのチェックボックスをクリックすると、完了/未完了を素早く切り替えられます。親チケット内表示でも個別カード表示でも操作できます。"
     label_kanban: "Kanban"
     label_lane_type: "スイムレーン"
+    label_category: "カテゴリ"
     label_none: "なし"
     label_aging_warn_days: "停滞（注意）日数"
     label_aging_danger_days: "停滞（危険）日数"
