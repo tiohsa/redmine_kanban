@@ -12,7 +12,12 @@ const seed = async () => {
 const command = (context: ReturnType<typeof recordingContext>, operation: Parameters<typeof runRecordingCommand>[2], phase?: Parameters<typeof runRecordingCommand>[3]) => runRecordingCommand(scope, context!, operation, phase);
 
 describe('recording commands and canonical outcomes', () => {
-  beforeEach(() => { localStorage.clear(); sessionStorage.clear(); sessionStorage.setItem('redmine_canvas_gantt_timer_tab_id', 'tab-a'); });
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    sessionStorage.setItem('redmine_canvas_gantt_timer_tab_id', 'tab-a');
+    vi.stubGlobal('navigator', { locks: { request: async (_name: string, _options: unknown, callback: () => unknown) => callback() } });
+  });
   afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
   it('distinguishes absence, corrupt data and unavailable storage without invoking the updater', async () => {
@@ -36,6 +41,17 @@ describe('recording commands and canonical outcomes', () => {
     expect(result).toMatchObject({ outcome: 'applied', session: { revision: previous + 1 } });
     expect(get.mock.calls.filter(([key]) => key === keysFor(scope).session)).toHaveLength(1);
     expect(set.mock.calls.filter(([key]) => key === keysFor(scope).session)).toHaveLength(1);
+  });
+
+  it('does not reserve a submission through the weak lease fallback', async () => {
+    const context = await seed();
+    const before = localStorage.getItem(keysFor(scope).session);
+    vi.stubGlobal('navigator', {});
+
+    const result = await command(context, 'submitting');
+
+    expect(result).toMatchObject({ outcome: 'strong_lock_unavailable', lock: 'unavailable', applied: false });
+    expect(localStorage.getItem(keysFor(scope).session)).toBe(before);
   });
 
   it('completes idempotently, rejects a new session and preserves state on write failure', async () => {
@@ -199,6 +215,7 @@ describe('recording commands and canonical outcomes', () => {
   it('retries locks at most three times and never retries semantic conflict or storage error', async () => {
     const context = await seed();
     vi.useFakeTimers();
+    vi.stubGlobal('navigator', {});
     const spy = vi.spyOn(Storage.prototype, 'getItem');
     localStorage.setItem(keysFor(scope).lock, JSON.stringify({ token: 'held', expiresAt: Date.now() + 10000 }));
     const pending = command(context, 'submitting');
@@ -206,6 +223,7 @@ describe('recording commands and canonical outcomes', () => {
     expect((await pending).outcome).toBe('locked');
     expect(spy.mock.calls.filter(([key]) => key === keysFor(scope).lock)).toHaveLength(3);
     localStorage.removeItem(keysFor(scope).lock);
+    vi.stubGlobal('navigator', { locks: { request: async (_name: string, _options: unknown, callback: () => unknown) => callback() } });
     spy.mockClear();
     expect((await command({ ...context, attemptId: 'stale' }, 'submitting')).outcome).toBe('semantic_conflict');
     expect(spy.mock.calls.filter(([key]) => key === keysFor(scope).session)).toHaveLength(1);

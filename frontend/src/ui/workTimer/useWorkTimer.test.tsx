@@ -27,6 +27,7 @@ describe('useWorkTimer recording ownership', () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
+    vi.stubGlobal('navigator', { locks: { request: async (_name: string, _options: unknown, callback: () => unknown) => callback() } });
     localStorage.setItem(keysFor(scope).session, JSON.stringify(stop(createTimerSession(1, 'Issue', 30, false, 7))));
   });
   afterEach(cleanup);
@@ -116,6 +117,7 @@ describe('useWorkTimer recording ownership', () => {
 
   it.each(['storage_error', 'locked', 'semantic_conflict'] as const)('preserves the actual start failure: %s', async outcome => {
     localStorage.clear();
+    if (outcome === 'locked') vi.stubGlobal('navigator', {});
     const onError = vi.fn();
     const { result } = renderHook(() => useWorkTimer({ scope, labels: { timer_sync_failed: 'sync failed', timer_conflict: 'conflict' }, onError }));
     await act(async () => { result.current.open({ id: 1, subject: 'Issue', can_log_time: true } as Issue); });

@@ -1,4 +1,4 @@
-import type { TimerIntervalMinutes, TimerSegment, TimerSession } from './timerTypes';
+import type { TimerIntervalMinutes, TimerRecordingPhase, TimerSegment, TimerSession } from './timerTypes';
 export const TIMER_SESSION_VERSION = 4;
 export const timerId = () => typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `timer_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 export function createTimerSession(issueId: number, subject: string, minutes: TimerIntervalMinutes, autoStop: boolean, userId: number, now = Date.now()): TimerSession { return { version: TIMER_SESSION_VERSION, sessionId: timerId(), revision: 1, issueId, subject, autoStop, deadlineAt: now + minutes * 60000, segments: [{ startedAt: now }], state: 'running', userId, createdAt: now, updatedAt: now }; }
@@ -13,7 +13,7 @@ export function stopAndBeginRecording(session: TimerSession, ownerTabId: string,
   if (session.state === 'stopped_pending_record' || session.recordingAttempt) return undefined;
   return beginRecording(stop(tick(session, now), now), ownerTabId, now);
 }
-function updateRecording(session: TimerSession, attemptId: string, from: 'editing' | 'submitting' | 'confirmed' | 'unknown', phase: 'editing' | 'submitting' | 'confirmed' | 'unknown'): TimerSession | undefined {
+function updateRecording(session: TimerSession, attemptId: string, from: TimerRecordingPhase, phase: TimerRecordingPhase): TimerSession | undefined {
   if (!session.recordingAttempt || session.recordingAttempt.id !== attemptId || session.recordingAttempt.phase !== from) return undefined;
   return { ...session, recordingAttempt: { ...session.recordingAttempt, phase }, updatedAt: Date.now() };
 }

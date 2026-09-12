@@ -1,7 +1,11 @@
 export type TimerIntervalMinutes = 5 | 10 | 15 | 30 | 60;
 export const TIMER_INTERVAL_MINUTES: TimerIntervalMinutes[] = [5, 10, 15, 30, 60];
 export type TimerState = 'running' | 'expired' | 'stopped_pending_record';
-export type TimerRecordingPhase = 'editing' | 'submitting' | 'confirmed' | 'unknown';
+export const TIMER_RECORDING_PHASES = ['editing', 'submitting', 'confirmed', 'unknown'] as const;
+export type TimerRecordingPhase = (typeof TIMER_RECORDING_PHASES)[number];
+export function isTimerRecordingPhase(value: unknown): value is TimerRecordingPhase {
+  return typeof value === 'string' && TIMER_RECORDING_PHASES.includes(value as TimerRecordingPhase);
+}
 export type TimerRecordingResolution = 'recorded' | 'unregistered';
 export type TimerSegment = { startedAt: number; stoppedAt?: number };
 export type TimerRecordingAttempt = { id: string; ownerTabId: string; openedAt: number; phase: TimerRecordingPhase };

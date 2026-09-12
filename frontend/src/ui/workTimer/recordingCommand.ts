@@ -34,7 +34,7 @@ export async function runRecordingCommand(scope: TimerScope, context: TimerRecor
       case 'recover': return takeOverRecording(current, context.attemptId, tabId);
       case 'recorded': case 'unregistered': return resolveUnknown(current, context.attemptId, command);
     }
-  }, { absentOutcome: command === 'complete' ? 'already_completed' : 'absent', unchangedOutcome: command === 'close' || command === 'unknown' || command === 'complete' || command === 'validationError' ? 'already_satisfied' : undefined });
+  }, { absentOutcome: command === 'complete' ? 'already_completed' : 'absent', unchangedOutcome: command === 'close' || command === 'unknown' || command === 'complete' || command === 'validationError' ? 'already_satisfied' : undefined, requireStrongLock: true });
   const executeWithRetry = async () => {
     let result = await execute();
     for (let retry = 0; retry < 2 && result.outcome === 'locked'; retry += 1) {
@@ -52,7 +52,7 @@ export async function runRecordingCommand(scope: TimerScope, context: TimerRecor
       || current.recordingAttempt.ownerTabId !== context.ownerTabId
       || current.recordingAttempt.phase !== 'confirmed') return undefined;
     return cleanupConfirmedRecording(current, context.attemptId);
-  }, { absentOutcome: 'already_completed' });
+  }, { absentOutcome: 'already_completed', requireStrongLock: true });
   let cleanupResult = await cleanup();
   for (let retry = 0; retry < 2 && cleanupResult.outcome === 'locked'; retry += 1) {
     await new Promise(resolve => setTimeout(resolve, 50 * (retry + 1)));

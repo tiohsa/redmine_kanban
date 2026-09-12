@@ -232,7 +232,7 @@ test('cleanup retry synchronizes TimerSession without another Time Entry POST', 
     if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/time_entries')) posts.push(request.url());
   });
   await page.locator('[data-testid="issue-dialog-footer"] .rk-btn-primary').click();
-  const retry = page.getByRole('button', { name: /retry synchronization|再同期/i });
+  const retry = page.getByTestId('issue-dialog-footer').getByRole('button', { name: /retry synchronization|再同期/i });
   await expect(retry).toBeVisible();
   await retry.click();
   await expect(retry).toBeVisible();

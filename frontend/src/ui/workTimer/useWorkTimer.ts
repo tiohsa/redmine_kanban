@@ -15,7 +15,7 @@ export function useWorkTimer({ scope, onError, labels }: Options) {
   const feedback = useRef({ labels, onError });
   useEffect(() => { feedback.current = { labels, onError }; }, [labels, onError]);
   const acceptResult = useCallback((result: TimerMutationResult) => {
-    if (result.outcome === 'storage_error' || result.outcome === 'locked') {
+    if (result.outcome === 'storage_error' || result.outcome === 'locked' || result.outcome === 'strong_lock_unavailable') {
       if (result.session?.recordingAttempt?.phase === 'confirmed') setSession(result.session);
       feedback.current.onError(feedback.current.labels.timer_sync_failed ?? 'Timer state synchronization failed.');
     } else if (result.outcome !== 'semantic_conflict' || result.session) setSession(result.session);
@@ -26,18 +26,21 @@ export function useWorkTimer({ scope, onError, labels }: Options) {
     if (read.outcome !== 'storage_error') setSession(read.session);
   }, [scope]);
   useEffect(() => { sync(); setPreferences(loadPreferences(scope)); const keys = keysFor(scope); const onStorage = (event: StorageEvent) => { if (event.key === keys.session) sync(); if (event.key === keys.preferences) setPreferences(loadPreferences(scope)); }; addEventListener('storage', onStorage); return () => removeEventListener('storage', onStorage); }, [scope, sync]);
-  useEffect(() => { void mutate(scope, current => current ? recoverRecording(current, getTabId()) : undefined).then(acceptResult); }, [scope, acceptResult]);
-  useEffect(() => { if (!session || session.state !== 'running' || !session.deadlineAt) return; const timeout = window.setTimeout(() => { let notify = false; void mutate(scope, current => { if (!current) return undefined; notify = current.state === 'running' && current.deadlineAt === session.deadlineAt && current.notifiedDeadlineAt !== current.deadlineAt; return tick(current); }).then(result => { acceptResult(result); if (notify && result.outcome === 'applied' && typeof Notification !== 'undefined' && Notification.permission === 'granted') new Notification(labels.work_timer ?? 'Work timer', { body: `${result.session?.subject ?? session.subject}: ${result.session?.state === 'expired' ? (labels.timer_expired ?? 'Time is over') : (labels.timer_pending ?? 'Work time not recorded')}` }); }); }, Math.max(0, session.deadlineAt - Date.now())); return () => clearTimeout(timeout); }, [acceptResult, labels, scope, session]);
+  useEffect(() => {
+    if (!load(scope)?.recordingAttempt) return;
+    void mutate(scope, current => current ? recoverRecording(current, getTabId()) : undefined, { requireStrongLock: true }).then(acceptResult);
+  }, [scope, acceptResult]);
+  useEffect(() => { if (!session || session.state !== 'running' || !session.deadlineAt) return; const timeout = window.setTimeout(() => { let notify = false; void mutate(scope, current => { if (!current) return undefined; notify = current.state === 'running' && current.deadlineAt === session.deadlineAt && current.notifiedDeadlineAt !== current.deadlineAt; return tick(current); }, { requireStrongLock: true }).then(result => { acceptResult(result); if (notify && result.outcome === 'applied' && typeof Notification !== 'undefined' && Notification.permission === 'granted') new Notification(labels.work_timer ?? 'Work timer', { body: `${result.session?.subject ?? session.subject}: ${result.session?.state === 'expired' ? (labels.timer_expired ?? 'Time is over') : (labels.timer_pending ?? 'Work time not recorded')}` }); }); }, Math.max(0, session.deadlineAt - Date.now())); return () => clearTimeout(timeout); }, [acceptResult, labels, scope, session]);
   const open = useCallback((issue: Issue) => { if (!issue.can_log_time) { onError(labels.timer_permission_denied ?? 'You do not have permission to log time on this issue.'); return; } const read = readSession(scope); if (read.outcome === 'storage_error') { onError(labels.timer_sync_failed ?? 'Timer state synchronization failed.'); return; } const current = read.session; if (current && String(current.issueId) !== String(issue.id)) { setConflictSession(current); return; } if (current?.state === 'stopped_pending_record') { setSession(current); setPendingManageRequest(request => request + 1); return; } if (!current) setStartIssue(issue); }, [labels, onError, scope]);
-  const start = useCallback(async (minutes: TimerIntervalMinutes, autoStop: boolean) => { if (!startIssue) return conflictResult(); if (typeof Notification !== 'undefined' && Notification.permission === 'default') void Notification.requestPermission(); const result = await mutate(scope, current => current ? undefined : createTimerSession(startIssue.id, startIssue.subject, minutes, autoStop, scope.userId)); acceptResult(result); if (result.outcome === 'applied') { const next = { autoStop }; savePreferences(scope, next); setPreferences(next); } setStartIssue(null); if (result.outcome === 'semantic_conflict') onError(labels.timer_conflict ?? 'Timer session conflict.'); return result; }, [acceptResult, labels, onError, scope, startIssue]);
-  const change = useCallback(async (fn: (current: TimerSession) => TimerSession | null | undefined) => { const id = session?.sessionId; if (!id) return conflictResult(); const result = await mutate(scope, current => current?.sessionId === id ? fn(current) : undefined); acceptResult(result); return result; }, [acceptResult, scope, session?.sessionId]);
+  const start = useCallback(async (minutes: TimerIntervalMinutes, autoStop: boolean) => { if (!startIssue) return conflictResult(); if (typeof Notification !== 'undefined' && Notification.permission === 'default') void Notification.requestPermission(); const result = await mutate(scope, current => current ? undefined : createTimerSession(startIssue.id, startIssue.subject, minutes, autoStop, scope.userId), { requireStrongLock: true }); acceptResult(result); if (result.outcome === 'applied') { const next = { autoStop }; savePreferences(scope, next); setPreferences(next); } setStartIssue(null); if (result.outcome === 'semantic_conflict') onError(labels.timer_conflict ?? 'Timer session conflict.'); return result; }, [acceptResult, labels, onError, scope, startIssue]);
+  const change = useCallback(async (fn: (current: TimerSession) => TimerSession | null | undefined) => { const id = session?.sessionId; if (!id) return conflictResult(); const result = await mutate(scope, current => current?.sessionId === id ? fn(current) : undefined, { requireStrongLock: true }); acceptResult(result); return result; }, [acceptResult, scope, session?.sessionId]);
   const extendTimer = useCallback(async (minutes: TimerIntervalMinutes) => change(current => current.recordingAttempt ? undefined : extend(tick(current), minutes)), [change]);
   const stopTimer = useCallback(async () => {
     const id = session?.sessionId;
     if (!id) return null;
 
     const ownerTabId = getTabId();
-    const stopped = await mutate(scope, (current) => current?.sessionId === id ? stopAndBeginRecording(current, ownerTabId) : undefined);
+    const stopped = await mutate(scope, (current) => current?.sessionId === id ? stopAndBeginRecording(current, ownerTabId) : undefined, { requireStrongLock: true });
     acceptResult(stopped);
     const next = stopped.session;
     if (!next || stopped.outcome !== 'applied' || !next.recordingAttempt || next.recordingAttempt.ownerTabId !== ownerTabId) return null;
@@ -72,7 +75,7 @@ export function useWorkTimer({ scope, onError, labels }: Options) {
   const discard = useCallback(async () => {
     const id = session?.sessionId;
     if (!id) return conflictResult();
-    const result = await mutate(scope, current => current?.sessionId === id && current.state === 'stopped_pending_record' && !current.recordingAttempt ? null : undefined);
+    const result = await mutate(scope, current => current?.sessionId === id && current.state === 'stopped_pending_record' && !current.recordingAttempt ? null : undefined, { requireStrongLock: true });
     acceptResult(result);
     return result;
   }, [acceptResult, scope, session?.sessionId]);

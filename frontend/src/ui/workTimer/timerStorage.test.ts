@@ -78,6 +78,22 @@ describe('work timer storage', () => {
     expect(result).toMatchObject({ applied: true, lock: 'acquired' });
     expect(load(scope)?.issueId).toBe(1);
   });
+  it('fails closed for critical mutations when no strong lock backend is available', async () => {
+    vi.stubGlobal('navigator', {});
+    const updater = vi.fn(() => createTimerSession(1, 'Issue', 30, true, 7));
+    const result = await mutate(scope, updater, { requireStrongLock: true });
+    expect(result).toMatchObject({ applied: false, outcome: 'strong_lock_unavailable', lock: 'unavailable' });
+    expect(updater).not.toHaveBeenCalled();
+    expect(load(scope)).toBeNull();
+  });
+  it('uses a strong Web Lock for critical mutations when available', async () => {
+    const request = vi.fn(async (_name: string, _options: unknown, callback: () => unknown) => callback());
+    vi.stubGlobal('navigator', { locks: { request } });
+    const result = await mutate(scope, () => createTimerSession(1, 'Issue', 30, true, 7), { requireStrongLock: true });
+    expect(result).toMatchObject({ applied: true, outcome: 'applied', lock: 'acquired' });
+    expect(request).toHaveBeenCalledOnce();
+    expect(load(scope)?.issueId).toBe(1);
+  });
   it('keeps a stable in-memory tab id when sessionStorage is unavailable', () => {
     vi.stubGlobal('sessionStorage', { getItem: () => { throw new Error('blocked'); }, setItem: () => { throw new Error('blocked'); } });
     expect(getTabId()).toBe(getTabId());

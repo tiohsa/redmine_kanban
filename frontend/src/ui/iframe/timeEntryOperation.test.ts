@@ -54,6 +54,15 @@ it('rejects a form without an explicit allowed action', () => {
   expect(canSubmitTimeEntry(operation, form, operation.url)).toBe(false);
 });
 
+it.each(['javascript:alert(1)', 'data:text/html,blocked', 'https://other.test/redmine/time_entries'])('rejects unsafe or cross-origin form actions: %s', action => {
+  const operation = createTimeEntryOperation(window.location.origin + '/redmine', 12);
+  const form = document.createElement('form');
+  form.id = 'new_time_entry';
+  form.action = action;
+  form.innerHTML = '<input name="time_entry[issue_id]" value="12">';
+  expect(canSubmitTimeEntry(operation, form, operation.url)).toBe(false);
+});
+
 it('rejects whitespace-only action on the generic Time Entry route', () => {
   const operation = createTimeEntryOperation(window.location.origin + '/redmine', 12);
   const form = document.createElement('form');

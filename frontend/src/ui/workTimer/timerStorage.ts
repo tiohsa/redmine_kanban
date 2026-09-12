@@ -1,5 +1,5 @@
 import { TIMER_SESSION_VERSION, timerId } from './timerDomain';
-import type { TimerSession } from './timerTypes';
+import { isTimerRecordingPhase, type TimerSession } from './timerTypes';
 export type TimerScope = { instanceKey: string; userId: number };
 // Shared intentionally with redmine_canvas_gantt. Coordinate storage key changes across both plugins.
 const sessionBase = 'redmine_canvas_gantt_timer_session'; const prefsBase = 'redmine_canvas_gantt_timer_preferences'; const tabBase = 'redmine_canvas_gantt_timer_tab_id';
@@ -8,8 +8,48 @@ const suffix = (scope: TimerScope) => `${encodeURIComponent(scope.instanceKey)}:
 export const keysFor = (scope: TimerScope) => ({ session: `${sessionBase}:${suffix(scope)}`, preferences: `${prefsBase}:${suffix(scope)}`, lock: `redmine_canvas_gantt_timer_lock:${suffix(scope)}` });
 export function getTabId() { try { const old = sessionStorage.getItem(tabBase); if (old?.trim()) return old; const next = timerId(); sessionStorage.setItem(tabBase, next); return next; } catch { fallbackTabId ??= timerId(); return fallbackTabId; } }
 const isValidIssueId = (value: unknown): value is number | string => (typeof value === 'number' || typeof value === 'string') && Number.isSafeInteger(Number(value)) && Number(value) > 0;
-export function isTimerSession(value: unknown): value is TimerSession { const x = value as Partial<TimerSession> | null; return !!x && x.version === TIMER_SESSION_VERSION && typeof x.sessionId === 'string' && x.sessionId.trim().length > 0 && Number.isInteger(x.revision) && (x.revision ?? 0) > 0 && isValidIssueId(x.issueId) && typeof x.subject === 'string' && typeof x.autoStop === 'boolean' && typeof x.createdAt === 'number' && Number.isFinite(x.createdAt) && typeof x.updatedAt === 'number' && Number.isFinite(x.updatedAt) && (x.userId === undefined || (typeof x.userId === 'number' && Number.isFinite(x.userId))) && Array.isArray(x.segments) && x.segments.length > 0 && x.segments.every(segment => typeof segment?.startedAt === 'number' && Number.isFinite(segment.startedAt) && segment.startedAt > 0 && (segment.stoppedAt === undefined || (typeof segment.stoppedAt === 'number' && Number.isFinite(segment.stoppedAt) && segment.stoppedAt >= segment.startedAt))) && ['running', 'expired', 'stopped_pending_record'].includes(String(x.state)) && (x.deadlineAt === undefined || (typeof x.deadlineAt === 'number' && Number.isFinite(x.deadlineAt))) && (x.notifiedDeadlineAt === undefined || (typeof x.notifiedDeadlineAt === 'number' && Number.isFinite(x.notifiedDeadlineAt))) && (x.notifiedType === undefined || ['running_expired', 'stopped'].includes(x.notifiedType)) && (!x.recordingAttempt || (x.state === 'stopped_pending_record' && typeof x.recordingAttempt.id === 'string' && x.recordingAttempt.id.trim().length > 0 && typeof x.recordingAttempt.ownerTabId === 'string' && x.recordingAttempt.ownerTabId.trim().length > 0 && typeof x.recordingAttempt.openedAt === 'number' && Number.isFinite(x.recordingAttempt.openedAt) && ['editing', 'submitting', 'confirmed', 'unknown'].includes(x.recordingAttempt.phase))); }
-function migrate(value: unknown): TimerSession | null { if (isTimerSession(value)) return value; const x = value as Partial<TimerSession> & { recordingAttemptId?: unknown } | null; if (!x || ![2, 3, TIMER_SESSION_VERSION].includes(x.version ?? 0)) return null; const base = { ...x, version: TIMER_SESSION_VERSION }; delete base.recordingAttempt; delete base.recordingAttemptId; if (x.state !== 'stopped_pending_record') return !x.recordingAttempt && !x.recordingAttemptId && isTimerSession(base) ? base : null; const legacy = x.recordingAttempt as Partial<TimerSession['recordingAttempt']> | undefined; if (typeof x.recordingAttemptId === 'string' && x.recordingAttemptId.trim()) base.recordingAttempt = { id: x.recordingAttemptId, ownerTabId: 'legacy-owner', openedAt: x.updatedAt!, phase: 'unknown' }; else if (legacy && typeof legacy.id === 'string' && typeof legacy.openedAt === 'number' && ['editing', 'submitting', 'confirmed', 'unknown'].includes(String(legacy.phase))) base.recordingAttempt = { id: legacy.id, ownerTabId: typeof legacy.ownerTabId === 'string' && legacy.ownerTabId.trim() ? legacy.ownerTabId : 'legacy-owner', openedAt: legacy.openedAt, phase: legacy.phase! }; else if (x.recordingAttempt || x.recordingAttemptId) return null; return isTimerSession(base) ? base : null; }
+export function isTimerSession(value: unknown): value is TimerSession {
+  const x = value as Partial<TimerSession> | null;
+  return !!x && x.version === TIMER_SESSION_VERSION && typeof x.sessionId === 'string' && x.sessionId.trim().length > 0
+    && Number.isInteger(x.revision) && (x.revision ?? 0) > 0 && isValidIssueId(x.issueId) && typeof x.subject === 'string'
+    && typeof x.autoStop === 'boolean' && typeof x.createdAt === 'number' && Number.isFinite(x.createdAt)
+    && typeof x.updatedAt === 'number' && Number.isFinite(x.updatedAt)
+    && (x.userId === undefined || (typeof x.userId === 'number' && Number.isFinite(x.userId)))
+    && Array.isArray(x.segments) && x.segments.length > 0
+    && x.segments.every(segment => typeof segment?.startedAt === 'number' && Number.isFinite(segment.startedAt) && segment.startedAt > 0
+      && (segment.stoppedAt === undefined || (typeof segment.stoppedAt === 'number' && Number.isFinite(segment.stoppedAt) && segment.stoppedAt >= segment.startedAt)))
+    && ['running', 'expired', 'stopped_pending_record'].includes(String(x.state))
+    && (x.deadlineAt === undefined || (typeof x.deadlineAt === 'number' && Number.isFinite(x.deadlineAt)))
+    && (x.notifiedDeadlineAt === undefined || (typeof x.notifiedDeadlineAt === 'number' && Number.isFinite(x.notifiedDeadlineAt)))
+    && (x.notifiedType === undefined || ['running_expired', 'stopped'].includes(x.notifiedType))
+    && (!x.recordingAttempt || (x.state === 'stopped_pending_record'
+      && typeof x.recordingAttempt.id === 'string' && x.recordingAttempt.id.trim().length > 0
+      && typeof x.recordingAttempt.ownerTabId === 'string' && x.recordingAttempt.ownerTabId.trim().length > 0
+      && typeof x.recordingAttempt.openedAt === 'number' && Number.isFinite(x.recordingAttempt.openedAt)
+      && isTimerRecordingPhase(x.recordingAttempt.phase)));
+}
+
+function migrate(value: unknown): TimerSession | null {
+  if (isTimerSession(value)) return value;
+  const x = value as Partial<TimerSession> & { recordingAttemptId?: unknown } | null;
+  if (!x || ![2, 3, TIMER_SESSION_VERSION].includes(x.version ?? 0)) return null;
+  const base = { ...x, version: TIMER_SESSION_VERSION };
+  delete base.recordingAttempt;
+  delete base.recordingAttemptId;
+  if (x.state !== 'stopped_pending_record') return !x.recordingAttempt && !x.recordingAttemptId && isTimerSession(base) ? base : null;
+  const legacy = x.recordingAttempt as Partial<TimerSession['recordingAttempt']> | undefined;
+  if (typeof x.recordingAttemptId === 'string' && x.recordingAttemptId.trim()) {
+    base.recordingAttempt = { id: x.recordingAttemptId, ownerTabId: 'legacy-owner', openedAt: x.updatedAt!, phase: 'unknown' };
+  } else if (legacy && typeof legacy.id === 'string' && typeof legacy.openedAt === 'number' && isTimerRecordingPhase(legacy.phase)) {
+    base.recordingAttempt = {
+      id: legacy.id,
+      ownerTabId: typeof legacy.ownerTabId === 'string' && legacy.ownerTabId.trim() ? legacy.ownerTabId : 'legacy-owner',
+      openedAt: legacy.openedAt,
+      phase: legacy.phase,
+    };
+  } else if (x.recordingAttempt || x.recordingAttemptId) return null;
+  return isTimerSession(base) ? base : null;
+}
 export type TimerReadResult =
   | { outcome: 'found'; session: TimerSession }
   | { outcome: 'absent'; session: null }
@@ -26,15 +66,16 @@ export function readSession(scope: TimerScope): TimerReadResult {
 export function load(scope: TimerScope): TimerSession | null { return readSession(scope).session; }
 export function loadPreferences(scope: TimerScope): { autoStop: boolean } { try { const raw = localStorage.getItem(keysFor(scope).preferences); const value = raw ? JSON.parse(raw) as { autoStop?: unknown } : null; return typeof value?.autoStop === 'boolean' ? { autoStop: value.autoStop } : { autoStop: false }; } catch { return { autoStop: false }; } }
 export function savePreferences(scope: TimerScope, preferences: { autoStop: boolean }) { try { localStorage.setItem(keysFor(scope).preferences, JSON.stringify(preferences)); } catch { /* Preference storage is non-critical. */ } }
-type LockStatus = 'acquired' | 'locked' | 'storage_error';
-type LockResult<T> = { result?: T; status: LockStatus };
+export type TimerLockStatus = 'acquired' | 'locked' | 'storage_error' | 'unavailable';
+type LockResult<T> = { result?: T; status: TimerLockStatus };
 type Lease = { token: string; expiresAt: number };
 
 function parseLease(raw: string | null): Lease | null {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as Partial<Lease>;
-    return typeof parsed.token === 'string' && typeof parsed.expiresAt === 'number' ? parsed as Lease : null;
+    return typeof parsed.token === 'string' && parsed.token.trim().length > 0 && typeof parsed.expiresAt === 'number' && Number.isFinite(parsed.expiresAt)
+      ? parsed as Lease : null;
   } catch { return null; }
 }
 
@@ -76,7 +117,7 @@ async function indexedDbLock<T>(name: string, fn: () => T): Promise<LockResult<T
   } catch { database?.close(); return { status: 'storage_error' }; }
 }
 
-async function lock<T>(scope: TimerScope, update: () => T): Promise<LockResult<T>> {
+async function lock<T>(scope: TimerScope, update: () => T, requireStrongLock: boolean): Promise<LockResult<T>> {
   // A fallback must never execute the logical mutation twice after a lock backend fails.
   let executed = false;
   let result: T;
@@ -88,16 +129,26 @@ async function lock<T>(scope: TimerScope, update: () => T): Promise<LockResult<T
   const indexed = await indexedDbLock(name, fn);
   if (indexed?.status === 'acquired') return indexed;
   if (executed) return { status: 'storage_error' };
+  if (requireStrongLock) {
+    // A weak lease can report contention, but it can never grant a critical mutation.
+    try {
+      const existing = parseLease(localStorage.getItem(name));
+      if (existing && existing.expiresAt > Date.now()) return { status: 'locked' };
+    } catch {
+      return { status: 'storage_error' };
+    }
+    return { status: 'unavailable' };
+  }
   return localStorageLock(name, fn);
 }
-export type TimerMutationOutcome = 'applied' | 'semantic_conflict' | 'locked' | 'storage_error' | 'absent' | 'already_completed' | 'already_satisfied';
-export type TimerMutationResult = { session: TimerSession | null; outcome: TimerMutationOutcome; applied: boolean; lock: LockStatus };
+export type TimerMutationOutcome = 'applied' | 'semantic_conflict' | 'locked' | 'storage_error' | 'strong_lock_unavailable' | 'absent' | 'already_completed' | 'already_satisfied';
+export type TimerMutationResult = { session: TimerSession | null; outcome: TimerMutationOutcome; applied: boolean; lock: TimerLockStatus };
 export const mutationSucceeded = (result: { outcome: TimerMutationOutcome }) => result.outcome === 'applied' || result.outcome === 'already_completed' || result.outcome === 'already_satisfied';
 
 export async function mutate(
   scope: TimerScope,
   updater: (session: TimerSession | null) => TimerSession | null | undefined,
-  options: { absentOutcome?: 'absent' | 'already_completed'; unchangedOutcome?: 'already_satisfied' } = {},
+  options: { absentOutcome?: 'absent' | 'already_completed'; unchangedOutcome?: 'already_satisfied'; requireStrongLock?: boolean } = {},
 ): Promise<TimerMutationResult> {
   const locked = await lock(scope, () => {
     const read = readSession(scope);
@@ -114,6 +165,13 @@ export async function mutate(
       else localStorage.setItem(key, JSON.stringify(persisted));
       return { session: persisted, outcome: 'applied' as const, applied: true };
     } catch { return { session: current, outcome: 'storage_error' as const, applied: false }; }
-  });
-  return locked.result ? { ...locked.result, lock: locked.status } : { session: null, outcome: locked.status === 'locked' ? 'locked' : 'storage_error', applied: false, lock: locked.status };
+  }, options.requireStrongLock === true);
+  return locked.result !== undefined
+    ? { ...locked.result, lock: locked.status }
+    : {
+      session: null,
+      outcome: locked.status === 'locked' ? 'locked' : locked.status === 'unavailable' ? 'strong_lock_unavailable' : 'storage_error',
+      applied: false,
+      lock: locked.status,
+    };
 }
