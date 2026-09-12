@@ -740,6 +740,43 @@ describe('IframeEditDialog layout variants', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: labels.saving })).toBeTruthy());
   });
 
+  it('defers native time entry submits until the submit event has finished', async () => {
+    const { container } = render(
+      <IframeEditDialog
+        timeEntryOperation={{ origin: 'time_entry_on_close', issueId: 1, url: '/issues/1/time_entries/new' }}
+        mode="time_entry"
+        labels={labels}
+        baseUrl="/projects/demo/kanban"
+        queryKey={['kanban', 'board']}
+        onClose={() => {}}
+        onSuccess={() => {}}
+      />,
+    );
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    const doc = document.implementation.createHTMLDocument('iframe');
+    doc.body.innerHTML = '<form id="new_time_entry" action="/issues/1/time_entries"><input name="time_entry[issue_id]" value="1"><input name="time_entry[hours]" value="0.02"><button type="submit">Save</button></form>';
+    const iframeWindow = {
+      location: { href: iframe.src },
+      document: doc,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    Object.defineProperty(iframe, 'contentWindow', { value: iframeWindow, configurable: true });
+    Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+    const submit = vi.spyOn(doc.querySelector('button') as HTMLButtonElement, 'click').mockImplementation(() => undefined);
+
+    fireEvent.load(iframe);
+    const firstNativeSubmit = new Event('submit', { bubbles: true, cancelable: true });
+    const secondNativeSubmit = new Event('submit', { bubbles: true, cancelable: true });
+    doc.querySelector('#new_time_entry')?.dispatchEvent(firstNativeSubmit);
+    doc.querySelector('#new_time_entry')?.dispatchEvent(secondNativeSubmit);
+
+    expect(firstNativeSubmit.defaultPrevented).toBe(true);
+    expect(secondNativeSubmit.defaultPrevented).toBe(true);
+    expect(submit).not.toHaveBeenCalled();
+    await waitFor(() => expect(submit).toHaveBeenCalledOnce());
+  });
+
   const validTimeEntryForm = '<form id="new_time_entry" action="/time_entries"><input name="time_entry[issue_id]" value="1"><input name="time_entry[hours]" value="-1"><button type="submit">Save</button></form>';
 
   async function openTimeEntry() {
