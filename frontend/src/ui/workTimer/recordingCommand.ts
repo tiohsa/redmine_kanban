@@ -22,7 +22,7 @@ export async function runRecordingCommand(scope: TimerScope, context: TimerRecor
       || (expectedPhase && attempt.phase !== expectedPhase)) return undefined;
     switch (command) {
       case 'submitting': return beginSubmission(current, context.attemptId);
-      case 'validationError': return markValidationError(current, context.attemptId);
+      case 'validationError': return attempt.phase === 'editing' ? current : markValidationError(current, context.attemptId);
       case 'cancel': return cancelRecording(current, context.attemptId);
       case 'unknown': return attempt.phase === 'unknown' ? current : markUnknown(current, context.attemptId);
       case 'complete': return completeRecording(current, context.attemptId);
@@ -34,7 +34,7 @@ export async function runRecordingCommand(scope: TimerScope, context: TimerRecor
       case 'recover': return takeOverRecording(current, context.attemptId, tabId);
       case 'recorded': case 'unregistered': return resolveUnknown(current, context.attemptId, command);
     }
-  }, { absentOutcome: command === 'complete' ? 'already_completed' : 'absent', unchangedOutcome: command === 'close' || command === 'unknown' || command === 'complete' ? 'already_satisfied' : undefined });
+  }, { absentOutcome: command === 'complete' ? 'already_completed' : 'absent', unchangedOutcome: command === 'close' || command === 'unknown' || command === 'complete' || command === 'validationError' ? 'already_satisfied' : undefined });
   const executeWithRetry = async () => {
     let result = await execute();
     for (let retry = 0; retry < 2 && result.outcome === 'locked'; retry += 1) {
@@ -49,6 +49,7 @@ export async function runRecordingCommand(scope: TimerScope, context: TimerRecor
   const cleanup = () => mutate(scope, current => {
     if (!current || current.sessionId !== context.sessionId || String(current.issueId) !== String(context.issueId)
       || !current.recordingAttempt || current.recordingAttempt.id !== context.attemptId
+      || current.recordingAttempt.ownerTabId !== context.ownerTabId
       || current.recordingAttempt.phase !== 'confirmed') return undefined;
     return cleanupConfirmedRecording(current, context.attemptId);
   }, { absentOutcome: 'already_completed' });
