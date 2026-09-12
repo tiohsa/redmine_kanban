@@ -416,7 +416,14 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
             event.preventDefault();
             event.stopImmediatePropagation();
             if (isSubmittingRef.current || submitPreparationRef.current) return;
-            void submitIssueForm(form, 'time_entry');
+            submitPreparationRef.current = true;
+            // Let the native submit event finish before clicking the hidden
+            // Redmine submit control. Calling it re-entrantly can suppress the
+            // actual navigation after Enter-triggered implicit submission.
+            queueMicrotask(() => {
+              submitPreparationRef.current = false;
+              void submitIssueForm(form, 'time_entry');
+            });
           };
           doc.addEventListener('submit', handleNativeSubmit, true);
           iframeSubmitCleanupRef.current = () => doc.removeEventListener('submit', handleNativeSubmit, true);

@@ -227,7 +227,7 @@ test('timeEntryOnClose saves the target issue through the shared native dialog',
     await form.locator('#time_entry_hours').fill('0.02');
     await form.locator('#time_entry_activity_id').selectOption({ index: 1 });
     const saved = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/time_entries'));
-    await page.locator('[data-testid="issue-dialog-footer"] .rk-btn-primary').click();
+    await form.locator('#time_entry_hours').press('Enter');
     expect((await saved).status()).toBe(302);
     await expect(iframe).toHaveCount(0);
   } finally {
