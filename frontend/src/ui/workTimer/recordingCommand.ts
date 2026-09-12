@@ -1,4 +1,4 @@
-import { beginSubmission, cancelRecording, completeRecording, markUnknown, markValidationError, resolveUnknown, takeOverRecording } from './timerDomain';
+import { beginSubmission, cancelRecording, cleanupConfirmedRecording, completeRecording, markUnknown, markValidationError, resolveUnknown, takeOverRecording } from './timerDomain';
 import { getTabId, mutate, type TimerMutationResult, type TimerScope } from './timerStorage';
 import type { TimerRecordingContext, TimerRecordingPhase, TimerSession } from './timerTypes';
 
@@ -13,7 +13,7 @@ export function recordingContext(scope: TimerScope, session: TimerSession): Time
 export async function runRecordingCommand(scope: TimerScope, context: TimerRecordingContext, command: RecordingCommand, expectedPhase?: TimerRecordingPhase): Promise<TimerMutationResult> {
   if (context.scope.instanceKey !== scope.instanceKey || context.scope.userId !== scope.userId) return conflictResult();
   const tabId = getTabId();
-  const confirmation = command === 'recover' || command === 'recorded' || command === 'unregistered';
+  const confirmation = command === 'recover' || command === 'recorded' || command === 'unregistered' || (command === 'complete' && expectedPhase !== undefined);
   if ((!confirmation && context.ownerTabId !== tabId) || (confirmation && !expectedPhase)) return conflictResult();
   const execute = () => mutate(scope, current => {
     const attempt = current?.recordingAttempt;
@@ -29,16 +29,33 @@ export async function runRecordingCommand(scope: TimerScope, context: TimerRecor
       case 'close':
         if (attempt.phase === 'editing') return cancelRecording(current, context.attemptId);
         if (attempt.phase === 'submitting') return markUnknown(current, context.attemptId);
-        if (attempt.phase === 'unknown') return current;
+        if (attempt.phase === 'unknown' || attempt.phase === 'confirmed') return current;
         return undefined;
       case 'recover': return takeOverRecording(current, context.attemptId, tabId);
       case 'recorded': case 'unregistered': return resolveUnknown(current, context.attemptId, command);
     }
-  }, { absentOutcome: command === 'complete' ? 'already_completed' : 'absent', unchangedOutcome: command === 'close' || command === 'unknown' ? 'already_satisfied' : undefined });
-  let result = await execute();
-  for (let retry = 0; retry < 2 && result.outcome === 'locked'; retry += 1) {
+  }, { absentOutcome: command === 'complete' ? 'already_completed' : 'absent', unchangedOutcome: command === 'close' || command === 'unknown' || command === 'complete' ? 'already_satisfied' : undefined });
+  const executeWithRetry = async () => {
+    let result = await execute();
+    for (let retry = 0; retry < 2 && result.outcome === 'locked'; retry += 1) {
+      await new Promise(resolve => setTimeout(resolve, 50 * (retry + 1)));
+      result = await execute();
+    }
+    return result;
+  };
+  const result = await executeWithRetry();
+  if (command !== 'complete' || !result.session?.recordingAttempt || result.session.recordingAttempt.phase !== 'confirmed') return result;
+
+  const cleanup = () => mutate(scope, current => {
+    if (!current || current.sessionId !== context.sessionId || String(current.issueId) !== String(context.issueId)
+      || !current.recordingAttempt || current.recordingAttempt.id !== context.attemptId
+      || current.recordingAttempt.phase !== 'confirmed') return undefined;
+    return cleanupConfirmedRecording(current, context.attemptId);
+  }, { absentOutcome: 'already_completed' });
+  let cleanupResult = await cleanup();
+  for (let retry = 0; retry < 2 && cleanupResult.outcome === 'locked'; retry += 1) {
     await new Promise(resolve => setTimeout(resolve, 50 * (retry + 1)));
-    result = await execute();
+    cleanupResult = await cleanup();
   }
-  return result;
+  return cleanupResult;
 }

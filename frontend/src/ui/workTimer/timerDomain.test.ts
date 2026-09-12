@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { beginRecording, beginSubmission, cancelRecording, completeRecording, createTimerSession, elapsed, extend, markUnknown, markValidationError, recoverRecording, resolveUnknown, stop, stopAndBeginRecording, takeOverRecording, tick } from './timerDomain';
+import { beginRecording, beginSubmission, cancelRecording, cleanupConfirmedRecording, completeRecording, createTimerSession, elapsed, extend, markUnknown, markValidationError, recoverRecording, resolveUnknown, stop, stopAndBeginRecording, takeOverRecording, tick } from './timerDomain';
 
 describe('work timer domain', () => {
   it('auto-stops exactly at its deadline and retains the recorded segment', () => {
@@ -44,7 +44,9 @@ describe('work timer domain', () => {
     expect(beginSubmission(unknown, unknown.recordingAttempt!.id)).toBeUndefined();
     expect(resolveUnknown(unknown, unknown.recordingAttempt!.id, 'unregistered')?.recordingAttempt).toBeUndefined();
     expect(resolveUnknown(unknown, unknown.recordingAttempt!.id, 'recorded')).toBeNull();
-    expect(completeRecording(submitting, submitting.recordingAttempt!.id)).toBeNull();
+    const confirmed = completeRecording(submitting, submitting.recordingAttempt!.id)!;
+    expect(confirmed.recordingAttempt?.phase).toBe('confirmed');
+    expect(cleanupConfirmedRecording(confirmed, submitting.recordingAttempt!.id)).toBeNull();
   });
 
   it('recovers a local editing attempt but preserves another tab and marks submits unknown', () => {

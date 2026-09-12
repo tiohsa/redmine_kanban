@@ -14,6 +14,7 @@ type Props = {
   onResume: (minutes: TimerIntervalMinutes) => void;
   onDiscard: () => void;
   onRecover: (expected: TimerSession) => void;
+  onRetrySynchronization: (expected: TimerSession) => void;
   onResolveUnknown: (resolution: 'recorded' | 'unregistered', expected: TimerSession) => void;
 };
 
@@ -23,7 +24,7 @@ const duration = (milliseconds: number) => {
 };
 const minuteLabel = (labels: Record<string, string>, minutes: number) => `+${(labels.timer_minutes ?? '%{count} min').replace('%{count}', String(minutes))}`;
 
-export function PendingWorkModal({ labels, session, remoteOwner, onClose, onRecord, onResume, onDiscard, onRecover, onResolveUnknown }: Props) {
+export function PendingWorkModal({ labels, session, remoteOwner, onClose, onRecord, onResume, onDiscard, onRecover, onRetrySynchronization, onResolveUnknown }: Props) {
   const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = useState(false);
   const [confirmation, setConfirmation] = useState<{ action: 'recover' | 'recorded' | 'unregistered'; expected: TimerSession } | null>(null);
   const phase = session.recordingAttempt?.phase;
@@ -87,7 +88,9 @@ export function PendingWorkModal({ labels, session, remoteOwner, onClose, onReco
             <p>{notice}</p>
             {remoteOwner && phase !== 'unknown' ? <p>{labels.timer_other_tab ?? 'Work time is being entered in another tab.'}</p> : null}
             <div className="rk-pending-work-state-actions">
-              {phase === 'unknown' ? <>
+              {phase === 'confirmed' ? (
+                <button type="button" className="rk-timer-button rk-timer-button-primary" data-testid="pending-work-retry-sync-button" onClick={() => onRetrySynchronization(session)}>{labels.timer_retry_sync ?? 'Retry synchronization'}</button>
+              ) : phase === 'unknown' ? <>
                 <button type="button" className="rk-timer-button rk-timer-button-primary" onClick={() => setConfirmation({ action: 'recorded', expected: session })}>{labels.timer_mark_recorded ?? 'Mark recorded'}</button>
                 <button type="button" className="rk-timer-button rk-timer-button-secondary" onClick={() => setConfirmation({ action: 'unregistered', expected: session })}>{labels.timer_reenter ?? 'Re-enter'}</button>
               </> : remoteOwner ? <button type="button" className="rk-timer-button rk-timer-button-primary" onClick={() => setConfirmation({ action: 'recover', expected: session })}>{labels.timer_recover ?? 'Recover in this tab'}</button> : null}

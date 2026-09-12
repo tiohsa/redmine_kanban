@@ -44,7 +44,7 @@ describe('recording commands and canonical outcomes', () => {
     const originalRemove = Storage.prototype.removeItem;
     const remove = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(function (this: Storage, key: string) { if (key === keysFor(scope).session) throw new Error('denied'); originalRemove.call(this, key); });
     expect((await command(context, 'complete')).outcome).toBe('storage_error');
-    expect(load(scope)?.recordingAttempt?.phase).toBe('submitting');
+    expect(load(scope)?.recordingAttempt?.phase).toBe('confirmed');
     remove.mockRestore();
     expect((await command(context, 'complete')).outcome).toBe('applied');
     expect((await command(context, 'complete')).outcome).toBe('already_completed');
@@ -128,6 +128,25 @@ describe('recording commands and canonical outcomes', () => {
     expect(get.mock.calls.filter(([key]) => key === keysFor(scope).session)).toHaveLength(1);
     expect(localStorage.getItem(keysFor(scope).session)).toBe(before);
     expect(set.mock.calls.filter(([key]) => key === keysFor(scope).session)).toHaveLength(0);
+  });
+
+  it('keeps a confirmed attempt confirmed when cleanup fails before close', async () => {
+    const context = await seed();
+    await command(context, 'submitting');
+    const originalRemove = Storage.prototype.removeItem;
+    vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(function (this: Storage, key: string) {
+      if (key === keysFor(scope).session) throw new Error('denied');
+      originalRemove.call(this, key);
+    });
+
+    const failed = await command(context, 'complete');
+
+    expect(failed.outcome).toBe('storage_error');
+    expect(failed.session?.recordingAttempt?.phase).toBe('confirmed');
+    expect(await command(context, 'close')).toMatchObject({
+      outcome: 'already_satisfied',
+      session: { recordingAttempt: { phase: 'confirmed' } },
+    });
   });
 
   it.each(['sessionId', 'attemptId', 'ownerTabId', 'issueId', 'scope', 'phase'] as const)('never treats a stale %s as satisfied when closing unknown', async field => {

@@ -12,10 +12,10 @@ const labels = {
   timer_resume: 'タイマーを再開（+15分）', timer_discard: '破棄', timer_discard_confirm: 'この未登録作業時間を破棄しますか？',
   timer_pending_record_desc: 'Redmineの作業時間入力フォームを開いて、この作業時間を登録します。', timer_or: 'または',
   timer_pending_resume_section: '作業を続ける', timer_pending_resume_desc: 'タイマーを再開し、記録前に作業時間を追加します。',
-  timer_editing: '作業時間を入力中', timer_submitting: '作業時間を登録処理中', timer_unknown: '作業時間の登録結果を確認できませんでした。',
+  timer_editing: '作業時間を入力中', timer_submitting: '作業時間を登録処理中', timer_saved_sync_failed: 'Redmine登録済み・タイマー同期待ち', timer_unknown: '作業時間の登録結果を確認できませんでした。', timer_retry_sync: '再同期',
   cancel: 'キャンセル', close: '閉じる',
 };
-const callbacks = () => ({ onExtend: vi.fn(), onStop: vi.fn(), onRecord: vi.fn(), onResume: vi.fn(), onDiscard: vi.fn(), onResolveUnknown: vi.fn(), onRecover: vi.fn() });
+const callbacks = () => ({ onExtend: vi.fn(), onStop: vi.fn(), onRecord: vi.fn(), onResume: vi.fn(), onDiscard: vi.fn(), onResolveUnknown: vi.fn(), onRecover: vi.fn(), onRetrySynchronization: vi.fn() });
 
 describe('WorkTimer UI', () => {
   beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(31_000); });
@@ -104,6 +104,24 @@ describe('WorkTimer UI', () => {
       fireEvent.click(screen.getByTestId('pending-work-operation-confirm'));
       expect(actions.onResolveUnknown).toHaveBeenCalled();
     }
+  });
+
+  it('shows only synchronization retry for a confirmed recording', () => {
+    const actions = callbacks();
+    const session = {
+      ...stop(createTimerSession(2, 'Pending task', 30, false, 7, 1_000), 9_000),
+      recordingAttempt: { id: 'attempt', ownerTabId: 'this-tab', openedAt: 9_000, phase: 'confirmed' as const },
+    };
+    render(<GlobalTimer labels={labels} session={session} remoteOwner={false} {...actions} />);
+
+    fireEvent.click(screen.getByTestId('global-timer-manage-button'));
+
+    expect(within(screen.getByTestId('pending-work-modal')).getByText('Redmine登録済み・タイマー同期待ち')).toBeTruthy();
+    expect(screen.getByTestId('pending-work-retry-sync-button')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Re-enter' })).toBeNull();
+    expect(screen.queryByTestId('pending-work-record-button')).toBeNull();
+    fireEvent.click(screen.getByTestId('pending-work-retry-sync-button'));
+    expect(actions.onRetrySynchronization).toHaveBeenCalledWith(session);
   });
 
   it('keeps recovery available for a recording owned by another tab', () => {

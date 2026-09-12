@@ -16,6 +16,7 @@ export function useWorkTimer({ scope, onError, labels }: Options) {
   useEffect(() => { feedback.current = { labels, onError }; }, [labels, onError]);
   const acceptResult = useCallback((result: TimerMutationResult) => {
     if (result.outcome === 'storage_error' || result.outcome === 'locked') {
+      if (result.session?.recordingAttempt?.phase === 'confirmed') setSession(result.session);
       feedback.current.onError(feedback.current.labels.timer_sync_failed ?? 'Timer state synchronization failed.');
     } else if (result.outcome !== 'semantic_conflict' || result.session) setSession(result.session);
     return result;
@@ -62,6 +63,12 @@ export function useWorkTimer({ scope, onError, labels }: Options) {
     const context = recordingContext(scope, expected);
     return context ? command(context, 'recover', expected.recordingAttempt!.phase) : conflictResult();
   }, [scope, command]);
+  const retrySynchronization = useCallback(async (expected: TimerSession) => {
+    const context = recordingContext(scope, expected);
+    return context && expected.recordingAttempt?.phase === 'confirmed'
+      ? command(context, 'complete', 'confirmed')
+      : conflictResult();
+  }, [command, scope]);
   const discard = useCallback(async () => {
     const id = session?.sessionId;
     if (!id) return conflictResult();
@@ -82,5 +89,5 @@ export function useWorkTimer({ scope, onError, labels }: Options) {
     },
   }), [command, scope]);
   const remoteOwner = Boolean(session?.recordingAttempt && session.recordingAttempt.ownerTabId !== getTabId());
-  return { session, startIssue, setStartIssue, conflictSession, setConflictSession, preferences, open, start, extendTimer, stopTimer, record, recover, discard, remoteOwner, pendingManageRequest, lifecycle, elapsed: session ? elapsed(session) : 0 };
+  return { session, startIssue, setStartIssue, conflictSession, setConflictSession, preferences, open, start, extendTimer, stopTimer, record, recover, retrySynchronization, discard, remoteOwner, pendingManageRequest, lifecycle, elapsed: session ? elapsed(session) : 0 };
 }

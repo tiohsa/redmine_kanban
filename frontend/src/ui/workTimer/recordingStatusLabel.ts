@@ -4,6 +4,7 @@ export function recordingStatusLabel(labels: Record<string, string>, attempt: Ti
   switch (attempt?.phase) {
     case 'editing': return labels.timer_editing ?? 'Entering work time';
     case 'submitting': return labels.timer_submitting ?? 'Recording work time';
+    case 'confirmed': return labels.timer_saved_sync_failed ?? 'Time was saved in Redmine. Timer state synchronization is pending.';
     case 'unknown': return labels.timer_unknown ?? 'Could not confirm whether work time was recorded.';
     default: return null;
   }
