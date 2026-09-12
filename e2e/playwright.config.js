@@ -12,7 +12,9 @@ module.exports = defineConfig({
   reporter: 'list',
   use: {
     baseURL: process.env.REDMINE_BASE_URL || 'http://127.0.0.1:3002',
-    trace: 'on-first-retry',
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
   },
   projects: [
     {

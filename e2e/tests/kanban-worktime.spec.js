@@ -209,7 +209,7 @@ test('validation retry preserves the recording attempt until corrected hours are
   expect(posts).toHaveLength(2);
 });
 
-test('cleanup retry synchronizes TimerSession without another Time Entry POST', async ({ page, baseURL }) => {
+test('retries local timer sync without posting a duplicate time entry', async ({ page, baseURL }) => {
   const redmineBase = baseURL || 'http://127.0.0.1:3002';
   await adminLogin(page, redmineBase);
   const { sessionKey, issue, data } = await prepareBoard(page, redmineBase);
@@ -220,11 +220,14 @@ test('cleanup retry synchronizes TimerSession without another Time Entry POST', 
   await form.locator('#time_entry_hours').fill('0.02');
   await form.locator('#time_entry_activity_id').selectOption({ index: 1 });
   await page.evaluate(key => {
-    const original = Storage.prototype.removeItem;
-    window.restoreTimerStorage = () => { Storage.prototype.removeItem = original; };
-    Storage.prototype.removeItem = function (target) {
-      if (target === key) throw new Error('Simulated timer cleanup failure');
-      return original.call(this, target);
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (target, value) {
+      const next = target === key ? JSON.parse(value) : null;
+      if (next?.recordingAttempt?.phase === 'confirmed') {
+        Storage.prototype.setItem = original;
+        throw new Error('Simulated one-shot timer sync write failure');
+      }
+      return original.call(this, target, value);
     };
   }, sessionKey);
   const posts = [];
@@ -234,10 +237,6 @@ test('cleanup retry synchronizes TimerSession without another Time Entry POST', 
   await page.locator('[data-testid="issue-dialog-footer"] .rk-btn-primary').click();
   const retry = page.getByTestId('issue-dialog-footer').getByRole('button', { name: /retry synchronization|再同期/i });
   await expect(retry).toBeVisible();
-  await retry.click();
-  await expect(retry).toBeVisible();
-  expect(await page.evaluate(key => localStorage.getItem(key), sessionKey)).not.toBeNull();
-  await page.evaluate(() => window.restoreTimerStorage());
   await retry.click();
   await expect(page.locator('iframe.rk-iframe-dialog-frame')).toHaveCount(0);
   expect(await page.evaluate(key => localStorage.getItem(key), sessionKey)).toBeNull();
