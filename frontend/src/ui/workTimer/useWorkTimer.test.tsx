@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Issue } from '../types';
 import { beginRecording, createTimerSession, stop } from './timerDomain';
-import { getTabId, keysFor, load, mutate } from './timerStorage';
+import { getTabId, keysFor, load, mutate, type TimerMutationResult } from './timerStorage';
 import { GlobalTimer, OtherNoticeModal } from './WorkTimer';
 import { useWorkTimer } from './useWorkTimer';
 
@@ -13,7 +13,7 @@ function PendingCardHarness() {
   const timer = useWorkTimer({ scope, labels: {}, onError: vi.fn() });
   const callbacks = {
     onExtend: vi.fn(), onStop: vi.fn(), onRecord: vi.fn(), onResume: vi.fn(), onDiscard: vi.fn(),
-    onResolveUnknown: vi.fn(), onRecover: vi.fn(),
+    onResolveUnknown: vi.fn(), onRecover: vi.fn(), onRetrySynchronization: vi.fn(),
   };
   return <>
     <button type="button" onClick={() => timer.open({ id: 1, subject: 'Issue', can_log_time: true } as Issue)}>Worktime #1</button>
@@ -92,6 +92,26 @@ describe('useWorkTimer recording ownership', () => {
       expect(await result.current.lifecycle.complete(context)).toMatchObject({ outcome: 'storage_error' });
       read.mockRestore();
     });
+  });
+  it('keeps the confirmed cleanup state visible after cleanup storage failure', async () => {
+    const { result } = renderHook(() => useWorkTimer({ scope, labels: {}, onError: vi.fn() }));
+    let completeResult: TimerMutationResult | undefined;
+    await act(async () => {
+      const context = (await result.current.record())!;
+      await result.current.lifecycle.submitting(context);
+      const originalRemove = Storage.prototype.removeItem;
+      const remove = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(function (this: Storage, key: string) {
+        if (key === keysFor(scope).session) throw new Error('denied');
+        originalRemove.call(this, key);
+      });
+      try {
+        completeResult = await result.current.lifecycle.complete(context);
+      } finally {
+        remove.mockRestore();
+      }
+    });
+    expect(completeResult).toMatchObject({ outcome: 'storage_error', session: { recordingAttempt: { phase: 'confirmed' } } });
+    expect(result.current.session?.recordingAttempt?.phase).toBe('confirmed');
   });
 
   it.each(['storage_error', 'locked', 'semantic_conflict'] as const)('preserves the actual start failure: %s', async outcome => {

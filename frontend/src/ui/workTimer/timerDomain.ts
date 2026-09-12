@@ -13,7 +13,7 @@ export function stopAndBeginRecording(session: TimerSession, ownerTabId: string,
   if (session.state === 'stopped_pending_record' || session.recordingAttempt) return undefined;
   return beginRecording(stop(tick(session, now), now), ownerTabId, now);
 }
-function updateRecording(session: TimerSession, attemptId: string, from: 'editing' | 'submitting' | 'unknown', phase: 'editing' | 'submitting' | 'unknown'): TimerSession | undefined {
+function updateRecording(session: TimerSession, attemptId: string, from: 'editing' | 'submitting' | 'confirmed' | 'unknown', phase: 'editing' | 'submitting' | 'confirmed' | 'unknown'): TimerSession | undefined {
   if (!session.recordingAttempt || session.recordingAttempt.id !== attemptId || session.recordingAttempt.phase !== from) return undefined;
   return { ...session, recordingAttempt: { ...session.recordingAttempt, phase }, updatedAt: Date.now() };
 }
@@ -27,7 +27,9 @@ export const beginSubmission = (session: TimerSession, attemptId: string) => upd
 export const markValidationError = (session: TimerSession, attemptId: string) => updateRecording(session, attemptId, 'submitting', 'editing');
 export const markUnknown = (session: TimerSession, attemptId: string) => updateRecording(session, attemptId, 'submitting', 'unknown');
 export const cancelRecording = (session: TimerSession, attemptId: string) => clearRecording(session, attemptId, 'editing');
-export const completeRecording = (session: TimerSession, attemptId: string) => session.recordingAttempt?.id === attemptId && session.recordingAttempt.phase === 'submitting' ? null : undefined;
+export const markConfirmed = (session: TimerSession, attemptId: string) => updateRecording(session, attemptId, 'submitting', 'confirmed');
+export const cleanupConfirmedRecording = (session: TimerSession, attemptId: string) => session.recordingAttempt?.id === attemptId && session.recordingAttempt.phase === 'confirmed' ? null : undefined;
+export const completeRecording = (session: TimerSession, attemptId: string) => session.recordingAttempt?.id === attemptId && session.recordingAttempt.phase === 'confirmed' ? session : markConfirmed(session, attemptId);
 export const resolveUnknown = (session: TimerSession, attemptId: string, resolution: 'recorded' | 'unregistered') => resolution === 'recorded' ? (session.recordingAttempt?.id === attemptId && session.recordingAttempt.phase === 'unknown' ? null : undefined) : clearRecording(session, attemptId, 'unknown');
 export function recoverRecording(session: TimerSession, ownerTabId: string): TimerSession | undefined {
   const attempt = session.recordingAttempt;

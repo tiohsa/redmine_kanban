@@ -829,6 +829,31 @@ describe('IframeEditDialog layout variants', () => {
     expect(state.onTimeEntrySuccess).toHaveBeenCalledOnce();
   });
 
+  it('keeps Save locked and offers synchronization retry when validation synchronization fails', async () => {
+    const state = await openTimeEntry();
+    state.onTimeEntryValidationError.mockResolvedValue({ outcome: 'storage_error' });
+    state.iframeWindow.location.href = new URL('/time_entries', state.iframe.src).href;
+    state.doc.body.innerHTML = '<div id="errorExplanation">Hours is invalid</div>' + validTimeEntryForm;
+    fireEvent.load(state.iframe);
+
+    const retry = await screen.findByRole('button', { name: 'Retry synchronization' });
+    expect(screen.queryByRole('button', { name: labels.save })).toBeNull();
+    expect(screen.queryByRole('button', { name: labels.saving })).toBeNull();
+    expect(state.onTimeEntryValidationError).toHaveBeenCalledOnce();
+
+    state.onTimeEntryValidationError.mockResolvedValue({ outcome: 'applied' });
+    fireEvent.click(retry);
+    const save = await screen.findByRole('button', { name: labels.save });
+    expect(state.onTimeEntryValidationError).toHaveBeenCalledTimes(2);
+    expect((save as HTMLButtonElement).disabled).toBe(false);
+
+    (state.doc.querySelector('[name="time_entry[hours]"]') as HTMLInputElement).value = '0.02';
+    const retrySubmit = vi.spyOn(state.doc.querySelector('button') as HTMLButtonElement, 'click').mockImplementation(() => undefined);
+    fireEvent.click(save);
+    await waitFor(() => expect(retrySubmit).toHaveBeenCalledOnce());
+    expect(state.submit).toHaveBeenCalledOnce();
+  });
+
   it.each([
     ['missing form', '<p>No form</p>'],
     ['missing action', validTimeEntryForm.replace(' action="/time_entries"', '')],
@@ -881,6 +906,59 @@ describe('IframeEditDialog layout variants', () => {
     expect(state.onTimeEntryUnknown).not.toHaveBeenCalled();
   });
 
+  it.each(['header', 'backdrop'] as const)('does not turn a confirmed time entry into unknown on %s close', async closePath => {
+    const onTimeEntrySubmitting = vi.fn().mockResolvedValue({ outcome: 'applied' });
+    const onTimeEntrySuccess = vi.fn().mockResolvedValue({ outcome: 'storage_error' });
+    const onSuccess = vi.fn();
+    const onClose = vi.fn();
+    const view = render(
+      <IframeEditDialog
+        timeEntryOperation={{ origin: 'time_entry_on_close', issueId: 1, url: '/issues/1/time_entries/new' }}
+        mode="time_entry"
+        labels={labels}
+        baseUrl="/projects/demo/kanban"
+        queryKey={['kanban', 'board']}
+        onClose={onClose}
+        onSuccess={onSuccess}
+        onTimeEntrySubmitting={onTimeEntrySubmitting}
+        onTimeEntrySuccess={onTimeEntrySuccess}
+      />,
+    );
+    const iframe = view.container.querySelector('iframe') as HTMLIFrameElement;
+    const doc = document.implementation.createHTMLDocument('iframe');
+    doc.body.innerHTML = '<form id="new_time_entry" action="/issues/1/time_entries"><input name="time_entry[issue_id]" value="1"><button type="submit">Save</button></form>';
+    const iframeWindow = {
+      location: { href: iframe.src },
+      document: doc,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    Object.defineProperty(iframe, 'contentWindow', { value: iframeWindow, configurable: true });
+    Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+    const submit = vi.spyOn(doc.querySelector('button') as HTMLButtonElement, 'click').mockImplementation(() => undefined);
+
+    fireEvent.load(iframe);
+    fireEvent.click(await screen.findByRole('button', { name: labels.save }));
+    await waitFor(() => expect(onTimeEntrySubmitting).toHaveBeenCalledOnce());
+
+    iframeWindow.location.href = new URL('/issues/1', iframe.src).href;
+    doc.body.innerHTML = '<div id="flash_notice">Created</div>';
+    fireEvent.load(iframe);
+
+    await waitFor(() => expect(onTimeEntrySuccess).toHaveBeenCalledOnce());
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(screen.getByTestId('issue-dialog-error').textContent).toContain('Time was saved in Redmine. Timer state synchronization failed');
+    expect(screen.getByRole('button', { name: 'Retry synchronization' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: labels.saving })).toBeNull();
+
+    if (closePath === 'header') fireEvent.click(screen.getByRole('button', { name: labels.close }));
+    else fireEvent.click(screen.getByRole('dialog'));
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledWith({ timeEntryConfirmed: true });
+    expect(submit).toHaveBeenCalledOnce();
+    view.unmount();
+  });
+
   it('keeps a successful time entry locked when TimerSession cleanup fails', async () => {
     const onTimeEntrySubmitting = vi.fn().mockResolvedValue({ outcome: 'applied' });
     const onTimeEntrySuccess = vi.fn().mockResolvedValue({ outcome: 'storage_error' });
@@ -922,7 +1000,7 @@ describe('IframeEditDialog layout variants', () => {
     await waitFor(() => expect(onTimeEntrySuccess).toHaveBeenCalledOnce());
     expect(onSuccess).not.toHaveBeenCalled();
     expect(screen.getByTestId('issue-dialog-error').textContent).toContain('Time was saved in Redmine. Timer state synchronization failed');
-    expect((screen.getByRole('button', { name: labels.saving }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'Retry synchronization' })).toBeTruthy();
   });
 
   it('shrinks dialog height for short iframe content', async () => {

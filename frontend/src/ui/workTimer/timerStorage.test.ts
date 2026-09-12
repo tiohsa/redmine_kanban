@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTimerSession, stopAndBeginRecording } from './timerDomain';
-import { getTabId, keysFor, load, loadPreferences, mutate, savePreferences } from './timerStorage';
+import { getTabId, isTimerSession, keysFor, load, loadPreferences, mutate, readSession, savePreferences } from './timerStorage';
 
 describe('work timer storage', () => {
   const scope = { instanceKey: 'https://example.test/redmine', userId: 7 };
@@ -38,6 +38,14 @@ describe('work timer storage', () => {
   });
   it('rejects malformed version 4 sessions', () => {
     localStorage.setItem(keysFor(scope).session, JSON.stringify({ version: 4, sessionId: 'x', revision: 1, issueId: 1, subject: 'Issue', autoStop: true, segments: [], state: 'running', createdAt: 1, updatedAt: 1 }));
+    expect(load(scope)).toBeNull();
+  });
+  it.each(['abc', 0, -1, 'NaN', NaN] as const)('rejects a malformed issueId without throwing: %s', issueId => {
+    const session = { ...createTimerSession(1, 'Issue', 30, true, 7), issueId };
+    localStorage.setItem(keysFor(scope).session, JSON.stringify(session));
+    expect(isTimerSession(session)).toBe(false);
+    expect(() => readSession(scope)).not.toThrow();
+    expect(readSession(scope).outcome).toBe('storage_error');
     expect(load(scope)).toBeNull();
   });
   it('migrates Gantt v2/v3 sessions and legacy recording attempts', () => {

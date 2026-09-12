@@ -9,12 +9,13 @@ type Props = {
   labels: Record<string, string>; session: TimerSession | null; remoteOwner: boolean;
   onExtend: (minutes: TimerIntervalMinutes) => void; onStop: () => void; onRecord: () => void; onResume: (minutes: TimerIntervalMinutes) => void; onDiscard: () => void;
   onResolveUnknown: (resolution: 'recorded' | 'unregistered', expected: TimerSession) => void; onRecover: (expected: TimerSession) => void;
+  onRetrySynchronization: (expected: TimerSession) => void;
   openPendingRequest?: number;
 };
 const duration = (milliseconds: number) => { const seconds = Math.floor(Math.max(0, milliseconds) / 1000); return `${Math.floor(seconds / 3600)}:${String(Math.floor(seconds / 60) % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`; };
 const minuteLabel = (labels: Record<string, string>, minutes: number) => `+${(labels.timer_minutes ?? '%{count} min').replace('%{count}', String(minutes))}`;
 
-export function GlobalTimer({ labels, session, onExtend, onStop, onRecord, onResume, onDiscard, onResolveUnknown, onRecover, remoteOwner, openPendingRequest }: Props) {
+export function GlobalTimer({ labels, session, onExtend, onStop, onRecord, onResume, onDiscard, onResolveUnknown, onRecover, onRetrySynchronization, remoteOwner, openPendingRequest }: Props) {
   const [now, setNow] = useState(Date.now());
   const [isExtendMenuOpen, setIsExtendMenuOpen] = useState(false);
   const [isManageOpen, setIsManageOpen] = useState(false);
@@ -49,7 +50,7 @@ export function GlobalTimer({ labels, session, onExtend, onStop, onRecord, onRes
       </div>
       <div className="rk-work-timer-actions">
         {isPending ? <>
-          <button type="button" className="rk-timer-button rk-timer-button-primary" data-testid="global-timer-record-button" onClick={needsManagement ? () => setIsManageOpen(true) : onRecord}>📝 {needsManagement ? (labels.timer_recover_action ?? 'Review recording') : (labels.timer_record ?? 'Record work time')}</button>
+          <button type="button" className="rk-timer-button rk-timer-button-primary" data-testid="global-timer-record-button" onClick={needsManagement ? () => setIsManageOpen(true) : onRecord}>📝 {needsManagement && session.recordingAttempt?.phase === 'confirmed' ? (labels.timer_retry_sync ?? 'Retry synchronization') : needsManagement ? (labels.timer_recover_action ?? 'Review recording') : (labels.timer_record ?? 'Record work time')}</button>
           <button type="button" className="rk-timer-button rk-timer-button-secondary" data-testid="global-timer-manage-button" onClick={() => setIsManageOpen(true)}>{labels.timer_manage ?? 'Manage pending work'}</button>
         </> : <>
           <button type="button" className="rk-timer-button rk-timer-button-dark-secondary" data-testid="global-timer-quick-extend" onClick={() => onExtend(15)}>{minuteLabel(labels, 15)}</button>
@@ -61,6 +62,6 @@ export function GlobalTimer({ labels, session, onExtend, onStop, onRecord, onRes
         </>}
       </div>
     </aside>
-    {isManageOpen && isPending ? <PendingWorkModal labels={labels} session={session} remoteOwner={remoteOwner} onClose={() => setIsManageOpen(false)} onRecord={() => { setIsManageOpen(false); onRecord(); }} onResume={(minutes) => { setIsManageOpen(false); onResume(minutes); }} onDiscard={() => { setIsManageOpen(false); onDiscard(); }} onRecover={(expected) => { setIsManageOpen(false); onRecover(expected); }} onResolveUnknown={(resolution, expected) => { setIsManageOpen(false); onResolveUnknown(resolution, expected); }} /> : null}
+    {isManageOpen && isPending ? <PendingWorkModal labels={labels} session={session} remoteOwner={remoteOwner} onClose={() => setIsManageOpen(false)} onRecord={() => { setIsManageOpen(false); onRecord(); }} onResume={(minutes) => { setIsManageOpen(false); onResume(minutes); }} onDiscard={() => { setIsManageOpen(false); onDiscard(); }} onRecover={(expected) => { setIsManageOpen(false); onRecover(expected); }} onRetrySynchronization={(expected) => { setIsManageOpen(false); onRetrySynchronization(expected); }} onResolveUnknown={(resolution, expected) => { setIsManageOpen(false); onResolveUnknown(resolution, expected); }} /> : null}
   </>;
 }
