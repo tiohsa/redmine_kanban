@@ -14,7 +14,6 @@ Use the repository as the primary source of truth.
 Consult these only when relevant:
 
 * `README.md` for current product behavior and API notes.
-* `spec-docs/` for feature-specific decisions and historical specifications.
 * Existing tests for established executable behavior.
 
 If documentation and implementation disagree, determine whether the document describes a newer intended behavior before changing code.
