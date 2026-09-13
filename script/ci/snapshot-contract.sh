@@ -6,6 +6,8 @@ cd "$REDMINE_ROOT"
 
 exec bundle exec rails test \
   plugins/redmine_kanban/test/unit/board_data_test.rb \
+  plugins/redmine_kanban/test/unit/board_labels_test.rb \
+  plugins/redmine_kanban/test/unit/board_tree_builder_test.rb \
   plugins/redmine_kanban/test/unit/snapshot_limits_test.rb \
   plugins/redmine_kanban/test/functional/api_controller_test.rb \
   "$@"

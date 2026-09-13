@@ -31,7 +31,7 @@ export type HoverSnapshot = {
   hoveredSubtaskKey: string | null;
 };
 
-export type DropAction = 'noop' | 'dispatch';
+export type DropAction = 'noop' | 'dispatch' | 'forbidden';
 export type WorkflowHint = 'allowed' | 'denied' | 'unknown';
 export type DropAssessment = {
   action: DropAction;
@@ -40,7 +40,7 @@ export type DropAssessment = {
 
 export type DropHintVisual = {
   glyph: '✓' | '!' | '?' | '';
-  tone: 'allowed' | 'advisory' | 'neutral' | 'noop';
+  tone: 'allowed' | 'advisory' | 'neutral' | 'forbidden' | 'noop';
 };
 
 export function assessDrop(
@@ -49,12 +49,14 @@ export function assessDrop(
   targetStatusId: number,
   targetLaneId: string | number,
   allowedStatusIds?: number[] | ReadonlySet<number>,
+  laneType?: 'none' | 'assignee' | 'priority' | 'category',
 ): DropAssessment {
   const isNoop = originStatusId === targetStatusId && originLaneId === targetLaneId;
+  const isForbiddenCategoryMove = laneType === 'category' && originLaneId !== targetLaneId;
   let workflowHint: WorkflowHint = 'unknown';
   if (Array.isArray(allowedStatusIds)) workflowHint = allowedStatusIds.includes(targetStatusId) ? 'allowed' : 'denied';
   if (allowedStatusIds instanceof Set) workflowHint = allowedStatusIds.has(targetStatusId) ? 'allowed' : 'denied';
-  return { action: isNoop ? 'noop' : 'dispatch', workflowHint };
+  return { action: isNoop ? 'noop' : isForbiddenCategoryMove ? 'forbidden' : 'dispatch', workflowHint };
 }
 
 export function shouldDispatchDrop(assessment: DropAssessment): boolean {
@@ -63,6 +65,7 @@ export function shouldDispatchDrop(assessment: DropAssessment): boolean {
 
 export function getDropHintVisual(assessment: DropAssessment): DropHintVisual {
   if (assessment.action === 'noop') return { glyph: '', tone: 'noop' };
+  if (assessment.action === 'forbidden') return { glyph: '', tone: 'forbidden' };
   if (assessment.workflowHint === 'allowed') return { glyph: '✓', tone: 'allowed' };
   if (assessment.workflowHint === 'denied') return { glyph: '!', tone: 'advisory' };
   return { glyph: '?', tone: 'neutral' };

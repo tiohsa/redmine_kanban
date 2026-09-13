@@ -2,9 +2,12 @@ require_relative 'board_context'
 require_relative 'board_membership_resolver'
 require_relative 'mutation_result_builder'
 require_relative 'permission_policy'
+require_relative 'service_response'
 
 module RedmineKanban
   class IssueDestroyer
+    include ServiceResponse
+
     def initialize(project:, issue:, user:, board_context: nil, operation_id: nil)
       @project = project
       @issue = issue
@@ -14,7 +17,7 @@ module RedmineKanban
     end
 
     def destroy(lock_version:)
-      return failure(I18n.t('redmine_kanban.error_lock_version_required')) if lock_version.blank?
+      return failure(I18n.t('redmine_kanban.error_lock_version_required'), status: :unprocessable_entity, code: 'LOCK_VERSION_REQUIRED') if lock_version.blank?
 
       result = nil
       membership_resolver = BoardMembershipResolver.new(board_context: @board_context)
@@ -26,12 +29,12 @@ module RedmineKanban
       Issue.transaction do
         locked_issue = Issue.lock.find_by(id: @issue.id)
         unless locked_issue && locked_issue.lock_version.to_i == lock_version.to_i
-          result = failure(I18n.t('redmine_kanban.error_conflict'))
+          result = failure(I18n.t('redmine_kanban.error_conflict'), status: :conflict, code: 'CONFLICT')
           raise ActiveRecord::Rollback
         end
 
         unless PermissionPolicy.new(user: @user).can_delete_issue?(locked_issue, @project)
-          result = failure(I18n.t('redmine_kanban.error_permission_denied'))
+          result = failure(I18n.t('redmine_kanban.error_permission_denied'), status: :forbidden, code: 'PERMISSION_DENIED')
           raise ActiveRecord::Rollback
         end
 
@@ -47,7 +50,7 @@ module RedmineKanban
                                         .pluck(:id)
         end
 
-        result = locked_issue.destroy ? { ok: true } : failure(I18n.t('redmine_kanban.error_delete_failed'))
+        result = locked_issue.destroy ? { ok: true } : failure(I18n.t('redmine_kanban.error_delete_failed'), status: :conflict, code: 'DELETE_FAILED')
         raise ActiveRecord::Rollback unless result[:ok]
 
         unless deletion_delta_overflow
@@ -70,13 +73,13 @@ module RedmineKanban
         }
       )
     rescue ActiveRecord::StaleObjectError
-      failure(I18n.t('redmine_kanban.error_conflict'))
+      failure(I18n.t('redmine_kanban.error_conflict'), status: :conflict, code: 'CONFLICT')
     end
 
     private
 
-    def failure(message)
-      { ok: false, message: message }
+    def failure(message, status:, code:)
+      error_response(message, status: status, code: code)
     end
 
     def mutation_result_builder

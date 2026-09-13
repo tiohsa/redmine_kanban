@@ -1,229 +1,16 @@
-require 'set'
 require 'json'
 require_relative 'board_context'
 require_relative 'board_workflow_status_resolver'
 require_relative 'snapshot_limits'
 require_relative 'board_membership_resolver'
+require_relative 'board_labels'
+require_relative 'board_tree_builder'
 
 module RedmineKanban
   class BoardData
     CONTRACT_VERSION = 3
     DEFAULT_BOARD_ENTITY_LIMIT = SnapshotLimits::DEFAULT_BOARD_ENTITY_LIMIT
-    LABEL_TRANSLATION_KEYS = {
-      all: "redmine_kanban.label_all",
-      me: "redmine_kanban.label_me",
-      unassigned: "redmine_kanban.label_unassigned",
-      summary: "redmine_kanban.label_summary",
-      analyzing: "redmine_kanban.label_analyzing",
-      assignee: "redmine_kanban.label_assignee",
-      search: "redmine_kanban.label_search",
-      due: "redmine_kanban.label_due",
-      sort: "redmine_kanban.label_sort",
-      analyze: "redmine_kanban.label_analyze",
-      normal_view: "redmine_kanban.label_normal_view",
-      fullscreen_view: "redmine_kanban.label_fullscreen",
-      add: "redmine_kanban.label_add",
-      title_ai_analysis: "redmine_kanban.label_title_ai_analysis",
-      close: "redmine_kanban.label_close",
-      loading: "redmine_kanban.label_loading",
-      fetching_data: "redmine_kanban.label_fetching_data",
-      notice: "redmine_kanban.label_notice",
-      updating: "redmine_kanban.label_updating",
-      conflict: "redmine_kanban.label_conflict",
-      error: "redmine_kanban.label_error",
-      data_fetching: "redmine_kanban.label_data_fetching",
-      delete_confirm_title: "redmine_kanban.label_delete_confirm_title",
-      delete_confirm_message: "redmine_kanban.label_delete_confirm_message",
-      deleting: "redmine_kanban.label_deleting",
-      delete: "redmine_kanban.label_delete",
-      cancel: "redmine_kanban.label_cancel",
-      issue_subject: "redmine_kanban.label_issue_subject",
-      issue_tracker: "redmine_kanban.label_issue_tracker",
-      issue_assignee: "redmine_kanban.label_issue_assignee",
-      issue_done_ratio: "redmine_kanban.label_issue_done_ratio",
-      issue_due_date: "redmine_kanban.label_issue_due_date",
-      issue_start_date: "redmine_kanban.label_issue_start_date",
-      issue_priority: "redmine_kanban.label_issue_priority",
-      issue_description: "redmine_kanban.label_issue_description",
-      stagnation: "redmine_kanban.label_stagnation",
-      not_set: "redmine_kanban.label_not_set",
-      category: "redmine_kanban.label_category",
-      this_week: "redmine_kanban.label_this_week",
-      within_3_days: "redmine_kanban.label_within_3_days",
-      within_1_week: "redmine_kanban.label_within_1_week",
-      overdue: "redmine_kanban.label_overdue",
-      select_tracker: "redmine_kanban.label_select_tracker",
-      invalid_assignee: "redmine_kanban.label_invalid_assignee",
-      invalid_priority: "redmine_kanban.label_invalid_priority",
-      update_failed: "redmine_kanban.label_update_failed",
-      create_failed: "redmine_kanban.label_create_failed",
-      delete_failed: "redmine_kanban.label_delete_failed",
-      move_failed: "redmine_kanban.label_move_failed",
-      load_failed: "redmine_kanban.label_load_failed",
-      maximum_board_entity_count: "redmine_kanban.label_maximum_board_entity_count",
-      maximum_board_entity_count_help: "redmine_kanban.label_maximum_board_entity_count_help",
-      maximum_board_entity_count_invalid: "redmine_kanban.label_maximum_board_entity_count_invalid",
-      maximum_board_entity_count_saved: "redmine_kanban.label_maximum_board_entity_count_saved",
-      server_entity_limit_notice: "redmine_kanban.label_server_entity_limit_notice",
-      no_result: "redmine_kanban.label_no_result",
-      reset: "redmine_kanban.label_reset",
-      undo: "redmine_kanban.label_undo",
-      restoring: "redmine_kanban.label_restoring",
-      bulk_subtask_title: "redmine_kanban.label_bulk_subtask_title",
-      bulk_subtask_placeholder: "redmine_kanban.label_bulk_subtask_placeholder",
-      bulk_subtask_help: "redmine_kanban.label_bulk_subtask_help",
-      bulk_subtask_mode: "redmine_kanban.label_bulk_subtask_mode",
-      bulk_subtask_table_mode: "redmine_kanban.label_bulk_subtask_table_mode",
-      bulk_subtask_text_mode: "redmine_kanban.label_bulk_subtask_text_mode",
-      bulk_subtask_default_tracker: "redmine_kanban.label_bulk_subtask_default_tracker",
-      bulk_subtask_count: "redmine_kanban.label_bulk_subtask_count",
-      bulk_subtask_edit_rows: "redmine_kanban.label_bulk_subtask_edit_rows",
-      bulk_subtask_add_row: "redmine_kanban.label_bulk_subtask_add_row",
-      bulk_subtask_preserved: "redmine_kanban.label_bulk_subtask_preserved",
-      bulk_subtask_restored: "redmine_kanban.label_bulk_subtask_restored",
-      bulk_subtask_empty_subject: "redmine_kanban.label_bulk_subtask_empty_subject",
-      bulk_subtask_invalid_tracker: "redmine_kanban.label_bulk_subtask_invalid_tracker",
-      bulk_subtask_limit: "redmine_kanban.label_bulk_subtask_limit",
-      creating: "redmine_kanban.label_creating",
-      created: "redmine_kanban.label_created",
-      saving: "redmine_kanban.label_saving",
-      saved: "redmine_kanban.label_saved",
-      save: "redmine_kanban.label_save",
-      create: "redmine_kanban.label_create",
-      create_issue: "redmine_kanban.label_create_issue",
-      edit_issue: "redmine_kanban.label_edit_issue",
-      save_comment: "redmine_kanban.label_save_comment",
-      saving_comment: "redmine_kanban.label_saving_comment",
-      show_subtasks: "redmine_kanban.label_show_subtasks",
-      hide_subtasks: "redmine_kanban.label_hide_subtasks",
-      board_aria: "redmine_kanban.label_board_aria",
-      subtask_update_failed: "redmine_kanban.label_subtask_update_failed",
-      restore_failed: "redmine_kanban.label_restore_failed",
-      restore_error: "redmine_kanban.label_restore_error",
-      updated: "redmine_kanban.label_updated",
-      created_with_subtasks: "redmine_kanban.label_created_with_subtasks",
-      updated_with_subtasks: "redmine_kanban.label_updated_with_subtasks",
-      created_subtask_failed: "redmine_kanban.label_created_subtask_failed",
-      updated_subtask_failed: "redmine_kanban.label_updated_subtask_failed",
-      deleted_with_undo: "redmine_kanban.label_deleted_with_undo",
-      url_clickable: "redmine_kanban.label_url_clickable",
-      filter: "redmine_kanban.label_filter",
-      filter_task: "redmine_kanban.label_filter_task",
-      filter_subject: "redmine_kanban.label_filter_subject",
-      project: "redmine_kanban.label_project",
-      status: "redmine_kanban.label_status",
-      fit_none: "redmine_kanban.label_fit_none",
-      fit_width: "redmine_kanban.label_fit_width",
-      fit_all: "redmine_kanban.label_fit_all",
-      time_entry_permission_required: "redmine_kanban.label_time_entry_permission_required",
-      show_priority_lanes: "redmine_kanban.label_show_priority_lanes",
-      hide_priority_lanes: "redmine_kanban.label_hide_priority_lanes",
-      issue_create_dialog_title: "redmine_kanban.label_issue_create_dialog_title",
-      issue_edit_dialog_title: "redmine_kanban.label_issue_edit_dialog_title",
-      issue_info_dialog_title: "redmine_kanban.label_issue_info_dialog_title",
-      open_in_redmine: "redmine_kanban.label_open_in_redmine",
-      show_viewable_projects: "redmine_kanban.label_show_viewable_projects",
-      hide_viewable_projects: "redmine_kanban.label_hide_viewable_projects",
-      help: "redmine_kanban.label_help",
-      help_chapter1_title: "redmine_kanban.label_help_chapter1_title",
-      help_chapter1_desc: "redmine_kanban.label_help_chapter1_desc",
-      help_add: "redmine_kanban.label_help_add",
-      help_filter: "redmine_kanban.label_help_filter",
-      help_tracker: "redmine_kanban.label_help_tracker",
-      help_assignee: "redmine_kanban.label_help_assignee",
-      help_project: "redmine_kanban.label_help_project",
-      help_status: "redmine_kanban.label_help_status",
-      help_priority: "redmine_kanban.label_help_priority",
-      help_due: "redmine_kanban.label_help_due",
-      help_sort: "redmine_kanban.label_help_sort",
-      help_priority_lane: "redmine_kanban.label_help_priority_lane",
-      help_time_entry: "redmine_kanban.label_help_time_entry",
-      help_viewable_projects: "redmine_kanban.label_help_viewable_projects",
-      help_fit_mode: "redmine_kanban.label_help_fit_mode",
-      help_show_subtasks: "redmine_kanban.label_help_show_subtasks",
-      help_fullscreen: "redmine_kanban.label_help_fullscreen",
-      help_scroll_top: "redmine_kanban.label_help_scroll_top",
-      help_font_size: "redmine_kanban.label_help_font_size",
-      help_maximum_board_entity_count: "redmine_kanban.label_help_maximum_board_entity_count",
-      within_1_day: "redmine_kanban.label_within_1_day",
-      within_specified_days: "redmine_kanban.label_within_specified_days",
-      sort_by: "redmine_kanban.label_sort_by",
-      display_settings: "redmine_kanban.label_display_settings",
-      lane_type: "redmine_kanban.label_lane_type",
-      none: "redmine_kanban.label_none",
-      aging_warn_days: "redmine_kanban.label_aging_warn_days",
-      aging_danger_days: "redmine_kanban.label_aging_danger_days",
-      aging_exclude_closed: "redmine_kanban.label_aging_exclude_closed",
-      show_subtasks_short: "redmine_kanban.label_show_subtasks_short",
-      priority_lane_short: "redmine_kanban.label_priority_lane_short",
-      viewable_projects_short: "redmine_kanban.label_viewable_projects_short",
-      time_entry_short: "redmine_kanban.label_time_entry_short",
-      display_width: "redmine_kanban.label_display_width",
-      font_size: "redmine_kanban.label_font_size",
-      scroll_top: "redmine_kanban.label_scroll_top",
-      enable_time_entry_on_close: "redmine_kanban.label_enable_time_entry_on_close",
-      disable_time_entry_on_close: "redmine_kanban.label_disable_time_entry_on_close",
-      kanban: "redmine_kanban.label_kanban",
-      successful_update: "redmine_kanban.label_successful_update",
-      time_entry_dialog_title: "redmine_kanban.label_time_entry_dialog_title",
-      work_timer: "redmine_kanban.label_work_timer",
-      timer_start: "redmine_kanban.label_timer_start",
-      timer_stop: "redmine_kanban.label_timer_stop",
-      timer_record: "redmine_kanban.label_timer_record",
-      timer_elapsed: "redmine_kanban.label_timer_elapsed",
-      timer_remaining: "redmine_kanban.label_timer_remaining",
-      timer_pending: "redmine_kanban.label_timer_pending",
-      timer_editing: "redmine_kanban.label_timer_editing",
-      timer_submitting: "redmine_kanban.label_timer_submitting",
-      timer_auto_stop: "redmine_kanban.label_timer_auto_stop",
-      timer_duration: "redmine_kanban.label_timer_duration",
-      timer_minutes: "redmine_kanban.label_timer_minutes",
-      timer_extend: "redmine_kanban.label_timer_extend",
-      timer_overrun: "redmine_kanban.label_timer_overrun",
-      timer_manage: "redmine_kanban.label_timer_manage",
-      timer_resume: "redmine_kanban.label_timer_resume",
-      timer_discard: "redmine_kanban.label_timer_discard",
-      timer_discard_confirm: "redmine_kanban.label_timer_discard_confirm",
-      timer_recover_action: "redmine_kanban.label_timer_recover_action",
-      timer_running_elsewhere: "redmine_kanban.label_timer_running_elsewhere",
-      timer_pending_elsewhere: "redmine_kanban.label_timer_pending_elsewhere",
-      timer_pending_record_desc: "redmine_kanban.label_timer_pending_record_desc",
-      timer_or: "redmine_kanban.label_timer_or",
-      timer_pending_resume_section: "redmine_kanban.label_timer_pending_resume_section",
-      timer_pending_resume_desc: "redmine_kanban.label_timer_pending_resume_desc",
-      timer_permission_denied: "redmine_kanban.label_timer_permission_denied",
-      timer_existing: "redmine_kanban.label_timer_existing",
-      timer_conflict: "redmine_kanban.label_timer_conflict",
-      timer_expired: "redmine_kanban.label_timer_expired",
-      timer_unknown: "redmine_kanban.label_timer_unknown",
-      timer_mark_recorded: "redmine_kanban.label_timer_mark_recorded",
-      timer_reenter: "redmine_kanban.label_timer_reenter",
-      timer_other_tab: "redmine_kanban.label_timer_other_tab",
-      timer_recover: "redmine_kanban.label_timer_recover",
-      timer_confirm: "redmine_kanban.label_timer_confirm",
-      timer_recover_confirm: "redmine_kanban.label_timer_recover_confirm",
-      timer_recover_submitting_confirm: "redmine_kanban.label_timer_recover_submitting_confirm",
-      timer_recorded_confirm: "redmine_kanban.label_timer_recorded_confirm",
-      timer_unregistered_confirm: "redmine_kanban.label_timer_unregistered_confirm",
-      timer_sync_failed: "redmine_kanban.label_timer_sync_failed",
-      timer_saved_sync_failed: "redmine_kanban.label_timer_saved_sync_failed",
-      timer_retry_sync: "redmine_kanban.label_timer_retry_sync",
-      invalid_priority_id: "redmine_kanban.label_invalid_priority_id",
-      date_update_failed: "redmine_kanban.label_date_update_failed",
-      progress_update_failed: "redmine_kanban.label_progress_update_failed",
-      board_scope_too_large: "redmine_kanban.label_board_scope_too_large",
-      board_response_too_large: "redmine_kanban.label_board_response_too_large",
-      board_server_limit_suffix: "redmine_kanban.label_board_server_limit_suffix",
-      help_chapter2_title: "redmine_kanban.label_help_chapter2_title",
-      help_drag_drop_title: "redmine_kanban.label_help_drag_drop_title",
-      help_drag_drop_desc: "redmine_kanban.label_help_drag_drop_desc",
-      help_edit_title: "redmine_kanban.label_help_edit_title",
-      help_edit_desc: "redmine_kanban.label_help_edit_desc",
-      help_quick_edit_title: "redmine_kanban.label_help_quick_edit_title",
-      help_quick_edit_desc: "redmine_kanban.label_help_quick_edit_desc",
-      help_subtask_title: "redmine_kanban.label_help_subtask_title",
-      help_subtask_desc: "redmine_kanban.label_help_subtask_desc"
-    }.freeze
+    LABEL_TRANSLATION_KEYS = BoardLabels::TRANSLATION_KEYS
 
 
     def initialize(project:, user:, project_ids: nil, issue_status_ids: nil, exclude_status_ids: nil, board_entity_limit: nil)
@@ -243,12 +30,16 @@ module RedmineKanban
 
     def with_performance_metrics
       started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      sql_count = 0
+      snapshot_query_count = 0
+      metadata_query_count = 0
+      total_query_count = 0
       snapshot_thread_id = Thread.current.object_id
       callback = lambda do |_name, _start, _finish, _id, payload|
-        next if Thread.current.object_id != snapshot_thread_id || payload[:cached] || payload[:name] == 'SCHEMA' || !@count_snapshot_queries
+        next if Thread.current.object_id != snapshot_thread_id || payload[:cached] || payload[:name] == 'SCHEMA'
 
-        sql_count += 1
+        total_query_count += 1
+        snapshot_query_count += 1 if @count_snapshot_queries
+        metadata_query_count += 1 if @count_metadata_queries
       end
 
       result = nil
@@ -257,11 +48,11 @@ module RedmineKanban
         result = yield
       end
 
-      result[:meta][:query_count] = sql_count if result[:ok] && result[:meta]
-      if sql_count > @board_context.query_limit && result[:ok]
+      result[:meta][:query_count] = snapshot_query_count if result[:ok] && result[:meta]
+      if snapshot_query_count > @board_context.query_limit && result[:ok]
         result = resource_error(
           'BOARD_QUERY_LIMIT_EXCEEDED',
-          query_count: sql_count,
+          query_count: snapshot_query_count,
           maximum_queries: @board_context.query_limit
         )
       end
@@ -281,13 +72,16 @@ module RedmineKanban
 
       elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round(1)
       if ENV['REDMINE_KANBAN_PERF_LOG'] == '1'
-      Rails.logger.info(
-        '[redmine_kanban] board_data_perf ' \
-        "project_id=#{@project.id} sql_count=#{sql_count} " \
-        "entity_count=#{result.dig(:meta, :entity_count)} " \
-        "id_probe_count=#{result.dig(:meta, :id_probe_count)} " \
-        "materialized_row_count=#{result.dig(:meta, :materialized_row_count)} " \
-        "json_bytes=#{result.to_json.bytesize} elapsed_ms=#{elapsed_ms}"
+        Rails.logger.info(
+          '[redmine_kanban] board_data_perf ' \
+          "project_id=#{@project.id} sql_count=#{snapshot_query_count} " \
+          "snapshot_query_count=#{snapshot_query_count} " \
+          "metadata_query_count=#{metadata_query_count} " \
+          "total_query_count=#{total_query_count} " \
+          "entity_count=#{result.dig(:meta, :entity_count)} " \
+          "id_probe_count=#{result.dig(:meta, :id_probe_count)} " \
+          "materialized_row_count=#{result.dig(:meta, :materialized_row_count)} " \
+          "json_bytes=#{result.to_json.bytesize} elapsed_ms=#{elapsed_ms}"
         )
       end
       result
@@ -346,13 +140,13 @@ module RedmineKanban
         )
         warm_permission_cache(issues)
         entities = presenter.issues_to_h(issues)
-        tree = build_tree(issues)
+        tree = BoardTreeBuilder.new(issues).build
         lane_assignee_ids = fetch_lane_assignee_ids(@board_context.scope_status_ids)
         lanes = build_lanes(lane_assignee_ids)
 
         counts = fetch_column_counts(status_ids)
-        lists = without_snapshot_query_count { cached_lists }
-        labels = without_snapshot_query_count { cached_labels }
+        lists = with_metadata_query_count { without_snapshot_query_count { cached_lists } }
+        labels = with_metadata_query_count { without_snapshot_query_count { cached_labels } }
       ensure
         @count_snapshot_queries = false
       end
@@ -396,6 +190,14 @@ module RedmineKanban
       yield
     ensure
       @count_snapshot_queries = previous
+    end
+
+    def with_metadata_query_count
+      previous = @count_metadata_queries
+      @count_metadata_queries = true
+      yield
+    ensure
+      @count_metadata_queries = previous
     end
 
     def warm_permission_cache(issues)
@@ -482,54 +284,6 @@ module RedmineKanban
       }
     end
 
-    def build_tree(issues)
-      issue_ids = issues.map(&:id).to_set
-      children_by_parent_id = Hash.new { |hash, key| hash[key] = [] }
-      roots = []
-      parent_by_id = {}
-
-      issues.each do |issue|
-        parent_id = issue.parent_id.to_i if issue.parent_id.present?
-        if parent_id && issue_ids.include?(parent_id) && parent_id != issue.id
-          parent_by_id[issue.id] = parent_id
-          children_by_parent_id[parent_id] << issue.id
-        else
-          roots << issue.id
-        end
-      end
-
-      parent_by_id.to_a.each do |child_id, parent_id|
-        seen = Set.new([child_id])
-        current = parent_id
-        while current
-          if seen.include?(current)
-            children_by_parent_id[parent_id].delete(child_id)
-            parent_by_id.delete(child_id)
-            roots << child_id
-            break
-          end
-          seen.add(current)
-          current = parent_by_id[current]
-        end
-      end
-
-      issues_by_id = issues.index_by(&:id)
-      children_by_parent_id.each_value do |ids|
-        ids.sort_by! do |id|
-          updated_on = issues_by_id.fetch(id).updated_on
-          [updated_on ? -updated_on.to_i : 0, id]
-        end
-      end
-      {
-        root_ids: roots.uniq,
-        children_by_parent_id: children_by_parent_id.each_with_object({}) { |(parent_id, child_ids), tree| tree[parent_id.to_s] = child_ids }
-      }
-    end
-
-    def labels
-      LABEL_TRANSLATION_KEYS.transform_values { |translation_key| l(translation_key) }
-    end
-
     def l(key, options = {})
       ::I18n.t(key, **options)
     end
@@ -543,7 +297,7 @@ module RedmineKanban
     end
 
     def cached_labels
-      Rails.cache.fetch(cache_key('labels'), expires_in: 60.seconds) { labels }
+      Rails.cache.fetch(cache_key('labels'), expires_in: 60.seconds) { BoardLabels.build }
     end
 
     def cache_key(scope)

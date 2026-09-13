@@ -39,7 +39,9 @@ class RedmineKanbanIssueDestroyerTest < ActiveSupport::TestCase
 
     result = destroyer(issue).destroy(lock_version: nil)
 
-    assert_equal({ ok: false, message: I18n.t('redmine_kanban.error_lock_version_required') }, result)
+    assert_equal :unprocessable_entity, result[:http_status]
+    assert_equal 'LOCK_VERSION_REQUIRED', result.dig(:error, :code)
+    assert_equal I18n.t('redmine_kanban.error_lock_version_required'), result[:message]
     assert Issue.exists?(issue.id)
   end
 
@@ -48,7 +50,9 @@ class RedmineKanbanIssueDestroyerTest < ActiveSupport::TestCase
 
     result = destroyer(issue).destroy(lock_version: issue.lock_version + 1)
 
-    assert_equal({ ok: false, message: I18n.t('redmine_kanban.error_conflict') }, result)
+    assert_equal :conflict, result[:http_status]
+    assert_equal 'CONFLICT', result.dig(:error, :code)
+    assert_equal I18n.t('redmine_kanban.error_conflict'), result[:message]
     assert Issue.exists?(issue.id)
   end
 
@@ -58,7 +62,9 @@ class RedmineKanbanIssueDestroyerTest < ActiveSupport::TestCase
 
     result = destroyer(issue).destroy(lock_version: issue.lock_version)
 
-    assert_equal({ ok: false, message: I18n.t('redmine_kanban.error_permission_denied') }, result)
+    assert_equal :forbidden, result[:http_status]
+    assert_equal 'PERMISSION_DENIED', result.dig(:error, :code)
+    assert_equal I18n.t('redmine_kanban.error_permission_denied'), result[:message]
     assert Issue.exists?(issue.id)
   end
 

@@ -31,6 +31,13 @@ describe('getBoardCursor', () => {
     expect(getBoardCursor({ phase: 'dragging', hitKind: 'card' })).toBe('move');
   });
 
+  it('returns not-allowed while dragging over a forbidden target', () => {
+    expect(getBoardCursor({
+      phase: 'dragging',
+      dropAssessment: { action: 'forbidden', workflowHint: 'allowed' },
+    })).toBe('not-allowed');
+  });
+
   it('returns default during pending drop cleanup', () => {
     expect(getBoardCursor({ phase: 'pending-drop', hitKind: 'card' })).toBe('default');
   });
