@@ -15,3 +15,6 @@ docs/
 e2e/test-results/
 .codegraph/
 .agents/
+docs/
+spec-docs/
+

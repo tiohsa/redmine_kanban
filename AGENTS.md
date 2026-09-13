@@ -2,155 +2,213 @@
 
 ## Project
 
-Redmine Kanban is a Redmine plugin providing a Kanban board with WIP limits, aging visualization, issue interaction, and canvas-based drag-and-drop.
+Redmine Kanban is a Redmine plugin for Kanban boards with WIP limits, aging visualization, issue interaction, work-time support, swimlanes, and canvas-based drag-and-drop.
 
-Supported Redmine versions:
+* Redmine: 6.0 / 6.1 / 7.0
+* Backend: Ruby on Rails / Redmine plugin APIs
+* Frontend: React 18, TypeScript strict, Vite, TanStack React Query
+* Tests: Rails Minitest, Vitest, Playwright
 
-* Redmine 6.0
-* Redmine 6.1
-* Redmine 7.0
+Use the repository as the primary source of truth.
 
-Frontend stack includes React 18, TypeScript in strict mode, and Vite.
+Consult these only when relevant:
 
-Tests are split across Rails Minitest, Vitest, and Playwright.
+* `README.md` for current product behavior and API notes.
+* `spec-docs/` for feature-specific decisions and historical specifications.
+* Existing tests for established executable behavior.
 
-Use the repository as the primary source of truth. Read supporting documentation only when relevant to the task.
+If documentation and implementation disagree, determine whether the document describes a newer intended behavior before changing code.
 
-## Invariants
+## Non-Negotiable Invariants
 
-### Frontend build and tracked assets
+Preserve these unless the requested task explicitly changes the corresponding behavior.
 
-Frontend source lives under `frontend/`.
+### Frontend and generated assets
 
-Production assets under `assets/` are generated artifacts.
+Frontend source lives under `frontend/`. Production assets under `assets/` are generated.
 
-Do not edit generated assets manually.
+* Never edit generated assets manually.
+* If a frontend change affects the production bundle, rebuild it and include the tracked generated assets.
+* Keep dependency metadata and lockfiles consistent.
+* Do not perform unrelated dependency upgrades.
 
-When a frontend change affects the production bundle, rebuild it using the repository's existing build process and include tracked generated assets required by the repository.
+### API v3 board state
 
-Keep dependency metadata and lockfiles internally consistent.
+The canonical board snapshot is the normalized API v3 representation:
 
-### Kanban state and mutations
+* `entities`
+* `tree.root_ids`
+* `tree.children_by_parent_id`
+* `scope_fingerprint`
+* `meta.complete: true`
 
-Preserve the existing ownership of board, issue, drag-and-drop, and mutation state.
+Do not reintroduce recursive Issue copies as a second source of truth.
 
-Extend the existing state/update path rather than creating parallel local state for the same server-backed concern.
+Preserve project/status/dependency scopes, fingerprints, entity/query/response limits, and structured resource-limit behavior. Never silently return partial snapshots.
 
-Do not allow stale asynchronous responses to overwrite newer user actions or issue state.
+### Mutations and reconciliation
 
-Operations that can overlap must retain appropriate request scoping, generation tracking, or single-flight behavior.
+Normal successful mutations return bounded API v3 deltas. Do not replace ordinary mutation handling with unconditional full-board refetching.
+
+If a successful domain mutation cannot produce a complete bounded delta, preserve the mutation and return `invalidations.board_snapshot: true` so the frontend can fetch a new authoritative snapshot.
+
+Bulk creation accepts at most 50 non-empty subtasks; reject oversized requests before domain transactions or idempotency claims.
+
+Stale asynchronous responses must never overwrite newer user actions or server state. Preserve the repository's existing mechanisms for:
+
+* scope fingerprints;
+* request generations/revisions;
+* freshness authority;
+* optimistic mutation state;
+* entity and aggregate reconciliation;
+* negative membership reconciliation;
+* mutation operation IDs;
+* single-flight or equivalent ordering protection.
+
+Extend the existing normalized board/state path. Do not create parallel React state for server-backed issue membership, hierarchy, mutation results, counts, or freshness.
 
 ### Issue hierarchy
 
-Changes to child issues can affect parent and ancestor progress.
+Child mutations can affect parents and ancestors. Preserve consistency among child state, parent/ancestor progress, hierarchy, and board membership.
 
-Do not apply an older parent/ancestor response after a newer child or hierarchy update.
+Do not apply an older parent or ancestor response after a newer child/hierarchy mutation.
 
-Preserve consistency between child completion state and parent/ancestor progress.
+When mutation logic needs to detect status or done-ratio changes, capture the mutation result immediately after the Issue save, before later operations can reload the record.
 
-### Drag-and-drop
+### Canvas and drag-and-drop
 
-Respect WIP limits, permissions, status-transition constraints, and repository-defined board rules.
+Canvas drag state belongs in the existing interaction/state-machine boundary under:
 
-Do not make optimistic UI state authoritative when the server rejects or supersedes the operation.
+`frontend/src/ui/board/`
 
-Rollback or reconciliation behavior must leave the board consistent with server state.
+Do not create a second drag state machine in component-local React state or bypass the existing layout, hit-test, pointer, drag-lifecycle, rendering, and command-dispatch boundaries.
 
-### Aging
+Drop indication and actual dispatch must use the same eligibility decision.
 
-Preserve the repository's definition of aging and its synchronization with issue update timestamps.
+Current drop assessment distinguishes:
 
-Do not introduce a second independent aging source.
+* `noop`
+* `dispatch`
+* `forbidden`
 
-### Work time
+Redmine remains the final authority for workflow transitions. Client workflow metadata is guidance, not a replacement for server validation.
 
-Work-time functionality must follow Redmine permissions, time-entry validation, project membership, and issue eligibility rules.
+#### Category swimlanes
 
-Keep behavior consistent between the Kanban implementation and established repository/product behavior where the same concept is shared.
+Category swimlanes do not change Issue category by drag-and-drop.
 
-UI entry points for work-time actions must not interfere with existing issue-edit, drag, or card interaction targets.
+Therefore:
+
+* Category A -> Category B is forbidden.
+* Category -> no-category is forbidden.
+* no-category -> Category is forbidden.
+* Forbidden targets must not show an allowed highlight/preview and must not dispatch a mutation.
+* Same-category status movement remains allowed when normal workflow/move rules allow it.
+
+Assignee and priority swimlanes retain their existing lane-changing behavior.
+
+### Permissions and Redmine authority
+
+Use Redmine permission, visibility, workflow, membership, and Time Entry validation APIs.
+
+Frontend permission checks are usability controls, not security boundaries. Server mutation paths must enforce permissions independently.
+
+Preserve the distinction between board viewing, issue mutation, issue creation/deletion, and work-time logging.
+
+### Backend boundaries
+
+Business logic belongs under:
+
+`lib/redmine_kanban/`
+
+Keep controllers as HTTP adapters/orchestration boundaries.
+
+Prefer focused composition over generic inheritance or broad utility abstractions. Extract shared code when it represents the same semantic invariant, not merely similar syntax.
+
+Preserve optimistic locking via `lock_version` where applicable.
+
+Load complete `User` records when Redmine model methods may require attributes such as `firstname`; do not introduce partial selects that can trigger `ActiveModel::MissingAttributeError`.
+
+### Delete, aging, and work time
+
+Keep physical deletion distinct from board-scope eviction:
+
+* `deleted_issue_ids`
+* `evicted_issue_ids`
+
+If a complete bounded deletion delta cannot be returned, invalidate the authoritative snapshot rather than returning partial tombstones.
+
+Do not imply that Undo restores Redmine history, comments, relations, attachments, or original IDs unless the implementation explicitly supports that behavior.
+
+Use the repository's existing aging source and update-time synchronization. Respect the configured closed-issue exclusion behavior.
+
+Work-time behavior must continue to respect permissions, membership, Issue eligibility, native Time Entry validation, timer lifecycle, and synchronization. Recovery/reconciliation must not create duplicate Time Entry POSTs.
 
 ### Persistence
 
-Do not introduce database migrations or persistent support tables solely for client workflow state unless the requested feature explicitly requires persistent server-side data and no existing Redmine mechanism fits.
+Do not add database migrations or persistent support tables solely for transient client workflow state unless the requested feature genuinely requires server-side persistence and no existing Redmine mechanism fits.
 
-Prefer existing Redmine data models and lightweight client persistence where appropriate.
+### Performance and compatibility
 
-### UI behavior
+Resource protection around board snapshots is intentional. Do not remove resource gates merely to make tests pass.
 
-Preserve existing Kanban interaction patterns unless the requested change explicitly modifies them.
+When performance work is required, measure first and preserve API/compatibility contracts.
 
-Avoid broad layout or interaction changes as incidental consequences of feature work.
+All changes must remain compatible with Redmine 6.0, 6.1, and 7.0. Do not remove compatibility code based only on behavior of the newest supported version.
 
-## References
+## How to Work
 
-Read documentation only when relevant to the task.
+Keep the change focused on the requested task. Small adjacent changes are acceptable when required for correctness, consistency, generated output, or validation.
 
-Use:
+Do not expand the task into unrelated refactoring, cleanup, dependency upgrades, migrations, UI/API redesign, state-library replacement, or broad formatting changes.
 
-* `README.md` for product behavior;
-* feature/task documents for feature-specific decisions;
-* existing tests as executable definitions of established behavior.
+For refactoring, preserve externally observable behavior unless the task explicitly changes it. Prefer focused extraction and composition over subsystem rewrites. Do not replace working freshness/concurrency logic merely to reduce line count.
 
-When implementation and a current feature decision document differ, determine whether the document represents a newer intended behavior before changing code.
+When implementation details are unclear:
+
+1. inspect the relevant code and nearby tests;
+2. consult `README.md` or the relevant `spec-docs/` material if it can resolve the ambiguity;
+3. make the smallest behavior-preserving choice if the repository still does not establish the answer;
+4. report any unresolved product decision as `要確認`.
+
+Do not invent new product behavior.
 
 ## Validation
 
-Use the smallest sufficient validation set for the changed area.
+Use the smallest validation set that can reliably detect regressions in the changed area, then expand only where the risk warrants it.
 
-Backend changes:
+Typical frontend checks include focused Vitest tests, typecheck/lint, and a production build when the bundle changes.
 
-* run relevant Rails Minitest tests.
+Typical backend checks include the directly affected Rails Minitest suites.
 
-Frontend logic/component changes:
+Use Playwright when the behavior depends on cross-layer or real interaction semantics that unit/integration tests cannot adequately cover.
 
-* run relevant Vitest tests.
+For Canvas/drop work, directly validate the interaction layers affected by the change, especially eligibility, cursor/preview state, and command dispatch.
 
-User interaction or end-to-end workflow changes:
+For category swimlanes, preserve regression coverage for same-category status moves and forbidden cross-category/category-to-none/none-to-category moves.
 
-* run relevant Playwright tests when the behavior is covered at that level.
+If a check fails, first classify it as:
 
-Frontend bundle changes:
+1. caused by the current change;
+2. pre-existing;
+3. environment/infrastructure.
 
-* build the production frontend and update tracked generated assets when required.
+Fix regressions caused by the current task. Do not weaken assertions, skip validation, remove resource guards, or repeatedly retry the same ineffective fix.
 
-When a change affects several layers, validate the affected boundaries rather than testing only the layer where the edit occurred.
-
-When fixing a regression, add or update a regression test when practical.
-
-If a relevant check fails:
-
-1. determine whether the requested change caused it;
-2. fix directly caused failures;
-3. rerun affected validation.
-
-Do not mechanically run every available test suite for narrowly scoped changes when targeted validation is sufficient.
+If the same approach fails repeatedly, return to root-cause analysis.
 
 ## Completion
 
-Continue until:
+Continue through implementation, directly required regression fixes, and relevant validation without stopping for approval after the first code change.
+
+A task is complete when:
 
 * the requested behavior is implemented;
-* directly caused regressions are resolved;
-* relevant tests and builds pass;
-* required generated assets are current;
-* server and client behavior remain consistent.
+* affected repository invariants still hold;
+* regressions caused by the change are fixed;
+* relevant validation passes;
+* generated assets are current when required;
+* server/client behavior remains consistent;
+* supported Redmine versions remain compatible.
 
-Do not stop after the first implementation simply to ask whether testing or directly required fixes should continue.
-
-## Boundaries
-
-Fix problems directly caused by the requested work.
-
-Do not expand the task into unrelated:
-
-* refactoring;
-* cleanup;
-* dependency upgrades;
-* migrations;
-* UI redesign;
-* behavioral changes.
-
-Small adjacent changes are acceptable when necessary for correctness, consistency, or validation.
-
-Report worthwhile but unrelated improvements separately instead of implementing them as part of the current task.
+Report unrelated worthwhile improvements separately instead of expanding the task.
