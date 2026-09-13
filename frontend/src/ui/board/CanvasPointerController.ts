@@ -2,6 +2,7 @@ import type { BoardData, Issue } from '../types';
 import { cellKey } from './state';
 import { hitTestCell, type RectMap } from './HitTestIndex';
 import { resolveBoardLaneId } from './keys';
+import { assessDrop, type DropAssessment } from './canvasInteraction';
 import { transitionDragPhase, type DragPhase } from './dragInteraction';
 
 export type BoardPoint = { x: number; y: number };
@@ -16,6 +17,7 @@ export type DragState = {
   allowedStatusIds?: ReadonlySet<number>;
   phase: Exclude<DragPhase, 'idle'>;
   targetCellKey: string | null;
+  targetAssessment: DropAssessment | null;
   dropTargetCellKey?: string | null;
 };
 
@@ -43,6 +45,7 @@ export function createDragState(issue: Issue, point: BoardPoint, data: BoardData
     allowedStatusIds: issue.allowed_status_ids ? new Set(issue.allowed_status_ids) : undefined,
     phase: transitionDragPhase('idle', 'pointerdown') as Exclude<DragPhase, 'idle'>,
     targetCellKey: null,
+    targetAssessment: null,
   };
 }
 
@@ -64,6 +67,16 @@ export function advanceDragState(
   if (next.phase === 'dragging') {
     const target = hitTestCell(point, rectMap, data);
     next.targetCellKey = target ? cellKey(target.statusId, target.laneId) : null;
+    next.targetAssessment = target
+      ? assessDrop(
+        next.origin.statusId,
+        next.origin.laneId,
+        target.statusId,
+        target.laneId,
+        next.allowedStatusIds,
+        data.meta.lane_type,
+      )
+      : null;
   }
   return next;
 }

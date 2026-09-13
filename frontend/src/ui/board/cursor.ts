@@ -1,4 +1,6 @@
-export type BoardCursor = 'default' | 'pointer' | 'move';
+import type { DropAssessment } from './canvasInteraction';
+
+export type BoardCursor = 'default' | 'pointer' | 'move' | 'not-allowed';
 
 export type BoardCursorPhase = 'idle' | 'dragging' | 'pending-drop';
 
@@ -27,10 +29,11 @@ export type BoardCursorHitKind =
 type CursorOptions = {
   phase: BoardCursorPhase;
   hitKind?: BoardCursorHitKind | null;
+  dropAssessment?: DropAssessment | null;
 };
 
-export function getBoardCursor({ phase, hitKind = 'empty' }: CursorOptions): BoardCursor {
-  if (phase === 'dragging') return 'move';
+export function getBoardCursor({ phase, hitKind = 'empty', dropAssessment }: CursorOptions): BoardCursor {
+  if (phase === 'dragging') return dropAssessment?.action === 'forbidden' ? 'not-allowed' : 'move';
   if (phase === 'pending-drop') return 'default';
 
   switch (hitKind) {

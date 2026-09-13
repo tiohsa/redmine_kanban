@@ -100,6 +100,7 @@ function createCanvasContextWithSpies() {
     fillText: ReturnType<typeof vi.fn>;
     lineTo: ReturnType<typeof vi.fn>;
     setTransform: ReturnType<typeof vi.fn>;
+    fillRect: ReturnType<typeof vi.fn>;
   };
   return context;
 }
@@ -532,6 +533,66 @@ afterEach(() => {
       expect(context.fillText).toHaveBeenCalledWith('!', expect.any(Number), expect.any(Number));
       expect(context.fillText).not.toHaveBeenCalledWith('×', expect.any(Number), expect.any(Number));
     });
+  });
+
+  it('does not highlight or dispatch a forbidden cross-category drop', async () => {
+    const issue = makeIssue(1, { category_id: 10, allowed_status_ids: [1, 2] });
+    const baseData = makeBoardData(issue);
+    const data: BoardData = {
+      ...baseData,
+      meta: { ...baseData.meta, lane_type: 'category' },
+      lanes: [
+        { id: 10, name: 'Category A', category_id: 10 },
+        { id: 20, name: 'Category B', category_id: 20 },
+      ],
+    };
+    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const onCommand = vi.fn(() => true);
+    const context = createCanvasContextWithSpies();
+    const cellFills: Array<{ fillStyle: string; x: number; y: number; width: number; height: number }> = [];
+    let fillStyle = '';
+    Object.defineProperty(context, 'fillStyle', {
+      configurable: true,
+      get: () => fillStyle,
+      set: (value: string) => { fillStyle = value; },
+    });
+    context.fillRect.mockImplementation((x: number, y: number, width: number, height: number) => {
+      cellFills.push({ fillStyle, x, y, width, height });
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+
+    const { container } = render(
+      <CanvasBoard
+        data={data}
+        state={state}
+        canMove
+        canCreate
+        onCommand={onCommand}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onView={vi.fn()}
+        onDelete={vi.fn()}
+        onEditClick={vi.fn()}
+        labels={data.labels}
+      />,
+    );
+
+    const board = container.querySelector('.rk-canvas-board') as HTMLDivElement;
+    const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
+    await waitFor(() => expect(canvas.width).toBeGreaterThan(0));
+
+    // Category A starts at y=40 and is 99px tall; the next lane is the forbidden target.
+    fireEvent.pointerDown(canvas, { clientX: 160, clientY: 100, pointerId: 1 });
+    fireEvent.pointerMove(canvas, { clientX: 160, clientY: 150, pointerId: 1 });
+    await waitFor(() => expect(board.style.cursor).toBe('not-allowed'));
+
+    const forbiddenCellFills = cellFills.filter(({ x, y, width, height }) => (
+      x === 120 && y === 139 && width === 260 && height === 32
+    ));
+    expect(forbiddenCellFills[forbiddenCellFills.length - 1]?.fillStyle).toBe('#ffffff');
+
+    fireEvent.pointerUp(canvas, { clientX: 160, clientY: 150, pointerId: 1 });
+    expect(onCommand).not.toHaveBeenCalled();
   });
 
   it.each([

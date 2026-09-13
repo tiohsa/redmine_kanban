@@ -608,7 +608,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     const nextDrag = dragRef.current;
 
     if (nextDrag?.phase === 'dragging') {
-      setCursor(getBoardCursor({ phase: 'dragging' }));
+      setCursor(getBoardCursor({ phase: 'dragging', dropAssessment: nextDrag.targetAssessment }));
     }
 
     scheduleRender();
@@ -641,13 +641,16 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     const issue = state.cardsById.get(drag.issueId);
     const assignedToId = laneIdToAssignee(data, target.laneId, issue?.assigned_to_id ?? null);
     const priorityId = laneIdToPriority(data, target.laneId, issue?.priority_id ?? null);
-    const assessment = assessDrop(
-      drag.origin.statusId,
-      drag.origin.laneId,
-      target.statusId,
-      target.laneId,
-      drag.allowedStatusIds,
-    );
+    const assessment = drag.targetCellKey === target.cellKey && drag.targetAssessment
+      ? drag.targetAssessment
+      : assessDrop(
+        drag.origin.statusId,
+        drag.origin.laneId,
+        target.statusId,
+        target.laneId,
+        drag.allowedStatusIds,
+        data.meta.lane_type,
+      );
     if (!shouldDispatchDrop(assessment)) {
       transitionDragState('pointerup-cancel');
       return;
@@ -985,7 +988,9 @@ function drawCells(
 
       const colBg = theme.columnBgs[colIndex % theme.columnBgs.length];
       const targetAssessment = drag?.phase === 'dragging'
-        ? assessDrop(drag.origin.statusId, drag.origin.laneId, statusId, laneLayout.laneId, drag.allowedStatusIds)
+        ? drag.targetCellKey === key
+          ? drag.targetAssessment
+          : assessDrop(drag.origin.statusId, drag.origin.laneId, statusId, laneLayout.laneId, drag.allowedStatusIds, data.meta.lane_type)
         : null;
       const hintVisual = targetAssessment ? getDropHintVisual(targetAssessment) : null;
       const isTarget = drag?.phase === 'dragging'

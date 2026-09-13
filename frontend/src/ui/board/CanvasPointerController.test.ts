@@ -38,6 +38,15 @@ describe('CanvasPointerController', () => {
     expect(next.targetCellKey).toBe('2:9');
   });
 
+  it('keeps the category drop assessment on the drag state', () => {
+    const index = createRectMap();
+    index.cells.set('2:9', { x: 10, y: 10, width: 20, height: 20 });
+    const drag = createDragState({ ...issue, category_id: 9 }, { x: 0, y: 0 }, categoryData);
+    const next = advanceDragState(drag, { x: 15, y: 15 }, index, categoryData);
+
+    expect(next.targetAssessment).toEqual({ action: 'dispatch', workflowHint: 'allowed' });
+  });
+
   it('resolves a drop target without dispatching a command', () => {
     const index = createRectMap();
     index.cells.set('2:9', { x: 10, y: 10, width: 20, height: 20 });
