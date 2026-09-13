@@ -8,5 +8,7 @@ exec bundle exec rails test \
   plugins/redmine_kanban/test/unit/board_context_test.rb \
   plugins/redmine_kanban/test/unit/board_membership_resolver_test.rb \
   plugins/redmine_kanban/test/unit/board_data_test.rb \
+  plugins/redmine_kanban/test/unit/board_labels_test.rb \
+  plugins/redmine_kanban/test/unit/board_tree_builder_test.rb \
   plugins/redmine_kanban/test/unit/snapshot_limits_test.rb \
   "$@"

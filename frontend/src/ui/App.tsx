@@ -1,18 +1,16 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { BoardApiResponse, BoardData, Issue } from './types';
-import { getJson, isHttpError } from './http';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import type { BoardData, Issue } from './types';
 import { CanvasBoard, type CanvasBoardHandle } from './board/CanvasBoard';
-import { buildBoardState } from './board/state';
-import { applyBoardDataFilters, buildPresentationProjection, buildVisibleIssues, resolveCreateStatusId, resolvePreferredTrackerId } from './boardFilters';
-import { buildBoardDataUrl, buildBoardQueryKey, effectiveDependencyStatusIds, effectiveScopeStatusIds } from './boardQuery';
+import { resolveCreateStatusId, resolvePreferredTrackerId } from './boardFilters';
+import { effectiveDependencyStatusIds, effectiveScopeStatusIds } from './boardQuery';
 import { IframeEditDialog } from './IframeEditDialog';
 import { KanbanIssueModal } from './KanbanIssueModal';
 import { KanbanPopupHost } from './KanbanPopupHost';
 import { DatePopup, PriorityPopup, ProgressPopup } from './KanbanPopups';
 import { KanbanToolbar } from './KanbanToolbar';
 import { HelpDialog } from './HelpDialog';
-import { buildDisplayData, buildIssueTitle, normalizeBoardData, payloadFieldError, payloadMessage, resolveMutationError } from './kanbanShared';
+import { buildIssueTitle, payloadFieldError, payloadMessage, resolveMutationError } from './kanbanShared';
 import { findIssueInBoard } from './kanbanShared';
 import { useKanbanActions } from './useKanbanActions';
 import { invalidateBoardSnapshot } from './useIssueMutation';
@@ -21,6 +19,9 @@ import { useKanbanPreferences } from './useKanbanPreferences';
 import { useWorkTimer } from './workTimer/useWorkTimer';
 import { GlobalTimer, OtherNoticeModal, TimerStartModal } from './workTimer/WorkTimer';
 import { createTimeEntryOperation, type TimeEntryOperation } from './iframe/timeEntryOperation';
+import { resolveDefaultCreateProjectId, useBoardFilterNormalization } from './useBoardFilterNormalization';
+import { useBoardPresentation } from './useBoardPresentation';
+import { useBoardSnapshot } from './useBoardSnapshot';
 
 type Props = { dataUrl: string; initialCurrentUserId: number; initialLabels?: Record<string, string> };
 
@@ -28,28 +29,7 @@ export function findIssueForAction(data: BoardData, issueId: number): Issue | nu
   return findIssueInBoard(data, issueId);
 }
 
-export function normalizeProjectIds(projectIds: number[], allowedProjectIds: Set<number>): number[] {
-  return projectIds.filter((projectId) => allowedProjectIds.has(projectId));
-}
-
-export function normalizeAssigneeIds(assigneeIds: string[], allowedAssigneeIds: Set<string>): string[] {
-  return assigneeIds.filter((assigneeId) => assigneeId === 'unassigned' || allowedAssigneeIds.has(assigneeId));
-}
-
-export function normalizeTrackerIds(trackerIds: number[], allowedTrackerIds: Set<number>): number[] {
-  return trackerIds.filter((trackerId) => allowedTrackerIds.has(trackerId));
-}
-
-export function resolveDefaultCreateProjectId(
-  selectedProjectIds: number[],
-  creatableProjectIds: Set<number>,
-  fallbackProjectId: number | undefined,
-): number | null {
-  const selectedCreatableProjectId = selectedProjectIds.find((projectId) => creatableProjectIds.has(projectId));
-  if (selectedCreatableProjectId) return selectedCreatableProjectId;
-  if (fallbackProjectId && creatableProjectIds.has(fallbackProjectId)) return fallbackProjectId;
-  return null;
-}
+export { normalizeAssigneeIds, normalizeProjectIds, normalizeTrackerIds, resolveDefaultCreateProjectId } from './useBoardFilterNormalization';
 
 export function canCreateInBoard(projectId: number | null, statusId: number | undefined): boolean {
   return projectId !== null && statusId !== undefined;
@@ -98,21 +78,20 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
   } = useKanbanPreferences(dataUrl, initialCurrentUserId);
 
   const baseUrl = useMemo(() => projectScope, [projectScope]);
-  const boardQueryKey = useMemo(
-    () => buildBoardQueryKey(baseUrl, filters.projectIds, filters.statusIds, hiddenStatusIds, maximumBoardEntityCount),
-    [baseUrl, filters.projectIds, filters.statusIds, hiddenStatusIds, maximumBoardEntityCount],
-  );
-
-  const boardQuery = useQuery({
-    queryKey: boardQueryKey,
-    queryFn: async () => normalizeBoardData(
-      await getJson<BoardApiResponse>(buildBoardDataUrl(baseUrl, filters.projectIds, filters.statusIds, hiddenStatusIds, maximumBoardEntityCount)),
-    ),
-    retry: false,
-    enabled: preferencesReady,
+  const snapshot = useBoardSnapshot({
+    baseUrl,
+    projectIds: filters.projectIds,
+    statusIds: filters.statusIds,
+    hiddenStatusIds,
+    maximumBoardEntityCount,
+    preferencesReady,
+    initialLabels,
+    agingWarnDays,
+    agingDangerDays,
+    agingExcludeClosed,
+    setError,
   });
-
-  const data = boardQuery.data ?? null;
+  const { boardQueryKey, data, loading, refresh, toolbarData } = snapshot;
   const timerInstanceKey = useMemo(() => {
     const pathname = new URL(dataUrl, window.location.origin).pathname;
     const projectIndex = pathname.indexOf('/projects/');
@@ -121,115 +100,15 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
   const timerScope = useMemo(() => ({ instanceKey: timerInstanceKey, userId: data?.meta.current_user_id ?? initialCurrentUserId }), [data?.meta.current_user_id, initialCurrentUserId, timerInstanceKey]);
   const workTimer = useWorkTimer({ scope: timerScope, labels: data?.labels ?? initialLabels, onError: setError });
 
-  const loading = boardQuery.isLoading;
   const labels = data?.labels;
-  const emptyBoardData = useMemo<BoardData>(() => ({
-    ok: true,
-    contract_version: 3,
-    scope_fingerprint: `pending:${baseUrl}`,
-    meta: {
-      project_id: 0,
-      project_ids: [],
-      scope_status_ids: [],
-      current_user_id: 0,
-      can_move: false,
-      can_create: false,
-      can_delete: false,
-      lane_type: 'assignee',
-      aging_warn_days: agingWarnDays,
-      aging_danger_days: agingDangerDays,
-      aging_exclude_closed: agingExcludeClosed,
-      complete: false,
-      entity_count: 0,
-      requested_entity_limit: maximumBoardEntityCount,
-      effective_entity_limit: maximumBoardEntityCount,
-      server_entity_limit: 5000,
-    },
-    columns: [],
-    lanes: [],
-    lists: { assignees: [], trackers: [], priorities: [], projects: [], viewable_projects: [], creatable_projects: [] },
-    issues: [],
-    labels: initialLabels,
-  }), [agingDangerDays, agingExcludeClosed, agingWarnDays, baseUrl, initialLabels, maximumBoardEntityCount]);
-  const toolbarData = data ?? emptyBoardData;
-  const suppressNextBoardErrorRef = useRef(false);
+  const { creatableProjectIds } = useBoardFilterNormalization({
+    data,
+    filters,
+    setFilters,
+    viewableProjectsEnabled,
+  });
 
-  useEffect(() => {
-    if (!boardQuery.error) {
-      if (boardQuery.data) suppressNextBoardErrorRef.current = false;
-      return;
-    }
-    if (suppressNextBoardErrorRef.current) {
-      suppressNextBoardErrorRef.current = false;
-      return;
-    }
-    const payload = isHttpError<{ error?: { code?: string; requested_entity_limit?: number; effective_entity_limit?: number; server_entity_limit?: number; count_at_least?: number; maximum_response_bytes?: number } }>(boardQuery.error)
-      ? boardQuery.error.payload
-      : null;
-    const boardError = payload?.error;
-    if (boardError?.code === 'BOARD_SCOPE_TOO_LARGE') {
-      const limit = boardError.effective_entity_limit ?? boardError.requested_entity_limit ?? maximumBoardEntityCount;
-      const serverSuffix = boardError.server_entity_limit && boardError.requested_entity_limit && boardError.requested_entity_limit > boardError.server_entity_limit
-        ? ` ${toolbarData.labels.board_server_limit_suffix.replace('%{limit}', boardError.server_entity_limit.toLocaleString())}`
-        : '';
-      setError(toolbarData.labels.board_scope_too_large.replace('%{limit}', limit.toLocaleString()) + serverSuffix);
-    } else if (boardError?.code === 'BOARD_RESPONSE_TOO_LARGE') {
-      setError(toolbarData.labels.board_response_too_large.replace('%{bytes}', (boardError.maximum_response_bytes ?? 0).toLocaleString()));
-    } else {
-      setError(toolbarData.labels.load_failed);
-    }
-  }, [boardQuery.data, boardQuery.error, maximumBoardEntityCount, toolbarData.labels]);
-
-  const refresh = useCallback(async (options: { suppressError?: boolean } = {}) => {
-    if (options.suppressError) suppressNextBoardErrorRef.current = true;
-    await queryClient.invalidateQueries({ queryKey: boardQueryKey });
-  }, [boardQueryKey, queryClient]);
-
-  const displayData = useMemo(() => {
-    if (!data) return null;
-    return buildDisplayData(data, laneType, { warnDays: agingWarnDays, dangerDays: agingDangerDays, excludeClosed: agingExcludeClosed });
-  }, [agingDangerDays, agingExcludeClosed, agingWarnDays, data, laneType]);
-
-  const projectOptions = useMemo(
-    () => (viewableProjectsEnabled ? data?.lists.viewable_projects : data?.lists.projects) ?? [],
-    [data, viewableProjectsEnabled],
-  );
-  const allowedProjectIds = useMemo(() => new Set(projectOptions.map((project) => project.id)), [projectOptions]);
-  const allowedAssigneeIds = useMemo(
-    () => new Set((data?.lists.assignees ?? []).filter((assignee) => assignee.id !== null).map((assignee) => String(assignee.id))),
-    [data],
-  );
-  const allowedTrackerIds = useMemo(
-    () => new Set((data?.lists.trackers ?? []).map((tracker) => tracker.id)),
-    [data],
-  );
-  const creatableProjectIds = useMemo(
-    () => new Set((data?.lists.creatable_projects ?? []).map((project) => project.id)),
-    [data],
-  );
-
-  useEffect(() => {
-    if (!data) return;
-    const normalizedProjectIds = normalizeProjectIds(filters.projectIds, allowedProjectIds);
-    if (normalizedProjectIds.length === filters.projectIds.length) return;
-    setFilters((previous) => ({ ...previous, projectIds: normalizedProjectIds }));
-  }, [allowedProjectIds, data, filters.projectIds, setFilters]);
-
-  useEffect(() => {
-    if (!data) return;
-    const normalizedAssigneeIds = normalizeAssigneeIds(filters.assigneeIds, allowedAssigneeIds);
-    if (normalizedAssigneeIds.length === filters.assigneeIds.length) return;
-    setFilters((previous) => ({ ...previous, assigneeIds: normalizedAssigneeIds }));
-  }, [allowedAssigneeIds, data, filters.assigneeIds, setFilters]);
-
-  useEffect(() => {
-    if (!data) return;
-    const normalizedTrackerIds = normalizeTrackerIds(filters.trackerIds, allowedTrackerIds);
-    if (normalizedTrackerIds.length === filters.trackerIds.length) return;
-    setFilters((previous) => ({ ...previous, trackerIds: normalizedTrackerIds }));
-  }, [allowedTrackerIds, data, filters.trackerIds, setFilters]);
-
-  const effectiveLaneType = displayData?.meta.lane_type;
+  const effectiveLaneType = laneType;
   const dialogs = useKanbanDialogs(baseUrl, data, effectiveLaneType, boardQueryKey);
   const actions = useKanbanActions({
     baseUrl,
@@ -243,54 +122,18 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     setIframeTimeEntryOperation: dialogs.setIframeTimeEntryOperation,
   });
 
-  const primaryFilteredData = useMemo(
-    () => applyBoardDataFilters(displayData, showSubtasks, filters.statusIds, filters.trackerIds),
-    [displayData, filters.statusIds, filters.trackerIds, showSubtasks],
-  );
-  const issues = useMemo(
-    () => buildVisibleIssues(primaryFilteredData, filters, hiddenStatusIds, actions.pendingDeleteIssue),
-    [actions.pendingDeleteIssue, filters, hiddenStatusIds, primaryFilteredData],
-  );
-  const presentation = useMemo(
-    () => {
-      if (!primaryFilteredData || !displayData) return null;
-      return buildPresentationProjection(
-        displayData,
-        primaryFilteredData.columns,
-        issues,
-        filters.statusIds,
-        hiddenStatusIds,
-      );
-    }, [displayData, filters.statusIds, hiddenStatusIds, issues, primaryFilteredData],
-  );
-  const filteredData = useMemo(
-    () => {
-      if (!primaryFilteredData || !presentation) return null;
-      return {
-        ...primaryFilteredData,
-        columns: presentation.columns,
-      };
-    }, [presentation, primaryFilteredData],
-  );
-  const priorityRank = useMemo(() => {
-    const rank = new Map<number, number>();
-    for (const [index, priority] of (data?.lists.priorities ?? []).entries()) {
-      rank.set(priority.id, index);
-    }
-    return rank;
-  }, [data]);
-  const boardState = useMemo(() => {
-    if (!filteredData) return null;
-    return buildBoardState(
-      filteredData,
-      presentation?.issues ?? [],
-      sortKey,
-      priorityRank,
-      filters.assigneeIds,
-      filters.priority,
-      filters.priorityFilterEnabled,
-    );
-  }, [filteredData, presentation?.issues, priorityRank, sortKey, filters.assigneeIds, filters.priority, filters.priorityFilterEnabled]);
+  const { boardState, filteredData, presentation, primaryFilteredData } = useBoardPresentation({
+    data,
+    laneType,
+    agingWarnDays,
+    agingDangerDays,
+    agingExcludeClosed,
+    showSubtasks,
+    filters,
+    hiddenStatusIds,
+    pendingDeleteIssue: actions.pendingDeleteIssue,
+    sortKey,
+  });
 
   const canMove = (presentation?.issues ?? []).some((issue) => issue.permissions?.can_move);
   const selectedProjectIds = useMemo(

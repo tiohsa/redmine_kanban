@@ -1,5 +1,6 @@
 require_relative 'board_context'
 require_relative 'ancestor_issue_updates'
+require_relative 'mutation_finalizer'
 
 module RedmineKanban
   class IssueUpdater
@@ -114,13 +115,13 @@ module RedmineKanban
       else
         []
       end
-      result = mutation_result_builder.build(
+      mutation_finalizer.build(
+        issue: issue,
         issue_updates: issue_updates,
         membership_recheck_ids: membership_recheck_ids,
+        ancestor_updates: ancestor_updates,
         invalidations: { column_counts: true }
-      ).merge(issue: issue_presenter(issue).issue_to_h(issue))
-      result[:ancestor_updates] = ancestor_updates if ancestor_updates&.any?
-      result
+      )
     rescue ActiveRecord::StaleObjectError
       error_response(I18n.t('redmine_kanban.error_conflict'), status: :conflict)
     end
@@ -159,12 +160,8 @@ module RedmineKanban
       normalize_optional_lock_version(value)
     end
 
-    def issue_presenter(issue)
-      @board_context.presenter([issue.id]).first
-    end
-
-    def mutation_result_builder
-      @mutation_result_builder ||= MutationResultBuilder.new(board_context: @board_context, operation_id: @operation_id)
+    def mutation_finalizer
+      @mutation_finalizer ||= MutationFinalizer.new(board_context: @board_context, operation_id: @operation_id)
     end
 
   end

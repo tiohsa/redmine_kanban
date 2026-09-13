@@ -3,7 +3,7 @@ import type { BoardData, Column, Issue, Lane } from '../types';
 import type { BoardCommand } from './commands';
 import { getBoardCursor } from './cursor';
 import type { Rect } from './canvasGeometry';
-import { clamp, pointInRect, rectIntersects, roundedRect } from './canvasGeometry';
+import { clamp, rectIntersects, roundedRect } from './canvasGeometry';
 import {
   canDeleteIssue,
   canEditIssue,
@@ -14,11 +14,10 @@ import {
   getIssueFromHover,
   getTooltipTextFromHover,
   shouldDispatchDrop,
-  type HitResult,
   subtaskPermissions,
 } from './canvasInteraction';
 import { transitionDragPhase, type DragLifecycleEvent, type DragPhase } from './dragInteraction';
-import { buildSubtaskKey, laneIdToAssignee, laneIdToPriority, parseCellKey, parseSubtaskKey, resolveBoardLaneId } from './keys';
+import { buildSubtaskKey, laneIdToAssignee, laneIdToPriority, parseCellKey, resolveBoardLaneId } from './keys';
 import { getMetrics } from './metrics';
 import type { BoardState } from './state';
 import { cellKey } from './state';
@@ -26,37 +25,29 @@ import { findSubtaskInTree, flattenSubtasks } from '../subtasksTree';
 import { truncateText, truncateTextLines } from './canvasText';
 import { buildTrackerCatalog, normalizeTrackerId, resolveTrackerName, type TrackerCatalog } from '../kanbanShared';
 import { layoutCardMetadata } from './canvasMetadata';
+import {
+  computeLayout,
+  measureCardHeight,
+  measureCardHeightCached as measureLayoutCardHeightCached,
+  type CardHeightCache,
+  type SubjectLineMeasurer,
+} from './BoardLayout';
+import { createRectMap, hitTest, type RectMap } from './HitTestIndex';
+import { renderCanvasScene } from './CanvasRenderer';
+import {
+  advanceDragState,
+  createDragState,
+  resolveDropTarget,
+  toBoardPoint,
+  type DragState,
+} from './CanvasPointerController';
 
-const dragThreshold = 4;
+export { makeSubtaskSignature, makeCardHeightCacheKey } from './BoardLayout';
+
 const subtaskIndentPx = 14;
 const maxSubtaskIndentLevel = 6;
 
 type CanvasBackingStoreState = { width: number; height: number; dpr: number };
-
-type RectMap = {
-  cards: Map<number, Rect>;
-  cells: Map<string, Rect>;
-  addButtons: Map<string, Rect>;
-  deleteButtons: Map<number, Rect>;
-  workTimerButtons: Map<number, Rect>;
-
-  subtaskRows: Map<string, Rect>; // key: "issueId:subtaskId"
-  subtaskChecks: Map<string, Rect>; // key: "issueId:subtaskId"
-  subtaskSubjects: Map<string, Rect>; // key: "issueId:subtaskId"
-  subtaskWorkTimerButtons: Map<string, Rect>;
-  subtaskEditButtons: Map<string, Rect>; // key: "issueId:subtaskId"
-  subtaskDeleteButtons: Map<string, Rect>; // key: "issueId:subtaskId"
-  subtaskAreas: Map<number, Rect>; // key: issueId - entire subtask area for hit exclusion
-  cardSubjects: Map<number, Rect>; // key: issueId
-  editButtons: Map<number, Rect>;
-  visibilityButtons: Map<number, Rect>; // key: statusId
-  priorityBadges: Map<number, Rect>;
-  dateBadges: Map<number, Rect>;
-  progressDonuts: Map<number, Rect>;
-  laneHeaders: Map<string | number, Rect>;
-};
-
-type CardHeightCache = Map<string, number>;
 
 type CanvasTheme = {
   bgMain: string;
@@ -87,17 +78,6 @@ type CanvasTheme = {
   badgeOverdueColor: string;
   badgeWarnBg: string;
   badgeWarnColor: string;
-};
-
-type DragState = {
-  issueId: number;
-  start: { x: number; y: number };
-  current: { x: number; y: number };
-  origin: { statusId: number; laneId: string | number };
-  allowedStatusIds?: ReadonlySet<number>;
-  phase: Exclude<DragPhase, 'idle'>;
-  targetCellKey: string | null;
-  dropTargetCellKey?: string | null;
 };
 
 export type CanvasBoardHandle = {
@@ -159,28 +139,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
 }: Props, ref) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const rectMapRef = useRef<RectMap>({
-    cards: new Map(),
-    cells: new Map(),
-    addButtons: new Map(),
-    deleteButtons: new Map(),
-    workTimerButtons: new Map(),
-
-    subtaskRows: new Map(),
-    subtaskChecks: new Map(),
-    subtaskSubjects: new Map(),
-    subtaskEditButtons: new Map(),
-    subtaskWorkTimerButtons: new Map(),
-    subtaskDeleteButtons: new Map(),
-    subtaskAreas: new Map(),
-    cardSubjects: new Map(),
-    editButtons: new Map(),
-    visibilityButtons: new Map(),
-    priorityBadges: new Map(),
-    dateBadges: new Map(),
-    progressDonuts: new Map(),
-    laneHeaders: new Map(),
-  });
+  const rectMapRef = useRef<RectMap>(createRectMap());
   const cardHeightCacheRef = useRef<CardHeightCache>(new Map());
   const scrollRef = useRef({ x: 0, y: 0 });
   const boardSizeRef = useRef({ width: 0, height: 0 });
@@ -263,13 +222,15 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     return canvas.getContext('2d');
   }, []);
 
+  const measureSubjectLines = useMemo(() => createSubjectLineMeasurer(measureCtx), [measureCtx]);
+
   const laneType = data.meta.lane_type;
 
   const metrics = useMemo(() => getMetrics(fontSize), [fontSize]);
 
   const layout = useMemo(
-    () => computeLayout(state, data, canCreate, metrics, size.width, fitMode, measureCtx, fontSize, cardHeightCacheRef.current),
-    [state, data, canCreate, metrics, size.width, fitMode, measureCtx, fontSize]
+    () => computeLayout(state, data, canCreate, metrics, size.width, fitMode, measureSubjectLines, fontSize, cardHeightCacheRef.current),
+    [state, data, canCreate, metrics, size.width, fitMode, measureSubjectLines, fontSize]
   );
 
   const trackerCatalog = useMemo(() => buildTrackerCatalog(data.lists.trackers), [data.lists.trackers]);
@@ -425,95 +386,79 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       height: size.height / scale
     };
 
-    rectMapRef.current = {
-      cards: new Map(),
-      cells: new Map(),
-      addButtons: new Map(),
-      deleteButtons: new Map(),
-      workTimerButtons: new Map(),
+    rectMapRef.current = createRectMap();
 
-      subtaskRows: new Map(),
-      subtaskChecks: new Map(),
-      subtaskSubjects: new Map(),
-      subtaskEditButtons: new Map(),
-      subtaskWorkTimerButtons: new Map(),
-      subtaskDeleteButtons: new Map(),
-      subtaskAreas: new Map(),
-      cardSubjects: new Map(),
-      editButtons: new Map(),
-      visibilityButtons: new Map(),
-      priorityBadges: new Map(),
-      dateBadges: new Map(),
-      progressDonuts: new Map(),
-      laneHeaders: new Map(),
-    };
-
-    ctx.save();
-    ctx.scale(scale, scale);
-    ctx.translate(-scroll.x, -scroll.y);
-
-    drawCells(
+    renderCanvasScene({
       ctx,
-      layout,
-      state,
-      data,
-      trackerCatalog,
-      viewRect,
-      theme,
-      canCreate,
-      canMove,
-      rectMapRef.current,
-      dragRef.current,
-      labels,
-      hoverRef.current,
-      hoveredCardIssueIdRef.current,
-      hoveredSubtaskKeyRef.current,
-      metrics,
-      fontSize,
-      cardHeightCacheRef.current,
-      busyIssueIds,
-      timerSession,
-    );
-
-    if (laneType !== 'none') {
-    drawLaneLabels(ctx, layout, state.lanes, theme, canCreate, defaultCreateStatusId ?? state.columns[0]?.id, rectMapRef.current, labels, metrics);
-    }
-
-    drawDragOverlay(ctx, state, data, trackerCatalog, theme, dragRef.current, labels, metrics, fontSize, layout);
-
-    // Draw header last so it appears on top (sticky header)
-    ctx.save();
-    ctx.translate(0, scroll.y); // Sticky header: counteract vertical translation
-    drawHeaders(ctx, layout, state.columns, theme, data.meta, metrics, hiddenStatusIds, rectMapRef.current, scroll.y);
-    ctx.restore();
-
-    ctx.restore();
+      scale,
+      scroll,
+      drawCells: () => drawCells(
+        ctx,
+        layout,
+        state,
+        data,
+        trackerCatalog,
+        viewRect,
+        theme,
+        canCreate,
+        canMove,
+        rectMapRef.current,
+        dragRef.current,
+        labels,
+        hoverRef.current,
+        hoveredCardIssueIdRef.current,
+        hoveredSubtaskKeyRef.current,
+        metrics,
+        fontSize,
+        cardHeightCacheRef.current,
+        busyIssueIds,
+        timerSession,
+      ),
+      drawLaneLabels: laneType !== 'none'
+        ? () => drawLaneLabels(
+          ctx,
+          layout,
+          state.lanes,
+          theme,
+          canCreate,
+          defaultCreateStatusId ?? state.columns[0]?.id,
+          rectMapRef.current,
+          labels,
+          metrics,
+        )
+        : undefined,
+      drawDragOverlay: () => drawDragOverlay(
+        ctx,
+        state,
+        data,
+        trackerCatalog,
+        theme,
+        dragRef.current,
+        labels,
+        metrics,
+        fontSize,
+        layout,
+      ),
+      drawHeaders: () => drawHeaders(
+        ctx,
+        layout,
+        state.columns,
+        theme,
+        data.meta,
+        metrics,
+        hiddenStatusIds,
+        rectMapRef.current,
+        scroll.y,
+      ),
+    });
   };
 
   drawRef.current = draw;
 
-  function toBoardPoint(
-    event: React.PointerEvent | React.MouseEvent,
-    scroll: { x: number; y: number },
-    canvas: HTMLCanvasElement | null,
-    scale: number = 1
-  ) {
-    const rect = canvas?.getBoundingClientRect();
-    const clientX = event.clientX;
-    const clientY = event.clientY;
-    const offsetX = rect ? clientX - rect.left : clientX;
-    const offsetY = rect ? clientY - rect.top : clientY;
-
-    return {
-      x: offsetX / scale + scroll.x,
-      y: offsetY / scale + scroll.y,
-    };
-  }
-
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (dragRef.current?.phase === 'pending-drop') return;
     const point = toBoardPoint(event, scrollRef.current, canvasRef.current, scaleRef.current);
-    const hit = hitTest(point, rectMapRef.current, state, data);
+    const hit = hitTest(point, rectMapRef.current, data);
     const isBusy = (issueId: number) => busyIssueIds?.has(issueId) ?? false;
     switch (hit.kind) {
       case 'subtask_check': {
@@ -613,16 +558,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         if (isBusy(hit.issueId)) return;
         const issue = state.cardsById.get(hit.issueId);
         if (!issue || !canMoveIssue(issue)) return;
-        const originLaneId = resolveBoardLaneId(data, issue);
-        dragRef.current = {
-          issueId: hit.issueId,
-          start: point,
-          current: point,
-          origin: { statusId: issue.status_id, laneId: originLaneId },
-          allowedStatusIds: issue.allowed_status_ids ? new Set(issue.allowed_status_ids) : undefined,
-          phase: transitionDragPhase('idle', 'pointerdown') as Exclude<DragPhase, 'idle'>,
-          targetCellKey: null,
-        };
+        dragRef.current = createDragState(issue, point, data);
         event.currentTarget.setPointerCapture(event.pointerId);
         return;
       }
@@ -636,7 +572,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     const drag = dragRef.current;
 
     if (!drag) {
-      const hit = hitTest(point, rectMapRef.current, state, data);
+      const hit = hitTest(point, rectMapRef.current, data);
       const hoverSnapshot = getHoverSnapshot(hit);
       const issue = getIssueFromHover(state.cardsById, hoverSnapshot.hover);
       const tooltipText = issue ? getTooltipTextFromHover(issue, hoverSnapshot.hover) : undefined;
@@ -668,18 +604,10 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       return;
     }
 
-    drag.current = point;
-    if (drag.phase === 'pressed') {
-      const dx = Math.abs(point.x - drag.start.x);
-      const dy = Math.abs(point.y - drag.start.y);
-      if (dx + dy >= dragThreshold) {
-        drag.phase = transitionDragPhase(drag.phase, 'threshold-reached') as Exclude<DragPhase, 'idle'>;
-      }
-    }
+    dragRef.current = advanceDragState(drag, point, rectMapRef.current, data);
+    const nextDrag = dragRef.current;
 
-    if (drag.phase === 'dragging') {
-      const hit = hitTestCell(point, rectMapRef.current, data);
-      drag.targetCellKey = hit ? cellKey(hit.statusId, hit.laneId) : null;
+    if (nextDrag?.phase === 'dragging') {
       setCursor(getBoardCursor({ phase: 'dragging' }));
     }
 
@@ -696,28 +624,28 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     if (drag.phase !== 'dragging') {
       // If we released on the same card and didn't drag, open the dialog
       // except for subtask checkbox area which is already handled in handlePointerDown
-      const hit = hitTest(point, rectMapRef.current, state, data);
+      const hit = hitTest(point, rectMapRef.current, data);
       if (hit.kind === 'subtask_subject') onView(hit.subtaskId);
       if (hit.kind === 'card_subject') onView(hit.issueId);
       transitionDragState('pointerup-cancel');
       return;
     }
 
-    const hit = hitTestCell(point, rectMapRef.current, data);
+    const target = resolveDropTarget(point, rectMapRef.current, data);
     const draggedIssue = state.cardsById.get(drag.issueId);
-    if (!hit || !canMove || !canMoveIssue(draggedIssue)) {
+    if (!target || !canMove || !canMoveIssue(draggedIssue)) {
       transitionDragState('pointerup-cancel');
       return;
     }
 
     const issue = state.cardsById.get(drag.issueId);
-    const assignedToId = laneIdToAssignee(data, hit.laneId, issue?.assigned_to_id ?? null);
-    const priorityId = laneIdToPriority(data, hit.laneId, issue?.priority_id ?? null);
+    const assignedToId = laneIdToAssignee(data, target.laneId, issue?.assigned_to_id ?? null);
+    const priorityId = laneIdToPriority(data, target.laneId, issue?.priority_id ?? null);
     const assessment = assessDrop(
       drag.origin.statusId,
       drag.origin.laneId,
-      hit.statusId,
-      hit.laneId,
+      target.statusId,
+      target.laneId,
       drag.allowedStatusIds,
     );
     if (!shouldDispatchDrop(assessment)) {
@@ -727,8 +655,8 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     const accepted = onCommand({
       type: 'move_issue',
       issueId: drag.issueId,
-      statusId: hit.statusId,
-      laneId: hit.laneId,
+      statusId: target.statusId,
+      laneId: target.laneId,
       assignedToId,
       priorityId,
     });
@@ -738,7 +666,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     }
 
     transitionDragState('pointerup-dispatch');
-    drag.dropTargetCellKey = cellKey(hit.statusId, hit.laneId);
+    drag.dropTargetCellKey = target.cellKey;
     setCursor(getBoardCursor({ phase: 'pending-drop' }));
     schedulePendingDropFallback();
     scheduleRender();
@@ -834,106 +762,15 @@ function resizeCanvasBackingStoreIfNeeded(
   backingStore.dpr = dpr;
 }
 
-function computeLayout(
-  state: BoardState,
-  data: BoardData,
-  canCreate: boolean,
-  metrics: ReturnType<typeof getMetrics>,
-  containerWidth: number = 0,
-  fitMode: 'none' | 'width' = 'none',
-  measureCtx?: CanvasRenderingContext2D | null,
-  fontSize?: number,
-  cardHeightCache?: CardHeightCache
-) {
-  const columnCount = state.columnOrder.length;
-  const gridStartX = data.meta.lane_type === 'none' ? 0 : metrics.laneHeaderWidth;
-
-  // Calculate dynamic column width when fitMode is 'width'
-  let columnWidth = metrics.columnWidth;
-  if (fitMode === 'width' && containerWidth > 0 && columnCount > 0) {
-    const availableWidth = containerWidth - gridStartX;
-    const totalGapWidth = Math.max(0, columnCount - 1) * metrics.columnGap;
-    const calculatedWidth = Math.floor((availableWidth - totalGapWidth) / columnCount);
-    // Use the larger of calculated width or minimum width (200px)
-    columnWidth = Math.max(200, calculatedWidth);
-  }
-
-  const gridWidth =
-    columnCount * columnWidth + Math.max(0, columnCount - 1) * metrics.columnGap;
-  const headerHeight = metrics.headerHeight;
-  const lanes = data.meta.lane_type === 'none' ? ['none'] : state.laneOrder;
-
-  // Create adjusted metrics for lane height calculation
-  const adjustedMetrics = { ...metrics, columnWidth };
-
-  let currentY = headerHeight;
-  const laneLayouts = lanes.map((laneId) => {
-    const laneHeight = computeLaneHeight(state, data, laneId, canCreate, adjustedMetrics, measureCtx, fontSize, cardHeightCache);
-    const y = currentY;
-    currentY += laneHeight;
-    return { laneId, y, height: laneHeight };
-  });
-
-  const lastLane = laneLayouts[laneLayouts.length - 1];
-  const boardHeight =
-    (lastLane ? lastLane.y + lastLane.height : headerHeight) + metrics.boardPaddingBottom;
-
-  return {
-    gridStartX,
-    gridWidth,
-    headerHeight,
-    laneLayouts,
-    boardWidth: gridStartX + gridWidth,
-    boardHeight,
-    columnWidth,
+function createSubjectLineMeasurer(ctx: CanvasRenderingContext2D | null): SubjectLineMeasurer | undefined {
+  if (!ctx) return undefined;
+  return (text, maxWidth, fontSize) => {
+    ctx.font = `400 ${fontSize}px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif`;
+    return truncateTextLines(ctx, text, maxWidth, 2).length;
   };
 }
 
-function measureCardHeight(
-  issue: Issue,
-  metrics: ReturnType<typeof getMetrics>,
-  ctx?: CanvasRenderingContext2D | null,
-  fontSize?: number,
-  cardWidth?: number,
-  currentProjectId?: number
-): number {
-  let h = metrics.cardBaseHeight;
-  const metaFontSize = Math.max(10, (fontSize ?? 13) - 2);
-  if (issue.project && issue.project.id !== currentProjectId) {
-    h += metaFontSize + 7;
-  }
-
-  if (ctx && fontSize && cardWidth) {
-    ctx.font = `400 ${fontSize}px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif`;
-    const stripWidth = 5;
-    const contentW = cardWidth - metrics.cellPadding * 2 - stripWidth - 16;
-    // Action icons are drawn as hover overlays, so they do not reserve layout space.
-    const subjectW = contentW;
-    const lines = truncateTextLines(ctx, issue.subject, subjectW, 2);
-    if (lines.length > 1) {
-      h += (fontSize + 3) * (lines.length - 1);
-    }
-  }
-
-  const subtaskRows = flattenSubtasks(issue.subtasks);
-  if (subtaskRows.length > 0) {
-    h += 20; // Padding before subtasks (increased from 8)
-    h += subtaskRows.length * metrics.subtaskHeight;
-  }
-  return h;
-}
-
-export function makeSubtaskSignature(issue: Issue) {
-  const subtaskRows = flattenSubtasks(issue.subtasks);
-  const lastSubtaskId = subtaskRows[subtaskRows.length - 1]?.subtask.id ?? 0;
-  const closedCount = subtaskRows.filter(({ subtask }) => subtask.is_closed).length;
-  return `${subtaskRows.length}:${lastSubtaskId}:${closedCount}`;
-}
-
-export function makeCardHeightCacheKey(issue: Issue, fontSize: number | undefined, columnWidth: number | undefined, currentProjectId?: number) {
-  return [issue.id, issue.subject, makeSubtaskSignature(issue), fontSize ?? 'default', columnWidth ?? 'default', currentProjectId ?? 'default'].join('|');
-}
-
+// Keep the Canvas adapter for drawing and existing callers; cache logic lives in BoardLayout.
 export function measureCardHeightCached(
   issue: Issue,
   metrics: ReturnType<typeof getMetrics>,
@@ -943,51 +780,8 @@ export function measureCardHeightCached(
   cardWidth?: number,
   currentProjectId?: number
 ) {
-  if (!cache) return measureCardHeight(issue, metrics, ctx, fontSize, cardWidth, currentProjectId);
-
-  const key = makeCardHeightCacheKey(issue, fontSize, cardWidth, currentProjectId);
-  const cached = cache.get(key);
-  if (cached !== undefined) return cached;
-
-  const height = measureCardHeight(issue, metrics, ctx, fontSize, cardWidth, currentProjectId);
-  cache.set(key, height);
-  return height;
+  return measureLayoutCardHeightCached(issue, metrics, cache, createSubjectLineMeasurer(ctx ?? null), fontSize, cardWidth, currentProjectId);
 }
-
-function computeLaneHeight(
-  state: BoardState,
-  data: BoardData,
-  laneId: string | number,
-  canCreate: boolean,
-  metrics: ReturnType<typeof getMetrics>,
-  measureCtx?: CanvasRenderingContext2D | null,
-  fontSize?: number,
-  cardHeightCache?: CardHeightCache
-) {
-  let maxCellHeight = 0;
-
-  for (const statusId of state.columnOrder) {
-    const key = cellKey(statusId, laneId);
-    const cardIds = state.cardsByCell.get(key) ?? [];
-
-    let height = metrics.cellPadding * 2;
-    if (cardIds.length > 0) {
-      for (const cardId of cardIds) {
-        const issue = state.cardsById.get(cardId);
-        if (issue) {
-          height += measureCardHeightCached(issue, metrics, cardHeightCache, measureCtx, fontSize, metrics.columnWidth, data.meta.project_id);
-        }
-      }
-      height += (cardIds.length - 1) * metrics.cardGap;
-    }
-
-    maxCellHeight = Math.max(maxCellHeight, height);
-  }
-
-  if (data.meta.lane_type === 'none') return maxCellHeight;
-  return Math.max(maxCellHeight, metrics.laneTitleHeight);
-}
-
 
 function drawHeaders(
   ctx: CanvasRenderingContext2D,
@@ -1985,130 +1779,6 @@ function drawDragOverlay(
   ctx.globalAlpha = drag.phase === 'pending-drop' ? 0.65 : 0.9;
   drawCard(ctx, rect, issue, data, trackerCatalog, theme, true, labels, metrics, fontSize, undefined, undefined, false);
   ctx.restore();
-}
-
-function hitTest(
-  point: { x: number; y: number },
-  rectMap: RectMap,
-  state: BoardState,
-  data: BoardData
-): HitResult {
-  for (const [issueId, rect] of rectMap.workTimerButtons) {
-    if (pointInRect(point, rect)) return { kind: 'work_timer', issueId };
-  }
-  for (const [key, rect] of rectMap.subtaskWorkTimerButtons) {
-    if (pointInRect(point, rect)) {
-      const { issueId, subtaskId } = parseSubtaskKey(key);
-      return { kind: 'subtask_work_timer', issueId, subtaskId };
-    }
-  }
-  for (const [key, rect] of rectMap.subtaskEditButtons) {
-    if (pointInRect(point, rect)) {
-      const { issueId, subtaskId } = parseSubtaskKey(key);
-      return { kind: 'subtask_edit', issueId, subtaskId };
-    }
-  }
-  for (const [key, rect] of rectMap.subtaskDeleteButtons) {
-    if (pointInRect(point, rect)) {
-      const { issueId, subtaskId } = parseSubtaskKey(key);
-      return { kind: 'subtask_delete', issueId, subtaskId };
-    }
-  }
-  for (const [key, rect] of rectMap.subtaskChecks) {
-    if (pointInRect(point, rect)) {
-      const { issueId, subtaskId } = parseSubtaskKey(key);
-      return { kind: 'subtask_check', issueId, subtaskId };
-    }
-  }
-  for (const [key, rect] of rectMap.subtaskSubjects) {
-    if (pointInRect(point, rect)) {
-      const { issueId, subtaskId } = parseSubtaskKey(key);
-      return { kind: 'subtask_subject', issueId, subtaskId };
-    }
-  }
-  for (const [key, rect] of rectMap.subtaskRows) {
-    if (pointInRect(point, rect)) {
-      const { issueId, subtaskId } = parseSubtaskKey(key);
-      return { kind: 'subtask_row', issueId, subtaskId };
-    }
-  }
-  for (const [issueId, rect] of rectMap.editButtons) {
-    if (pointInRect(point, rect)) {
-      return { kind: 'edit', issueId };
-    }
-  }
-  for (const [issueId, rect] of rectMap.deleteButtons) {
-    if (pointInRect(point, rect)) return { kind: 'delete', issueId };
-  }
-  for (const [statusId, rect] of rectMap.visibilityButtons) {
-    if (pointInRect(point, rect)) {
-      return { kind: 'visibility', statusId };
-    }
-  }
-  for (const [issueId, rect] of rectMap.priorityBadges) {
-    if (pointInRect(point, rect)) {
-      return { kind: 'priority', issueId };
-    }
-  }
-  for (const [issueId, rect] of rectMap.dateBadges) {
-    if (pointInRect(point, rect)) {
-      return { kind: 'date', issueId };
-    }
-  }
-  for (const [issueId, rect] of rectMap.progressDonuts) {
-    if (pointInRect(point, rect)) {
-      return { kind: 'progress', issueId };
-    }
-  }
-  for (const [issueId, rect] of rectMap.cardSubjects) {
-    if (pointInRect(point, rect)) {
-      return { kind: 'card_subject', issueId };
-    }
-  }
-  for (const [issueId, rect] of rectMap.deleteButtons) {
-    if (pointInRect(point, rect)) return { kind: 'delete', issueId };
-  }
-
-  // Check subtask area before card - clicking on subtask area should not open dialog
-  for (const [issueId, rect] of rectMap.subtaskAreas) {
-    if (pointInRect(point, rect)) return { kind: 'subtask_area', issueId };
-  }
-
-  for (const [issueId, rect] of rectMap.cards) {
-    if (pointInRect(point, rect)) return { kind: 'card', issueId };
-  }
-    for (const [key, rect] of rectMap.addButtons) {
-      if (pointInRect(point, rect)) {
-        const [statusId, laneId] = parseCellKey(key, data);
-        return { kind: 'add', statusId, laneId };
-      }
-    }
-    for (const [laneId, rect] of rectMap.laneHeaders) {
-      if (pointInRect(point, rect)) {
-        return { kind: 'lane_header', laneId };
-      }
-    }
-    for (const [key, rect] of rectMap.cells) {
-    if (pointInRect(point, rect)) {
-      const [statusId, laneId] = parseCellKey(key, data);
-      return { kind: 'cell', statusId, laneId };
-    }
-  }
-  return { kind: 'empty' };
-}
-
-function hitTestCell(
-  point: { x: number; y: number },
-  rectMap: RectMap,
-  data: BoardData
-): { statusId: number; laneId: string | number } | null {
-  for (const [key, rect] of rectMap.cells) {
-    if (pointInRect(point, rect)) {
-      const [statusId, laneId] = parseCellKey(key, data);
-      return { statusId, laneId };
-    }
-  }
-  return null;
 }
 
 function getCardColor(trackerId: number | null | undefined, theme: CanvasTheme): string {

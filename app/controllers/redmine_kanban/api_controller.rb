@@ -123,10 +123,7 @@ module RedmineKanban
         board_context: board_context,
         operation_id: operation_id
       ).destroy(lock_version: lock_version)
-      result = enforce_mutation_response_limit(result) if result[:ok]
-      status = result[:ok] ? :ok : (result[:message] == I18n.t('redmine_kanban.error_permission_denied') ? :forbidden : :conflict)
-      status = :unprocessable_entity if result[:message] == I18n.t('redmine_kanban.error_lock_version_required')
-      render json: result, status: status
+      render_service_result(result)
     end
 
     private
@@ -257,11 +254,8 @@ module RedmineKanban
 
     def render_service_result(result)
       result = enforce_mutation_response_limit(result)
-      if result[:ok]
-        render json: result
-      else
-        render json: result, status: result[:http_status] || :unprocessable_entity
-      end
+      status = result[:ok] ? :ok : (result[:http_status] || :unprocessable_entity)
+      render json: result.except(:http_status), status: status
     end
 
     def enforce_mutation_response_limit(result)

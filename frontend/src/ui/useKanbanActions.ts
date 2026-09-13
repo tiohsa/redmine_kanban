@@ -1,17 +1,17 @@
 import { createTimeEntryOperation, type TimeEntryOperation } from './iframe/timeEntryOperation';
 import { useCallback, useRef, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import type { QueryKey } from '@tanstack/react-query';
 import type { BoardData, Issue } from './types';
-import { getJson, isHttpError, postJson } from './http';
-import { applyAncestorIssueUpdates, applyEntityReconciliation, applyMutationResponse, invalidateBoardSnapshot, isBoardSnapshotInvalidated, unresolvedInvalidationIds, useIssueMutation, type EntityReconciliationOptions } from './useIssueMutation';
+import { isHttpError, postJson } from './http';
+import { isBoardSnapshotInvalidated, useIssueMutation } from './useIssueMutation';
+import { useMutationReconciler } from './useMutationReconciler';
 import { findIssueInBoard } from './kanbanShared';
 import { applyLocalIssuePatch } from './boardState';
 import { findSubtask, isWorkflowTransitionError, resolveAssigneeName, resolveMutationError, resolvePriorityName, resolveSubtaskStatus, resolveBoardIssue, type IssueMutationResult, type MovePayload, type UpdatePayload } from './kanbanShared';
 import { discardBulkIdempotencyKey, getOrCreateBulkIdempotencyKey, stableSerialize, storageKeyForBulkSignature } from './bulkIdempotency';
 import { buildBulkCreateRequest, buildRestoreIssuePayload, isBulkCreateInput } from './kanbanActionPayloads';
-import { buildBoardCountsUrl, buildBoardEntitiesUrl, buildBoardMutationUrl, effectiveDependencyStatusIds, effectiveScopeStatusIds } from './boardQuery';
-import { getBoardFreshnessAuthority, releaseBoardFreshnessAuthority } from './asyncFreshness';
+import { buildBoardMutationUrl, effectiveDependencyStatusIds, effectiveScopeStatusIds } from './boardQuery';
 
 type Args = {
   baseUrl: string;
@@ -52,7 +52,7 @@ export function useKanbanActions({
   const [busyIssueIds, setBusyIssueIds] = useState<Set<number>>(new Set());
   const [pendingDeleteIssue, setPendingDeleteIssue] = useState<Issue | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
-  const queryClient = useQueryClient();
+  const { applyIssueMutationResponse, invalidateSnapshot, reconcileIssues, reconcileIssueIds, reconcileMutationResult } = useMutationReconciler({ baseUrl, boardQueryKey, data });
   const busyIssueIdsRef = useRef<Set<number>>(new Set());
   const busyMutationCountsRef = useRef(new Map<number, number>());
   const deletingIssueIdsRef = useRef(new Set<number>());
@@ -106,65 +106,6 @@ export function useKanbanActions({
     setIssueBusy(issueId, false);
   }, [setIssueBusy]);
 
-  const reconcileIssues = useCallback(async (issueIds: number[], options: EntityReconciliationOptions = {}) => {
-    const ids = [...new Set(issueIds)];
-    if (ids.length === 0) return true;
-    const requestData = queryClient.getQueryData<BoardData>(boardQueryKey) ?? data;
-    if (!requestData) return false;
-    const freshnessAuthority = getBoardFreshnessAuthority(queryClient, boardQueryKey);
-    const request = freshnessAuthority.beginEntityReconciliation(requestData, ids);
-    try {
-      const response = await getJson<{ ok: boolean } & Parameters<typeof applyEntityReconciliation>[1]>(
-        buildBoardEntitiesUrl(baseUrl, requestData.meta.project_ids ?? [], ids, effectiveScopeStatusIds(requestData), effectiveDependencyStatusIds(requestData)),
-      );
-      if (!response.ok) return false;
-      let applied = false;
-      let complete = false;
-      queryClient.setQueryData<BoardData>(boardQueryKey, (current) => {
-        if (!current) return current;
-        const missingIssueIds = freshnessAuthority.applicableNegativeIssueIds(request, current, response.missing_issue_ids ?? []);
-        if (missingIssueIds === null) return current;
-        applied = true;
-        complete = missingIssueIds.length === 0
-          && ids.every((id) => response.entities?.some((issue) => issue.id === id));
-        return applyEntityReconciliation(current, { ...response, missing_issue_ids: missingIssueIds }, options);
-      });
-      return applied && complete;
-    } catch (_error) {
-      // Callers that require a verified entity can fall back to an authoritative snapshot.
-      return false;
-    } finally {
-      freshnessAuthority.finish(request);
-      releaseBoardFreshnessAuthority(queryClient, boardQueryKey, freshnessAuthority);
-    }
-  }, [baseUrl, boardQueryKey, data, queryClient]);
-
-  const reconcileIssueIds = useCallback(async (issueIds: number[], options: EntityReconciliationOptions = {}) => {
-    await reconcileIssues(issueIds, options);
-  }, [reconcileIssues]);
-
-  const reconcileColumnCounts = useCallback(async (required: boolean) => {
-    if (!required || !data) return;
-    const requestData = queryClient.getQueryData<BoardData>(boardQueryKey) ?? data;
-    const freshnessAuthority = getBoardFreshnessAuthority(queryClient, boardQueryKey);
-    const request = freshnessAuthority.beginAggregateReconciliation(requestData);
-    try {
-      const response = await getJson<{ ok: boolean; columns?: BoardData['columns'] }>(
-        buildBoardCountsUrl(baseUrl, requestData.meta.project_ids ?? []),
-      );
-      queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
-        current && response.columns && freshnessAuthority.canApplyAggregateReconciliation(request, current)
-          ? { ...current, columns: response.columns }
-          : current
-      ));
-    } catch (_error) {
-      // Counts are auxiliary and must not turn a successful mutation into a rejection.
-    } finally {
-      freshnessAuthority.finish(request);
-      releaseBoardFreshnessAuthority(queryClient, boardQueryKey, freshnessAuthority);
-    }
-  }, [baseUrl, boardQueryKey, data, queryClient]);
-
   const moveIssueMutation = useIssueMutation<MovePayload, IssueMutationResult>({
     queryKey: boardQueryKey,
     mutationFn: async (payload) => {
@@ -198,12 +139,7 @@ export function useKanbanActions({
         is_closed: isClosed,
       });
     },
-    applyServer: (prev, result, payload, options = { applyTarget: true }) => {
-      const next = options.applyTarget
-        ? applyMutationResponse(prev, result)
-        : applyMutationResponse(prev, result, { excludeIssueId: payload.issueId });
-      return applyAncestorIssueUpdates(options.applyTarget || options.applyNonTarget ? next : prev, result.ancestor_updates);
-    },
+    applyServer: applyIssueMutationResponse,
     onError: (error, payload) => {
       setError(resolveMutationError(error, data?.labels, data?.labels.move_failed));
       if (isWorkflowTransitionError(error)) void reconcileIssueIds([payload.issueId]);
@@ -212,9 +148,7 @@ export function useKanbanActions({
       if (result.warning) setNotice(result.warning);
       if (isBoardSnapshotInvalidated(result)) return;
 
-      void reconcileIssueIds(unresolvedInvalidationIds(result));
-      void reconcileIssueIds(result.invalidations?.parent_ids ?? []);
-      void reconcileColumnCounts(Boolean(result.invalidations?.column_counts));
+      reconcileMutationResult(result, { responseHandled: true });
       const issue = result.issue;
       if (timeEntryOnClose && !isWorkTimerIssue(issue?.id ?? 0) && issue && data?.columns.find((column) => column.id === issue.status_id)?.is_closed) {
         if (issue.can_log_time) {
@@ -244,19 +178,10 @@ export function useKanbanActions({
         ...('priority_id' in patch ? { priority_name: resolvePriorityName(prev, patch.priority_id ?? null) } : {}),
       });
     },
-    applyServer: (prev, result, payload, options = { applyTarget: true }) => {
-      const next = options.applyTarget
-        ? applyMutationResponse(prev, result)
-        : applyMutationResponse(prev, result, { excludeIssueId: payload.issueId });
-      return applyAncestorIssueUpdates(options.applyTarget || options.applyNonTarget ? next : prev, result.ancestor_updates);
-    },
+    applyServer: applyIssueMutationResponse,
     onSuccess: (result) => {
       if (result.warning) setNotice(result.warning);
-      if (isBoardSnapshotInvalidated(result)) return;
-
-      void reconcileIssueIds(unresolvedInvalidationIds(result));
-      void reconcileIssueIds(result.invalidations?.parent_ids ?? []);
-      void reconcileColumnCounts(Boolean(result.invalidations?.column_counts));
+      reconcileMutationResult(result, { responseHandled: true });
     },
     onError: (error, payload) => {
       if (isWorkflowTransitionError(error)) void reconcileIssueIds([payload.issueId]);
@@ -298,19 +223,7 @@ export function useKanbanActions({
       }>(scopedUrl('/issues'), { issue: { ...payload, operation_id: clientOperationId() } }, 'POST');
     },
     onSuccess: (result, payload) => {
-      const snapshotInvalidated = isBoardSnapshotInvalidated(result);
-      if (snapshotInvalidated) {
-        invalidateBoardSnapshot(queryClient, boardQueryKey);
-      } else {
-        queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
-          current ? applyMutationResponse(current, result) : current
-        ));
-      }
-      if (!snapshotInvalidated) {
-        void reconcileIssueIds(unresolvedInvalidationIds(result));
-        void reconcileIssueIds(result.invalidations?.parent_ids ?? []);
-        void reconcileColumnCounts(Boolean(result.invalidations?.column_counts));
-      }
+      reconcileMutationResult(result);
       if (isBulkCreateInput(payload)) {
         const requestPayload = buildBulkCreateRequest(payload);
         discardBulkIdempotencyKey(storageKeyForBulkSignature(stableSerialize(requestPayload)));
@@ -338,19 +251,7 @@ export function useKanbanActions({
         return;
       }
       deleted = true;
-      const snapshotInvalidated = isBoardSnapshotInvalidated(response);
-      if (snapshotInvalidated) {
-        invalidateBoardSnapshot(queryClient, boardQueryKey);
-      } else {
-        queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
-          current ? applyMutationResponse(current, response) : current
-        ));
-      }
-      if (!snapshotInvalidated) {
-        void reconcileIssueIds(unresolvedInvalidationIds(response));
-        void reconcileIssueIds(response.invalidations?.parent_ids ?? []);
-        void reconcileColumnCounts(Boolean(response.invalidations?.column_counts));
-      }
+      reconcileMutationResult(response);
       setPendingDeleteIssue(undoIssue);
       // Deletion succeeded. A failed refetch is a board-loading problem, not a deletion failure;
       // keep the deleted issue available so the user can still use Undo.
@@ -364,7 +265,7 @@ export function useKanbanActions({
       deletingIssueIdsRef.current.delete(issueId);
       endIssueMutation(issueId);
     }
-  }, [beginIssueMutation, boardQueryKey, data, endIssueMutation, queryClient, reconcileColumnCounts, reconcileIssueIds, scopedUrl, setError]);
+  }, [beginIssueMutation, data, endIssueMutation, reconcileMutationResult, scopedUrl, setError]);
 
   const moveIssue = useCallback((issueId: number, statusId: number, assignedToId?: number | null, priorityId?: number | null) => {
     if (!data || isIssueBusy(issueId)) return false;
@@ -433,18 +334,14 @@ export function useKanbanActions({
       if (response.ok) {
         const snapshotInvalidated = isBoardSnapshotInvalidated(response);
         if (snapshotInvalidated) {
-          invalidateBoardSnapshot(queryClient, boardQueryKey);
+          invalidateSnapshot();
         } else {
           const restoredIssueIds = [...new Set(response.created_issues?.map((issue) => issue.id) ?? [])];
           const restoredIssuesReconciled = restoredIssueIds.length > 0
             && await reconcileIssues(restoredIssueIds, { treatAsCreated: true });
-          if (!restoredIssuesReconciled) invalidateBoardSnapshot(queryClient, boardQueryKey);
+          if (!restoredIssuesReconciled) invalidateSnapshot();
         }
-        if (!snapshotInvalidated) {
-          void reconcileIssueIds(unresolvedInvalidationIds(response));
-          void reconcileIssueIds(response.invalidations?.parent_ids ?? []);
-          void reconcileColumnCounts(Boolean(response.invalidations?.column_counts));
-        }
+        reconcileMutationResult(response, { responseHandled: true });
         setNotice(null);
         setPendingDeleteIssue(null);
       } else {
@@ -455,7 +352,7 @@ export function useKanbanActions({
     } finally {
       setIsRestoring(false);
     }
-  }, [boardQueryKey, data, isRestoring, pendingDeleteIssue, queryClient, reconcileColumnCounts, reconcileIssueIds, reconcileIssues, scopedUrl, setError, setNotice]);
+  }, [data, invalidateSnapshot, isRestoring, pendingDeleteIssue, reconcileMutationResult, reconcileIssues, scopedUrl, setError, setNotice]);
 
   return {
     busyIssueIds,
