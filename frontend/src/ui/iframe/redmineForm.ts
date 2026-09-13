@@ -84,7 +84,13 @@ export function isTimeEntryForm(form: HTMLFormElement): boolean {
 
 export function submitForm(form: HTMLFormElement): void {
   const submitButton = form.querySelector<HTMLElement>('input[type="submit"], button[type="submit"]');
-  if (submitButton) {
+  if (isTimeEntryForm(form)) {
+    // Enter-triggered submission is already being handled by the parent
+    // dialog. Calling requestSubmit/click here can be treated as a nested
+    // native submission and leave the iframe in its saving state without a
+    // network request.
+    form.submit();
+  } else if (submitButton) {
     submitButton.click();
   } else if (typeof form.requestSubmit === 'function') {
     form.requestSubmit();

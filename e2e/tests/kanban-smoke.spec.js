@@ -98,7 +98,7 @@ test('kanban page loads without request errors and without Loading text', async 
   expect(consoleErrors, consoleErrors.join('\n')).toEqual([]);
 });
 
-test('nested child can close and reopen while server column counts return to baseline', async ({ page, baseURL }) => {
+test('nested leaf can close and reopen while server column counts return to baseline', async ({ page, baseURL }) => {
   const redmineBase = baseURL || 'http://127.0.0.1:3002';
   const dataUrl = `${redmineBase}/projects/ecookbook/kanban/data`;
 
@@ -111,8 +111,10 @@ test('nested child can close and reopen while server column counts return to bas
   }, dataUrl));
   let initial = await getBoard();
   let parent = initial.issues.find((issue) => issue.subject === 'Kanban E2E parent issue');
-  let child = parent?.subtasks?.find((subtask) => subtask.subject === 'Kanban E2E nested child');
+  let nestedParent = parent?.subtasks?.find((subtask) => subtask.subject === 'Kanban E2E nested child');
+  let child = nestedParent?.subtasks?.find((subtask) => subtask.subject === 'Kanban E2E grandchild');
   expect(parent).toBeTruthy();
+  expect(nestedParent).toBeTruthy();
   expect(child).toBeTruthy();
   expect(child.tracker_id).toBeGreaterThan(0);
   expect(initial.lists.trackers.map((tracker) => tracker.id)).toContain(child.tracker_id);
@@ -160,7 +162,8 @@ test('nested child can close and reopen while server column counts return to bas
     expect(normalized.status).toBe(200);
     initial = await getBoard();
     parent = initial.issues.find((issue) => issue.subject === 'Kanban E2E parent issue');
-    child = parent?.subtasks?.find((subtask) => subtask.subject === 'Kanban E2E nested child');
+    nestedParent = parent?.subtasks?.find((subtask) => subtask.subject === 'Kanban E2E nested child');
+    child = nestedParent?.subtasks?.find((subtask) => subtask.subject === 'Kanban E2E grandchild');
     openColumn = initial.columns.find((column) => !column.is_closed && child.allowed_status_ids.includes(column.id));
     closedColumn = initial.columns.find((column) => column.is_closed && child.allowed_status_ids.includes(column.id));
     expect(openColumn).toBeTruthy();

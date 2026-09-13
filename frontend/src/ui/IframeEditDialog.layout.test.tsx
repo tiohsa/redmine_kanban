@@ -668,6 +668,7 @@ describe('IframeEditDialog layout variants', () => {
     };
     Object.defineProperty(iframe, 'contentWindow', { value: iframeWindow, configurable: true });
     Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+    vi.spyOn(doc.querySelector('#new_time_entry') as HTMLFormElement, 'submit').mockImplementation(() => undefined);
     fireEvent.load(iframe);
     await screen.findByRole('button', { name: labels.save });
 
@@ -718,6 +719,7 @@ describe('IframeEditDialog layout variants', () => {
     };
     Object.defineProperty(iframe, 'contentWindow', { value: iframeWindow, configurable: true });
     Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+    vi.spyOn(doc.querySelector('#new_time_entry') as HTMLFormElement, 'submit').mockImplementation(() => undefined);
     fireEvent.load(iframe);
 
     const unrelatedSubmit = new Event('submit', { bubbles: true, cancelable: true });
@@ -763,7 +765,7 @@ describe('IframeEditDialog layout variants', () => {
     };
     Object.defineProperty(iframe, 'contentWindow', { value: iframeWindow, configurable: true });
     Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
-    const submit = vi.spyOn(doc.querySelector('button') as HTMLButtonElement, 'click').mockImplementation(() => undefined);
+    const submit = vi.spyOn(doc.querySelector('#new_time_entry') as HTMLFormElement, 'submit').mockImplementation(() => undefined);
 
     fireEvent.load(iframe);
     const firstNativeSubmit = new Event('submit', { bubbles: true, cancelable: true });
@@ -798,7 +800,7 @@ describe('IframeEditDialog layout variants', () => {
     const iframeWindow = { location: { href: iframe.src }, document: doc, addEventListener: vi.fn(), removeEventListener: vi.fn() };
     Object.defineProperty(iframe, 'contentWindow', { value: iframeWindow, configurable: true });
     Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
-    const submit = vi.spyOn(doc.querySelector('button') as HTMLButtonElement, 'click').mockImplementation(() => undefined);
+    const submit = vi.spyOn(doc.querySelector('#new_time_entry') as HTMLFormElement, 'submit').mockImplementation(() => undefined);
     fireEvent.load(iframe);
     fireEvent.click(await screen.findByRole('button', { name: labels.save }));
     await waitFor(() => expect(submit).toHaveBeenCalledOnce());
@@ -809,7 +811,7 @@ describe('IframeEditDialog layout variants', () => {
     const state = await openTimeEntry();
     state.iframeWindow.location.href = new URL('/time_entries', state.iframe.src).href;
     state.doc.body.innerHTML = '<div id="errorExplanation">Hours is invalid</div>' + validTimeEntryForm;
-    const retrySubmit = vi.spyOn(state.doc.querySelector('button') as HTMLButtonElement, 'click').mockImplementation(() => undefined);
+    const retrySubmit = vi.spyOn(state.doc.querySelector('#new_time_entry') as HTMLFormElement, 'submit').mockImplementation(() => undefined);
     fireEvent.load(state.iframe);
     await waitFor(() => expect(state.onTimeEntryValidationError).toHaveBeenCalledOnce());
     const save = await screen.findByRole('button', { name: labels.save });
@@ -848,7 +850,7 @@ describe('IframeEditDialog layout variants', () => {
     expect((save as HTMLButtonElement).disabled).toBe(false);
 
     (state.doc.querySelector('[name="time_entry[hours]"]') as HTMLInputElement).value = '0.02';
-    const retrySubmit = vi.spyOn(state.doc.querySelector('button') as HTMLButtonElement, 'click').mockImplementation(() => undefined);
+    const retrySubmit = vi.spyOn(state.doc.querySelector('#new_time_entry') as HTMLFormElement, 'submit').mockImplementation(() => undefined);
     fireEvent.click(save);
     await waitFor(() => expect(retrySubmit).toHaveBeenCalledOnce());
     expect(state.submit).toHaveBeenCalledOnce();
@@ -935,7 +937,7 @@ describe('IframeEditDialog layout variants', () => {
     };
     Object.defineProperty(iframe, 'contentWindow', { value: iframeWindow, configurable: true });
     Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
-    const submit = vi.spyOn(doc.querySelector('button') as HTMLButtonElement, 'click').mockImplementation(() => undefined);
+    const submit = vi.spyOn(doc.querySelector('#new_time_entry') as HTMLFormElement, 'submit').mockImplementation(() => undefined);
 
     fireEvent.load(iframe);
     fireEvent.click(await screen.findByRole('button', { name: labels.save }));
@@ -987,7 +989,7 @@ describe('IframeEditDialog layout variants', () => {
     };
     Object.defineProperty(iframe, 'contentWindow', { value: iframeWindow, configurable: true });
     Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
-    vi.spyOn(doc.querySelector('button') as HTMLButtonElement, 'click').mockImplementation(() => undefined);
+    vi.spyOn(doc.querySelector('#new_time_entry') as HTMLFormElement, 'submit').mockImplementation(() => undefined);
 
     fireEvent.load(iframe);
     fireEvent.click(await screen.findByRole('button', { name: labels.save }));
