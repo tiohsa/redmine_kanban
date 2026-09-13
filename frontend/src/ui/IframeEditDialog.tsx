@@ -1,3 +1,5 @@
+import { canSubmitTimeEntry, type TimeEntryOperation } from './iframe/timeEntryOperation';
+import { mutationSucceeded, type TimerMutationResult } from './workTimer/timerStorage';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { applyLinkTargetBlank, getCleanDialogStyles, type CleanDialogStyleVariant } from './board/iframeStyles';
 import { IssueDialogHeader } from './IssueDialogHeader';
@@ -12,6 +14,8 @@ import {
   getActiveSaveForm,
   getRedmineFormErrorMessage,
   hasRedmineFormError,
+  hasRedmineSuccessNotice,
+  isTimeEntryForm,
   isIssueShowUrl,
   readNumericFormValue,
   shouldTreatEditLoadAsSuccess,
@@ -32,12 +36,16 @@ const COMPACT_ACTION_BUTTON_HEIGHT = 28;
 const COMPACT_ACTION_BUTTON_MIN_WIDTH = 112;
 
 type DialogMode = 'form' | 'saving' | 'issue-show' | 'error';
+type TimeEntryRecoveryState = 'none' | 'validation-sync-failed' | 'cleanup-failed';
+type DialogCloseOptions = { timeEntryConfirmed?: boolean };
 export type { SaveTarget } from './iframe/redmineForm';
 export {
   buildIssueEditUrl,
   findJournalEditForm,
   getActiveSaveForm,
   hasRedmineFormError,
+  hasRedmineSuccessNotice,
+  isTimeEntryForm,
   isIssueShowUrl,
   shouldTreatEditLoadAsSuccess,
   submitForm,
@@ -70,11 +78,8 @@ export function formatBulkSubtaskError(error: unknown, fallback: string): string
 }
 
 type Props = {
-  url: string;
-  issueId: number;
   issueTitle?: string;
   projectId?: number;
-  mode?: 'create' | 'edit' | 'time_entry';
   labels: Record<string, string>;
   baseUrl: string;
   queryKey: readonly unknown[];
@@ -82,17 +87,24 @@ type Props = {
   scopeStatusIds?: number[];
   dependencyStatusIds?: number[];
   boardEntityLimit?: number;
-  onClose: () => void;
+  onClose: (options?: DialogCloseOptions) => void;
   onSuccess: (message: string, issueId?: number) => void;
   onNativeWriteComplete?: () => void;
-};
+  onTimeEntrySubmitting?: () => Promise<TimerMutationResult> | TimerMutationResult;
+  onTimeEntryValidationError?: () => Promise<TimerMutationResult> | TimerMutationResult;
+  onTimeEntryUnknown?: () => Promise<TimerMutationResult> | TimerMutationResult;
+  onTimeEntrySuccess?: () => Promise<TimerMutationResult> | TimerMutationResult;
+} & ({ mode: 'time_entry'; timeEntryOperation: TimeEntryOperation; url?: never; issueId?: never } | { mode?: 'create' | 'edit'; url: string; issueId: number; timeEntryOperation?: never });
 
-export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = 'edit', labels, baseUrl, queryKey, projectIds = [], scopeStatusIds = [], dependencyStatusIds = scopeStatusIds, boardEntityLimit = 1500, onClose, onSuccess, onNativeWriteComplete }: Props) {
+export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, timeEntryOperation, issueTitle, projectId, mode = 'edit', labels, baseUrl, queryKey, projectIds = [], scopeStatusIds = [], dependencyStatusIds = scopeStatusIds, boardEntityLimit = 1500, onClose, onSuccess, onNativeWriteComplete, onTimeEntrySubmitting, onTimeEntryValidationError, onTimeEntryUnknown, onTimeEntrySuccess }: Props) {
+  const url = timeEntryOperation?.url ?? navigationUrl!;
+  const issueId = timeEntryOperation?.issueId ?? targetIssueId!;
   const [subtasks, setSubtasks] = useState<SubtaskCreateInput[]>([]);
   const [subtaskValidationError, setSubtaskValidationError] = useState<string | null>(null);
   const [trackerOptions, setTrackerOptions] = useState<Array<{ id: number; name: string }>>([]);
   const [parentTrackerId, setParentTrackerId] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [timeEntryRecoveryState, setTimeEntryRecoveryState] = useState<TimeEntryRecoveryState>('none');
   const [isSaveTransitioning, setIsSaveTransitioning] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [currentUrl, setCurrentUrl] = useState(url);
@@ -109,6 +121,12 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
   const saveTransitionRef = useRef(false);
   const successHandlingRef = useRef(false);
   const saveTargetRef = useRef<SaveTarget>(null);
+  const submitPreparationRef = useRef(false);
+  const nativeSubmitBypassRef = useRef(false);
+  const timeEntryUncertainRef = useRef(false);
+  const timeEntryConfirmedRef = useRef(false);
+  const iframeSubmitCleanupRef = useRef<(() => void) | null>(null);
+  const dialogClosingRef = useRef(false);
   const submitSubtasksAfterEditLoadRef = useRef(false);
   const handleSuccessRef = useRef<((targetIssueId: number) => void) | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -121,8 +139,13 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
   const dialogResizeCleanupRef = useRef<(() => void) | null>(null);
   const parentAttributesRef = useRef<Record<string, number | undefined>>({});
   const parentTrackerChangeCleanupRef = useRef<(() => void) | null>(null);
+  const onTimeEntryUnknownRef = useRef(onTimeEntryUnknown);
 
   const bulkMutation = useBulkSubtaskMutation(baseUrl, queryKey, projectIds, scopeStatusIds, dependencyStatusIds, boardEntityLimit, true);
+  const requestClose = useCallback(() => {
+    dialogClosingRef.current = true;
+    onClose(mode === 'time_entry' && timeEntryConfirmedRef.current ? { timeEntryConfirmed: true } : undefined);
+  }, [mode, onClose]);
   const hasSubtaskInput = useMemo(
     () => subtasks.some((subtask) => subtask.subject.trim().length > 0),
     [subtasks],
@@ -148,6 +171,14 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
     isSubmittingRef.current = isSubmitting;
   }, [isSubmitting]);
 
+  useEffect(() => {
+    onTimeEntryUnknownRef.current = onTimeEntryUnknown;
+  }, [onTimeEntryUnknown]);
+
+  useEffect(() => () => {
+    if (mode === 'time_entry' && isSubmittingRef.current && saveTargetRef.current === 'time_entry' && !timeEntryConfirmedRef.current) void onTimeEntryUnknownRef.current?.();
+  }, [mode]);
+
   const measureDialogHeight = useCallback(() => {
     const doc = iframeRef.current?.contentDocument;
     if (!doc) {
@@ -162,6 +193,12 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
     ));
   }, []);
 
+  const getSafeSaveForm = useCallback((doc: Document, currentUrl: string) => {
+    const active = getActiveSaveForm(doc, mode, currentUrl);
+    if (mode === 'time_entry' && (!active || !timeEntryOperation || !canSubmitTimeEntry(timeEntryOperation, active.form, currentUrl))) return null;
+    return active;
+  }, [mode, timeEntryOperation]);
+
   const bindIframeSizeObservers = useCallback((doc: Document) => {
     iframeSizeObserverCleanupRef.current?.();
 
@@ -174,7 +211,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
         if (isSubmittingRef.current && saveTargetRef.current === 'journal' && !hasRedmineFormError(doc) && !findJournalEditForm(doc)) {
           handleSuccessRef.current?.(issueId);
         } else if (!isSubmittingRef.current) {
-          const activeSaveForm = getActiveSaveForm(doc, mode, iframeRef.current?.contentWindow?.location.href ?? currentUrl);
+          const activeSaveForm = getSafeSaveForm(doc, iframeRef.current?.contentWindow?.location.href ?? currentUrl);
           setSaveTarget(activeSaveForm?.target ?? null);
           if (activeSaveForm?.target === 'journal') {
             setDialogMode('form');
@@ -182,7 +219,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
         }
       },
     );
-  }, [currentUrl, issueId, measureDialogHeight, mode]);
+  }, [currentUrl, getSafeSaveForm, issueId, measureDialogHeight]);
 
   const handleSuccess = useCallback(async (targetIssueId: number) => {
     if (successHandlingRef.current) return;
@@ -203,12 +240,26 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
     }
 
     if (completedSaveTarget === 'time_entry' || mode === 'time_entry') {
+      timeEntryConfirmedRef.current = true;
+      setTimeEntryRecoveryState('none');
+      try {
+        const synchronized = await onTimeEntrySuccess?.();
+        if (synchronized && !mutationSucceeded(synchronized)) {
+          setTimeEntryRecoveryState('cleanup-failed');
+          setIframeError(labels.timer_saved_sync_failed ?? 'Time was saved in Redmine. Timer state synchronization failed.');
+          return;
+        }
+      } catch {
+        setTimeEntryRecoveryState('cleanup-failed');
+        setIframeError(labels.timer_saved_sync_failed ?? 'Time was saved in Redmine. Timer state synchronization failed.');
+        return;
+      }
       setSaveTarget(null);
       saveTargetRef.current = null;
       setDialogMode('form');
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
       onSuccess(labels.successful_update, targetIssueId);
-      onClose();
       return;
     }
 
@@ -262,9 +313,61 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
     saveTargetRef.current = null;
     setIsSubmitting(false);
     onNativeWriteComplete?.();
-  }, [bulkMutation, labels, mode, onClose, onNativeWriteComplete, onSuccess, subtasks]);
+  }, [bulkMutation, labels, mode, onNativeWriteComplete, onSuccess, onTimeEntrySuccess, subtasks]);
 
-  const submitIssueForm = useCallback((form: HTMLFormElement, target: SaveTarget) => {
+  const completeValidationError = useCallback(async (iframe: HTMLIFrameElement, nextCurrentUrl: string) => {
+    const currentDoc = iframe.contentDocument;
+    const currentUrl = iframe.contentWindow?.location.href ?? nextCurrentUrl;
+    const currentTarget = currentDoc ? getSafeSaveForm(currentDoc, currentUrl) : null;
+    if (!currentDoc || currentTarget?.target !== 'time_entry') {
+      setTimeEntryRecoveryState('validation-sync-failed');
+      setIframeError(labels.timer_unknown ?? 'The time entry result is unknown. Check Redmine before entering it again.');
+      return;
+    }
+
+    let synchronized: TimerMutationResult | undefined;
+    try {
+      synchronized = await onTimeEntryValidationError?.();
+    } catch {
+      setTimeEntryRecoveryState('validation-sync-failed');
+      setIframeError(labels.timer_sync_failed ?? 'Timer state synchronization failed. Retry synchronization before submitting again.');
+      return;
+    }
+    if (synchronized && !mutationSucceeded(synchronized)) {
+      setTimeEntryRecoveryState('validation-sync-failed');
+      setIframeError(labels.timer_sync_failed ?? 'Timer state synchronization failed. Retry synchronization before submitting again.');
+      return;
+    }
+
+    const retryTarget = currentDoc ? getSafeSaveForm(currentDoc, iframe.contentWindow?.location.href ?? nextCurrentUrl) : null;
+    if (!currentDoc || retryTarget?.target !== 'time_entry') {
+      setTimeEntryRecoveryState('validation-sync-failed');
+      setIframeError(labels.timer_unknown ?? 'The time entry result is unknown. Check Redmine before entering it again.');
+      return;
+    }
+
+    setTimeEntryRecoveryState('none');
+    setDialogMode('error');
+    setIsSubmitting(false);
+    isSubmittingRef.current = false;
+    setSaveTarget(retryTarget.target);
+    saveTargetRef.current = null;
+    setIframeError(getRedmineFormErrorMessage(currentDoc));
+  }, [getSafeSaveForm, labels.timer_sync_failed, labels.timer_unknown, onTimeEntryValidationError]);
+
+  const retryValidationSynchronization = useCallback(() => {
+    if (timeEntryRecoveryState !== 'validation-sync-failed') return;
+    const iframe = iframeRef.current;
+    if (iframe) void completeValidationError(iframe, iframe.contentWindow?.location.href ?? url);
+  }, [completeValidationError, timeEntryRecoveryState, url]);
+
+  const submitIssueForm = useCallback(async (form: HTMLFormElement, target: SaveTarget) => {
+    if (target === 'time_entry' && (submitPreparationRef.current || isSubmittingRef.current || timeEntryUncertainRef.current || timeEntryConfirmedRef.current)) return;
+    if (target === 'time_entry' && (!timeEntryOperation || !canSubmitTimeEntry(timeEntryOperation, form, iframeRef.current?.contentWindow?.location.href ?? url))) {
+      setIframeError(labels.timer_conflict ?? 'Invalid Time Entry operation.');
+      return;
+    }
+    if (target === 'time_entry') submitPreparationRef.current = true;
     const formData = new FormData(form);
     const getVal = (name: string) => readNumericFormValue(formData, form, name);
 
@@ -276,6 +379,16 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
       assigned_to_id: getVal('issue[assigned_to_id]'),
     };
 
+    if (target === 'time_entry' && onTimeEntrySubmitting && (await onTimeEntrySubmitting()).outcome !== 'applied') {
+      submitPreparationRef.current = false;
+      setIframeError(labels.timer_conflict ?? 'Unable to secure the work timer session.');
+      return;
+    }
+    if (target === 'time_entry' && dialogClosingRef.current) {
+      submitPreparationRef.current = false;
+      return;
+    }
+    if (target === 'time_entry') submitPreparationRef.current = false;
     setDialogMode('saving');
     successHandlingRef.current = false;
     saveTransitionRef.current = false;
@@ -295,8 +408,13 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
         // Ignore jQuery access issues in the iframe.
       }
     }
-    submitForm(form);
-  }, [projectId]);
+    nativeSubmitBypassRef.current = true;
+    try {
+      submitForm(form);
+    } finally {
+      nativeSubmitBypassRef.current = false;
+    }
+  }, [labels.timer_conflict, onTimeEntrySubmitting, projectId, timeEntryOperation, url]);
 
   useEffect(() => {
     handleSuccessRef.current = (targetIssueId: number) => {
@@ -305,6 +423,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
   }, [handleSuccess]);
 
   const handleLoad = useCallback((e: React.SyntheticEvent<HTMLIFrameElement, Event>) => {
+    if (timeEntryConfirmedRef.current) return;
     const iframe = e.currentTarget;
     iframeRef.current = iframe;
 
@@ -316,6 +435,47 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
       }
 
       if (doc) {
+        // A successful Time Entry redirect must be resolved before optional
+        // iframe decoration.  Otherwise an observer/style error can turn a
+        // confirmed Redmine POST into the conservative `unknown` state.
+        if (isSubmittingRef.current) {
+          const outcome = resolveSaveLoadOutcome({
+            doc,
+            currentUrl: nextCurrentUrl,
+            saveTarget: saveTargetRef.current,
+            mode,
+            fallbackIssueId: issueId,
+            operation: timeEntryOperation,
+          });
+          if (outcome.type === 'success') {
+            void handleSuccess(outcome.issueId);
+            return;
+          }
+        }
+
+        iframeSubmitCleanupRef.current?.();
+        iframeSubmitCleanupRef.current = null;
+        if (mode === 'time_entry') {
+          const handleNativeSubmit = (event: Event) => {
+            // Native iframe forms belong to a different Window realm.
+            const form = event.target as HTMLFormElement | null;
+            if (!form || form.tagName !== 'FORM' || !isTimeEntryForm(form)) return;
+            if (nativeSubmitBypassRef.current) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            if (isSubmittingRef.current || submitPreparationRef.current) return;
+            submitPreparationRef.current = true;
+            // Let the native submit task finish before submitting the form.
+            // A microtask is still re-entrant and can suppress navigation
+            // after an Enter-triggered implicit submission.
+            setTimeout(() => {
+              submitPreparationRef.current = false;
+              void submitIssueForm(form, 'time_entry');
+            }, 0);
+          };
+          doc.addEventListener('submit', handleNativeSubmit, true);
+          iframeSubmitCleanupRef.current = () => doc.removeEventListener('submit', handleNativeSubmit, true);
+        }
         const trackerSelect = doc.querySelector<HTMLSelectElement>('select[name="issue[tracker_id]"], select#issue_tracker_id');
         if (trackerSelect) {
           setTrackerOptions(Array.from(trackerSelect.options).map((option) => ({ id: Number(option.value), name: option.textContent?.trim() ?? option.value })).filter((option) => option.id > 0));
@@ -336,11 +496,11 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
       const errorMessage = getRedmineFormErrorMessage(doc);
       setIframeError(errorMessage);
       if (!isSubmittingRef.current) {
-        const activeSaveForm = getActiveSaveForm(doc, mode, nextCurrentUrl);
+        const activeSaveForm = getSafeSaveForm(doc, nextCurrentUrl);
         setSaveTarget(activeSaveForm?.target ?? null);
         if (activeSaveForm?.target === 'issue' && submitSubtasksAfterEditLoadRef.current) {
           submitSubtasksAfterEditLoadRef.current = false;
-          submitIssueForm(activeSaveForm.form, activeSaveForm.target);
+          void submitIssueForm(activeSaveForm.form, activeSaveForm.target);
         } else if (activeSaveForm?.target === 'journal') {
           setDialogMode('form');
         } else if (isIssueShowUrl(nextCurrentUrl)) {
@@ -360,14 +520,14 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
             if (ev.key === 'Escape' && !isSubmittingRef.current) {
               ev.preventDefault();
               ev.stopPropagation();
-              onClose();
+              requestClose();
             }
           };
           iframe.contentWindow.addEventListener('keydown', handleIframeEscape, true);
           iframeEscapeCleanupRef.current = () => {
             iframe.contentWindow?.removeEventListener('keydown', handleIframeEscape, true);
-          };
-        }
+        };
+      }
 
       if (isSubmittingRef.current) {
         const outcome = resolveSaveLoadOutcome({
@@ -376,12 +536,17 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
           saveTarget: saveTargetRef.current,
           mode,
           fallbackIssueId: issueId,
+          operation: timeEntryOperation,
         });
         if (outcome.type === 'error') {
-          setDialogMode('error');
-          setIsSubmitting(false);
-          setSaveTarget(null);
-          saveTargetRef.current = null;
+          if (saveTargetRef.current === 'time_entry' || mode === 'time_entry') {
+            void completeValidationError(iframe, nextCurrentUrl);
+          } else {
+            setDialogMode('error');
+            setIsSubmitting(false);
+            setSaveTarget(null);
+            saveTargetRef.current = null;
+          }
         } else if (outcome.type === 'success') {
           void handleSuccess(outcome.issueId);
           return;
@@ -389,6 +554,18 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
           // Keep the submit lock while the iframe is still showing the form
           // that initiated this save. Redmine can reload that form before
           // navigating to the saved issue, and another click must not submit it again.
+        } else if (outcome.type === 'unknown' && (saveTargetRef.current === 'time_entry' || mode === 'time_entry')) {
+          void (async () => {
+            timeEntryUncertainRef.current = true;
+            setSaveTarget(null);
+            setIframeError(labels.timer_unknown ?? 'The time entry result is unknown. Check Redmine before entering it again.');
+            const synchronized = await onTimeEntryUnknown?.();
+            if (synchronized && !mutationSucceeded(synchronized)) {
+              setIframeError(labels.timer_sync_failed ?? 'Timer state synchronization failed. Retry synchronization before submitting again.');
+              return;
+            }
+            setIsSubmitting(false);
+          })();
         } else {
           setIsSubmitting(false);
         }
@@ -398,7 +575,21 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
       console.warn('Cannot access iframe content:', err);
       setIframeError(null);
       if (isSubmittingRef.current) {
-        setIsSubmitting(false);
+        if (saveTargetRef.current === 'time_entry' || mode === 'time_entry') {
+          void (async () => {
+            timeEntryUncertainRef.current = true;
+            setSaveTarget(null);
+            setIframeError(labels.timer_unknown ?? 'The time entry result is unknown. Check Redmine before entering it again.');
+            const synchronized = await onTimeEntryUnknown?.();
+            if (synchronized && !mutationSucceeded(synchronized)) {
+              setIframeError(labels.timer_sync_failed ?? 'Timer state synchronization failed. Retry synchronization before submitting again.');
+              return;
+            }
+            setIsSubmitting(false);
+          })();
+        } else {
+          setIsSubmitting(false);
+        }
       }
     } finally {
       setIsLoading(false);
@@ -406,17 +597,17 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
         measureDialogHeight();
       });
     }
-  }, [bindIframeSizeObservers, handleSuccess, issueId, measureDialogHeight, mode, onClose, submitIssueForm, url]);
+  }, [bindIframeSizeObservers, completeValidationError, getSafeSaveForm, handleSuccess, issueId, labels.timer_sync_failed, measureDialogHeight, mode, onTimeEntryUnknown, requestClose, submitIssueForm, url, timeEntryOperation, labels.timer_unknown]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !isSubmitting) {
-        onClose();
+        requestClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [onClose, isSubmitting]);
+  }, [isSubmitting, requestClose]);
 
   useEffect(() => {
     dialogResizeCleanupRef.current = observeDialogChrome(
@@ -441,10 +632,12 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
     dialogResizeCleanupRef.current = null;
     parentTrackerChangeCleanupRef.current?.();
     parentTrackerChangeCleanupRef.current = null;
+    iframeSubmitCleanupRef.current?.();
+    iframeSubmitCleanupRef.current = null;
   }, []);
 
   const handleSubmit = () => {
-    if (isSubmittingRef.current || saveTransitionRef.current) return;
+    if (isSubmittingRef.current || saveTransitionRef.current || submitPreparationRef.current) return;
     if (!iframeRef.current?.contentDocument || !iframeRef.current.contentWindow) return;
     if (subtaskValidationError) return;
 
@@ -467,12 +660,12 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
       return;
     }
 
-    const activeSaveForm = getActiveSaveForm(iframeRef.current.contentDocument, mode, currentUrl);
+    const activeSaveForm = getSafeSaveForm(iframeRef.current.contentDocument, iframeRef.current.contentWindow.location.href);
     if (!activeSaveForm) return;
 
     const { form, target } = activeSaveForm;
 
-    submitIssueForm(form, target);
+    void submitIssueForm(form, target);
   };
 
   const effectiveSaveTarget = saveTargetRef.current ?? saveTarget;
@@ -483,7 +676,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
       : effectiveSaveTarget === 'new-issue'
         ? (isSubmitting ? labels.creating : (labels.create_issue ?? labels.create))
         : (isSubmitting ? labels.saving : labels.save);
-  const showPrimaryAction = dialogMode === 'issue-show' || saveTarget !== null || isSubmitting;
+  const showPrimaryAction = timeEntryRecoveryState === 'none' && (dialogMode === 'issue-show' || saveTarget !== null || isSubmitting);
   const isViewDialog = mode !== 'create' && isIssueShowUrl(currentUrl || url);
   const resolvedIssueTitle =
     issueTitle && issueId > 0 && !issueTitle.includes(`#${issueId}`)
@@ -525,7 +718,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
       aria-modal="true"
       onClick={(event) => {
         if (event.target === event.currentTarget) {
-          onClose();
+          requestClose();
         }
       }}
     >
@@ -540,7 +733,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
           title={dialogTitle}
           linkUrl={issueDialogLinkUrl}
           linkAriaLabel={issueDialogLinkLabel}
-          onClose={onClose}
+              onClose={requestClose}
           closeAriaLabel={closeLabel}
           compact
           iconButtonSize={COMPACT_ICON_BUTTON_SIZE}
@@ -634,7 +827,7 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
           <button
             type="button"
             className="rk-btn"
-            onClick={onClose}
+            onClick={requestClose}
             disabled={isSubmitting}
             style={{
               height: `${COMPACT_ACTION_BUTTON_HEIGHT}px`,
@@ -643,6 +836,18 @@ export function IframeEditDialog({ url, issueId, issueTitle, projectId, mode = '
           >
             {labels.cancel}
           </button>
+          {timeEntryRecoveryState !== 'none' ? (
+            <button type="button" className="rk-btn rk-btn-primary" onClick={() => {
+              if (timeEntryRecoveryState === 'cleanup-failed') {
+                successHandlingRef.current = false;
+                void handleSuccess(issueId);
+              } else {
+                retryValidationSynchronization();
+              }
+            }}>
+              {labels.timer_retry_sync ?? 'Retry synchronization'}
+            </button>
+          ) : null}
           {showPrimaryAction ? (
             <button
               type="button"

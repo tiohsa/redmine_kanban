@@ -1,0 +1,60 @@
+{
+  "sessions": [
+    {
+      "version": 4,
+      "sessionId": "contract-editing",
+      "revision": 3,
+      "issueId": 101,
+      "subject": "Contract fixture",
+      "autoStop": false,
+      "state": "stopped_pending_record",
+      "segments": [{ "startedAt": 1700000000000, "stoppedAt": 1700000060000 }],
+      "userId": 7,
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000060000,
+      "recordingAttempt": { "id": "attempt-editing", "ownerTabId": "canvas-tab", "openedAt": 1700000061000, "phase": "editing" }
+    },
+    {
+      "version": 4,
+      "sessionId": "contract-submitting",
+      "revision": 3,
+      "issueId": 101,
+      "subject": "Contract fixture",
+      "autoStop": false,
+      "state": "stopped_pending_record",
+      "segments": [{ "startedAt": 1700000000000, "stoppedAt": 1700000060000 }],
+      "userId": 7,
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000060000,
+      "recordingAttempt": { "id": "attempt-submitting", "ownerTabId": "canvas-tab", "openedAt": 1700000061000, "phase": "submitting" }
+    },
+    {
+      "version": 4,
+      "sessionId": "contract-confirmed",
+      "revision": 3,
+      "issueId": 101,
+      "subject": "Contract fixture",
+      "autoStop": false,
+      "state": "stopped_pending_record",
+      "segments": [{ "startedAt": 1700000000000, "stoppedAt": 1700000060000 }],
+      "userId": 7,
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000060000,
+      "recordingAttempt": { "id": "attempt-confirmed", "ownerTabId": "kanban-tab", "openedAt": 1700000061000, "phase": "confirmed" }
+    },
+    {
+      "version": 4,
+      "sessionId": "contract-unknown",
+      "revision": 3,
+      "issueId": 101,
+      "subject": "Contract fixture",
+      "autoStop": false,
+      "state": "stopped_pending_record",
+      "segments": [{ "startedAt": 1700000000000, "stoppedAt": 1700000060000 }],
+      "userId": 7,
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000060000,
+      "recordingAttempt": { "id": "attempt-unknown", "ownerTabId": "canvas-tab", "openedAt": 1700000061000, "phase": "unknown" }
+    }
+  ]
+}

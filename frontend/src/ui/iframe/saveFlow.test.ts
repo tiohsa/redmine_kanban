@@ -12,6 +12,7 @@ describe('resolveSaveLoadOutcome', () => {
       saveTarget: 'issue',
       mode: 'edit',
       fallbackIssueId: 12,
+      operation: { origin: 'time_entry_on_close', issueId: 12, url: '/issues/12/time_entries/new' },
     })).toEqual({ type: 'keep-submitting' });
   });
 
@@ -33,5 +34,102 @@ describe('resolveSaveLoadOutcome', () => {
       mode: 'edit',
       fallbackIssueId: 42,
     })).toEqual({ type: 'error' });
+  });
+
+  it('completes a time entry when Redmine returns the new form with a success notice', () => {
+    expect(resolveSaveLoadOutcome({
+      doc: doc('<div id="flash_notice">Created</div><form id="new_time_entry"></form>'),
+      currentUrl: '/issues/12/time_entries/new',
+      saveTarget: 'time_entry',
+      mode: 'time_entry',
+      fallbackIssueId: 12,
+      operation: { origin: 'time_entry_on_close', issueId: 12, url: '/issues/12/time_entries/new' },
+    })).toEqual({ type: 'success', issueId: 12 });
+  });
+
+  it('marks a time entry result unknown when the new form has no success notice', () => {
+    expect(resolveSaveLoadOutcome({
+      doc: doc('<form id="new_time_entry"></form>'),
+      currentUrl: '/issues/12/time_entries/new',
+      saveTarget: 'time_entry',
+      mode: 'time_entry',
+      fallbackIssueId: 12,
+      operation: { origin: 'time_entry_on_close', issueId: 12, url: '/issues/12/time_entries/new' },
+    })).toEqual({ type: 'unknown' });
+  });
+
+  it.each([
+    '/login', '/error', '/plugins/other/result', '/issues/99',
+    '/login?back_url=/issues/12', '/login?back_url=/time_entries/new',
+    '/plugins/other/time_entries/new/preview', '/plugins/other/issues/12',
+    '/time_entries/new/preview', '/error#/time_entries/new',
+  ])('does not accept an unexpected time entry redirect: %s', (currentUrl) => {
+    expect(resolveSaveLoadOutcome({
+      doc: doc('<div id="flash_notice">Unrelated success</div><main>Unexpected page</main>'),
+      currentUrl,
+      saveTarget: 'time_entry',
+      mode: 'time_entry',
+      fallbackIssueId: 12,
+      operation: { origin: 'time_entry_on_close', issueId: 12, url: '/issues/12/time_entries/new' },
+    })).toEqual({ type: 'unknown' });
+  });
+
+  it('accepts the configured Redmine issue redirect after a time entry save', () => {
+    expect(resolveSaveLoadOutcome({
+      doc: doc('<main>Issue</main>'),
+      currentUrl: '/issues/12',
+      saveTarget: 'time_entry',
+      mode: 'time_entry',
+      fallbackIssueId: 12,
+      operation: { origin: 'time_entry_on_close', issueId: 12, url: '/issues/12/time_entries/new' },
+    })).toEqual({ type: 'success', issueId: 12 });
+  });
+
+  it.each(['/redmine/issues/12?tab=history#change-1', '/redmine/time_entries/new', '/redmine/issues/12/time_entries/new'])('accepts confirmed outcomes for a subdirectory installation: %s', (path) => {
+    expect(resolveSaveLoadOutcome({
+      doc: doc('<div id="flash_notice">Created</div>'),
+      currentUrl: `https://example.test${path}`,
+      operation: { origin: 'work_timer', issueId: 12, url: 'https://example.test/redmine/issues/12/time_entries/new?back_url=%2Fredmine%2Fissues%2F12', recording: { origin: 'timer', scope: { instanceKey: 'https://example.test/redmine', userId: 7 }, sessionId: 's', issueId: 12, attemptId: 'a', ownerTabId: 'tab' } },
+      saveTarget: 'time_entry', mode: 'time_entry', fallbackIssueId: 12,
+    })).toEqual({ type: 'success', issueId: 12 });
+  });
+
+  it.each(['https://other.test/redmine/issues/12', 'https://example.test/other/issues/12'])('rejects a different Redmine instance: %s', (currentUrl) => {
+    expect(resolveSaveLoadOutcome({
+      doc: doc('<div id="flash_notice">Created</div>'),
+      currentUrl,
+      operation: { origin: 'time_entry_on_close', issueId: 12, url: 'https://example.test/redmine/issues/12/time_entries/new' },
+      saveTarget: 'time_entry', mode: 'time_entry', fallbackIssueId: 12,
+    })).toEqual({ type: 'unknown' });
+  });
+});
+
+describe('Time Entry error identity', () => {
+  const operation = { origin: 'time_entry_on_close' as const, issueId: 12, url: 'https://example.test/redmine/issues/12/time_entries/new' };
+  const form = '<form id="new_time_entry" action="/redmine/time_entries"><input name="time_entry[issue_id]" value="12"></form>';
+  const error = '<div class="flash error">Unexpected error</div>';
+  const resolve = (currentUrl: string, html = error + form) => resolveSaveLoadOutcome({
+    doc: doc(html), currentUrl, operation, saveTarget: 'time_entry', mode: 'time_entry', fallbackIssueId: 12,
+  });
+
+  it.each(['/error', '/login', '/plugins/other/error', '/redmine/unknown', '/redmine/issues/99/time_entries/new',
+    '/other/time_entries', 'https://other.test/redmine/time_entries', '/redmine/issues/12'])('keeps errors at %s unknown even with a matching form', path => {
+    expect(resolve(new URL(path, operation.url).href)).toEqual({ type: 'unknown' });
+  });
+  it.each(['/redmine/time_entries', '/redmine/issues/12/time_entries', '/redmine/time_entries/new', '/redmine/issues/12/time_entries/new'])('accepts a verified validation form at %s', path => {
+    expect(resolve(new URL(path, operation.url).href)).toEqual({ type: 'error' });
+  });
+  it.each([
+    error, error + form.replace('value="12"', 'value="99"'),
+    error + form.replace('/redmine/time_entries', '/other/time_entries'),
+    error + form.replace('new_time_entry', 'other_form'),
+  ])('rejects incomplete or mismatched validation identity', html => {
+    expect(resolve(operation.url, html)).toEqual({ type: 'unknown' });
+  });
+  it('rejects missing and mismatched operation identity', () => {
+    for (const candidate of [undefined, { ...operation, issueId: 99 }]) {
+      expect(resolveSaveLoadOutcome({ doc: doc(error + form), currentUrl: operation.url, operation: candidate,
+        saveTarget: 'time_entry', mode: 'time_entry', fallbackIssueId: 12 })).toEqual({ type: 'unknown' });
+    }
   });
 });

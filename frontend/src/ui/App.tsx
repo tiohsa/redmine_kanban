@@ -18,6 +18,9 @@ import { useKanbanActions } from './useKanbanActions';
 import { invalidateBoardSnapshot } from './useIssueMutation';
 import { useKanbanDialogs } from './useKanbanDialogs';
 import { useKanbanPreferences } from './useKanbanPreferences';
+import { useWorkTimer } from './workTimer/useWorkTimer';
+import { GlobalTimer, OtherNoticeModal, TimerStartModal } from './workTimer/WorkTimer';
+import { createTimeEntryOperation, type TimeEntryOperation } from './iframe/timeEntryOperation';
 
 type Props = { dataUrl: string; initialCurrentUserId: number; initialLabels?: Record<string, string> };
 
@@ -59,6 +62,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
   const boardRef = useRef<CanvasBoardHandle>(null);
   const dismissNotice = useCallback(() => setNotice(null), []);
   const dismissError = useCallback(() => setError(null), []);
+  const [workTimeEntry, setWorkTimeEntry] = useState<Extract<TimeEntryOperation, { origin: 'work_timer' }> | null>(null);
 
   const {
     projectScope,
@@ -109,6 +113,13 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
   });
 
   const data = boardQuery.data ?? null;
+  const timerInstanceKey = useMemo(() => {
+    const pathname = new URL(dataUrl, window.location.origin).pathname;
+    const projectIndex = pathname.indexOf('/projects/');
+    return `${window.location.origin}${projectIndex >= 0 ? pathname.slice(0, projectIndex) : ''}`;
+  }, [dataUrl]);
+  const timerScope = useMemo(() => ({ instanceKey: timerInstanceKey, userId: data?.meta.current_user_id ?? initialCurrentUserId }), [data?.meta.current_user_id, initialCurrentUserId, timerInstanceKey]);
+  const workTimer = useWorkTimer({ scope: timerScope, labels: data?.labels ?? initialLabels, onError: setError });
 
   const loading = boardQuery.isLoading;
   const labels = data?.labels;
@@ -226,9 +237,10 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     data,
     refresh,
     timeEntryOnClose,
+    isWorkTimerIssue: (issueId) => String(workTimer.session?.issueId) === String(issueId),
     setNotice,
     setError,
-    setIframeTimeEntryUrl: dialogs.setIframeTimeEntryUrl,
+    setIframeTimeEntryOperation: dialogs.setIframeTimeEntryOperation,
   });
 
   const primaryFilteredData = useMemo(
@@ -390,6 +402,12 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
             onView={dialogs.openView}
             onDelete={actions.requestDelete}
             onEditClick={dialogs.openIssueUrl}
+            timerSession={workTimer.session ? { sessionId: workTimer.session.sessionId, issueId: workTimer.session.issueId, state: workTimer.session.state } : null}
+            onWorkTimer={(issueId) => {
+              if (!data) return;
+              const issue = findIssueForAction(data, issueId);
+              if (issue) workTimer.open(issue);
+            }}
             onPriorityClick={(issueId, currentPriorityId, x, y) => {
               dialogs.setPriorityPopup({ issueId, currentId: currentPriorityId, x, y });
             }}
@@ -412,6 +430,10 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
           />
         ) : null}
       </div>
+
+      <GlobalTimer labels={toolbarData.labels} session={workTimer.session} remoteOwner={workTimer.remoteOwner} openPendingRequest={workTimer.pendingManageRequest} onRecover={(expected) => { void workTimer.recover(expected); }} onRetrySynchronization={(expected) => { void workTimer.retrySynchronization(expected); }} onExtend={(minutes) => { void workTimer.extendTimer(minutes); }} onResume={(minutes) => { void workTimer.extendTimer(minutes); }} onDiscard={() => { void workTimer.discard(); }} onStop={() => { void workTimer.stopTimer().then((context) => { if (context) setWorkTimeEntry(createTimeEntryOperation(timerInstanceKey, Number(context.issueId), context)); }); }} onRecord={() => { void workTimer.record().then((context) => { if (context) setWorkTimeEntry(createTimeEntryOperation(timerInstanceKey, Number(context.issueId), context)); }); }} onResolveUnknown={(resolution, expected) => { void workTimer.lifecycle.resolve(expected, resolution); }} />
+      <TimerStartModal labels={toolbarData.labels} startIssue={workTimer.startIssue} autoStop={workTimer.preferences.autoStop} onCloseStart={() => workTimer.setStartIssue(null)} onStart={(minutes, autoStop) => { void workTimer.start(minutes, autoStop); }} />
+      <OtherNoticeModal labels={toolbarData.labels} session={workTimer.conflictSession} onClose={() => workTimer.setConflictSession(null)} />
 
       {data && dialogs.modal ? (
         <KanbanIssueModal
@@ -531,10 +553,9 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
         />
       ) : null}
 
-      {dialogs.iframeTimeEntryUrl && data ? (
+      {dialogs.iframeTimeEntryOperation && data ? (
         <IframeEditDialog
-          url={dialogs.iframeTimeEntryUrl}
-          issueId={0}
+          timeEntryOperation={dialogs.iframeTimeEntryOperation}
           mode="time_entry"
           labels={data.labels}
           baseUrl={baseUrl}
@@ -542,11 +563,27 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
           projectIds={data.meta.project_ids ?? []}
           scopeStatusIds={effectiveScopeStatusIds(data)}
           dependencyStatusIds={effectiveDependencyStatusIds(data)}
-          onClose={() => dialogs.setIframeTimeEntryUrl(null)}
+          onClose={() => dialogs.setIframeTimeEntryOperation(null)}
           onSuccess={(message) => {
             setNotice(message);
-            dialogs.setIframeTimeEntryUrl(null);
+            dialogs.setIframeTimeEntryOperation(null);
           }}
+        />
+      ) : null}
+
+      {workTimeEntry && data ? (
+        <IframeEditDialog
+          timeEntryOperation={workTimeEntry}
+          mode="time_entry"
+          labels={data.labels}
+          baseUrl={baseUrl}
+          queryKey={boardQueryKey}
+          onClose={(options) => { if (!options?.timeEntryConfirmed) void workTimer.lifecycle.close(workTimeEntry.recording); setWorkTimeEntry(null); }}
+          onSuccess={(message) => { setNotice(message); setWorkTimeEntry(null); }}
+          onTimeEntrySubmitting={() => workTimer.lifecycle.submitting(workTimeEntry.recording)}
+          onTimeEntryValidationError={() => workTimer.lifecycle.validationError(workTimeEntry.recording)}
+          onTimeEntryUnknown={() => workTimer.lifecycle.unknown(workTimeEntry.recording)}
+          onTimeEntrySuccess={() => workTimer.lifecycle.complete(workTimeEntry.recording)}
         />
       ) : null}
 

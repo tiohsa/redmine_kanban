@@ -119,7 +119,22 @@ describe('IframeEditDialog edit success detection', () => {
     expect(getActiveSaveForm(doc, 'create', '/issues/123/edit')?.target).toBe('issue');
   });
 
-  it('clicks the submit button before falling back to requestSubmit or submit', () => {
+  it('submits time entries directly after parent dialog validation', () => {
+    const doc = createDoc('<form id="new_time_entry"><button type="submit">Save</button></form>');
+    const form = doc.querySelector('form') as HTMLFormElement;
+    const button = doc.querySelector('button') as HTMLButtonElement;
+    const clickSpy = vi.spyOn(button, 'click').mockImplementation(() => undefined);
+    const requestSubmitSpy = vi.spyOn(form, 'requestSubmit').mockImplementation(() => undefined);
+    const submitSpy = vi.spyOn(form, 'submit').mockImplementation(() => undefined);
+
+    submitForm(form);
+
+    expect(submitSpy).toHaveBeenCalledOnce();
+    expect(clickSpy).not.toHaveBeenCalled();
+    expect(requestSubmitSpy).not.toHaveBeenCalled();
+  });
+
+  it('uses the submit button for ordinary forms', () => {
     const doc = createDoc('<form><button type="submit">Save</button></form>');
     const form = doc.querySelector('form') as HTMLFormElement;
     const button = doc.querySelector('button') as HTMLButtonElement;

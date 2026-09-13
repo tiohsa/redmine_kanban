@@ -534,6 +534,75 @@ afterEach(() => {
     });
   });
 
+  it.each([
+    { nested: false, permission: true, busy: false },
+    { nested: true, permission: true, busy: false },
+    { nested: false, permission: false, busy: false },
+    { nested: false, permission: true, busy: true },
+  ])('routes child worktime with its own permission and ID: %j', async ({ nested, permission, busy }) => {
+    const target = { id: 30, subject: 'Timer target', status_id: 1, is_closed: false, can_log_time: permission, permissions: { can_edit: true, can_delete: true, can_move: true } };
+    const issue = makeIssue(2, { can_log_time: !permission, subtasks: nested
+      ? [{ id: 20, subject: 'Middle', status_id: 1, is_closed: false, subtasks: [target] }] : [target] });
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const context = createCanvasContextWithSpies();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+    const onWorkTimer = vi.fn();
+    const onView = vi.fn();
+    const onEdit = vi.fn();
+    const { container } = render(<CanvasBoard data={data} state={state} canMove canCreate
+      onCommand={vi.fn()} onCreate={vi.fn()} onEdit={onEdit} onView={onView} onDelete={vi.fn()}
+      onEditClick={vi.fn()} labels={data.labels} onWorkTimer={onWorkTimer} busyIssueIds={busy ? new Set([30]) : undefined} />);
+    const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
+    await waitFor(() => expect(context.fillText).toHaveBeenCalledWith('Timer target', expect.any(Number), expect.any(Number)));
+    expect(context.fillText.mock.calls.some(([text]) => text === 'play_arrow')).toBe(false);
+    const [, x, y] = context.fillText.mock.calls.find(([text]) => text === 'Timer target')!;
+    context.fillText.mockClear();
+    fireEvent.pointerMove(canvas, { clientX: x + 5, clientY: y + 5 });
+    await waitFor(() => expect(context.fillText).toHaveBeenCalledWith('edit', expect.any(Number), expect.any(Number)));
+    const edit = context.fillText.mock.calls.find(([text]) => text === 'edit')!;
+    const timer = context.fillText.mock.calls.find(([text]) => text === 'play_arrow');
+    if (permission) {
+      expect(timer).toBeTruthy();
+      expect(timer![1]).toBeLessThan(edit[1]);
+      const timerPoint = { clientX: timer![1] + 5, clientY: timer![2] };
+      context.fillText.mockClear();
+      fireEvent.pointerMove(canvas, timerPoint);
+      await waitFor(() => expect(context.fillText).toHaveBeenCalledWith('play_arrow', expect.any(Number), expect.any(Number)));
+      expect((container.querySelector('.rk-canvas-board') as HTMLElement).style.cursor).toBe('pointer');
+      fireEvent.pointerDown(canvas, timerPoint);
+      expect(onWorkTimer.mock.calls).toEqual(busy ? [] : [[30]]);
+    } else {
+      expect(timer).toBeUndefined();
+      fireEvent.pointerDown(canvas, { clientX: edit[1] - 15, clientY: edit[2] });
+      expect(onWorkTimer).not.toHaveBeenCalled();
+    }
+    expect(onEdit).not.toHaveBeenCalled();
+    expect(onView).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['running', 'timer'], ['expired', 'timer_off'], ['stopped_pending_record', 'pending_actions'],
+  ] as const)('shows the active nested timer without hover: %s', async (timerState, icon) => {
+    const issue = makeIssue(2, { subtasks: [{ id: 20, subject: 'Child', status_id: 1, is_closed: false,
+      subtasks: [{ id: 30, subject: 'Grandchild', status_id: 1, is_closed: false, can_log_time: true, permissions: { can_move: true, can_edit: true, can_delete: true } }] }] });
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const context = createCanvasContextWithSpies();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+    const onWorkTimer = vi.fn();
+    const { container } = render(<CanvasBoard data={data} state={state} canMove canCreate
+      onCommand={vi.fn()} onCreate={vi.fn()} onEdit={vi.fn()} onView={vi.fn()} onDelete={vi.fn()}
+      onEditClick={vi.fn()} labels={data.labels} onWorkTimer={onWorkTimer} timerSession={{ issueId: 30, state: timerState }} />);
+    await waitFor(() => expect(context.fillText).toHaveBeenCalledWith(icon, expect.any(Number), expect.any(Number)));
+    const [, x, y] = context.fillText.mock.calls.find(([text]) => text === icon)!;
+    context.fillText.mockClear();
+    fireEvent.pointerMove(container.querySelector('canvas.rk-canvas')!, { clientX: x + 5, clientY: y });
+    await waitFor(() => expect(context.fillText).toHaveBeenCalledWith(icon, x, y));
+    fireEvent.pointerDown(container.querySelector('canvas.rk-canvas')!, { clientX: x + 5, clientY: y });
+    expect(onWorkTimer).toHaveBeenCalledWith(30);
+  });
+
   it('draws completed issue and subtask titles in canvas with strikethrough lines', async () => {
     const issue = makeIssue(2, {
       subject: 'Closed issue',

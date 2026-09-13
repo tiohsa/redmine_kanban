@@ -2,6 +2,7 @@ export type IframeMode = 'create' | 'edit' | 'time_entry';
 export type SaveTarget = 'issue' | 'new-issue' | 'journal' | 'time_entry' | null;
 
 const REDMINE_ERROR_SELECTORS = ['#errorExplanation', '.flash.error', '.flash-error', '#flash_error', '.conflict'] as const;
+const REDMINE_SUCCESS_SELECTORS = ['#flash_notice', '.flash.notice', '.flash-notice'] as const;
 
 export function hasRedmineFormError(doc: Document): boolean {
   return REDMINE_ERROR_SELECTORS.some((selector) => doc.querySelector(selector) !== null);
@@ -13,6 +14,10 @@ export function getRedmineFormErrorMessage(doc: Document): string | null {
     if (text) return text;
   }
   return null;
+}
+
+export function hasRedmineSuccessNotice(doc: Document): boolean {
+  return REDMINE_SUCCESS_SELECTORS.some((selector) => doc.querySelector(selector)?.textContent?.trim());
 }
 
 export function isIssueShowUrl(currentUrl: string): boolean {
@@ -73,9 +78,19 @@ export function getActiveSaveForm(
   };
 }
 
+export function isTimeEntryForm(form: HTMLFormElement): boolean {
+  return form.matches('form#new_time_entry');
+}
+
 export function submitForm(form: HTMLFormElement): void {
   const submitButton = form.querySelector<HTMLElement>('input[type="submit"], button[type="submit"]');
-  if (submitButton) {
+  if (isTimeEntryForm(form)) {
+    // Enter-triggered submission is already being handled by the parent
+    // dialog. Calling requestSubmit/click here can be treated as a nested
+    // native submission and leave the iframe in its saving state without a
+    // network request.
+    form.submit();
+  } else if (submitButton) {
     submitButton.click();
   } else if (typeof form.requestSubmit === 'function') {
     form.requestSubmit();

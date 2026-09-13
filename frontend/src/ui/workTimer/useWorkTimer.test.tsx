@@ -1,0 +1,138 @@
+// @vitest-environment jsdom
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Issue } from '../types';
+import { beginRecording, createTimerSession, stop } from './timerDomain';
+import { getTabId, keysFor, load, mutate, type TimerMutationResult } from './timerStorage';
+import { GlobalTimer, OtherNoticeModal } from './WorkTimer';
+import { useWorkTimer } from './useWorkTimer';
+
+const scope = { instanceKey: 'https://example.test/redmine', userId: 7 };
+
+function PendingCardHarness() {
+  const timer = useWorkTimer({ scope, labels: {}, onError: vi.fn() });
+  const callbacks = {
+    onExtend: vi.fn(), onStop: vi.fn(), onRecord: vi.fn(), onResume: vi.fn(), onDiscard: vi.fn(),
+    onResolveUnknown: vi.fn(), onRecover: vi.fn(), onRetrySynchronization: vi.fn(),
+  };
+  return <>
+    <button type="button" onClick={() => timer.open({ id: 1, subject: 'Issue', can_log_time: true } as Issue)}>Worktime #1</button>
+    <button type="button" onClick={() => timer.open({ id: 2, subject: 'Other issue', can_log_time: true } as Issue)}>Worktime #2</button>
+    <GlobalTimer labels={{}} session={timer.session} remoteOwner={timer.remoteOwner} openPendingRequest={timer.pendingManageRequest} {...callbacks} />
+    <OtherNoticeModal labels={{}} session={timer.conflictSession} onClose={() => timer.setConflictSession(null)} />
+  </>;
+}
+
+describe('useWorkTimer recording ownership', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    vi.stubGlobal('navigator', { locks: { request: async (_name: string, _options: unknown, callback: () => unknown) => callback() } });
+    localStorage.setItem(keysFor(scope).session, JSON.stringify(stop(createTimerSession(1, 'Issue', 30, false, 7))));
+  });
+  afterEach(cleanup);
+
+  it('opens only one recording context for simultaneous record requests', async () => {
+    const { result } = renderHook(() => useWorkTimer({ scope, labels: {}, onError: vi.fn() }));
+    await waitFor(() => expect(result.current.session?.state).toBe('stopped_pending_record'));
+
+    await act(async () => {
+      const contexts = await Promise.all([result.current.record(), result.current.record()]);
+      expect(contexts.filter(Boolean)).toHaveLength(1);
+      expect(contexts.find(Boolean)?.attemptId).toBe(load(scope)?.recordingAttempt?.id);
+    });
+    expect(load(scope)?.recordingAttempt?.ownerTabId).toBe(getTabId());
+  });
+
+  it('does not open an attempt claimed by another tab before the UI syncs', async () => {
+    const { result } = renderHook(() => useWorkTimer({ scope, labels: {}, onError: vi.fn() }));
+    await waitFor(() => expect(result.current.session?.state).toBe('stopped_pending_record'));
+    await mutate(scope, current => current ? beginRecording(current, 'other-tab') : undefined);
+
+    await act(async () => {
+      expect(await result.current.record()).toBeNull();
+    });
+    expect(result.current.remoteOwner).toBe(true);
+    expect(load(scope)?.recordingAttempt?.ownerTabId).toBe('other-tab');
+  });
+
+  it('requests pending management when opening the same Issue from a card', async () => {
+    const { result } = renderHook(() => useWorkTimer({ scope, labels: {}, onError: vi.fn() }));
+    await waitFor(() => expect(result.current.session?.state).toBe('stopped_pending_record'));
+
+    await act(async () => {
+      result.current.open({ id: 1, subject: 'Issue', can_log_time: true } as Issue);
+    });
+
+    expect(result.current.pendingManageRequest).toBe(1);
+    expect(result.current.startIssue).toBeNull();
+  });
+
+  it('connects card Worktime actions to PendingWorkModal and preserves OtherNotice for another Issue', async () => {
+    render(<PendingCardHarness />);
+    await waitFor(() => expect(screen.getByTestId('global-timer')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Worktime #1' }));
+    await waitFor(() => expect(screen.getByTestId('pending-work-modal')).toBeTruthy());
+    expect(within(screen.getByTestId('pending-work-modal')).getByText('#1 Issue')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('pending-work-close-button'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Worktime #2' }));
+    const otherHeading = await screen.findByRole('heading', { name: 'There is unrecorded work time' });
+    expect(within(otherHeading.closest('[role="dialog"]')!).getByText('#1 Issue')).toBeTruthy();
+  });
+  it('completes idempotently but never treats a storage read error as completion', async () => {
+    const { result } = renderHook(() => useWorkTimer({ scope, labels: {}, onError: vi.fn() }));
+    await act(async () => {
+      const context = (await result.current.record())!;
+      expect(await result.current.lifecycle.submitting(context)).toMatchObject({ outcome: 'applied' });
+      expect(await result.current.lifecycle.complete(context)).toMatchObject({ outcome: 'applied' });
+      expect(await result.current.lifecycle.complete(context)).toMatchObject({ outcome: 'already_completed' });
+      const originalRead = Storage.prototype.getItem;
+      const read = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (this: Storage, key: string) { if (key === keysFor(scope).session) throw new Error('blocked'); return originalRead.call(this, key); });
+      expect(await result.current.lifecycle.complete(context)).toMatchObject({ outcome: 'storage_error' });
+      read.mockRestore();
+    });
+  });
+  it('keeps the confirmed cleanup state visible after cleanup storage failure', async () => {
+    const { result } = renderHook(() => useWorkTimer({ scope, labels: {}, onError: vi.fn() }));
+    let completeResult: TimerMutationResult | undefined;
+    await act(async () => {
+      const context = (await result.current.record())!;
+      await result.current.lifecycle.submitting(context);
+      const originalRemove = Storage.prototype.removeItem;
+      const remove = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(function (this: Storage, key: string) {
+        if (key === keysFor(scope).session) throw new Error('denied');
+        originalRemove.call(this, key);
+      });
+      try {
+        completeResult = await result.current.lifecycle.complete(context);
+      } finally {
+        remove.mockRestore();
+      }
+    });
+    expect(completeResult).toMatchObject({ outcome: 'storage_error', session: { recordingAttempt: { phase: 'confirmed' } } });
+    expect(result.current.session?.recordingAttempt?.phase).toBe('confirmed');
+  });
+
+  it.each(['storage_error', 'locked', 'semantic_conflict'] as const)('preserves the actual start failure: %s', async outcome => {
+    localStorage.clear();
+    if (outcome === 'locked') vi.stubGlobal('navigator', {});
+    const onError = vi.fn();
+    const { result } = renderHook(() => useWorkTimer({ scope, labels: { timer_sync_failed: 'sync failed', timer_conflict: 'conflict' }, onError }));
+    await act(async () => { result.current.open({ id: 1, subject: 'Issue', can_log_time: true } as Issue); });
+    if (outcome === 'locked') localStorage.setItem(keysFor(scope).lock, JSON.stringify({ token: 'other', expiresAt: Date.now() + 10000 }));
+    if (outcome === 'semantic_conflict') await mutate(scope, () => createTimerSession(2, 'Other', 5, false, 7));
+    const original = Storage.prototype.setItem;
+    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (outcome === 'storage_error' && key === keysFor(scope).session) throw new Error('denied');
+      original.call(this, key, value);
+    });
+    onError.mockClear();
+    try {
+      await act(async () => { expect((await result.current.start(5, false)).outcome).toBe(outcome); });
+      expect(onError.mock.calls).toEqual([[outcome === 'semantic_conflict' ? 'conflict' : 'sync failed']]);
+    } finally { spy.mockRestore(); }
+  });
+
+});

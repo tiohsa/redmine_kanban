@@ -355,7 +355,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-redmine-${{ matrix.redmine_version }}
-          path: e2e/playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
           if-no-files-found: ignore
 
       - name: Show container logs on failure
@@ -526,7 +528,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-redmine-60
-          path: e2e/playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
           if-no-files-found: ignore
 
       - name: Show container logs on failure

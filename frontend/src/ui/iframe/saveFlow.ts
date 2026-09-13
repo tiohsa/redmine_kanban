@@ -1,8 +1,10 @@
+import { canSubmitTimeEntry, timeEntryIdentity, type TimeEntryOperation } from './timeEntryOperation';
 import { extractIssueIdFromUrl } from '../utils/url';
 import {
   findJournalEditForm,
   getActiveSaveForm,
   hasRedmineFormError,
+  hasRedmineSuccessNotice,
   shouldTreatEditLoadAsSuccess,
   type IframeMode,
   type SaveTarget,
@@ -11,6 +13,7 @@ import {
 export type SaveLoadOutcome =
   | { type: 'error' }
   | { type: 'success'; issueId: number }
+  | { type: 'unknown' }
   | { type: 'keep-submitting' }
   | { type: 'release-submit-lock' };
 
@@ -20,13 +23,36 @@ export function resolveSaveLoadOutcome({
   saveTarget,
   mode,
   fallbackIssueId,
+  operation,
 }: {
   doc: Document;
   currentUrl: string;
   saveTarget: SaveTarget;
   mode: IframeMode;
   fallbackIssueId: number;
+  operation?: TimeEntryOperation;
 }): SaveLoadOutcome {
+  if (saveTarget === 'time_entry') {
+    // Allow only confirmed Redmine outcomes. Login, error, plugin, and other
+    // unexpected pages must not delete a possibly unrecorded TimerSession.
+    try {
+      if (!operation) return { type: 'unknown' };
+      const identity = timeEntryIdentity(operation);
+      if (!identity || operation.issueId !== fallbackIssueId) return { type: 'unknown' };
+      const { initial, instancePath } = identity;
+      const current = new URL(currentUrl, initial);
+      if (current.origin !== initial.origin) return { type: 'unknown' };
+      if (hasRedmineFormError(doc)) {
+        const form = doc.querySelector<HTMLFormElement>('form#new_time_entry');
+        return { type: form && canSubmitTimeEntry(operation, form, currentUrl) ? 'error' : 'unknown' };
+      }
+      const issuePath = `${instancePath}/issues/${fallbackIssueId}`;
+      if (current.pathname === issuePath) return { type: 'success', issueId: fallbackIssueId };
+      const newFormPaths = [initial.pathname, `${instancePath}/time_entries/new`, `${issuePath}/time_entries/new`];
+      if (newFormPaths.includes(current.pathname) && hasRedmineSuccessNotice(doc)) return { type: 'success', issueId: fallbackIssueId };
+    } catch { /* Invalid or unexpected URLs leave the recording result unknown. */ }
+    return { type: 'unknown' };
+  }
   if (hasRedmineFormError(doc)) return { type: 'error' };
 
   if (saveTarget === 'new-issue') {
@@ -35,11 +61,6 @@ export function resolveSaveLoadOutcome({
   }
   if (saveTarget === 'issue' && shouldTreatEditLoadAsSuccess(currentUrl, doc)) {
     return { type: 'success', issueId: extractIssueIdFromUrl(currentUrl) ?? fallbackIssueId };
-  }
-  if (saveTarget === 'time_entry') {
-    return currentUrl.includes('/time_entries/new')
-      ? { type: 'release-submit-lock' }
-      : { type: 'success', issueId: fallbackIssueId };
   }
   if (saveTarget === 'journal' && !findJournalEditForm(doc)) {
     return { type: 'success', issueId: fallbackIssueId };

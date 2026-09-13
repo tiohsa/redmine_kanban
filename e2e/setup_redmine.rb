@@ -21,7 +21,7 @@ admin.must_change_passwd = false if admin.respond_to?(:must_change_passwd=)
 admin.save!
 
 project = Project.find_or_initialize_by(identifier: 'ecookbook')
-required_modules = ['issue_tracking', 'redmine_kanban']
+required_modules = ['issue_tracking', 'time_tracking', 'redmine_kanban']
 if project.new_record?
   project.name = 'eCookbook'
   project.is_public = true
@@ -71,10 +71,20 @@ parent_issue = Issue.find_or_create_by!(
   issue.status = status
 end
 
-Issue.find_or_create_by!(
+child_issue = Issue.find_or_create_by!(
   project: project,
   subject: 'Kanban E2E nested child',
   parent: parent_issue
+) do |issue|
+  issue.author = admin
+  issue.tracker = tracker
+  issue.status = status
+end
+
+Issue.find_or_create_by!(
+  project: project,
+  subject: 'Kanban E2E grandchild',
+  parent: child_issue
 ) do |issue|
   issue.author = admin
   issue.tracker = tracker

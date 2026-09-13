@@ -9,11 +9,13 @@ export type BoardCursorHitKind =
   | 'subtask_check'
   | 'subtask_subject'
   | 'subtask_row'
+  | 'subtask_work_timer'
   | 'subtask_edit'
   | 'subtask_delete'
   | 'subtask_area'
   | 'card_subject'
   | 'edit'
+  | 'work_timer'
   | 'cell'
   | 'visibility'
   | 'priority'
@@ -40,10 +42,12 @@ export function getBoardCursor({ phase, hitKind = 'empty' }: CursorOptions): Boa
     case 'delete':
     case 'subtask_check':
     case 'subtask_subject':
+    case 'subtask_work_timer':
     case 'subtask_edit':
     case 'subtask_delete':
     case 'card_subject':
     case 'edit':
+    case 'work_timer':
     case 'visibility':
     case 'priority':
     case 'date':
