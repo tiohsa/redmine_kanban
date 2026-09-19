@@ -1948,7 +1948,7 @@ function drawDragOverlay(
       : drag.current.x - offsetX,
     y: targetLane ? targetLane.y + metrics.cellPadding : drag.current.y - offsetY,
     width: layout.columnWidth - metrics.cellPadding * 2,
-    height: measureCardHeight(issue, metrics, undefined, undefined, undefined, data.meta.project_id, cardDisplayMode),
+    height: measureCardHeight(issue, metrics, createSubjectLineMeasurer(ctx), fontSize, layout.columnWidth, data.meta.project_id, cardDisplayMode),
   };
   ctx.save();
   ctx.globalAlpha = drag.phase === 'pending-drop' ? 0.65 : 0.9;

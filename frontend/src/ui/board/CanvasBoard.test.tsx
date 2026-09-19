@@ -9,6 +9,8 @@ import { layoutCardMetadata } from './canvasMetadata';
 import { getMetrics } from './metrics';
 import { buildBoardState } from './state';
 import * as hitTestIndex from './HitTestIndex';
+import * as canvasGeometry from './canvasGeometry';
+import { measureSingleLineCardHeight } from './BoardLayout';
 
 function makeIssue(id: number, attrs: Partial<Issue> = {}): Issue {
   return {
@@ -425,6 +427,93 @@ afterEach(() => {
     expect(context.fillText).not.toHaveBeenCalledWith(`#${issue.id}`, expect.any(Number), expect.any(Number));
     expect(context.fillText).toHaveBeenCalledWith(issue.subject, expect.any(Number), expect.any(Number));
     expect(container.querySelector('canvas.rk-canvas')).toBeTruthy();
+  });
+
+  it.each([
+    { cardDisplayMode: 'single_line', fontSize: 30, fitMode: 'none', detailed: false },
+    { cardDisplayMode: 'single_line', fontSize: 10, fitMode: 'width', detailed: false },
+    { cardDisplayMode: 'standard', fontSize: 13, fitMode: 'none', detailed: false },
+    { cardDisplayMode: 'standard', fontSize: 30, fitMode: 'none', detailed: true },
+    { cardDisplayMode: 'standard', fontSize: 30, fitMode: 'width', detailed: true },
+  ] as const)('matches normal and drag overlay heights through drop: %j', async ({ cardDisplayMode, fontSize, fitMode, detailed }) => {
+    const issue = makeIssue(1, detailed ? {
+      subject: 'A long subject that wraps onto a second line in the card',
+      project: { id: 2, name: 'External' },
+      subtasks: [{ id: 2, subject: 'Child', status_id: 1, is_closed: false }],
+    } : {});
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
+    const rectMap = hitTestIndex.createRectMap();
+    vi.spyOn(hitTestIndex, 'createRectMap').mockReturnValue(rectMap);
+    const roundedRect = vi.spyOn(canvasGeometry, 'roundedRect');
+    const onCommand = vi.fn(() => true);
+    const { container } = render(
+      <CanvasBoard data={data} state={state} canMove canCreate
+        cardDisplayMode={cardDisplayMode} fontSize={fontSize} fitMode={fitMode}
+        onCommand={onCommand} onCreate={vi.fn()} onEdit={vi.fn()} onView={vi.fn()}
+        onDelete={vi.fn()} onEditClick={vi.fn()} labels={data.labels} />,
+    );
+    const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
+    await waitFor(() => expect(rectMap.cards.has(issue.id)).toBe(true));
+    const card = rectMap.cards.get(issue.id)!;
+    const metrics = getMetrics(fontSize);
+    const expectedHeight = cardDisplayMode === 'single_line'
+      ? measureSingleLineCardHeight(fontSize)
+      : metrics.cardBaseHeight + (detailed ? (fontSize - 2 + 7) + (fontSize + 3) + 20 + metrics.subtaskHeight : 0);
+    expect(card.height).toBe(expectedHeight);
+
+    const target = rectMap.cells.get('2:none')!;
+    const end = { clientX: target.x + target.width / 2, clientY: card.y + 10, pointerId: 1 };
+    roundedRect.mockClear();
+    // Start on the card body outside the subject and action hit areas.
+    fireEvent.pointerDown(canvas, { clientX: card.x + card.width - 2, clientY: card.y + 2, pointerId: 1 });
+    fireEvent.pointerMove(canvas, end);
+    await waitFor(() => expect(roundedRect).toHaveBeenCalledWith(
+      expect.anything(), end.clientX - 20, end.clientY - 20, card.width, card.height, 8,
+    ));
+    expect(onCommand).not.toHaveBeenCalled();
+
+    roundedRect.mockClear();
+    fireEvent.pointerUp(canvas, end);
+    expect(onCommand).toHaveBeenCalledExactlyOnceWith({
+      type: 'move_issue', issueId: issue.id, statusId: 2, laneId: 'none', assignedToId: null, priorityId: null,
+    });
+    await waitFor(() => expect(roundedRect).toHaveBeenCalledWith(
+      expect.anything(), target.x + metrics.cellPadding, target.y + metrics.cellPadding, card.width, card.height, 8,
+    ));
+  });
+
+  it('routes single-line subject clicks and hover actions to the issue', async () => {
+    const issue = makeIssue(1, { can_log_time: true });
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
+    const rectMap = hitTestIndex.createRectMap();
+    vi.spyOn(hitTestIndex, 'createRectMap').mockReturnValue(rectMap);
+    const onView = vi.fn();
+    const onEdit = vi.fn();
+    const onDelete = vi.fn();
+    const onWorkTimer = vi.fn();
+    const onCommand = vi.fn();
+    const { container } = render(
+      <CanvasBoard data={data} state={state} canMove canCreate cardDisplayMode="single_line"
+        onCommand={onCommand} onCreate={vi.fn()} onEdit={onEdit} onView={onView}
+        onDelete={onDelete} onEditClick={vi.fn()} onWorkTimer={onWorkTimer} labels={data.labels} />,
+    );
+    const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
+    await waitFor(() => expect(rectMap.cardSubjects.has(issue.id)).toBe(true));
+    const subject = rectMap.cardSubjects.get(issue.id)!;
+    fireEvent.pointerMove(canvas, { clientX: subject.x + 2, clientY: subject.y + subject.height / 2 });
+    await waitFor(() => expect(rectMap.workTimerButtons.has(issue.id)).toBe(true));
+
+    for (const [rects, callback] of [
+      [rectMap.cardSubjects, onView], [rectMap.editButtons, onEdit],
+      [rectMap.deleteButtons, onDelete], [rectMap.workTimerButtons, onWorkTimer],
+    ] as const) {
+      const rect = rects.get(issue.id)!;
+      fireEvent.pointerDown(canvas, { clientX: rect.x + 2, clientY: rect.y + rect.height / 2 });
+      expect(callback).toHaveBeenCalledExactlyOnceWith(issue.id);
+    }
+    expect(onCommand).not.toHaveBeenCalled();
   });
 
   it('resets active drag but keeps a committed drop across lost capture', async () => {
