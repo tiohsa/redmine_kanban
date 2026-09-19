@@ -3,7 +3,7 @@ import type { BoardData, Issue } from './types';
 import { buildBoardState, type BoardState } from './board/state';
 import { applyBoardDataFilters, buildPresentationProjection, buildVisibleIssues, type Filters } from './boardFilters';
 import { buildDisplayData } from './kanbanShared';
-import type { SortKey } from './board/sort';
+import type { SortConfig } from './board/sort';
 
 type Args = {
   data: BoardData | null;
@@ -15,7 +15,7 @@ type Args = {
   filters: Filters;
   hiddenStatusIds: Set<number>;
   pendingDeleteIssue: Issue | null;
-  sortKey: SortKey;
+  sortConfig: SortConfig;
 };
 
 export function useBoardPresentation({
@@ -28,7 +28,7 @@ export function useBoardPresentation({
   filters,
   hiddenStatusIds,
   pendingDeleteIssue,
-  sortKey,
+  sortConfig,
 }: Args) {
   const displayData = useMemo(() => {
     if (!data) return null;
@@ -71,13 +71,13 @@ export function useBoardPresentation({
     return buildBoardState(
       filteredData,
       presentation?.issues ?? [],
-      sortKey,
+      sortConfig,
       priorityRank,
       filters.assigneeIds,
       filters.priority,
       filters.priorityFilterEnabled,
     );
-  }, [filteredData, filters.assigneeIds, filters.priority, filters.priorityFilterEnabled, presentation?.issues, priorityRank, sortKey]);
+  }, [filteredData, filters.assigneeIds, filters.priority, filters.priorityFilterEnabled, presentation?.issues, priorityRank, sortConfig]);
 
   return { boardState, displayData, filteredData, issues, presentation, primaryFilteredData };
 }

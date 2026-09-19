@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import type { SortKey } from './board/sort';
+import { DEFAULT_SORT_CONFIG, parseSortConfig, serializeSortConfig, type SortConfig } from './board/sort';
 import type { Filters } from './boardFilters';
 import { buildProjectScopeFromDataUrl, makeScopedStorageKey, readScopedBooleanWithLegacy, readScopedNumberSetWithLegacy, readScopedValueWithLegacy } from './utils/storage';
 import type { FitMode } from './kanbanShared';
@@ -101,7 +101,7 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
   const fullWindowStorageKey = userKey('rk_fullwindow');
   const fitModeStorageKey = userKey('rk_fit_mode');
   const showSubtasksStorageKey = userKey('rk_show_subtasks');
-  const sortKeyStorageKey = userKey('rk_sortkey');
+  const sortConfigStorageKey = userKey('rk_sortkey');
   const fontSizeStorageKey = userKey('rk_font_size');
   const timeEntryStorageKey = userKey('rk_time_entry_on_close');
 
@@ -109,7 +109,7 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
   const [fullWindow, setFullWindow] = useState(false);
   const [fitMode, setFitMode] = useState<FitMode>('none');
   const [showSubtasks, setShowSubtasks] = useState(true);
-  const [sortKey, setSortKey] = useState<SortKey>('updated_desc');
+  const [sortConfig, setSortConfig] = useState<SortConfig>(() => DEFAULT_SORT_CONFIG.map((criterion) => ({ ...criterion })));
   const [hiddenStatusIds, setHiddenStatusIds] = useState<Set<number>>(new Set());
   const [fontSize, setFontSize] = useState(13);
   const [timeEntryOnClose, setTimeEntryOnClose] = useState(false);
@@ -133,8 +133,8 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
     }
     setFitMode(fitMode === 'width' || (fitMode === null && legacyFitToScreen === '1') ? 'width' : 'none');
     setShowSubtasks(readScopedValueWithLegacy(showSubtasksStorageKey!, 'rk_show_subtasks') !== '0');
-    const sortKey = readScopedValueWithLegacy(sortKeyStorageKey!, 'rk_sortkey');
-    setSortKey(sortKey === 'updated_asc' || sortKey === 'due_asc' || sortKey === 'due_desc' || sortKey === 'priority_desc' || sortKey === 'priority_asc' ? sortKey : 'updated_desc');
+    const savedSortConfig = readScopedValueWithLegacy(sortConfigStorageKey!, 'rk_sortkey');
+    setSortConfig(parseSortConfig(savedSortConfig));
     setHiddenStatusIds(readScopedNumberSetWithLegacy(hiddenStatusStorageKey!, makeScopedStorageKey('rk_hidden_status_ids', projectScope), new Set()));
     setFontSize(Number(readScopedValueWithLegacy(fontSizeStorageKey!, 'rk_font_size')) || 13);
     setTimeEntryOnClose(readScopedValueWithLegacy(timeEntryStorageKey!, 'rk_time_entry_on_close') === '1');
@@ -160,7 +160,7 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
     setViewableProjectsEnabled(readScopedBooleanWithLegacy(viewableProjectsStorageKey!, makeScopedStorageKey('rk_viewable_projects_enabled', projectScope), false));
     setMaximumBoardEntityCount(normalizeMaximumBoardEntityCount(readStorageValue(maximumBoardEntityCountStorageKey!)));
     setHydratedScope(userScope);
-  }, [agingDangerDaysStorageKey, agingExcludeClosedStorageKey, agingWarnDaysStorageKey, filtersStorageKey, fitModeStorageKey, fontSizeStorageKey, fullWindowStorageKey, hiddenStatusStorageKey, laneTypeStorageKey, maximumBoardEntityCountStorageKey, priorityLaneStorageKey, projectScope, showSubtasksStorageKey, sortKeyStorageKey, timeEntryStorageKey, userScope, viewableProjectsStorageKey]);
+  }, [agingDangerDaysStorageKey, agingExcludeClosedStorageKey, agingWarnDaysStorageKey, filtersStorageKey, fitModeStorageKey, fontSizeStorageKey, fullWindowStorageKey, hiddenStatusStorageKey, laneTypeStorageKey, maximumBoardEntityCountStorageKey, priorityLaneStorageKey, projectScope, showSubtasksStorageKey, sortConfigStorageKey, timeEntryStorageKey, userScope, viewableProjectsStorageKey]);
 
   useEffect(() => {
     if (!preferencesReady) return;
@@ -190,8 +190,8 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
   }, [fitMode, fitModeStorageKey, preferencesReady]);
 
   useEffect(() => {
-    if (preferencesReady && sortKeyStorageKey) writeStorageValue(sortKeyStorageKey, sortKey);
-  }, [preferencesReady, sortKey, sortKeyStorageKey]);
+    if (preferencesReady && sortConfigStorageKey) writeStorageValue(sortConfigStorageKey, serializeSortConfig(sortConfig));
+  }, [preferencesReady, sortConfig, sortConfigStorageKey]);
 
   useEffect(() => {
     if (preferencesReady && filtersStorageKey) writeStorageValue(filtersStorageKey, JSON.stringify(filters));
@@ -256,8 +256,8 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
     setFitMode,
     showSubtasks,
     setShowSubtasks,
-    sortKey,
-    setSortKey,
+    sortConfig,
+    setSortConfig,
     hiddenStatusIds,
     setHiddenStatusIds,
     fontSize,

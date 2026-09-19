@@ -230,7 +230,7 @@ afterEach(() => {
       ...baseData,
       lists: { ...baseData.lists, trackers: [{ id: 1, name: 'Very long tracker name' }] },
     };
-    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
     const context = createCanvasContextWithSpies();
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
 
@@ -274,7 +274,7 @@ afterEach(() => {
       permissions: { can_move: true, can_edit: canEdit, can_delete: true },
     });
     const data = makeBoardData(issue);
-    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
     const context = createCanvasContextWithSpies();
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
     const rectMap = hitTestIndex.createRectMap();
@@ -324,7 +324,7 @@ afterEach(() => {
     const onPriorityClick = vi.fn();
     const onProgressClick = vi.fn();
     const onDateClick = vi.fn();
-    const props = { data, state: buildBoardState(data, data.issues, 'updated_desc', new Map()), fitMode,
+    const props = { data, state: buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map()), fitMode,
       canMove: true, canCreate: true, onCommand: vi.fn(), onCreate: vi.fn(), onEdit: vi.fn(), onView: vi.fn(),
       onDelete: vi.fn(), onEditClick: vi.fn(), labels: data.labels, onPriorityClick, onProgressClick, onDateClick };
     const { container, rerender } = render(<CanvasBoard {...props} />);
@@ -351,7 +351,7 @@ afterEach(() => {
 
     const datedData = { ...data, issues: [{ ...issue, due_date: '2099-09-26' }] };
     context.fillText.mockClear();
-    rerender(<CanvasBoard {...props} data={datedData} state={buildBoardState(datedData, datedData.issues, 'updated_desc', new Map())} />);
+    rerender(<CanvasBoard {...props} data={datedData} state={buildBoardState(datedData, datedData.issues, [{ field: 'updated', direction: 'desc' }], new Map())} />);
     await waitFor(() => expect(context.fillText).toHaveBeenCalledWith('calendar_today', expect.any(Number), expect.any(Number)));
     expect(rectMap.cards.get(issue.id)).toEqual(card);
     expect(rectMap.dateBadges.get(issue.id)).toMatchObject({ x: badge.x, y: badge.y, height: badge.height });
@@ -364,7 +364,7 @@ afterEach(() => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
     const rectMap = hitTestIndex.createRectMap();
     vi.spyOn(hitTestIndex, 'createRectMap').mockReturnValue(rectMap);
-    render(<CanvasBoard data={data} state={buildBoardState(data, data.issues, 'updated_desc', new Map())} canMove canCreate
+    render(<CanvasBoard data={data} state={buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map())} canMove canCreate
       onCommand={vi.fn()} onCreate={vi.fn()} onEdit={vi.fn()} onView={vi.fn()} onDelete={vi.fn()}
       onEditClick={vi.fn()} labels={data.labels} onDateClick={vi.fn()} />);
     await waitFor(() => expect(rectMap.progressDonuts.has(issue.id)).toBe(true));
@@ -375,7 +375,7 @@ afterEach(() => {
   it('resets active drag but keeps a committed drop across lost capture', async () => {
     const issue = makeIssue(1, { due_date: '2026-03-20' });
     const data = makeBoardData(issue);
-    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
     const onCommand = vi.fn(() => true);
 
     const { container } = render(
@@ -465,7 +465,7 @@ afterEach(() => {
   it('does not retain a rejected command as a pending drop', async () => {
     const issue = makeIssue(1);
     const data = makeBoardData(issue);
-    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
     const onCommand = vi.fn(() => false);
     const { container } = render(
       <CanvasBoard
@@ -497,7 +497,7 @@ afterEach(() => {
   it('keeps an accepted drop pending until exactly its two-second fallback, then allows another drag', async () => {
   const issue = makeIssue(1);
   const data = makeBoardData(issue);
-  const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+  const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
   const onCommand = vi.fn(() => true);
 
   const { container } = render(
@@ -550,7 +550,7 @@ afterEach(() => {
   it('separates target observation, previous timer cancellation, and the next drop fallback', async () => {
     const issue = makeIssue(1);
     const data = makeBoardData(issue);
-    const oldState = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const oldState = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
     const onCommand = vi.fn(() => true);
     const props = {
       data,
@@ -583,7 +583,7 @@ afterEach(() => {
           {...props}
           data={committedData}
           labels={committedData.labels}
-          state={buildBoardState(committedData, committedData.issues, 'updated_desc', new Map())}
+          state={buildBoardState(committedData, committedData.issues, [{ field: 'updated', direction: 'desc' }], new Map())}
         />,
       );
     });
@@ -619,7 +619,7 @@ afterEach(() => {
         { id: 4, name: 'Done', is_closed: true, count: 0 },
       ],
     };
-    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
     const context = createCanvasContextWithSpies();
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
 
@@ -662,7 +662,7 @@ afterEach(() => {
         { id: 20, name: 'Category B', category_id: 20 },
       ],
     };
-    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
     const onCommand = vi.fn(() => true);
     const context = createCanvasContextWithSpies();
     const cellFills: Array<{ fillStyle: string; x: number; y: number; width: number; height: number }> = [];
@@ -722,7 +722,7 @@ afterEach(() => {
     const issue = makeIssue(2, { can_log_time: !permission, subtasks: nested
       ? [{ id: 20, subject: 'Middle', status_id: 1, is_closed: false, subtasks: [target] }] : [target] });
     const data = makeBoardData(issue);
-    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
     const context = createCanvasContextWithSpies();
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
     const onWorkTimer = vi.fn();
@@ -765,7 +765,7 @@ afterEach(() => {
     const issue = makeIssue(2, { subtasks: [{ id: 20, subject: 'Child', status_id: 1, is_closed: false,
       subtasks: [{ id: 30, subject: 'Grandchild', status_id: 1, is_closed: false, can_log_time: true, permissions: { can_move: true, can_edit: true, can_delete: true } }] }] });
     const data = makeBoardData(issue);
-    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
     const context = createCanvasContextWithSpies();
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
     const onWorkTimer = vi.fn();
@@ -788,7 +788,7 @@ afterEach(() => {
       subtasks: [{ id: 20, subject: 'Closed child', status_id: 2, is_closed: true }],
     });
     const data = makeBoardData(issue);
-    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
     const context = createCanvasContextWithSpies();
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
 
@@ -833,7 +833,7 @@ afterEach(() => {
       project: { id: 2, name: '別プロジェクト' },
     });
     const data = makeBoardData(issue);
-    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
     const context = createCanvasContextWithSpies();
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
 
@@ -869,7 +869,7 @@ afterEach(() => {
       ...baseData,
       lists: { ...baseData.lists, trackers: [{ id: 1, name: 'Bug' }] },
     };
-    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
     const context = createCanvasContextWithSpies();
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
 
@@ -929,7 +929,7 @@ afterEach(() => {
       project: { id: 2, name: longProject },
     });
     const data = makeBoardData(issue);
-    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
     const context = createCanvasContextWithSpies();
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
 
@@ -962,7 +962,7 @@ afterEach(() => {
     setDevicePixelRatio(2);
     const issue = makeIssue(3);
     const data = makeBoardData(issue);
-    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
 
     const { container } = render(
       <CanvasBoard
@@ -993,7 +993,7 @@ afterEach(() => {
     setDevicePixelRatio(1.25);
     const issue = makeIssue(4);
     const data = makeBoardData(issue);
-    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
 
     const { container } = render(
       <CanvasBoard
@@ -1024,7 +1024,7 @@ afterEach(() => {
     setDevicePixelRatio(2);
     const issue = makeIssue(5);
     const data = makeBoardData(issue);
-    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
     const context = createCanvasContextWithSpies();
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
 
@@ -1053,7 +1053,7 @@ afterEach(() => {
     setDevicePixelRatio(4);
     const issue = makeIssue(6);
     const data = makeBoardData(issue);
-    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
     const context = createCanvasContextWithSpies();
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
 

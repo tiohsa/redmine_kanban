@@ -54,8 +54,8 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     setFitMode,
     showSubtasks,
     setShowSubtasks,
-    sortKey,
-    setSortKey,
+    sortConfig,
+    setSortConfig,
     hiddenStatusIds,
     setHiddenStatusIds,
     fontSize,
@@ -132,7 +132,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     filters,
     hiddenStatusIds,
     pendingDeleteIssue: actions.pendingDeleteIssue,
-    sortKey,
+    sortConfig,
   });
 
   const canMove = (presentation?.issues ?? []).some((issue) => issue.permissions?.can_move);
@@ -175,8 +175,8 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
           data={toolbarData}
           filters={filters}
           onChange={setFilters}
-          sortKey={sortKey}
-          onChangeSort={setSortKey}
+          sortConfig={sortConfig}
+          onChangeSort={setSortConfig}
           fullWindow={fullWindow}
           onToggleFullWindow={() => setFullWindow((value) => !value)}
           fitMode={fitMode}

@@ -1,7 +1,7 @@
 import React from 'react';
 import type { BoardData } from './types';
 import type { Filters } from './boardFilters';
-import type { SortKey } from './board/sort';
+import type { SortConfig } from './board/sort';
 import type { FitMode } from './kanbanShared';
 import type { LaneType } from './useKanbanPreferences';
 import { buildToolbarOptions, togglePriorityFilter } from './toolbar/toolbarOptions';
@@ -14,8 +14,8 @@ type ToolbarProps = {
   data: BoardData;
   filters: Filters;
   onChange: (filters: Filters) => void;
-  sortKey: SortKey;
-  onChangeSort: (key: SortKey) => void;
+  sortConfig: SortConfig;
+  onChangeSort: (config: SortConfig) => void;
   fullWindow: boolean;
   onToggleFullWindow: () => void;
   fitMode: FitMode;
@@ -49,7 +49,7 @@ export function KanbanToolbar({
   data,
   filters,
   onChange,
-  sortKey,
+  sortConfig,
   onChangeSort,
   fullWindow,
   onToggleFullWindow,
@@ -237,7 +237,7 @@ export function KanbanToolbar({
           showTriggerLabel
         />
 
-        <SortPopover sortKey={sortKey} onChangeSort={onChangeSort} labels={labels} />
+        <SortPopover sortConfig={sortConfig} onChangeSort={onChangeSort} labels={labels} />
 
         {showDueCustomInput ? (
           <input

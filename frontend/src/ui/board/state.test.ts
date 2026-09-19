@@ -91,7 +91,7 @@ describe('buildBoardState', () => {
       makeIssue(3, { assigned_to_id: null, updated_on: '2026-01-02T00:00:00Z' }),
     ];
 
-    const state = buildBoardState(data, issues, 'updated_desc', new Map());
+    const state = buildBoardState(data, issues, [{ field: 'updated', direction: 'desc' }], new Map());
 
     expect(state.columnOrder).toEqual([1, 2]);
     expect(state.laneOrder).toEqual(['unassigned', 10, 20]);
@@ -103,7 +103,7 @@ describe('buildBoardState', () => {
   it('uses all assignee filter candidates as lanes when no assignee is selected', () => {
     const data = makeBoardData('assignee');
 
-    const state = buildBoardState(data, [], 'updated_desc', new Map());
+    const state = buildBoardState(data, [], [{ field: 'updated', direction: 'desc' }], new Map());
 
     expect(state.laneOrder).toEqual(['unassigned', 10, 20]);
     expect(state.lanes.map((lane) => lane.id)).toEqual(['unassigned', 10, 20]);
@@ -113,7 +113,7 @@ describe('buildBoardState', () => {
     const data = makeBoardData('assignee');
     const issues = [makeIssue(1, { assigned_to_id: 10 })];
 
-    const state = buildBoardState(data, issues, 'updated_desc', new Map(), ['10']);
+    const state = buildBoardState(data, issues, [{ field: 'updated', direction: 'desc' }], new Map(), ['10']);
 
     expect(state.laneOrder).toEqual([10]);
     expect(state.lanes.map((lane) => lane.id)).toEqual([10]);
@@ -123,7 +123,7 @@ describe('buildBoardState', () => {
     const data = makeBoardData('assignee');
     const issues = [makeIssue(1, { assigned_to_id: null })];
 
-    const state = buildBoardState(data, issues, 'updated_desc', new Map(), ['unassigned']);
+    const state = buildBoardState(data, issues, [{ field: 'updated', direction: 'desc' }], new Map(), ['unassigned']);
 
     expect(state.laneOrder).toEqual(['unassigned']);
     expect(state.lanes.map((lane) => lane.id)).toEqual(['unassigned']);
@@ -133,7 +133,7 @@ describe('buildBoardState', () => {
     const data = makeBoardData('assignee');
     const issues = [makeIssue(1, { assigned_to_id: null })];
 
-    const state = buildBoardState(data, issues, 'updated_desc', new Map(), ['10']);
+    const state = buildBoardState(data, issues, [{ field: 'updated', direction: 'desc' }], new Map(), ['10']);
 
     expect(state.laneOrder).toEqual([10]);
     expect(state.cardsByCell.get('1:10')).toBeUndefined();
@@ -143,7 +143,7 @@ describe('buildBoardState', () => {
     const data = makeBoardData('priority');
     const issues = [makeIssue(1, { assigned_to_id: 10 })];
 
-    const state = buildBoardState(data, issues, 'updated_desc', new Map(), ['10']);
+    const state = buildBoardState(data, issues, [{ field: 'updated', direction: 'desc' }], new Map(), ['10']);
 
     expect(state.lanes.map((lane) => lane.id)).toEqual([2, 1, 'no_priority']);
   });
@@ -151,23 +151,23 @@ describe('buildBoardState', () => {
   it('shows all priority lanes including no_priority when priority filter is disabled', () => {
     const data = makeBoardData('priority');
 
-    const state = buildBoardState(data, [], 'updated_desc', new Map(), [], [], false);
+    const state = buildBoardState(data, [], [{ field: 'updated', direction: 'desc' }], new Map(), [], [], false);
 
     expect(state.lanes.map((lane) => lane.id)).toEqual([2, 1, 'no_priority']);
   });
 
-  it('uses low to high lane order only for priority_asc', () => {
+  it('keeps priority lane order independent from card sort direction', () => {
     const data = makeBoardData('priority');
 
-    const state = buildBoardState(data, [], 'priority_asc', new Map(), [], [], false);
+    const state = buildBoardState(data, [], [{ field: 'priority', direction: 'asc' }], new Map(), [], [], false);
 
-    expect(state.lanes.map((lane) => lane.id)).toEqual([1, 2, 'no_priority']);
+    expect(state.lanes.map((lane) => lane.id)).toEqual([2, 1, 'no_priority']);
   });
 
   it('keeps high to low lane order for non-priority sort keys', () => {
     const data = makeBoardData('priority');
 
-    const state = buildBoardState(data, [], 'due_asc', new Map(), [], [], false);
+    const state = buildBoardState(data, [], [{ field: 'due', direction: 'asc' }], new Map(), [], [], false);
 
     expect(state.lanes.map((lane) => lane.id)).toEqual([2, 1, 'no_priority']);
   });
@@ -175,7 +175,7 @@ describe('buildBoardState', () => {
   it('keeps only selected priority lanes when priority filter is enabled', () => {
     const data = makeBoardData('priority');
 
-    const state = buildBoardState(data, [], 'updated_desc', new Map(), [], ['2'], true);
+    const state = buildBoardState(data, [], [{ field: 'updated', direction: 'desc' }], new Map(), [], ['2'], true);
 
     expect(state.lanes.map((lane) => lane.id)).toEqual([2]);
   });
@@ -184,7 +184,7 @@ describe('buildBoardState', () => {
     const data = makeBoardData('priority');
     const issues = [makeIssue(1, { priority_id: 1 })];
 
-    const state = buildBoardState(data, issues, 'updated_desc', new Map(), [], ['2'], true);
+    const state = buildBoardState(data, issues, [{ field: 'updated', direction: 'desc' }], new Map(), [], ['2'], true);
 
     expect(state.lanes.map((lane) => lane.id)).toEqual([2]);
     expect(state.cardsByCell.get('1:2')).toBeUndefined();
@@ -193,8 +193,8 @@ describe('buildBoardState', () => {
   it('shows no_priority lane only when selected while priority filter is enabled', () => {
     const data = makeBoardData('priority');
 
-    const hiddenState = buildBoardState(data, [], 'updated_desc', new Map(), [], ['1'], true);
-    const visibleState = buildBoardState(data, [], 'updated_desc', new Map(), [], ['no_priority'], true);
+    const hiddenState = buildBoardState(data, [], [{ field: 'updated', direction: 'desc' }], new Map(), [], ['1'], true);
+    const visibleState = buildBoardState(data, [], [{ field: 'updated', direction: 'desc' }], new Map(), [], ['no_priority'], true);
 
     expect(hiddenState.lanes.map((lane) => lane.id)).toEqual([1]);
     expect(visibleState.lanes.map((lane) => lane.id)).toEqual(['no_priority']);
@@ -242,8 +242,8 @@ describe('buildBoardState', () => {
   it('keeps no_priority lane at the end in priority_asc', () => {
     const data = makeBoardData('priority');
 
-    const state = buildBoardState(data, [], 'priority_asc', new Map(), [], ['1', '2', 'no_priority'], true);
+    const state = buildBoardState(data, [], [{ field: 'priority', direction: 'asc' }], new Map(), [], ['1', '2', 'no_priority'], true);
 
-    expect(state.lanes.map((lane) => lane.id)).toEqual([1, 2, 'no_priority']);
+    expect(state.lanes.map((lane) => lane.id)).toEqual([2, 1, 'no_priority']);
   });
 });
