@@ -332,6 +332,7 @@ afterEach(() => {
     const badge = { ...rectMap.dateBadges.get(issue.id)! };
     const card = { ...rectMap.cards.get(issue.id)! };
     const priority = rectMap.priorityBadges.get(issue.id)!;
+    const date = rectMap.dateBadges.get(issue.id)!;
     const progress = rectMap.progressDonuts.get(issue.id)!;
     expect(badge.x).toBe(priority.x + priority.width + 8);
     expect(badge.y).toBe(priority.y);
@@ -342,12 +343,12 @@ afterEach(() => {
     expect(age![1] + context.measureText('3d').width).toBeLessThan(progress.x);
 
     const canvas = container.querySelector('canvas.rk-canvas')!;
-    for (const region of [priority, progress]) {
+    for (const region of [priority, date, progress]) {
       fireEvent.pointerDown(canvas, { clientX: region.x + region.width / 2, clientY: region.y + region.height / 2 });
     }
     expect(onPriorityClick).toHaveBeenCalledWith(issue.id, 2, expect.any(Number), expect.any(Number));
+    expect(onDateClick).toHaveBeenCalledWith(issue.id, null, expect.any(Number), expect.any(Number));
     expect(onProgressClick).toHaveBeenCalledWith(issue.id, 20, expect.any(Number), expect.any(Number));
-    expect(onDateClick).not.toHaveBeenCalled();
 
     const datedData = { ...data, issues: [{ ...issue, due_date: '2099-09-26' }] };
     context.fillText.mockClear();
@@ -357,7 +358,7 @@ afterEach(() => {
     expect(rectMap.dateBadges.get(issue.id)).toMatchObject({ x: badge.x, y: badge.y, height: badge.height });
   });
 
-  it('does not overlap progress with an empty date badge when priority leaves insufficient width', async () => {
+  it('keeps an empty date badge when a long priority leaves insufficient width', async () => {
     const issue = makeIssue(16, { due_date: null, priority_id: 2, priority_name: 'Very long priority name', done_ratio: 20 });
     const data = makeBoardData(issue);
     const context = createCanvasContextWithSpies();
@@ -368,8 +369,14 @@ afterEach(() => {
       onCommand={vi.fn()} onCreate={vi.fn()} onEdit={vi.fn()} onView={vi.fn()} onDelete={vi.fn()}
       onEditClick={vi.fn()} labels={data.labels} onDateClick={vi.fn()} />);
     await waitFor(() => expect(rectMap.progressDonuts.has(issue.id)).toBe(true));
-    expect(rectMap.dateBadges.has(issue.id)).toBe(false);
-    expect(context.fillText).not.toHaveBeenCalledWith('calendar_today', expect.any(Number), expect.any(Number));
+    const priority = rectMap.priorityBadges.get(issue.id);
+    const date = rectMap.dateBadges.get(issue.id);
+    const progress = rectMap.progressDonuts.get(issue.id)!;
+    expect(priority).toBeDefined();
+    expect(date).toBeDefined();
+    expect(priority!.x + priority!.width + 8).toBeLessThanOrEqual(date!.x);
+    expect(date!.x + date!.width).toBeLessThanOrEqual(progress.x);
+    expect(context.fillText).toHaveBeenCalledWith('calendar_today', expect.any(Number), expect.any(Number));
   });
 
   it('resets active drag but keeps a committed drop across lost capture', async () => {

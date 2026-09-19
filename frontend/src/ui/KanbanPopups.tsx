@@ -87,20 +87,11 @@ export function DatePopup({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Get today's date in YYYY-MM-DD format
-  const getTodayStr = () => {
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-  };
-
   // State to hold the temporary selection during calendar navigation
   const [currentValue, setCurrentValue] = useState<string>(value || '');
 
-  // Keep track of the baseline date at mount. If none provided, use today.
-  const initialValueRef = useRef<string>(value || getTodayStr());
+  // An empty baseline means the first selected date is always an explicit choice.
+  const initialValueRef = useRef<string>(value || '');
 
   // Prevent multiple commits
   const hasCommitted = useRef(false);
@@ -136,6 +127,8 @@ export function DatePopup({
 
   // Check if the change event corresponds to a real day selection rather than month/year navigation
   const isRealDaySelection = (oldValStr: string, newValStr: string) => {
+    if (!oldValStr) return true;
+
     const oldParts = oldValStr.split('-');
     const newParts = newValStr.split('-');
     if (oldParts.length !== 3 || newParts.length !== 3) return true;
@@ -156,7 +149,7 @@ export function DatePopup({
       return false; // Month changed, day was just clipped. Not a real day click.
     }
 
-    return oldDay !== newDay;
+    return oldValStr !== newValStr;
   };
 
   return (
@@ -186,7 +179,12 @@ export function DatePopup({
         const newValue = event.target.value;
         setCurrentValue(newValue);
 
-        if (newValue && isRealDaySelection(initialValueRef.current, newValue)) {
+        if (!newValue) {
+          commitAndClose(null);
+          return;
+        }
+
+        if (isRealDaySelection(initialValueRef.current, newValue)) {
           // Commit and close immediately when a new day is explicitly selected
           commitAndClose(newValue);
         }
