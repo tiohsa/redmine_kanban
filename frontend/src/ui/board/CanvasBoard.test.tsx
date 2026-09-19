@@ -429,6 +429,26 @@ afterEach(() => {
     expect(container.querySelector('canvas.rk-canvas')).toBeTruthy();
   });
 
+  it('centers the single-line closed-title strikethrough', async () => {
+    const issue = makeIssue(18, { subject: 'Closed single-line subject', status_id: 2, is_closed: true });
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
+    const context = createCanvasContextWithSpies();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+
+    render(
+      <CanvasBoard data={data} state={state} cardDisplayMode="single_line"
+        canMove canCreate onCommand={vi.fn()} onCreate={vi.fn()} onEdit={vi.fn()} onView={vi.fn()}
+        onDelete={vi.fn()} onEditClick={vi.fn()} labels={data.labels} />,
+    );
+
+    await waitFor(() => expect(context.fillText).toHaveBeenCalledWith(issue.subject, expect.any(Number), expect.any(Number)));
+    const subjectTextCall = context.fillText.mock.calls.find(([text]) => text === issue.subject);
+    expect(subjectTextCall).toBeTruthy();
+    const [, subjectX, subjectY] = subjectTextCall as [string, number, number];
+    expect(context.lineTo).toHaveBeenCalledWith(subjectX + issue.subject.length * 7, subjectY);
+  });
+
   it.each([
     { cardDisplayMode: 'single_line', fontSize: 30, fitMode: 'none', detailed: false },
     { cardDisplayMode: 'single_line', fontSize: 10, fitMode: 'width', detailed: false },
@@ -928,7 +948,8 @@ afterEach(() => {
   it('draws completed issue and subtask titles in canvas with strikethrough lines', async () => {
     const issue = makeIssue(2, {
       subject: 'Closed issue',
-      status_id: 2,
+      status_id: 1,
+      is_closed: true,
       subtasks: [{ id: 20, subject: 'Closed child', status_id: 2, is_closed: true }],
     });
     const data = makeBoardData(issue);

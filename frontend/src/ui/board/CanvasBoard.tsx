@@ -24,7 +24,7 @@ import type { BoardState } from './state';
 import { cellKey } from './state';
 import { findSubtaskInTree, flattenSubtasks } from '../subtasksTree';
 import { truncateText, truncateTextLines } from './canvasText';
-import { buildTrackerCatalog, normalizeTrackerId, resolveTrackerName, type TrackerCatalog } from '../kanbanShared';
+import { buildTrackerCatalog, normalizeTrackerId, resolveClosedState, resolveTrackerName, type TrackerCatalog } from '../kanbanShared';
 import { layoutCardMetadata } from './canvasMetadata';
 import {
   computeLayout,
@@ -1126,8 +1126,7 @@ function drawSingleLineCard(
 	hoveredCardIssueId?: number | null,
 	timerSession?: { sessionId?: string; issueId: number | string; state: 'running' | 'expired' | 'stopped_pending_record' } | null,
 ) {
-	const column = data.columns.find((candidate) => candidate.id === issue.status_id);
-	const isClosed = !!column?.is_closed;
+	const isClosed = resolveClosedState(issue, data.columns);
 	const agingEnabled = !(data.meta.aging_exclude_closed && isClosed);
 	const agingDays = issue.aging_days ?? 0;
 	const agingClass = agingEnabled
@@ -1188,8 +1187,8 @@ function drawSingleLineCard(
 		ctx.beginPath();
 		ctx.strokeStyle = ctx.fillStyle;
 		ctx.lineWidth = 1;
-		ctx.moveTo(subjectX, metadataY + fontSize * 0.3);
-		ctx.lineTo(subjectX + subjectWidth, metadataY + fontSize * 0.3);
+		ctx.moveTo(subjectX, metadataY);
+		ctx.lineTo(subjectX + subjectWidth, metadataY);
 		ctx.stroke();
 	}
 	if (rectMap) {
@@ -1258,8 +1257,7 @@ function drawStandardCard(
   hoveredSubtaskKey?: string | null,
   timerSession?: { sessionId?: string; issueId: number | string; state: 'running' | 'expired' | 'stopped_pending_record' } | null,
 ) {
-  const column = data.columns.find((c) => c.id === issue.status_id);
-  const isClosed = !!column?.is_closed;
+  const isClosed = resolveClosedState(issue, data.columns);
   const agingEnabled = !(data.meta.aging_exclude_closed && isClosed);
   const agingDays = issue.aging_days ?? 0;
   const agingClass = agingEnabled
