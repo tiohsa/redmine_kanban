@@ -1181,14 +1181,24 @@ function drawSingleLineCard(
 	ctx.font = `500 ${fontSize}px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif`;
 	const subjectText = truncateText(ctx, issue.subject, subjectMaxWidth);
 	const subjectWidth = ctx.measureText(subjectText).width;
-	ctx.fillStyle = isClosed ? theme.textSecondary : theme.textPrimary;
+	const subjectColor = isClosed ? theme.textSecondary : theme.textPrimary;
+	ctx.fillStyle = subjectColor;
 	ctx.fillText(subjectText, subjectX, metadataY);
-	if (isClosed || (hover?.kind === 'card_subject' && hover.id === String(issue.id))) {
+	if (isClosed) {
 		ctx.beginPath();
-		ctx.strokeStyle = ctx.fillStyle;
+		ctx.strokeStyle = subjectColor;
 		ctx.lineWidth = 1;
 		ctx.moveTo(subjectX, metadataY);
 		ctx.lineTo(subjectX + subjectWidth, metadataY);
+		ctx.stroke();
+	}
+	if (hover?.kind === 'card_subject' && hover.id === String(issue.id)) {
+		const underlineY = metadataY + fontSize * 0.5 + 1;
+		ctx.beginPath();
+		ctx.strokeStyle = subjectColor;
+		ctx.lineWidth = 1;
+		ctx.moveTo(subjectX, underlineY);
+		ctx.lineTo(subjectX + subjectWidth, underlineY);
 		ctx.stroke();
 	}
 	if (rectMap) {

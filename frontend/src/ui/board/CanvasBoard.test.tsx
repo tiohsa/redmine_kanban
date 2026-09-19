@@ -450,6 +450,42 @@ afterEach(() => {
   });
 
   it.each([
+    { isClosed: false, expectedY: 'underline' },
+    { isClosed: true, expectedY: 'both' },
+  ] as const)('separates single-line hover underline from closed strikethrough: %j', async ({ isClosed, expectedY }) => {
+    const issue = makeIssue(19, { subject: 'Hover subject', status_id: isClosed ? 2 : 1, is_closed: isClosed });
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
+    const context = createCanvasContextWithSpies();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+    const rectMap = hitTestIndex.createRectMap();
+    vi.spyOn(hitTestIndex, 'createRectMap').mockReturnValue(rectMap);
+
+    const { container } = render(
+      <CanvasBoard data={data} state={state} cardDisplayMode="single_line"
+        canMove canCreate onCommand={vi.fn()} onCreate={vi.fn()} onEdit={vi.fn()} onView={vi.fn()}
+        onDelete={vi.fn()} onEditClick={vi.fn()} labels={data.labels} />,
+    );
+
+    await waitFor(() => expect(rectMap.cardSubjects.has(issue.id)).toBe(true));
+    const subject = rectMap.cardSubjects.get(issue.id)!;
+    const subjectX = subject.x;
+    const subjectWidth = issue.subject.length * 7;
+    const subjectY = subject.y + subject.height / 2;
+    const centerY = subjectY;
+    const underlineY = centerY + 13 * 0.5 + 1;
+    context.lineTo.mockClear();
+    fireEvent.pointerMove(container.querySelector('canvas.rk-canvas')!, {
+      clientX: subject.x + 2,
+      clientY: subject.y + subject.height / 2,
+    });
+
+    await waitFor(() => expect(context.lineTo).toHaveBeenCalledWith(subjectX + subjectWidth, underlineY));
+    const centerLineDrawn = context.lineTo.mock.calls.some(([x, y]) => x === subjectX + subjectWidth && y === centerY);
+    expect(centerLineDrawn).toBe(expectedY === 'both');
+  });
+
+  it.each([
     { cardDisplayMode: 'single_line', fontSize: 30, fitMode: 'none', detailed: false },
     { cardDisplayMode: 'single_line', fontSize: 10, fitMode: 'width', detailed: false },
     { cardDisplayMode: 'standard', fontSize: 13, fitMode: 'none', detailed: false },
