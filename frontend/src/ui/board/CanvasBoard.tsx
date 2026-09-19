@@ -1235,6 +1235,11 @@ function drawCard(
   const dueDateRowY = metadataY;
   currentX = contentX;
   const limitX = issue.done_ratio !== undefined ? x + w - 32 : x + w - 12;
+  const dateBadgeIcon = 'calendar_today';
+  const canRenderEmptyDate = issue.due_date == null && canEditIssue(issue);
+  const emptyDateBadgeWidth = canRenderEmptyDate
+    ? measureBadgeWidth(ctx, '', metaFontSize, dateBadgeIcon)
+    : 0;
 
   if (issue.priority_id) {
     let bg = theme.badgeBg;
@@ -1258,18 +1263,24 @@ function drawCard(
     fg = colorEntry.fg;
 
     if (issue.priority_id) { // Always draw if priority_id exists (even normal) to allow editing
-      const width = drawBadge(ctx, issue.priority_name || '', currentX, dueDateRowY - 1, bg, fg, metaFontSize);
+      const priorityText = canRenderEmptyDate
+        ? fitBadgeText(ctx, issue.priority_name || '', metaFontSize, limitX - currentX - emptyDateBadgeWidth - 8)
+        : issue.priority_name || '';
 
-      if (rectMap) {
-        rectMap.priorityBadges.set(issue.id, {
-          x: currentX,
-          y: dueDateRowY - 1,
-          width: width,
-          height: metaFontSize + (Math.max(2, Math.round(metaFontSize * 0.2)) * 2) + 4 // approximated height from drawBadge
-        });
+      if (priorityText !== null) {
+        const width = drawBadge(ctx, priorityText, currentX, dueDateRowY - 1, bg, fg, metaFontSize);
+
+        if (rectMap) {
+          rectMap.priorityBadges.set(issue.id, {
+            x: currentX,
+            y: dueDateRowY - 1,
+            width: width,
+            height: measureBadgeHeight(metaFontSize),
+          });
+        }
+
+        currentX += width + 8;
       }
-
-      currentX += width + 8;
     }
   }
 
@@ -1291,20 +1302,8 @@ function drawCard(
       text = '!' + text;
     }
 
-    const badgeIcon = 'calendar_today';
-    const measureWidth = (t: string, iconStr?: string) => {
-      ctx.save();
-      ctx.font = `500 ${metaFontSize}px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif`;
-      const textWidth = ctx.measureText(t).width;
-      ctx.restore();
-      const paddingX = Math.max(4, Math.round(metaFontSize * 0.5));
-      const iconSize = iconStr ? metaFontSize + 2 : 0;
-      const iconGap = iconStr ? 4 : 0;
-      return paddingX * 2 + textWidth + iconSize + iconGap;
-    };
-
     let badgeText = text;
-    let predictedWidth = measureWidth(badgeText, badgeIcon);
+    let predictedWidth = measureBadgeWidth(ctx, badgeText, metaFontSize, dateBadgeIcon);
 
     if (currentX + predictedWidth > limitX) {
       // Try MM-DD format
@@ -1314,7 +1313,7 @@ function drawCard(
         if (dueState === 'overdue') {
           shortDate = '!' + shortDate;
         }
-        const shortWidth = measureWidth(shortDate, badgeIcon);
+        const shortWidth = measureBadgeWidth(ctx, shortDate, metaFontSize, dateBadgeIcon);
         if (currentX + shortWidth <= limitX) {
           badgeText = shortDate;
           predictedWidth = shortWidth;
@@ -1322,39 +1321,50 @@ function drawCard(
           // Icon only
           const iconOnlyText = dueState === 'overdue' ? '!' : '';
           badgeText = iconOnlyText;
-          predictedWidth = measureWidth(iconOnlyText, badgeIcon);
+          predictedWidth = measureBadgeWidth(ctx, iconOnlyText, metaFontSize, dateBadgeIcon);
         }
       }
     }
 
     if (dueState !== 'normal') {
-      const width = drawBadge(ctx, badgeText, currentX, dueDateRowY - 1, bg, fg, metaFontSize, badgeIcon);
+      const width = drawBadge(ctx, badgeText, currentX, dueDateRowY - 1, bg, fg, metaFontSize, dateBadgeIcon);
 
       if (rectMap) {
         rectMap.dateBadges.set(issue.id, {
           x: currentX,
           y: dueDateRowY - 1,
           width: width,
-          height: metaFontSize + (Math.max(2, Math.round(metaFontSize * 0.2)) * 2) + 4
+          height: measureBadgeHeight(metaFontSize),
         });
       }
 
       currentX += width + 8;
     } else {
       // Normal state: White badge with border
-      const width = drawBadge(ctx, badgeText, currentX, dueDateRowY - 1, theme.surface, theme.textSecondary, metaFontSize, badgeIcon, theme.surface);
+      const width = drawBadge(ctx, badgeText, currentX, dueDateRowY - 1, theme.surface, theme.textSecondary, metaFontSize, dateBadgeIcon, theme.surface);
 
       if (rectMap) {
         rectMap.dateBadges.set(issue.id, {
           x: currentX,
           y: dueDateRowY - 1,
           width: width,
-          height: metaFontSize + (Math.max(2, Math.round(metaFontSize * 0.2)) * 2) + 4
+          height: measureBadgeHeight(metaFontSize),
         });
       }
 
       currentX += width + 8;
     }
+  }
+
+  if (canRenderEmptyDate) {
+    const width = drawBadge(ctx, '', currentX, dueDateRowY - 1, theme.surface, theme.textSecondary, metaFontSize, dateBadgeIcon, theme.border);
+    rectMap?.dateBadges.set(issue.id, {
+      x: currentX,
+      y: dueDateRowY - 1,
+      width,
+      height: measureBadgeHeight(metaFontSize),
+    });
+    currentX += width + 8;
   }
 
   if (agingEnabled && agingDays > 0) {
@@ -1890,6 +1900,48 @@ function calculateDueDateState(dateStr: string): 'overdue' | 'near' | 'normal' {
   return 'normal';
 }
 
+function measureBadgeWidth(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  fontSize: number,
+  icon?: string,
+): number {
+  ctx.save();
+  ctx.font = `500 ${fontSize}px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif`;
+  const textWidth = ctx.measureText(text).width;
+  ctx.restore();
+
+  const paddingX = Math.max(4, Math.round(fontSize * 0.5));
+  const iconSize = icon ? fontSize + 2 : 0;
+  const iconGap = icon ? 4 : 0;
+  return paddingX * 2 + textWidth + iconSize + iconGap;
+}
+
+function measureBadgeHeight(fontSize: number): number {
+  const paddingY = Math.max(2, Math.round(fontSize * 0.2));
+  return fontSize + paddingY * 2 + 4;
+}
+
+function fitBadgeText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  fontSize: number,
+  maxWidth: number,
+): string | null {
+  if (maxWidth <= 0) return null;
+  if (measureBadgeWidth(ctx, text, fontSize) <= maxWidth) return text;
+
+  const emptyTextWidth = measureBadgeWidth(ctx, '', fontSize);
+  const textMaxWidth = maxWidth - emptyTextWidth;
+  if (textMaxWidth <= 0) return null;
+
+  ctx.save();
+  ctx.font = `500 ${fontSize}px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif`;
+  const truncated = truncateText(ctx, text, textMaxWidth);
+  ctx.restore();
+  return measureBadgeWidth(ctx, truncated, fontSize) <= maxWidth ? truncated : null;
+}
+
 function drawBadge(
   ctx: CanvasRenderingContext2D,
   text: string,
@@ -1902,14 +1954,12 @@ function drawBadge(
   borderColor?: string
 ): number {
   ctx.save();
+  const totalWidth = measureBadgeWidth(ctx, text, fontSize, icon);
+  const height = measureBadgeHeight(fontSize);
   ctx.font = `500 ${fontSize}px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif`;
-  const textWidth = ctx.measureText(text).width;
   const paddingX = Math.max(4, Math.round(fontSize * 0.5));
-  const paddingY = Math.max(2, Math.round(fontSize * 0.2));
   const iconSize = icon ? fontSize + 2 : 0;
   const iconGap = icon ? 4 : 0;
-  const totalWidth = paddingX * 2 + textWidth + iconSize + iconGap;
-  const height = fontSize + paddingY * 2 + 4;
 
   ctx.fillStyle = bgColor;
   roundedRect(ctx, x, y, totalWidth, height, 4);

@@ -1,6 +1,6 @@
 import type { BoardData, Column, Issue, Lane } from '../types';
 import { resolveBoardLaneId } from './keys';
-import { sortIssues, type SortKey } from './sort';
+import { sortIssues, type SortConfig } from './sort';
 
 export type BoardState = {
   columns: Column[];
@@ -14,14 +14,14 @@ export type BoardState = {
 export function buildBoardState(
   data: BoardData,
   issues: Issue[],
-  sortKey: SortKey,
+  sortConfig: SortConfig,
   priorityRank: Map<number, number>,
   assigneeIds: string[] = [],
   priorityIds: string[] = [],
   priorityFilterEnabled: boolean = false,
 ): BoardState {
   const columns = data.columns ?? [];
-  const lanes = buildVisibleLanes(data, sortKey, assigneeIds, priorityIds, priorityFilterEnabled);
+  const lanes = buildVisibleLanes(data, assigneeIds, priorityIds, priorityFilterEnabled);
   const columnOrder = columns.map((c) => c.id);
   const laneOrder = data.meta.lane_type === 'none' ? ['none'] : lanes.map((l) => l.id);
 
@@ -41,7 +41,7 @@ export function buildBoardState(
 
   for (const [key, ids] of cardsByCell) {
     const list = ids.map((id) => cardsById.get(id)).filter((v): v is Issue => Boolean(v));
-    const sorted = sortIssues(list, sortKey, priorityRank);
+    const sorted = sortIssues(list, sortConfig, priorityRank);
     cardsByCell.set(
       key,
       sorted.map((it) => it.id)
@@ -60,13 +60,12 @@ export function buildBoardState(
 
 function buildVisibleLanes(
   data: BoardData,
-  sortKey: SortKey,
   assigneeIds: string[],
   priorityIds: string[],
   priorityFilterEnabled: boolean,
 ): Lane[] {
   if (data.meta.lane_type === 'priority') {
-    return buildVisiblePriorityLanes(data, sortKey, priorityIds, priorityFilterEnabled);
+    return buildVisiblePriorityLanes(data, priorityIds, priorityFilterEnabled);
   }
   if (data.meta.lane_type !== 'assignee') return data.lanes ?? [];
 
@@ -94,13 +93,11 @@ function buildVisibleLanes(
 
 function buildVisiblePriorityLanes(
   data: BoardData,
-  sortKey: SortKey,
   priorityIds: string[],
   priorityFilterEnabled: boolean,
 ): Lane[] {
-  const shouldSortAscending = sortKey === 'priority_asc';
   const priorities = [...(data.lists.priorities ?? [])];
-  if (!shouldSortAscending) priorities.reverse();
+  priorities.reverse();
 
   const availableLanes = [
     ...priorities.map((priority) => ({

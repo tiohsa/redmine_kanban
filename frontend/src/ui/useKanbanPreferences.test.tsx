@@ -202,4 +202,57 @@ describe('useKanbanPreferences', () => {
     expect(result.current.filters.projectIds).toEqual([4]);
     expect(localStorage.getItem('rk_maximum_board_entity_count:/projects/demo/kanban:user:7')).toBe('3000');
   });
+
+  it.each([
+    ['due_asc', [{ field: 'due', direction: 'asc' }]],
+    ['due_desc', [{ field: 'due', direction: 'desc' }]],
+    ['priority_asc', [{ field: 'priority', direction: 'asc' }]],
+    ['priority_desc', [{ field: 'priority', direction: 'desc' }]],
+    ['updated_asc', [{ field: 'updated', direction: 'asc' }]],
+    ['updated_desc', [{ field: 'updated', direction: 'desc' }]],
+  ] as const)('migrates legacy sort preference %s', (legacyValue, expected) => {
+    localStorage.setItem('rk_sortkey:user:7', legacyValue);
+
+    const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data', 7));
+
+    expect(result.current.sortConfig).toEqual(expected);
+    expect(JSON.parse(localStorage.getItem('rk_sortkey:user:7') ?? 'null')).toEqual(expected);
+  });
+
+  it('loads and persists the new sort configuration format', () => {
+    const saved = [
+      { field: 'due', direction: 'asc' },
+      { field: 'priority', direction: 'desc' },
+    ] as const;
+    localStorage.setItem('rk_sortkey:user:7', JSON.stringify(saved));
+
+    const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data', 7));
+    expect(result.current.sortConfig).toEqual(saved);
+
+    act(() => {
+      result.current.setSortConfig([
+        { field: 'priority', direction: 'asc' },
+        { field: 'updated', direction: 'desc' },
+      ]);
+    });
+
+    expect(JSON.parse(localStorage.getItem('rk_sortkey:user:7') ?? 'null')).toEqual([
+      { field: 'priority', direction: 'asc' },
+      { field: 'updated', direction: 'desc' },
+    ]);
+  });
+
+  it('falls back to the default for corrupt sort preferences', () => {
+    localStorage.setItem('rk_sortkey:user:7', JSON.stringify([
+      { field: 'due', direction: 'asc' },
+      { field: 'due', direction: 'desc' },
+    ]));
+
+    const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data', 7));
+
+    expect(result.current.sortConfig).toEqual([{ field: 'updated', direction: 'desc' }]);
+    expect(JSON.parse(localStorage.getItem('rk_sortkey:user:7') ?? 'null')).toEqual([
+      { field: 'updated', direction: 'desc' },
+    ]);
+  });
 });
