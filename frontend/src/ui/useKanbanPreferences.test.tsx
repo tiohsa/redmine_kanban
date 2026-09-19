@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { act, renderHook } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { describe, expect, it, beforeEach } from 'vitest';
 import { MAXIMUM_BOARD_ENTITY_COUNT, parseMaximumBoardEntityCount, useKanbanPreferences } from './useKanbanPreferences';
 
@@ -16,6 +17,92 @@ describe('parseMaximumBoardEntityCount', () => {
 describe('useKanbanPreferences', () => {
   beforeEach(() => {
     localStorage.clear();
+  });
+
+  it('defaults card display to standard without writing before the user is known', () => {
+    const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data'));
+
+    expect(result.current.cardDisplayMode).toBe('standard');
+    expect(result.current.preferencesReady).toBe(false);
+    expect(localStorage.length).toBe(0);
+
+    act(() => { result.current.setCurrentUserId(7); });
+    expect(result.current.cardDisplayMode).toBe('standard');
+    expect(localStorage.getItem('rk_card_display_mode:user:7')).toBe('standard');
+  });
+
+  it('persists card display across remounts and projects without changing other display preferences', () => {
+    const first = renderHook(() => useKanbanPreferences('/projects/alpha/kanban/data', 7));
+    act(() => {
+      first.result.current.setFitMode('width');
+      first.result.current.setFontSize(30);
+      first.result.current.setCardDisplayMode('single_line');
+    });
+    expect(first.result.current.showSubtasks).toBe(true);
+    expect(localStorage.getItem('rk_card_display_mode:user:7')).toBe('single_line');
+    expect(localStorage.getItem('rk_card_display_mode:/projects/alpha/kanban:user:7')).toBeNull();
+    first.unmount();
+
+    const second = renderHook(() => useKanbanPreferences('/projects/beta/kanban/data', 7));
+    expect(second.result.current.preferencesReady).toBe(true);
+    expect(second.result.current.cardDisplayMode).toBe('single_line');
+    expect(second.result.current.showSubtasks).toBe(true);
+    expect(second.result.current.fitMode).toBe('width');
+    expect(second.result.current.fontSize).toBe(30);
+
+    act(() => { second.result.current.setShowSubtasks(false); });
+    expect(second.result.current.cardDisplayMode).toBe('single_line');
+    act(() => { second.result.current.setCardDisplayMode('standard'); });
+    expect(second.result.current.showSubtasks).toBe(false);
+    expect(localStorage.getItem('rk_card_display_mode:user:7')).toBe('standard');
+  });
+
+  it.each(['', 'compact', 'SINGLE_LINE', 'null', '1'])('repairs invalid card display value %j to standard', (value) => {
+    localStorage.setItem('rk_card_display_mode:user:7', value);
+    const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data', 7));
+
+    expect(result.current.cardDisplayMode).toBe('standard');
+    expect(localStorage.getItem('rk_card_display_mode:user:7')).toBe('standard');
+  });
+
+  it('hydrates card display after user discovery and isolates it when the user changes', () => {
+    localStorage.setItem('rk_card_display_mode:user:7', 'single_line');
+    localStorage.setItem('rk_card_display_mode:user:8', 'standard');
+    const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data'));
+
+    expect(localStorage.getItem('rk_card_display_mode:user:7')).toBe('single_line');
+    act(() => { result.current.setCurrentUserId(7); });
+    expect(result.current.cardDisplayMode).toBe('single_line');
+    act(() => { result.current.setCurrentUserId(8); });
+    expect(result.current.cardDisplayMode).toBe('standard');
+    expect(localStorage.getItem('rk_card_display_mode:user:7')).toBe('single_line');
+    expect(localStorage.getItem('rk_card_display_mode:user:8')).toBe('standard');
+    act(() => { result.current.setCurrentUserId(7); });
+    expect(result.current.cardDisplayMode).toBe('single_line');
+    act(() => { result.current.setCurrentUserId(9); });
+    expect(result.current.cardDisplayMode).toBe('standard');
+  });
+
+  it('preserves the saved card display mode during StrictMode hydration', () => {
+    localStorage.setItem('rk_card_display_mode:user:7', 'single_line');
+    const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data', 7), { wrapper: StrictMode });
+
+    expect(result.current.preferencesReady).toBe(true);
+    expect(result.current.cardDisplayMode).toBe('single_line');
+    expect(localStorage.getItem('rk_card_display_mode:user:7')).toBe('single_line');
+  });
+
+  it('keeps the user-scoped card display mode when the mounted board changes projects', () => {
+    const { result, rerender } = renderHook(({ dataUrl }) => useKanbanPreferences(dataUrl, 7), {
+      initialProps: { dataUrl: '/projects/alpha/kanban/data' },
+    });
+    act(() => { result.current.setCardDisplayMode('single_line'); });
+
+    rerender({ dataUrl: '/projects/beta/kanban/data' });
+
+    expect(result.current.cardDisplayMode).toBe('single_line');
+    expect(localStorage.getItem('rk_card_display_mode:user:7')).toBe('single_line');
+    expect(localStorage.getItem('rk_card_display_mode:/projects/beta/kanban:user:7')).toBeNull();
   });
 
   it('reads assigneeIds from the saved filters payload', () => {

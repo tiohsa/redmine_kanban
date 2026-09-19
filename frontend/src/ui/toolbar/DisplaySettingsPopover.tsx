@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { FitMode } from '../kanbanShared';
-import { DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT, MAXIMUM_BOARD_ENTITY_COUNT, parseMaximumBoardEntityCount, type LaneType } from '../useKanbanPreferences';
+import { DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT, MAXIMUM_BOARD_ENTITY_COUNT, parseMaximumBoardEntityCount, type CardDisplayMode, type LaneType } from '../useKanbanPreferences';
 import { useDropdownDismiss } from './useDropdownDismiss';
 
 const FONT_SIZE_OPTIONS = ['10', '12', '14', '16', '18', '20', '22', '24', '26', '28', '30'] as const;
 
-export function SettingsToggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
+export function SettingsToggle({ label, checked, onChange, disabled = false }: { label: string; checked: boolean; onChange: () => void; disabled?: boolean }) {
   return (
-    <button type="button" className="rk-settings-row" onClick={onChange} role="switch" aria-checked={checked}>
+    <button type="button" className="rk-settings-row" onClick={onChange} role="switch" aria-checked={checked} disabled={disabled}>
       <span>{label}</span>
       <span className={`rk-switch ${checked ? 'rk-switch-on' : ''}`} aria-hidden="true">
         <span className="rk-switch-thumb" />
@@ -43,6 +43,8 @@ export function DisplaySettingsPopover({
   onToggleTimeEntryOnClose,
   fitMode,
   onToggleFitMode,
+  cardDisplayMode,
+  onChangeCardDisplayMode,
   fontSize,
   onChangeFontSize,
   maximumBoardEntityCount = DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT,
@@ -64,6 +66,8 @@ export function DisplaySettingsPopover({
   onToggleTimeEntryOnClose: () => void;
   fitMode: FitMode;
   onToggleFitMode: () => void;
+  cardDisplayMode: CardDisplayMode;
+  onChangeCardDisplayMode: (value: CardDisplayMode) => void;
   fontSize: number;
   onChangeFontSize: (size: number) => void;
   maximumBoardEntityCount?: number;
@@ -84,6 +88,7 @@ export function DisplaySettingsPopover({
     { id: 'width', name: labels.fit_width },
   ];
   const fontSizeOptions = FONT_SIZE_OPTIONS.map((value) => ({ id: value, name: `${value}px` }));
+  const isSingleLineMode = cardDisplayMode === 'single_line';
 
   return (
     <div className="rk-dropdown-container">
@@ -94,7 +99,7 @@ export function DisplaySettingsPopover({
       {open ? (
         <div ref={menuRef} className="rk-settings-menu" role="dialog" aria-label={title}>
           <div className="rk-settings-title">{title}</div>
-          <SettingsToggle label={labels.show_subtasks_short} checked={showSubtasks} onChange={onToggleShowSubtasks} />
+          <SettingsToggle label={labels.show_subtasks_short} checked={isSingleLineMode ? false : showSubtasks} onChange={onToggleShowSubtasks} disabled={isSingleLineMode} />
           <SettingsSelect label={labels.lane_type} value={laneType} options={[
             { id: 'none', name: labels.none },
             { id: 'assignee', name: labels.assignee },
@@ -159,6 +164,10 @@ export function DisplaySettingsPopover({
             }}>{labels.reset}</button>
           </div>
           <SettingsSelect label={labels.display_width} value={fitMode} options={widthOptions} onChange={(value) => { if (value !== fitMode) onToggleFitMode(); }} />
+          <SettingsSelect label={labels.card_display_mode} value={cardDisplayMode} options={[
+            { id: 'standard', name: labels.card_display_standard },
+            { id: 'single_line', name: labels.card_display_single_line },
+          ]} onChange={(value) => onChangeCardDisplayMode(value === 'single_line' ? 'single_line' : 'standard')} />
           <SettingsSelect label={labels.font_size} value={String(fontSize)} options={fontSizeOptions} onChange={(value) => onChangeFontSize(Number(value))} />
         </div>
       ) : null}

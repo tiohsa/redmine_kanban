@@ -1,5 +1,6 @@
 import type { BoardData, Issue } from '../types';
 import { flattenSubtasks } from '../subtasksTree';
+import type { CardDisplayMode } from '../useKanbanPreferences';
 import type { getMetrics } from './metrics';
 import type { BoardState } from './state';
 import { cellKey } from './state';
@@ -18,7 +19,8 @@ export function computeLayout(
   fitMode: 'none' | 'width' = 'none',
   measureSubjectLines?: SubjectLineMeasurer,
   fontSize?: number,
-  cardHeightCache?: CardHeightCache
+  cardHeightCache?: CardHeightCache,
+  cardDisplayMode: CardDisplayMode = 'standard',
 ) {
   const columnCount = state.columnOrder.length;
   const gridStartX = data.meta.lane_type === 'none' ? 0 : metrics.laneHeaderWidth;
@@ -43,7 +45,7 @@ export function computeLayout(
 
   let currentY = headerHeight;
   const laneLayouts = lanes.map((laneId) => {
-    const laneHeight = computeLaneHeight(state, data, laneId, canCreate, adjustedMetrics, measureSubjectLines, fontSize, cardHeightCache);
+    const laneHeight = computeLaneHeight(state, data, laneId, canCreate, adjustedMetrics, measureSubjectLines, fontSize, cardHeightCache, cardDisplayMode);
     const y = currentY;
     currentY += laneHeight;
     return { laneId, y, height: laneHeight };
@@ -70,8 +72,11 @@ export function measureCardHeight(
   measureSubjectLines?: SubjectLineMeasurer,
   fontSize?: number,
   cardWidth?: number,
-  currentProjectId?: number
+  currentProjectId?: number,
+  cardDisplayMode: CardDisplayMode = 'standard',
 ): number {
+  if (cardDisplayMode === 'single_line') return measureSingleLineCardHeight(fontSize);
+
   let h = metrics.cardBaseHeight;
   const metaFontSize = Math.max(10, (fontSize ?? 13) - 2);
   if (issue.project && issue.project.id !== currentProjectId) {
@@ -97,6 +102,10 @@ export function measureCardHeight(
   return h;
 }
 
+export function measureSingleLineCardHeight(fontSize?: number): number {
+  return Math.max(34, (fontSize ?? 13) + 14);
+}
+
 export function makeSubtaskSignature(issue: Issue) {
   const subtaskRows = flattenSubtasks(issue.subtasks);
   const lastSubtaskId = subtaskRows[subtaskRows.length - 1]?.subtask.id ?? 0;
@@ -104,8 +113,14 @@ export function makeSubtaskSignature(issue: Issue) {
   return `${subtaskRows.length}:${lastSubtaskId}:${closedCount}`;
 }
 
-export function makeCardHeightCacheKey(issue: Issue, fontSize: number | undefined, columnWidth: number | undefined, currentProjectId?: number) {
-  return [issue.id, issue.subject, makeSubtaskSignature(issue), fontSize ?? 'default', columnWidth ?? 'default', currentProjectId ?? 'default'].join('|');
+export function makeCardHeightCacheKey(
+  issue: Issue,
+  fontSize: number | undefined,
+  columnWidth: number | undefined,
+  currentProjectId?: number,
+  cardDisplayMode: CardDisplayMode = 'standard',
+) {
+  return [issue.id, issue.subject, makeSubtaskSignature(issue), fontSize ?? 'default', columnWidth ?? 'default', currentProjectId ?? 'default', cardDisplayMode].join('|');
 }
 
 export function measureCardHeightCached(
@@ -115,15 +130,16 @@ export function measureCardHeightCached(
   measureSubjectLines?: SubjectLineMeasurer,
   fontSize?: number,
   cardWidth?: number,
-  currentProjectId?: number
+  currentProjectId?: number,
+  cardDisplayMode: CardDisplayMode = 'standard',
 ) {
-  if (!cache) return measureCardHeight(issue, metrics, measureSubjectLines, fontSize, cardWidth, currentProjectId);
+  if (!cache) return measureCardHeight(issue, metrics, measureSubjectLines, fontSize, cardWidth, currentProjectId, cardDisplayMode);
 
-  const key = makeCardHeightCacheKey(issue, fontSize, cardWidth, currentProjectId);
+  const key = makeCardHeightCacheKey(issue, fontSize, cardWidth, currentProjectId, cardDisplayMode);
   const cached = cache.get(key);
   if (cached !== undefined) return cached;
 
-  const height = measureCardHeight(issue, metrics, measureSubjectLines, fontSize, cardWidth, currentProjectId);
+  const height = measureCardHeight(issue, metrics, measureSubjectLines, fontSize, cardWidth, currentProjectId, cardDisplayMode);
   cache.set(key, height);
   return height;
 }
@@ -136,7 +152,8 @@ export function computeLaneHeight(
   metrics: ReturnType<typeof getMetrics>,
   measureSubjectLines?: SubjectLineMeasurer,
   fontSize?: number,
-  cardHeightCache?: CardHeightCache
+  cardHeightCache?: CardHeightCache,
+  cardDisplayMode: CardDisplayMode = 'standard',
 ) {
   let maxCellHeight = 0;
 
@@ -149,7 +166,7 @@ export function computeLaneHeight(
       for (const cardId of cardIds) {
         const issue = state.cardsById.get(cardId);
         if (issue) {
-          height += measureCardHeightCached(issue, metrics, cardHeightCache, measureSubjectLines, fontSize, metrics.columnWidth, data.meta.project_id);
+          height += measureCardHeightCached(issue, metrics, cardHeightCache, measureSubjectLines, fontSize, metrics.columnWidth, data.meta.project_id, cardDisplayMode);
         }
       }
       height += (cardIds.length - 1) * metrics.cardGap;
