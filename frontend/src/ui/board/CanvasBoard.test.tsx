@@ -379,6 +379,54 @@ afterEach(() => {
     expect(context.fillText).toHaveBeenCalledWith('calendar_today', expect.any(Number), expect.any(Number));
   });
 
+  it('shows only the subject in single-line cards', async () => {
+    const issue = makeIssue(17, {
+      subject: 'Single-line subject',
+      due_date: '2099-09-26',
+      priority_id: 2,
+      priority_name: 'Normal',
+      done_ratio: 75,
+      subtasks: [{ id: 18, subject: 'Child should be hidden', status_id: 1, is_closed: false }],
+    });
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
+    const context = createCanvasContextWithSpies();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+    const rectMap = hitTestIndex.createRectMap();
+    vi.spyOn(hitTestIndex, 'createRectMap').mockReturnValue(rectMap);
+    const { container } = render(
+      <CanvasBoard
+        data={data}
+        state={state}
+        cardDisplayMode="single_line"
+        fitMode="width"
+        canMove
+        canCreate
+        onCommand={vi.fn()}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onView={vi.fn()}
+        onDelete={vi.fn()}
+        onEditClick={vi.fn()}
+        labels={data.labels}
+      />,
+    );
+
+    await waitFor(() => expect(rectMap.cards.has(issue.id)).toBe(true));
+    const card = rectMap.cards.get(issue.id)!;
+    const subject = rectMap.cardSubjects.get(issue.id)!;
+
+    expect(card.height).toBe(34);
+    expect(subject).toBeDefined();
+    expect(rectMap.priorityBadges.get(issue.id)).toBeUndefined();
+    expect(rectMap.dateBadges.get(issue.id)).toBeUndefined();
+    expect(rectMap.progressDonuts.get(issue.id)).toBeUndefined();
+    expect(rectMap.subtaskAreas.get(issue.id)).toBeUndefined();
+    expect(context.fillText).not.toHaveBeenCalledWith(`#${issue.id}`, expect.any(Number), expect.any(Number));
+    expect(context.fillText).toHaveBeenCalledWith(issue.subject, expect.any(Number), expect.any(Number));
+    expect(container.querySelector('canvas.rk-canvas')).toBeTruthy();
+  });
+
   it('resets active drag but keeps a committed drop across lost capture', async () => {
     const issue = makeIssue(1, { due_date: '2026-03-20' });
     const data = makeBoardData(issue);

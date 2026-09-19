@@ -3,7 +3,7 @@ import type { BoardData } from './types';
 import type { Filters } from './boardFilters';
 import type { SortConfig } from './board/sort';
 import type { FitMode } from './kanbanShared';
-import type { LaneType } from './useKanbanPreferences';
+import type { CardDisplayMode, LaneType } from './useKanbanPreferences';
 import { buildToolbarOptions, togglePriorityFilter } from './toolbar/toolbarOptions';
 import { SearchPopover } from './toolbar/SearchPopover';
 import { SortPopover } from './toolbar/SortPopover';
@@ -20,6 +20,8 @@ type ToolbarProps = {
   onToggleFullWindow: () => void;
   fitMode: FitMode;
   onToggleFitMode: () => void;
+  cardDisplayMode: CardDisplayMode;
+  onChangeCardDisplayMode: (value: CardDisplayMode) => void;
   showSubtasks: boolean;
   onToggleShowSubtasks: () => void;
   fontSize: number;
@@ -55,6 +57,8 @@ export function KanbanToolbar({
   onToggleFullWindow,
   fitMode,
   onToggleFitMode,
+  cardDisplayMode,
+  onChangeCardDisplayMode,
   showSubtasks,
   onToggleShowSubtasks,
   fontSize,
@@ -275,6 +279,8 @@ export function KanbanToolbar({
           onToggleTimeEntryOnClose={onToggleTimeEntryOnClose}
           fitMode={fitMode}
           onToggleFitMode={onToggleFitMode}
+          cardDisplayMode={cardDisplayMode}
+          onChangeCardDisplayMode={onChangeCardDisplayMode}
           fontSize={fontSize}
           onChangeFontSize={onChangeFontSize}
           maximumBoardEntityCount={maximumBoardEntityCount}

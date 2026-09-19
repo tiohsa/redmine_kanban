@@ -5,6 +5,7 @@ import { buildProjectScopeFromDataUrl, makeScopedStorageKey, readScopedBooleanWi
 import type { FitMode } from './kanbanShared';
 
 export type LaneType = 'none' | 'assignee' | 'priority' | 'category';
+export type CardDisplayMode = 'standard' | 'single_line';
 export const DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT = 1500;
 export const MAXIMUM_BOARD_ENTITY_COUNT = 2_147_483_647;
 
@@ -100,6 +101,7 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
   const maximumBoardEntityCountStorageKey = projectKey('rk_maximum_board_entity_count');
   const fullWindowStorageKey = userKey('rk_fullwindow');
   const fitModeStorageKey = userKey('rk_fit_mode');
+  const cardDisplayModeStorageKey = userKey('rk_card_display_mode');
   const showSubtasksStorageKey = userKey('rk_show_subtasks');
   const sortConfigStorageKey = userKey('rk_sortkey');
   const fontSizeStorageKey = userKey('rk_font_size');
@@ -108,6 +110,7 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [fullWindow, setFullWindow] = useState(false);
   const [fitMode, setFitMode] = useState<FitMode>('none');
+  const [cardDisplayMode, setCardDisplayMode] = useState<CardDisplayMode>('standard');
   const [showSubtasks, setShowSubtasks] = useState(true);
   const [sortConfig, setSortConfig] = useState<SortConfig>(() => DEFAULT_SORT_CONFIG.map((criterion) => ({ ...criterion })));
   const [hiddenStatusIds, setHiddenStatusIds] = useState<Set<number>>(new Set());
@@ -132,6 +135,7 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
       // The gated persistence effects perform the migration write after hydration.
     }
     setFitMode(fitMode === 'width' || (fitMode === null && legacyFitToScreen === '1') ? 'width' : 'none');
+    setCardDisplayMode(readStorageValue(cardDisplayModeStorageKey!) === 'single_line' ? 'single_line' : 'standard');
     setShowSubtasks(readScopedValueWithLegacy(showSubtasksStorageKey!, 'rk_show_subtasks') !== '0');
     const savedSortConfig = readScopedValueWithLegacy(sortConfigStorageKey!, 'rk_sortkey');
     setSortConfig(parseSortConfig(savedSortConfig));
@@ -160,7 +164,7 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
     setViewableProjectsEnabled(readScopedBooleanWithLegacy(viewableProjectsStorageKey!, makeScopedStorageKey('rk_viewable_projects_enabled', projectScope), false));
     setMaximumBoardEntityCount(normalizeMaximumBoardEntityCount(readStorageValue(maximumBoardEntityCountStorageKey!)));
     setHydratedScope(userScope);
-  }, [agingDangerDaysStorageKey, agingExcludeClosedStorageKey, agingWarnDaysStorageKey, filtersStorageKey, fitModeStorageKey, fontSizeStorageKey, fullWindowStorageKey, hiddenStatusStorageKey, laneTypeStorageKey, maximumBoardEntityCountStorageKey, priorityLaneStorageKey, projectScope, showSubtasksStorageKey, sortConfigStorageKey, timeEntryStorageKey, userScope, viewableProjectsStorageKey]);
+  }, [agingDangerDaysStorageKey, agingExcludeClosedStorageKey, agingWarnDaysStorageKey, cardDisplayModeStorageKey, filtersStorageKey, fitModeStorageKey, fontSizeStorageKey, fullWindowStorageKey, hiddenStatusStorageKey, laneTypeStorageKey, maximumBoardEntityCountStorageKey, priorityLaneStorageKey, projectScope, showSubtasksStorageKey, sortConfigStorageKey, timeEntryStorageKey, userScope, viewableProjectsStorageKey]);
 
   useEffect(() => {
     if (!preferencesReady) return;
@@ -188,6 +192,10 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
   useEffect(() => {
     if (preferencesReady && fitModeStorageKey) writeStorageValue(fitModeStorageKey, fitMode);
   }, [fitMode, fitModeStorageKey, preferencesReady]);
+
+  useEffect(() => {
+    if (preferencesReady && cardDisplayModeStorageKey) writeStorageValue(cardDisplayModeStorageKey, cardDisplayMode);
+  }, [cardDisplayMode, cardDisplayModeStorageKey, preferencesReady]);
 
   useEffect(() => {
     if (preferencesReady && sortConfigStorageKey) writeStorageValue(sortConfigStorageKey, serializeSortConfig(sortConfig));
@@ -254,6 +262,8 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
     setFullWindow,
     fitMode,
     setFitMode,
+    cardDisplayMode,
+    setCardDisplayMode,
     showSubtasks,
     setShowSubtasks,
     sortConfig,

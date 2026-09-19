@@ -52,6 +52,8 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     setFullWindow,
     fitMode,
     setFitMode,
+    cardDisplayMode,
+    setCardDisplayMode,
     showSubtasks,
     setShowSubtasks,
     sortConfig,
@@ -109,6 +111,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
   });
 
   const effectiveLaneType = laneType;
+  const effectiveShowSubtasks = cardDisplayMode === 'single_line' ? false : showSubtasks;
   const dialogs = useKanbanDialogs(baseUrl, data, effectiveLaneType, boardQueryKey);
   const actions = useKanbanActions({
     baseUrl,
@@ -128,7 +131,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     agingWarnDays,
     agingDangerDays,
     agingExcludeClosed,
-    showSubtasks,
+    showSubtasks: effectiveShowSubtasks,
     filters,
     hiddenStatusIds,
     pendingDeleteIssue: actions.pendingDeleteIssue,
@@ -181,6 +184,8 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
           onToggleFullWindow={() => setFullWindow((value) => !value)}
           fitMode={fitMode}
           onToggleFitMode={() => setFitMode((value) => (value === 'none' ? 'width' : 'none'))}
+          cardDisplayMode={cardDisplayMode}
+          onChangeCardDisplayMode={setCardDisplayMode}
           showSubtasks={showSubtasks}
           onToggleShowSubtasks={() => setShowSubtasks((value) => !value)}
           fontSize={fontSize}
@@ -224,6 +229,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
             canCreate={canCreate}
             labels={filteredData.labels}
             fitMode={fitMode}
+            cardDisplayMode={cardDisplayMode}
             busyIssueIds={actions.busyIssueIds}
             fontSize={fontSize}
             onCommand={(command) => {

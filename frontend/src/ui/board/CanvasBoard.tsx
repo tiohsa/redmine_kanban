@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 import type { BoardData, Column, Issue, Lane } from '../types';
+import type { CardDisplayMode } from '../useKanbanPreferences';
 import type { BoardCommand } from './commands';
 import { getBoardCursor } from './cursor';
 import type { Rect } from './canvasGeometry';
@@ -108,6 +109,7 @@ type Props = {
   hiddenStatusIds?: Set<number>;
   onToggleStatusVisibility?: (statusId: number) => void;
   fontSize?: number;
+  cardDisplayMode?: CardDisplayMode;
   defaultCreateStatusId?: number;
 };
 
@@ -135,6 +137,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   hiddenStatusIds,
   onToggleStatusVisibility,
   fontSize = 13,
+  cardDisplayMode = 'standard',
   defaultCreateStatusId,
 }: Props, ref) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -229,8 +232,8 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   const metrics = useMemo(() => getMetrics(fontSize), [fontSize]);
 
   const layout = useMemo(
-    () => computeLayout(state, data, canCreate, metrics, size.width, fitMode, measureSubjectLines, fontSize, cardHeightCacheRef.current),
-    [state, data, canCreate, metrics, size.width, fitMode, measureSubjectLines, fontSize]
+    () => computeLayout(state, data, canCreate, metrics, size.width, fitMode, measureSubjectLines, fontSize, cardHeightCacheRef.current, cardDisplayMode),
+    [state, data, canCreate, metrics, size.width, fitMode, measureSubjectLines, fontSize, cardDisplayMode]
   );
 
   const trackerCatalog = useMemo(() => buildTrackerCatalog(data.lists.trackers), [data.lists.trackers]);
@@ -263,7 +266,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   }, []);
   useEffect(() => {
     scheduleRender();
-  }, [size, state, data.meta, trackerCatalog, canCreate, canMove, theme, fontSize, defaultCreateStatusId, timerSession?.sessionId, timerSession?.issueId, timerSession?.state, scheduleRender]);
+  }, [size, state, data.meta, trackerCatalog, canCreate, canMove, theme, fontSize, cardDisplayMode, defaultCreateStatusId, timerSession?.sessionId, timerSession?.issueId, timerSession?.state, scheduleRender]);
 
   useEffect(() => {
     const onViewportChange = () => {
@@ -410,6 +413,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         hoveredSubtaskKeyRef.current,
         metrics,
         fontSize,
+        cardDisplayMode,
         cardHeightCacheRef.current,
         busyIssueIds,
         timerSession,
@@ -438,6 +442,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         metrics,
         fontSize,
         layout,
+        cardDisplayMode,
       ),
       drawHeaders: () => drawHeaders(
         ctx,
@@ -781,9 +786,10 @@ export function measureCardHeightCached(
   ctx?: CanvasRenderingContext2D | null,
   fontSize?: number,
   cardWidth?: number,
-  currentProjectId?: number
+  currentProjectId?: number,
+  cardDisplayMode: CardDisplayMode = 'standard',
 ) {
-  return measureLayoutCardHeightCached(issue, metrics, cache, createSubjectLineMeasurer(ctx ?? null), fontSize, cardWidth, currentProjectId);
+  return measureLayoutCardHeightCached(issue, metrics, cache, createSubjectLineMeasurer(ctx ?? null), fontSize, cardWidth, currentProjectId, cardDisplayMode);
 }
 
 function drawHeaders(
@@ -957,6 +963,7 @@ function drawCells(
   hoveredSubtaskKey: string | null,
   metrics: ReturnType<typeof getMetrics>,
   fontSize: number,
+  cardDisplayMode: CardDisplayMode,
   cardHeightCache: CardHeightCache,
   busyIssueIds?: Set<number>,
   timerSession?: { sessionId?: string; issueId: number | string; state: 'running' | 'expired' | 'stopped_pending_record' } | null,
@@ -1057,7 +1064,7 @@ function drawCells(
         const issue = state.cardsById.get(cardId);
         if (!issue) continue;
 
-          const cardH = measureCardHeightCached(issue, metrics, cardHeightCache, ctx, fontSize, layout.columnWidth, data.meta.project_id);
+          const cardH = measureCardHeightCached(issue, metrics, cardHeightCache, ctx, fontSize, layout.columnWidth, data.meta.project_id, cardDisplayMode);
           const cardRect = {
             x: cellRect.x + metrics.cellPadding,
             y: currentY,
@@ -1073,7 +1080,7 @@ function drawCells(
 
           const isUpdating = busyIssueIds?.has(issue.id) ?? false;
           rectMap.cards.set(issue.id, cardRect);
-        drawCard(ctx, cardRect, issue, data, trackerCatalog, theme, canMove, labels, metrics, fontSize, rectMap, hover, isUpdating, hoveredCardIssueId, hoveredSubtaskKey, timerSession);
+        drawCard(ctx, cardRect, issue, data, trackerCatalog, theme, canMove, labels, metrics, fontSize, rectMap, hover, isUpdating, hoveredCardIssueId, hoveredSubtaskKey, timerSession, cardDisplayMode);
       }
     });
   });
@@ -1082,6 +1089,158 @@ function drawCells(
 }
 
 function drawCard(
+	ctx: CanvasRenderingContext2D,
+	rect: Rect,
+	issue: Issue,
+	data: BoardData,
+	trackerCatalog: TrackerCatalog,
+	theme: CanvasTheme,
+	canMove: boolean,
+	labels: Record<string, string>,
+	metrics: ReturnType<typeof getMetrics>,
+	fontSize: number,
+	rectMap?: RectMap,
+	hover?: { kind: 'card_subject' | 'subtask_subject'; id: string } | null,
+	isUpdating?: boolean,
+	hoveredCardIssueId?: number | null,
+	hoveredSubtaskKey?: string | null,
+	timerSession?: { sessionId?: string; issueId: number | string; state: 'running' | 'expired' | 'stopped_pending_record' } | null,
+	cardDisplayMode: CardDisplayMode = 'standard',
+) {
+	if (cardDisplayMode === 'single_line') {
+		drawSingleLineCard(ctx, rect, issue, data, theme, fontSize, rectMap, hover, hoveredCardIssueId, timerSession);
+		return;
+	}
+	drawStandardCard(ctx, rect, issue, data, trackerCatalog, theme, canMove, labels, metrics, fontSize, rectMap, hover, isUpdating, hoveredCardIssueId, hoveredSubtaskKey, timerSession);
+}
+
+function drawSingleLineCard(
+	ctx: CanvasRenderingContext2D,
+	rect: Rect,
+	issue: Issue,
+	data: BoardData,
+	theme: CanvasTheme,
+	fontSize: number,
+	rectMap?: RectMap,
+	hover?: { kind: 'card_subject' | 'subtask_subject'; id: string } | null,
+	hoveredCardIssueId?: number | null,
+	timerSession?: { sessionId?: string; issueId: number | string; state: 'running' | 'expired' | 'stopped_pending_record' } | null,
+) {
+	const column = data.columns.find((candidate) => candidate.id === issue.status_id);
+	const isClosed = !!column?.is_closed;
+	const agingEnabled = !(data.meta.aging_exclude_closed && isClosed);
+	const agingDays = issue.aging_days ?? 0;
+	const agingClass = agingEnabled
+		? agingDays >= data.meta.aging_danger_days ? 'danger' : agingDays >= data.meta.aging_warn_days ? 'warn' : 'none'
+		: 'none';
+
+	ctx.save();
+	const x = rect.x;
+	const y = rect.y;
+	const w = rect.width;
+	const h = rect.height;
+	const radius = 6;
+	ctx.shadowColor = 'rgba(0, 0, 0, 0.08)';
+	ctx.shadowBlur = 6;
+	ctx.shadowOffsetY = 3;
+	ctx.fillStyle = theme.surface;
+	roundedRect(ctx, x, y, w, h, 8);
+	ctx.fill();
+	ctx.shadowColor = 'transparent';
+
+	const stripWidth = 5;
+	ctx.fillStyle = getCardColor(issue.tracker_id, theme);
+	ctx.beginPath();
+	ctx.moveTo(x + radius, y);
+	ctx.lineTo(x + stripWidth, y);
+	ctx.lineTo(x + stripWidth, y + h);
+	ctx.lineTo(x + radius, y + h);
+	ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+	ctx.lineTo(x, y + radius);
+	ctx.quadraticCurveTo(x, y, x + radius, y);
+	ctx.fill();
+
+	const contentX = x + stripWidth + 8;
+	const contentRight = x + w - 8;
+	const actionIconSize = 24;
+	const isActionIconsVisible = hoveredCardIssueId === issue.id;
+	const canEditCard = canEditIssue(issue);
+	const canDeleteCard = canDeleteIssue(issue);
+	const canLogTime = issue.can_log_time === true;
+	const isActiveTimer = String(timerSession?.issueId) === String(issue.id) && canLogTime;
+	const actionButtonCount = Number(canLogTime) + Number(canEditCard) + Number(canDeleteCard);
+	const visibleActionCount = isActionIconsVisible ? actionButtonCount : Number(isActiveTimer);
+	const actionStart = contentRight - visibleActionCount * actionIconSize;
+	const subjectRight = actionStart - (visibleActionCount > 0 ? 6 : 0);
+
+	ctx.font = `500 ${fontSize}px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif`;
+	ctx.textBaseline = 'middle';
+	const metadataY = y + h / 2;
+
+	const subjectX = contentX;
+	const subjectMaxWidth = Math.max(0, subjectRight - subjectX);
+	ctx.font = `500 ${fontSize}px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif`;
+	const subjectText = truncateText(ctx, issue.subject, subjectMaxWidth);
+	const subjectWidth = ctx.measureText(subjectText).width;
+	ctx.fillStyle = isClosed ? theme.textSecondary : theme.textPrimary;
+	ctx.fillText(subjectText, subjectX, metadataY);
+	if (isClosed || (hover?.kind === 'card_subject' && hover.id === String(issue.id))) {
+		ctx.beginPath();
+		ctx.strokeStyle = ctx.fillStyle;
+		ctx.lineWidth = 1;
+		ctx.moveTo(subjectX, metadataY + fontSize * 0.3);
+		ctx.lineTo(subjectX + subjectWidth, metadataY + fontSize * 0.3);
+		ctx.stroke();
+	}
+	if (rectMap) {
+		rectMap.cardSubjects.set(issue.id, { x: subjectX, y, width: Math.max(subjectWidth, 1), height: h });
+	}
+
+	if (agingClass !== 'none') {
+		ctx.strokeStyle = agingClass === 'danger' ? theme.danger : theme.warn;
+		ctx.lineWidth = 2;
+		ctx.beginPath();
+		ctx.moveTo(x + 1, y + 1);
+		ctx.lineTo(x + w - 1, y + 1);
+		ctx.lineTo(x + w - 1, y + h - 1);
+		ctx.lineTo(x + 1, y + h - 1);
+		ctx.closePath();
+		ctx.stroke();
+	}
+
+	if (rectMap && (isActionIconsVisible || isActiveTimer) && actionButtonCount > 0) {
+		const overlayRect = { x: actionStart - 3, y: y + (h - actionIconSize) / 2 - 2, width: actionButtonCount * actionIconSize + 6, height: actionIconSize + 4 };
+		if (isActionIconsVisible) {
+			ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+			roundedRect(ctx, overlayRect.x, overlayRect.y, overlayRect.width, overlayRect.height, 6);
+			ctx.fill();
+		}
+		let buttonRightX = contentRight;
+		ctx.font = '20px "Material Symbols Outlined"';
+		ctx.textBaseline = 'middle';
+		if (isActionIconsVisible && canDeleteCard) {
+			const button = { x: buttonRightX - actionIconSize, y: y + (h - actionIconSize) / 2, width: actionIconSize, height: actionIconSize };
+			rectMap.deleteButtons.set(issue.id, button);
+			drawIcon(ctx, 'delete', button.x, button.y + 2, 20, theme.danger);
+			buttonRightX -= actionIconSize;
+		}
+		if (isActionIconsVisible && canEditCard) {
+			const button = { x: buttonRightX - actionIconSize, y: y + (h - actionIconSize) / 2, width: actionIconSize, height: actionIconSize };
+			rectMap.editButtons.set(issue.id, button);
+			drawIcon(ctx, 'edit', button.x, button.y + 2, 20, theme.textSecondary);
+			buttonRightX -= actionIconSize;
+		}
+		if (isActiveTimer || (isActionIconsVisible && canLogTime)) {
+			const button = { x: buttonRightX - actionIconSize, y: y + (h - actionIconSize) / 2, width: actionIconSize, height: actionIconSize };
+			rectMap.workTimerButtons.set(issue.id, button);
+			drawWorkTimerAction(ctx, button, issue.id, timerSession, theme);
+		}
+	}
+
+	ctx.restore();
+}
+
+function drawStandardCard(
   ctx: CanvasRenderingContext2D,
   rect: Rect,
   issue: Issue,
@@ -1770,7 +1929,8 @@ function drawDragOverlay(
   labels: Record<string, string>,
   metrics: ReturnType<typeof getMetrics>,
   fontSize: number,
-  layout: ReturnType<typeof computeLayout>
+  layout: ReturnType<typeof computeLayout>,
+  cardDisplayMode: CardDisplayMode,
 ) {
   if (!drag || (drag.phase !== 'dragging' && drag.phase !== 'pending-drop')) return;
   const issue = state.cardsById.get(drag.issueId);
@@ -1788,11 +1948,11 @@ function drawDragOverlay(
       : drag.current.x - offsetX,
     y: targetLane ? targetLane.y + metrics.cellPadding : drag.current.y - offsetY,
     width: layout.columnWidth - metrics.cellPadding * 2,
-    height: measureCardHeight(issue, metrics, undefined, undefined, undefined, data.meta.project_id),
+    height: measureCardHeight(issue, metrics, undefined, undefined, undefined, data.meta.project_id, cardDisplayMode),
   };
   ctx.save();
   ctx.globalAlpha = drag.phase === 'pending-drop' ? 0.65 : 0.9;
-  drawCard(ctx, rect, issue, data, trackerCatalog, theme, true, labels, metrics, fontSize, undefined, undefined, false);
+  drawCard(ctx, rect, issue, data, trackerCatalog, theme, true, labels, metrics, fontSize, undefined, undefined, false, undefined, undefined, undefined, cardDisplayMode);
   ctx.restore();
 }
 

@@ -143,7 +143,7 @@ describe('BoardLayout card height', () => {
     const cache = new Map<string, number>();
     const measureLines = vi.fn(() => 2);
     const height = () => measureCardHeightCached(issue, metrics, cache, measureLines, 14, 260, 1);
-    expect(makeCardHeightCacheKey(issue, undefined, undefined)).toBe('1|Issue 1|0:0:0|default|default|default');
+    expect(makeCardHeightCacheKey(issue, undefined, undefined)).toBe('1|Issue 1|0:0:0|default|default|default|standard');
     expect(height()).toBe(95);
     expect(height()).toBe(95);
     expect(measureLines).toHaveBeenCalledTimes(1);
@@ -171,5 +171,30 @@ describe('BoardLayout card height', () => {
     }
     expect(measureLines).toHaveBeenCalledTimes(variants.length);
     expect(cache.size).toBe(variants.length);
+  });
+
+  it('measures single-line cards from font size without wrapping or project rows', () => {
+    const issue = makeIssue(1, {
+      subject: 'A very long subject that must stay on one line',
+      project: { id: 2, name: 'External' },
+      subtasks: [{ id: 2, subject: 'Child', status_id: 1, is_closed: false }],
+    });
+    const measureLines = vi.fn(() => 2);
+
+    expect(measureCardHeight(issue, metrics, measureLines, 10, 260, 1, 'single_line')).toBe(34);
+    expect(measureCardHeight(issue, metrics, measureLines, 30, 260, 1, 'single_line')).toBe(44);
+    expect(measureLines).not.toHaveBeenCalled();
+  });
+
+  it('does not reuse standard card heights for single-line cards', () => {
+    const issue = makeIssue(1);
+    const cache = new Map<string, number>();
+    const standard = measureCardHeightCached(issue, metrics, cache, undefined, 14, 260, 1, 'standard');
+    const singleLine = measureCardHeightCached(issue, metrics, cache, undefined, 14, 260, 1, 'single_line');
+
+    expect(standard).toBe(78);
+    expect(singleLine).toBe(34);
+    expect(cache.size).toBe(2);
+    expect(makeCardHeightCacheKey(issue, 14, 260, 1, 'standard')).not.toBe(makeCardHeightCacheKey(issue, 14, 260, 1, 'single_line'));
   });
 });
