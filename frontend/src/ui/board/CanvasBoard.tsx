@@ -1357,6 +1357,20 @@ function drawCard(
     }
   }
 
+  if (issue.due_date == null && canEditIssue(issue)) {
+    const badgeWidth = Math.max(4, Math.round(metaFontSize * 0.5)) * 2 + metaFontSize + 2 + 4;
+    if (currentX + badgeWidth <= limitX) {
+      const width = drawBadge(ctx, '', currentX, dueDateRowY - 1, theme.surface, theme.textSecondary, metaFontSize, 'calendar_today', theme.border);
+      rectMap?.dateBadges.set(issue.id, {
+        x: currentX,
+        y: dueDateRowY - 1,
+        width,
+        height: metaFontSize + Math.max(2, Math.round(metaFontSize * 0.2)) * 2 + 4,
+      });
+      currentX += width + 8;
+    }
+  }
+
   if (agingEnabled && agingDays > 0) {
     const ageColor = agingClass === 'danger' ? theme.danger : agingClass === 'warn' ? theme.warn : theme.textSecondary;
     ctx.save();

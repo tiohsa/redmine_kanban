@@ -8,6 +8,7 @@ import { CanvasBoard, makeSubtaskSignature, measureCardHeightCached } from './Ca
 import { layoutCardMetadata } from './canvasMetadata';
 import { getMetrics } from './metrics';
 import { buildBoardState } from './state';
+import * as hitTestIndex from './HitTestIndex';
 
 function makeIssue(id: number, attrs: Partial<Issue> = {}): Issue {
   return {
@@ -254,6 +255,121 @@ afterEach(() => {
       expect(context.fillText).toHaveBeenCalledWith(expect.stringContaining('担'), expect.any(Number), expect.any(Number));
     });
     expect(context.fillText).not.toHaveBeenCalledWith('...', expect.any(Number), expect.any(Number));
+  });
+
+  it.each([
+    { dueDate: null, canEdit: true, busy: false },
+    { dueDate: undefined, canEdit: true, busy: false },
+    { dueDate: null, canEdit: false, busy: false },
+    { dueDate: null, canEdit: true, busy: true },
+    { dueDate: '2026-09-26', canEdit: true, busy: false },
+    { dueDate: '2026-09-21', canEdit: true, busy: false },
+    { dueDate: '2026-09-18', canEdit: true, busy: false },
+    { dueDate: '2026-09-26', canEdit: false, busy: false },
+    { dueDate: '2026-09-26', canEdit: true, busy: true },
+  ])('renders and routes date badges with existing permission and busy guards: %j', async ({ dueDate, canEdit, busy }) => {
+    vi.setSystemTime(new Date('2026-09-19T12:00:00'));
+    const issue = makeIssue(14, {
+      due_date: dueDate,
+      permissions: { can_move: true, can_edit: canEdit, can_delete: true },
+    });
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, 'updated_desc', new Map());
+    const context = createCanvasContextWithSpies();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+    const rectMap = hitTestIndex.createRectMap();
+    vi.spyOn(hitTestIndex, 'createRectMap').mockReturnValue(rectMap);
+    const onDateClick = vi.fn();
+    const onView = vi.fn();
+    const onCommand = vi.fn();
+    const { container } = render(<CanvasBoard data={data} state={state} canMove canCreate
+      onCommand={onCommand} onCreate={vi.fn()} onEdit={vi.fn()} onView={onView} onDelete={vi.fn()}
+      onEditClick={vi.fn()} labels={data.labels} onDateClick={onDateClick}
+      busyIssueIds={busy ? new Set([issue.id]) : undefined} />);
+
+    await waitFor(() => expect(context.fillText).toHaveBeenCalledWith(issue.subject, expect.any(Number), expect.any(Number)));
+    const badge = rectMap.dateBadges.get(issue.id);
+    if (dueDate == null && !canEdit) {
+      expect(badge).toBeUndefined();
+      expect(context.fillText).not.toHaveBeenCalledWith('calendar_today', expect.any(Number), expect.any(Number));
+      return;
+    }
+
+    expect(context.fillText).toHaveBeenCalledWith('calendar_today', expect.any(Number), expect.any(Number));
+    expect(badge).toBeDefined();
+    if (dueDate) {
+      const expectedText = dueDate === '2026-09-18' ? `!${dueDate}` : dueDate;
+      expect(context.fillText).toHaveBeenCalledWith(expectedText, expect.any(Number), expect.any(Number));
+    }
+    const point = { x: badge!.x + badge!.width / 2, y: badge!.y + badge!.height / 2 };
+    expect(hitTestIndex.hitTest(point, rectMap, data)).toEqual({ kind: 'date', issueId: issue.id });
+    const canvas = container.querySelector('canvas.rk-canvas')!;
+    fireEvent.pointerDown(canvas, { clientX: point.x, clientY: point.y });
+    expect(onDateClick.mock.calls).toEqual(canEdit && !busy ? [[issue.id, dueDate ?? null, point.x, point.y]] : []);
+    expect(onView).not.toHaveBeenCalled();
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
+  it.each(['none', 'width'] as const)('keeps empty date badges between priority, aging and progress in %s fit mode', async (fitMode) => {
+    const issue = makeIssue(15, { due_date: null, priority_id: 2, priority_name: 'Normal', aging_days: 3, done_ratio: 20 });
+    const data = makeBoardData(issue);
+    data.columns.push(
+      { id: 3, name: 'Review', is_closed: false, count: 0 },
+      { id: 4, name: 'Other', is_closed: false, count: 0 },
+    );
+    const context = createCanvasContextWithSpies();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+    const rectMap = hitTestIndex.createRectMap();
+    vi.spyOn(hitTestIndex, 'createRectMap').mockReturnValue(rectMap);
+    const onPriorityClick = vi.fn();
+    const onProgressClick = vi.fn();
+    const onDateClick = vi.fn();
+    const props = { data, state: buildBoardState(data, data.issues, 'updated_desc', new Map()), fitMode,
+      canMove: true, canCreate: true, onCommand: vi.fn(), onCreate: vi.fn(), onEdit: vi.fn(), onView: vi.fn(),
+      onDelete: vi.fn(), onEditClick: vi.fn(), labels: data.labels, onPriorityClick, onProgressClick, onDateClick };
+    const { container, rerender } = render(<CanvasBoard {...props} />);
+    await waitFor(() => expect(rectMap.dateBadges.has(issue.id)).toBe(true));
+    const badge = { ...rectMap.dateBadges.get(issue.id)! };
+    const card = { ...rectMap.cards.get(issue.id)! };
+    const priority = rectMap.priorityBadges.get(issue.id)!;
+    const progress = rectMap.progressDonuts.get(issue.id)!;
+    expect(badge.x).toBe(priority.x + priority.width + 8);
+    expect(badge.y).toBe(priority.y);
+    expect(badge.x + badge.width).toBeLessThan(progress.x);
+    const age = context.fillText.mock.calls.find(([text]) => text === '3d');
+    expect(age).toBeDefined();
+    expect(age![1]).toBeGreaterThan(badge.x + badge.width);
+    expect(age![1] + context.measureText('3d').width).toBeLessThan(progress.x);
+
+    const canvas = container.querySelector('canvas.rk-canvas')!;
+    for (const region of [priority, progress]) {
+      fireEvent.pointerDown(canvas, { clientX: region.x + region.width / 2, clientY: region.y + region.height / 2 });
+    }
+    expect(onPriorityClick).toHaveBeenCalledWith(issue.id, 2, expect.any(Number), expect.any(Number));
+    expect(onProgressClick).toHaveBeenCalledWith(issue.id, 20, expect.any(Number), expect.any(Number));
+    expect(onDateClick).not.toHaveBeenCalled();
+
+    const datedData = { ...data, issues: [{ ...issue, due_date: '2099-09-26' }] };
+    context.fillText.mockClear();
+    rerender(<CanvasBoard {...props} data={datedData} state={buildBoardState(datedData, datedData.issues, 'updated_desc', new Map())} />);
+    await waitFor(() => expect(context.fillText).toHaveBeenCalledWith('calendar_today', expect.any(Number), expect.any(Number)));
+    expect(rectMap.cards.get(issue.id)).toEqual(card);
+    expect(rectMap.dateBadges.get(issue.id)).toMatchObject({ x: badge.x, y: badge.y, height: badge.height });
+  });
+
+  it('does not overlap progress with an empty date badge when priority leaves insufficient width', async () => {
+    const issue = makeIssue(16, { due_date: null, priority_id: 2, priority_name: 'Very long priority name', done_ratio: 20 });
+    const data = makeBoardData(issue);
+    const context = createCanvasContextWithSpies();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+    const rectMap = hitTestIndex.createRectMap();
+    vi.spyOn(hitTestIndex, 'createRectMap').mockReturnValue(rectMap);
+    render(<CanvasBoard data={data} state={buildBoardState(data, data.issues, 'updated_desc', new Map())} canMove canCreate
+      onCommand={vi.fn()} onCreate={vi.fn()} onEdit={vi.fn()} onView={vi.fn()} onDelete={vi.fn()}
+      onEditClick={vi.fn()} labels={data.labels} onDateClick={vi.fn()} />);
+    await waitFor(() => expect(rectMap.progressDonuts.has(issue.id)).toBe(true));
+    expect(rectMap.dateBadges.has(issue.id)).toBe(false);
+    expect(context.fillText).not.toHaveBeenCalledWith('calendar_today', expect.any(Number), expect.any(Number));
   });
 
   it('resets active drag but keeps a committed drop across lost capture', async () => {
@@ -582,7 +698,8 @@ afterEach(() => {
     await waitFor(() => expect(canvas.width).toBeGreaterThan(0));
 
     // Category A starts at y=40 and is 99px tall; the next lane is the forbidden target.
-    fireEvent.pointerDown(canvas, { clientX: 160, clientY: 100, pointerId: 1 });
+    // Start on the card body, to the right of the empty date badge.
+    fireEvent.pointerDown(canvas, { clientX: 200, clientY: 100, pointerId: 1 });
     fireEvent.pointerMove(canvas, { clientX: 160, clientY: 150, pointerId: 1 });
     await waitFor(() => expect(board.style.cursor).toBe('not-allowed'));
 
