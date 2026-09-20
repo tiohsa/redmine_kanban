@@ -102,6 +102,8 @@ module RedmineKanban
       filter_task: "redmine_kanban.label_filter_task",
       filter_subject: "redmine_kanban.label_filter_subject",
       project: "redmine_kanban.label_project",
+      project_search_placeholder: "redmine_kanban.label_project_search_placeholder",
+      project_search_no_results: "redmine_kanban.label_project_search_no_results",
       status: "redmine_kanban.label_status",
       fit_none: "redmine_kanban.label_fit_none",
       fit_width: "redmine_kanban.label_fit_width",

@@ -39,6 +39,7 @@ export function buildToolbarOptions(
     projectOptions: projects.map((project) => ({
       id: String(project.id),
       name: '\xA0'.repeat(project.level * 2) + project.name,
+      searchText: project.name,
     })),
     statusOptions: data.columns.map((column) => ({ id: String(column.id), name: column.name })),
     trackerOptions: (data.lists.trackers ?? []).map((tracker) => ({ id: String(tracker.id), name: tracker.name })),

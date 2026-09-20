@@ -1,7 +1,7 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { useDropdownDismiss } from './useDropdownDismiss';
 
-type Option<T extends string> = { id: T; name: string };
+type Option<T extends string> = { id: T; name: string; searchText?: string };
 
 function triggerClass(showLabel: boolean | undefined, open: boolean, active: boolean) {
   return `rk-dropdown-trigger ${showLabel ? 'rk-dropdown-trigger-labeled' : ''} ${open ? 'rk-active' : ''} ${active ? 'rk-active-soft' : ''}`;
@@ -91,6 +91,9 @@ export function ToolbarMultiSelect({
   active,
   showTriggerLabel,
   extraContent,
+  searchable = false,
+  searchPlaceholder,
+  searchEmptyLabel,
 }: {
   label: string;
   icon: string;
@@ -106,9 +109,23 @@ export function ToolbarMultiSelect({
   active?: boolean;
   showTriggerLabel?: boolean;
   extraContent?: ReactNode;
+  searchable?: boolean;
+  searchPlaceholder?: string;
+  searchEmptyLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const { triggerRef, menuRef } = useDropdownDismiss(open, () => setOpen(false));
+  const [query, setQuery] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+  const closeDropdown = () => {
+    setOpen(false);
+    setQuery('');
+  };
+  const { triggerRef, menuRef } = useDropdownDismiss(open, closeDropdown);
+  const visibleOptions = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!searchable || !normalizedQuery) return options;
+    return options.filter((option) => (option.searchText ?? option.name).toLowerCase().includes(normalizedQuery));
+  }, [options, query, searchable]);
   const optionIds = useMemo(() => options.map((option) => option.id), [options]);
   const optionIdSet = useMemo(() => new Set(optionIds), [optionIds]);
   const allSelected = optionIds.length > 0 && optionIds.every((id) => value.includes(id));
@@ -122,7 +139,7 @@ export function ToolbarMultiSelect({
 
   return (
     <div className="rk-dropdown-container">
-      <div ref={triggerRef} className={triggerClass(showTriggerLabel, open, active ?? Boolean(showDot))} onClick={() => setOpen(!open)} title={title}>
+      <div ref={triggerRef} className={triggerClass(showTriggerLabel, open, active ?? Boolean(showDot))} onClick={() => open ? closeDropdown() : setOpen(true)} title={title}>
         <span className="rk-icon">{icon}</span>
         {showTriggerLabel ? <span>{selectedCount > 0 ? `${label} (${selectedCount})` : label}</span> : null}
         {showDot ? <span className="rk-indicator-dot" /> : null}
@@ -130,6 +147,33 @@ export function ToolbarMultiSelect({
       {open ? (
         <div ref={menuRef} className="rk-dropdown-menu" style={{ width }}>
           <div className="rk-dropdown-title">{label}</div>
+          {searchable ? (
+            <div style={{ padding: '8px 12px' }}>
+              <div className="rk-search-box">
+                <span className="rk-icon">search</span>
+                <input
+                  ref={inputRef}
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder={searchPlaceholder}
+                  aria-label={searchPlaceholder ?? label}
+                />
+                {query ? (
+                  <button
+                    type="button"
+                    className="rk-search-clear"
+                    aria-label={label}
+                    onClick={() => {
+                      setQuery('');
+                      inputRef.current?.focus();
+                    }}
+                  >
+                    <span className="rk-icon">close</span>
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
           {extraContent ? <div className="rk-dropdown-extra">{extraContent}</div> : null}
           <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
             {includeAllOption ? (
@@ -138,7 +182,12 @@ export function ToolbarMultiSelect({
                 <span>{resolvedAllLabel}</span>
               </div>
             ) : null}
-            {options.map((option) => {
+            {searchable && visibleOptions.length === 0 ? (
+              <div role="status" style={{ padding: '8px 12px', color: 'var(--rk-text-secondary)', fontSize: '13px' }}>
+                {searchEmptyLabel ?? labels.no_result ?? 'No results'}
+              </div>
+            ) : null}
+            {visibleOptions.map((option) => {
               const checked = value.includes(option.id);
               return (
                 <div
@@ -154,7 +203,7 @@ export function ToolbarMultiSelect({
           </div>
           {onReset ? (
             <div className="rk-dropdown-footer">
-              <button type="button" className="rk-dropdown-link" onClick={() => { onReset(); setOpen(false); }}>
+              <button type="button" className="rk-dropdown-link" onClick={() => { onReset(); closeDropdown(); }}>
                 {labels.reset}
               </button>
             </div>

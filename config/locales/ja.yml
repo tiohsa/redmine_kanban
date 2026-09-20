@@ -60,6 +60,8 @@ ja:
     label_filter_task: "タスクの絞り込み"
     label_filter_subject: "題名で絞り込み..."
     label_project: "プロジェクト"
+    label_project_search_placeholder: "プロジェクトを検索..."
+    label_project_search_no_results: "該当するプロジェクトはありません"
     label_status: "ステータス"
     label_fit_none: "原寸 (100%)"
     label_fit_width: "幅に合わせる"
