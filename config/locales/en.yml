@@ -14,6 +14,8 @@ en:
     label_assignee: "Assignee"
     label_status: "Status"
     label_project: "Project"
+    label_project_search_placeholder: "Search projects..."
+    label_project_search_no_results: "No matching projects"
     label_reset: "Reset"
     label_undo: "Recreate with same content"
     label_restoring: "Recreating..."

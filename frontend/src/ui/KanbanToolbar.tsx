@@ -158,6 +158,9 @@ export function KanbanToolbar({
           labels={labels}
           includeAllOption
           allLabel={labels.all}
+          searchable
+          searchPlaceholder={labels.project_search_placeholder}
+          searchEmptyLabel={labels.project_search_no_results}
           showDot={showProjectDot}
           showTriggerLabel
           extraContent={(
