@@ -77,18 +77,14 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
   end
 
   def test_create_rejects_a_status_that_redmine_falls_back
-    probe = build_issue(subject: 'Create workflow probe')
-    allowed_status_ids = probe.new_statuses_allowed_to(@user).map(&:id)
-    denied_status = IssueStatus.where.not(id: allowed_status_ids).first
-    skip 'fixture has no denied workflow status' unless denied_status
-    tracker = @project.trackers.first || Tracker.first
+    probe, denied_status = build_create_workflow_probe
     priority = IssuePriority.active.first
 
     post :create, params: {
       project_id: @project.identifier,
       issue: {
         subject: 'Rejected create status',
-        tracker_id: tracker.id,
+        tracker_id: probe.tracker_id,
         status_id: denied_status.id,
         priority_id: priority.id
       }
@@ -965,6 +961,26 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
   end
 
   private
+
+  def build_create_workflow_probe
+    # These records are isolated to the test transaction; existing workflows remain intact.
+    allowed_status = IssueStatus.create!(name: 'Kanban create allowed', is_closed: false)
+    denied_status = IssueStatus.create!(name: 'Kanban create denied', is_closed: false)
+    tracker = Tracker.create!(name: 'Kanban create workflow', default_status: allowed_status)
+    @project.trackers << tracker
+    role = Role.create!(name: 'Kanban create workflow', permissions: [:view_issues, :add_issues, :manage_subtasks])
+    Member.find_by!(project_id: @project.id, user_id: @user.id).roles << role
+    WorkflowTransition.create!(tracker: tracker, role: role, old_status_id: 0, new_status: allowed_status)
+    @user.reload
+
+    probe = Issue.new(project: @project, tracker: tracker, author: @user, subject: 'Create workflow probe')
+    allowed_status_ids = probe.new_statuses_allowed_to(@user).map(&:id)
+    assert_includes allowed_status_ids, allowed_status.id
+    refute_includes allowed_status_ids, denied_status.id
+    probe.send(:safe_attributes=, { 'status_id' => denied_status.id }, @user)
+    assert_equal allowed_status.id, probe.status_id
+    [probe, denied_status]
+  end
 
   def enable_kanban_module!
     EnabledModule.find_or_create_by!(project_id: @project.id, name: 'redmine_kanban')

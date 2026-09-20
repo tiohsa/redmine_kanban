@@ -200,6 +200,81 @@ jobs:
         if: always()
         run: docker compose -f .github/e2e/docker-compose.yml down -v
 
+  ruby-issue-creator-contract:
+    name: Redmine ${{ matrix.redmine_version }} IssueCreator contract
+    needs: init
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        redmine_version:
+          - '6.0'
+          - '6.1'
+          - '7.0'
+    env:
+      REDMINE_IMAGE: redmine:${{ matrix.redmine_version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start Redmine test stack
+        run: docker compose -f .github/e2e/docker-compose.yml up -d --wait --wait-timeout 600
+
+      - name: Install Redmine test dependencies
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+            sh -lc 'apt-get update && apt-get install -y --no-install-recommends build-essential && bundle config set --local without development && bundle install'
+
+      - name: Configure Redmine database.yml for production and test
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T redmine sh -lc \
+            "printf '%s\n' \
+            'production:' \
+            '  adapter: mysql2' \
+            '  database: redmine' \
+            '  host: db' \
+            '  username: redmine' \
+            '  password: password' \
+            '  encoding: utf8mb4' \
+            'test:' \
+            '  adapter: mysql2' \
+            '  database: redmine' \
+            '  host: db' \
+            '  username: redmine' \
+            '  password: password' \
+            '  encoding: utf8mb4' \
+            > /usr/src/redmine/config/database.yml"
+
+      - name: Migrate Redmine and plugin
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+            env RAILS_ENV=production bundle exec rake db:migrate redmine:plugins:migrate
+
+      - name: Load default data
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+            env REDMINE_LANG=en RAILS_ENV=production bundle exec rake redmine:load_default_data
+
+      - name: Prepare test database
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+            env RAILS_ENV=test bundle exec rake db:migrate redmine:plugins:migrate
+
+      - name: Run focused IssueCreator contract tests
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+            env RAILS_ENV=test bash \
+            /usr/src/redmine/plugins/redmine_kanban/script/ci/issue-creator-contract.sh
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose -f .github/e2e/docker-compose.yml logs --no-color
+
+      - name: Stop Redmine test stack
+        if: always()
+        run: docker compose -f .github/e2e/docker-compose.yml down -v
+
   ruby-test-postgresql:
     name: PostgreSQL membership integration
     needs: init

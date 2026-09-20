@@ -56,7 +56,7 @@ class RedmineKanbanBoardDataTest < ActiveSupport::TestCase
     assert_same RedmineKanban::BoardLabels::TRANSLATION_KEYS, RedmineKanban::BoardData::LABEL_TRANSLATION_KEYS
   end
 
-  def test_query_limit_includes_metadata_queries
+  def test_total_query_limit_includes_metadata_queries
     board_data = RedmineKanban::BoardData.new(project: stub(id: 1), user: stub(id: 2))
     board_data.instance_variable_set(:@board_context, stub(query_limit: 1, total_query_limit: 1, scope_fingerprint: 'scope', response_byte_limit: 1000))
     board_data.define_singleton_method(:build_payload) do
