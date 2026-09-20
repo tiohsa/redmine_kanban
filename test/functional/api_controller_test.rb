@@ -76,6 +76,59 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_equal 'WORKFLOW_TRANSITION_NOT_ALLOWED', json.dig('error', 'code')
   end
 
+  def test_create_rejects_a_status_that_redmine_falls_back
+    probe = build_issue(subject: 'Create workflow probe')
+    allowed_status_ids = probe.new_statuses_allowed_to(@user).map(&:id)
+    denied_status = IssueStatus.where.not(id: allowed_status_ids).first
+    skip 'fixture has no denied workflow status' unless denied_status
+    tracker = @project.trackers.first || Tracker.first
+    priority = IssuePriority.active.first
+
+    post :create, params: {
+      project_id: @project.identifier,
+      issue: {
+        subject: 'Rejected create status',
+        tracker_id: tracker.id,
+        status_id: denied_status.id,
+        priority_id: priority.id
+      }
+    }
+
+    assert_response :unprocessable_entity
+    json = JSON.parse(@response.body)
+    assert_equal false, json['ok']
+    assert_equal 'WORKFLOW_TRANSITION_NOT_ALLOWED', json.dig('error', 'code')
+    assert_nil Issue.find_by(subject: 'Rejected create status')
+  end
+
+  def test_create_rejects_a_parent_that_redmine_discards
+    parent = build_issue(subject: 'Create parent permission boundary')
+    roles_with_permission = @user.roles_for_project(@project).select { |role| role.permissions.include?(:manage_subtasks) }
+    @user.roles_for_project(@project).each { |role| role.remove_permission!(:manage_subtasks) }
+    @user.reload
+    tracker = @project.trackers.first || Tracker.first
+    priority = IssuePriority.active.first
+
+    post :create, params: {
+      project_id: @project.identifier,
+      issue: {
+        subject: 'Rejected create parent',
+        tracker_id: tracker.id,
+        status_id: parent.status_id,
+        priority_id: priority.id,
+        parent_issue_id: parent.id
+      }
+    }
+
+    assert_response :unprocessable_entity
+    json = JSON.parse(@response.body)
+    assert_equal false, json['ok']
+    assert_equal 'PARENT_ISSUE_NOT_ALLOWED', json.dig('error', 'code')
+    assert_nil Issue.find_by(subject: 'Rejected create parent')
+  ensure
+    roles_with_permission&.each { |role| role.add_permission!(:manage_subtasks) }
+  end
+
   def test_trackers_endpoint_uses_the_shared_metadata_semantics_for_target_project
     tracker = @project.trackers.first || Tracker.first
 
@@ -201,6 +254,21 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     refute json.key?('entities')
   ensure
     ENV['REDMINE_KANBAN_MAX_BOARD_QUERIES'] = previous
+  end
+
+  def test_total_query_limit_returns_a_structured_error_without_entities
+    previous = ENV['REDMINE_KANBAN_MAX_TOTAL_BOARD_QUERIES']
+    ENV['REDMINE_KANBAN_MAX_TOTAL_BOARD_QUERIES'] = '1'
+    build_issue(subject: 'Total query limit')
+
+    get :index, params: { project_id: @project.identifier, board_entity_limit: 1500 }
+
+    assert_response :unprocessable_entity
+    json = JSON.parse(@response.body)
+    assert_equal 'BOARD_TOTAL_QUERY_LIMIT_EXCEEDED', json.dig('error', 'code')
+    refute json.key?('entities')
+  ensure
+    ENV['REDMINE_KANBAN_MAX_TOTAL_BOARD_QUERIES'] = previous
   end
 
   def test_status_filter_limits_the_snapshot_entities
@@ -908,6 +976,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     @role.add_permission!(:add_issues) unless @role.permissions.include?(:add_issues)
     @role.add_permission!(:edit_issues) unless @role.permissions.include?(:edit_issues)
     @role.add_permission!(:delete_issues) unless @role.permissions.include?(:delete_issues)
+    @role.add_permission!(:manage_subtasks) unless @role.permissions.include?(:manage_subtasks)
   end
 
   def ensure_member!(user = @user, project = @project)

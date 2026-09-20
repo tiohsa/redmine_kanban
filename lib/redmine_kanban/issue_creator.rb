@@ -181,6 +181,25 @@ module RedmineKanban
 
       issue.send(:safe_attributes=, attributes, @user)
 
+      requested_parent_id = normalize_nullable_id(params[:parent_issue_id]) if param_key_provided?(params, 'parent_issue_id')
+      if requested_parent_id.present? && issue.parent_issue_id.to_i != requested_parent_id
+        message = I18n.t('redmine_kanban.error_parent_unavailable')
+        return [nil, error_response(
+          message,
+          field_errors: { parent_issue_id: [I18n.t('redmine_kanban.error_parent_unavailable_field')] },
+          code: 'PARENT_ISSUE_NOT_ALLOWED'
+        )]
+      end
+
+      requested_status_id = normalize_optional_integer(params[:status_id]) if param_key_provided?(params, 'status_id')
+      if !requested_status_id.nil? && issue.status_id.to_i != requested_status_id
+        return [nil, error_response(
+          I18n.t('redmine_kanban.error_workflow_transition'),
+          field_errors: { status_id: [I18n.t('redmine_kanban.error_workflow_transition')] },
+          code: 'WORKFLOW_TRANSITION_NOT_ALLOWED'
+        )]
+      end
+
       if issue.save
         [issue, nil]
       else

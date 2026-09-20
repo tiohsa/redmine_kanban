@@ -56,6 +56,24 @@ class RedmineKanbanBoardDataTest < ActiveSupport::TestCase
     assert_same RedmineKanban::BoardLabels::TRANSLATION_KEYS, RedmineKanban::BoardData::LABEL_TRANSLATION_KEYS
   end
 
+  def test_query_limit_includes_metadata_queries
+    board_data = RedmineKanban::BoardData.new(project: stub(id: 1), user: stub(id: 2))
+    board_data.instance_variable_set(:@board_context, stub(query_limit: 1, total_query_limit: 1, scope_fingerprint: 'scope', response_byte_limit: 1000))
+    board_data.define_singleton_method(:build_payload) do
+      @count_snapshot_queries = true
+      ActiveRecord::Base.connection.select_value('SELECT 1')
+      @count_snapshot_queries = false
+      ActiveRecord::Base.connection.select_value('SELECT 1')
+      { ok: true, meta: {} }
+    end
+
+    result = board_data.to_h
+
+    assert_equal false, result[:ok]
+    assert_equal 'BOARD_TOTAL_QUERY_LIMIT_EXCEEDED', result.dig(:error, :code)
+    assert_equal 2, result.dig(:error, :query_count)
+  end
+
   private
 
   def board_data_for_cache(project_id: 1, user_id: 2, project_ids: [3, 1])
