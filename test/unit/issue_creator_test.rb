@@ -82,7 +82,76 @@ class RedmineKanbanIssueCreatorTest < ActiveSupport::TestCase
     assert_nil Issue.find_by(subject: 'rollback child 1')
   end
 
+  def test_single_create_rejects_a_parent_that_safe_attributes_discards
+    parent = build_issue(subject: 'parent permission boundary')
+    roles_with_permission = @user.roles_for_project(@project).select { |role| role.permissions.include?(:manage_subtasks) }
+    @user.roles_for_project(@project).each { |role| role.remove_permission!(:manage_subtasks) }
+    @user.reload
+    creator, = issue_creator
+
+    result = creator.create(params: issue_params(subject: 'discarded parent', parent_issue_id: parent.id, status_id: parent.status_id))
+
+    assert_equal false, result[:ok]
+    assert_equal 'PARENT_ISSUE_NOT_ALLOWED', result.dig(:error, :code)
+    assert_nil Issue.find_by(subject: 'discarded parent')
+  ensure
+    roles_with_permission&.each { |role| role.add_permission!(:manage_subtasks) }
+  end
+
+  def test_single_create_rejects_a_status_that_safe_attributes_falls_back
+    probe, denied_status = build_create_workflow_probe
+    creator, = issue_creator
+
+    result = creator.create(params: issue_params(subject: 'discarded status', tracker_id: probe.tracker_id, status_id: denied_status.id))
+
+    assert_equal false, result[:ok]
+    assert_equal 'WORKFLOW_TRANSITION_NOT_ALLOWED', result.dig(:error, :code)
+    assert_nil Issue.find_by(subject: 'discarded status')
+  end
+
+  def test_bulk_status_semantic_failure_rolls_back_all_rows
+    probe, denied_status = build_create_workflow_probe
+    creator, builder = issue_creator
+
+    result = creator.create_with_subtasks(
+      parent_params: issue_params(subject: 'bulk semantic parent', tracker_id: probe.tracker_id, status_id: probe.status_id),
+      subtasks: [
+        issue_params(subject: 'bulk allowed status', tracker_id: probe.tracker_id, status_id: probe.status_id),
+        issue_params(subject: 'bulk discarded status', tracker_id: probe.tracker_id, status_id: denied_status.id)
+      ],
+      idempotency_key: 'bulk-status-semantic-failure'
+    )
+
+    assert_equal false, result[:ok]
+    assert_equal 'WORKFLOW_TRANSITION_NOT_ALLOWED', result.dig(:error, :code)
+    assert_equal 1, result[:row_index]
+    assert_equal 0, builder.build_count
+    assert_nil Issue.find_by(subject: 'bulk semantic parent')
+    assert_nil Issue.find_by(subject: 'bulk allowed status')
+    assert_nil Issue.find_by(subject: 'bulk discarded status')
+  end
+
   private
+
+  def build_create_workflow_probe
+    # These records are isolated to the test transaction; existing workflows remain intact.
+    allowed_status = IssueStatus.create!(name: 'Kanban create allowed', is_closed: false)
+    denied_status = IssueStatus.create!(name: 'Kanban create denied', is_closed: false)
+    tracker = Tracker.create!(name: 'Kanban create workflow', default_status: allowed_status)
+    @project.trackers << tracker
+    role = Role.create!(name: 'Kanban create workflow', permissions: [:view_issues, :add_issues, :manage_subtasks])
+    Member.find_by!(project_id: @project.id, user_id: @user.id).roles << role
+    WorkflowTransition.create!(tracker: tracker, role: role, old_status_id: 0, new_status: allowed_status)
+    @user.reload
+
+    probe = Issue.new(project: @project, tracker: tracker, author: @user, subject: 'Create workflow probe')
+    allowed_status_ids = probe.new_statuses_allowed_to(@user).map(&:id)
+    assert_includes allowed_status_ids, allowed_status.id
+    refute_includes allowed_status_ids, denied_status.id
+    probe.send(:safe_attributes=, { 'status_id' => denied_status.id }, @user)
+    assert_equal allowed_status.id, probe.status_id
+    [probe, denied_status]
+  end
 
   def issue_creator
     creator = RedmineKanban::IssueCreator.new(project: @project, user: @user)
@@ -91,13 +160,26 @@ class RedmineKanbanIssueCreatorTest < ActiveSupport::TestCase
     [creator, builder]
   end
 
-  def issue_params(subject:, tracker_id: nil, status_id: nil, priority_id: nil)
-    {
+  def issue_params(subject:, tracker_id: nil, status_id: nil, priority_id: nil, parent_issue_id: nil)
+    params = {
       subject: subject,
       tracker_id: tracker_id || @project.trackers.first.id,
       status_id: status_id || IssueStatus.first.id,
       priority_id: priority_id || IssuePriority.active.first.id
     }
+    params[:parent_issue_id] = parent_issue_id unless parent_issue_id.nil?
+    params
+  end
+
+  def build_issue(subject:)
+    Issue.new(
+      project: @project,
+      tracker: @project.trackers.first,
+      author: @user,
+      status: IssueStatus.first,
+      priority: IssuePriority.active.first,
+      subject: subject
+    ).tap(&:save!)
   end
 
   def enable_kanban_module!
@@ -110,6 +192,7 @@ class RedmineKanbanIssueCreatorTest < ActiveSupport::TestCase
     @role.add_permission!(:add_issues) unless @role.permissions.include?(:add_issues)
     @role.add_permission!(:edit_issues) unless @role.permissions.include?(:edit_issues)
     @role.add_permission!(:delete_issues) unless @role.permissions.include?(:delete_issues)
+    @role.add_permission!(:manage_subtasks) unless @role.permissions.include?(:manage_subtasks)
   end
 
   def ensure_member!

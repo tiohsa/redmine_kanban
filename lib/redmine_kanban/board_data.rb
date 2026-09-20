@@ -57,6 +57,14 @@ module RedmineKanban
         )
       end
 
+      if total_query_count > @board_context.total_query_limit && result[:ok]
+        result = resource_error(
+          'BOARD_TOTAL_QUERY_LIMIT_EXCEEDED',
+          query_count: total_query_count,
+          maximum_queries: @board_context.total_query_limit
+        )
+      end
+
       if result[:ok]
         bytes = response_bytes_including_metadata(result)
         if bytes > @board_context.response_byte_limit

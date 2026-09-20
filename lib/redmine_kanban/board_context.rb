@@ -7,7 +7,7 @@ module RedmineKanban
   class BoardContext
     attr_reader :project, :user, :project_ids, :scope_status_ids, :dependency_status_ids,
                 :requested_entity_limit, :effective_entity_limit, :server_entity_limit,
-                :response_byte_limit, :query_limit
+                :response_byte_limit, :query_limit, :total_query_limit
 
     def initialize(project:, user:, project_ids: nil, scope_status_ids: nil, issue_status_ids: nil, exclude_status_ids: nil, dependency_status_ids: nil, board_entity_limit: nil)
       @project = project
@@ -33,6 +33,7 @@ module RedmineKanban
       @server_entity_limit = SnapshotLimits.server_entity_limit
       @response_byte_limit = SnapshotLimits.response_bytes
       @query_limit = SnapshotLimits.query_limit
+      @total_query_limit = SnapshotLimits.total_query_limit
     end
 
     def presenter(_root_issue_ids = [])

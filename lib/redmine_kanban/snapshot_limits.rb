@@ -4,6 +4,7 @@ module RedmineKanban
     DEFAULT_SERVER_ENTITY_LIMIT = 5_000
     DEFAULT_RESPONSE_BYTES = 8 * 1024 * 1024
     DEFAULT_QUERY_LIMIT = 20
+    DEFAULT_TOTAL_QUERY_LIMIT = 100
     INTEGER_MAX = 2_147_483_647
 
     class InvalidLimit < StandardError; end
@@ -44,6 +45,10 @@ module RedmineKanban
 
     def self.query_limit
       env_positive_integer('REDMINE_KANBAN_MAX_BOARD_QUERIES', DEFAULT_QUERY_LIMIT)
+    end
+
+    def self.total_query_limit
+      env_positive_integer('REDMINE_KANBAN_MAX_TOTAL_BOARD_QUERIES', DEFAULT_TOTAL_QUERY_LIMIT)
     end
 
     def self.effective(requested)

@@ -7,6 +7,7 @@ class RedmineKanbanSnapshotLimitsTest < ActiveSupport::TestCase
     assert_equal 5_000, RedmineKanban::SnapshotLimits.server_entity_limit
     assert_equal 8 * 1024 * 1024, RedmineKanban::SnapshotLimits.response_bytes
     assert_equal 20, RedmineKanban::SnapshotLimits.query_limit
+    assert_equal 100, RedmineKanban::SnapshotLimits.total_query_limit
   end
 
   def test_requested_limit_accepts_only_positive_decimal_integers
@@ -28,16 +29,20 @@ class RedmineKanbanSnapshotLimitsTest < ActiveSupport::TestCase
     previous_entities = ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES']
     previous_bytes = ENV['REDMINE_KANBAN_MAX_RESPONSE_BYTES']
     previous_queries = ENV['REDMINE_KANBAN_MAX_BOARD_QUERIES']
+    previous_total_queries = ENV['REDMINE_KANBAN_MAX_TOTAL_BOARD_QUERIES']
     ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = '0'
     ENV['REDMINE_KANBAN_MAX_RESPONSE_BYTES'] = '1e6'
     ENV['REDMINE_KANBAN_MAX_BOARD_QUERIES'] = '-1'
+    ENV['REDMINE_KANBAN_MAX_TOTAL_BOARD_QUERIES'] = '0'
 
     assert_equal 5_000, RedmineKanban::SnapshotLimits.server_entity_limit
     assert_equal 8 * 1024 * 1024, RedmineKanban::SnapshotLimits.response_bytes
     assert_equal 20, RedmineKanban::SnapshotLimits.query_limit
+    assert_equal 100, RedmineKanban::SnapshotLimits.total_query_limit
   ensure
     ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = previous_entities
     ENV['REDMINE_KANBAN_MAX_RESPONSE_BYTES'] = previous_bytes
     ENV['REDMINE_KANBAN_MAX_BOARD_QUERIES'] = previous_queries
+    ENV['REDMINE_KANBAN_MAX_TOTAL_BOARD_QUERIES'] = previous_total_queries
   end
 end
