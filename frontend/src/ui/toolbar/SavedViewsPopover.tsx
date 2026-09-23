@@ -37,8 +37,9 @@ export function SavedViewsPopover({ storageKey, current, onApply, labels, valida
     if (!open) return;
     if (mode === 'create' || mode === 'rename') inputRef.current?.focus();
     else {
+      const activeView = mode === 'list' ? menuRef.current?.querySelector<HTMLButtonElement>('[aria-pressed="true"]') : null;
       const firstView = mode === 'list' ? menuRef.current?.querySelector<HTMLButtonElement>('[aria-pressed]') : null;
-      (firstView ?? menuRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled):not(.rk-saved-views-close)'))?.focus();
+      (activeView ?? firstView ?? menuRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled):not(.rk-saved-views-close)'))?.focus();
     }
   }, [mode, open, menuRef]);
   const triggerLabel = `${labels.saved_views}${views.active ? `: ${views.active.name}` : ''}${views.changed ? ` (${labels.saved_views_changed})` : ''}`;
@@ -58,10 +59,7 @@ export function SavedViewsPopover({ storageKey, current, onApply, labels, valida
           <button type="button" className="rk-btn rk-btn-sm rk-btn-ghost rk-saved-views-close" aria-label={labels.close} onClick={closeAndFocus}><span className="rk-icon" aria-hidden="true">close</span></button>
         </div>
         {mode === 'list' || mode === 'manage' ? <>
-          {mode === 'list' ? <div className="rk-saved-views-list-heading">
-            <span>{labels.saved_views_switch}</span>
-            {views.active ? <button type="button" className="rk-saved-views-clear" title={labels.saved_views_clear_help} onClick={() => { views.clearActiveView(); closeAndFocus(); }}>{labels.saved_views_clear}</button> : null}
-          </div> : null}
+          {mode === 'list' ? <div className="rk-saved-views-list-heading">{labels.saved_views_switch}</div> : null}
           <div className="rk-saved-views-list">
             {views.stored.views.length === 0 ? <p className="rk-settings-help">{labels.saved_views_empty}</p> : null}
             {views.stored.views.map((view, index) => mode === 'list' ? (
@@ -96,6 +94,7 @@ export function SavedViewsPopover({ storageKey, current, onApply, labels, valida
           {mode === 'list' ? <div className="rk-saved-views-section rk-saved-views-footer">
             <button type="button" className="rk-settings-row rk-saved-views-new" disabled={Boolean(views.stored.error)} onClick={() => { views.editName(''); changeMode('create'); }}><span className="rk-icon" aria-hidden="true">add</span>{labels.saved_views_new}</button>
             <button type="button" className="rk-settings-row rk-saved-views-action" onClick={() => changeMode('manage')}><span className="rk-icon" aria-hidden="true">settings</span>{labels.saved_views_manage}</button>
+            {views.active ? <button type="button" className="rk-saved-views-clear" title={labels.saved_views_clear_help} onClick={() => { views.clearActiveView(); closeAndFocus(); }}>{labels.saved_views_clear}</button> : null}
           </div> : null}
         </> : null}
         {isForm ? <form className="rk-saved-views-section" onSubmit={(event) => {

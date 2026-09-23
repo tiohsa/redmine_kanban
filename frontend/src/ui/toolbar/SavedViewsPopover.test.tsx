@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SavedViewsPopover } from './SavedViewsPopover';
 import { parseSavedViews, type SavedViewSettings } from '../../model/view/savedViews';
 const current: SavedViewSettings = { filters: { assigneeIds: [], q: '', due: 'all', priority: [], priorityFilterEnabled: false, projectIds: [1], statusIds: [2], trackerIds: [] }, sortConfig: [{ field: 'updated', direction: 'desc' }], laneType: 'none', hiddenStatusIds: [], viewableProjectsEnabled: false };
-const labels = Object.fromEntries(['saved_views', 'saved_views_select', 'saved_views_none', 'saved_views_apply', 'saved_views_name', 'saved_views_new', 'saved_views_overwrite', 'saved_views_rename', 'saved_views_saved', 'saved_views_changed', 'saved_views_confirm_delete', 'saved_views_delete_confirm', 'saved_views_write_failed', 'saved_views_unreadable', 'saved_views_duplicate', 'saved_views_limit', 'saved_views_empty', 'saved_views_manage', 'saved_views_back', 'saved_views_create_title', 'saved_views_rename_title', 'saved_views_rename_submit', 'saved_views_pending', 'saved_views_clear', 'saved_views_switch', 'saved_views_switch_help', 'saved_views_manage_help', 'close', 'due', 'all', 'overdue', 'this_week', 'within_3_days', 'within_1_week', 'within_1_day', 'not_set', 'lane_type', 'none', 'assignee', 'issue_priority', 'category', 'save', 'delete', 'cancel'].map((k) => [k, k]));
+const labels = Object.fromEntries(['saved_views', 'saved_views_select', 'saved_views_none', 'saved_views_apply', 'saved_views_name', 'saved_views_new', 'saved_views_overwrite', 'saved_views_rename', 'saved_views_saved', 'saved_views_changed', 'saved_views_confirm_delete', 'saved_views_delete_confirm', 'saved_views_write_failed', 'saved_views_unreadable', 'saved_views_duplicate', 'saved_views_limit', 'saved_views_empty', 'saved_views_manage', 'saved_views_back', 'saved_views_create_title', 'saved_views_rename_title', 'saved_views_rename_submit', 'saved_views_pending', 'saved_views_clear', 'saved_views_clear_help', 'saved_views_switch', 'saved_views_switch_help', 'saved_views_manage_help', 'close', 'due', 'all', 'overdue', 'this_week', 'within_3_days', 'within_1_week', 'within_1_day', 'not_set', 'lane_type', 'none', 'assignee', 'issue_priority', 'category', 'save', 'delete', 'cancel'].map((k) => [k, k]));
 labels.saved_views_actions = 'Actions for %{name}';
 labels.saved_views_due_days = 'Within %{days} days';
 const key = 'test-views';
@@ -24,6 +24,20 @@ const nameView = (name: string) => fireEvent.change(screen.getByRole('textbox', 
 beforeEach(() => localStorage.clear());
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 describe('saved view operations', () => {
+  it('focuses the active view on reopen, then the first view or another action when none is active', () => {
+    const view = setup();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'saved_views_new' }));
+    createView('A'); createView('B'); createView('C');
+    click('close'); click('saved_views: C');
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'C', pressed: true }));
+    const clear = screen.getByRole('button', { name: 'saved_views_clear' });
+    const manage = screen.getByRole('button', { name: 'saved_views_manage' });
+    expect(manage.compareDocumentPosition(clear) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(clear.getAttribute('title')).toBe('saved_views_clear_help');
+    click('saved_views_clear'); click('saved_views');
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'A', pressed: false }));
+    expect(view.onApply).not.toHaveBeenCalled();
+  });
   it.each(['none', 'priority'] as const)('clears selection with %s lanes without applying or writing settings', (laneType) => {
     const view = setup();
     expect(screen.queryByRole('button', { name: 'saved_views_clear' })).toBeNull();

@@ -184,7 +184,8 @@ test('toolbar keyboard activation, focus return, outside click and saved view op
   const activeView = toolbar.getByRole('button', { name: `${l.saved_views}: My view (${l.saved_views_changed})`, exact: true });
   await expect(activeView).toBeVisible(); await activeView.click();
   const storedBeforeClear = await page.evaluate(() => Object.fromEntries(Object.entries(localStorage).filter(([key]) => key.startsWith('rk_saved_views:'))));
-  await page.keyboard.press('Shift+Tab');
+  await views.getByRole('button', { name: l.saved_views_manage }).focus();
+  await page.keyboard.press('Tab');
   await expect(views.getByRole('button', { name: l.saved_views_clear })).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(views).toHaveCount(0);
