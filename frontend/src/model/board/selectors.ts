@@ -75,13 +75,6 @@ export function buildDisplayData(
   };
 }
 
-function buildIssueUrls(issueId: number): Pick<ResolvedBoardIssue, 'issueUrl' | 'issueEditUrl'> {
-  return {
-    issueUrl: `/issues/${issueId}`,
-    issueEditUrl: `/issues/${issueId}/edit`,
-  };
-}
-
 export function resolveBoardIssue(data: BoardData, issueId: number): ResolvedBoardIssue | null {
   const issue = data.issues.find((it) => it.id === issueId);
   if (issue) {
@@ -110,7 +103,8 @@ export function resolveBoardIssue(data: BoardData, issueId: number): ResolvedBoa
       subject: subtask.subject,
       lockVersion: subtask.lock_version ?? null,
       assignedToId: undefined,
-      ...buildIssueUrls(subtask.id),
+      issueUrl: subtask.urls?.issue ?? `/issues/${subtask.id}`,
+      issueEditUrl: subtask.urls?.issue_edit ?? `/issues/${subtask.id}/edit`,
       kind: 'subtask',
       trackerId: normalizeTrackerId(subtask.tracker_id),
       parentIssueId: parent.id,
