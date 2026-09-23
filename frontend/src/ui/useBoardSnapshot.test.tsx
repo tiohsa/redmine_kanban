@@ -6,10 +6,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getJson, HttpError } from './http';
 import { parseBoardSnapshotV3 } from '../infrastructure/api/boardSnapshot';
 import { useBoardSnapshot } from './useBoardSnapshot';
+import { makeBoardSnapshot } from '../test/fixtures/boardSnapshot';
 vi.mock('./http', async (original) => ({ ...await original<typeof import('./http')>(), getJson: vi.fn() }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 const metadata = { ok: true, board: { id: 1, name: 'Board', identifier: 'demo' }, server_entity_limit: 2, projects: [{ id: 1, name: 'Board', level: 0 }], viewable_projects: [], statuses: [{ id: 1, name: 'New', is_closed: false }] };
-const snapshot = { ok: true, contract_version: 3, scope_fingerprint: 'narrow', meta: { complete: true, entity_count: 0 }, entities: [], tree: { root_ids: [], children_by_parent_id: {} }, columns: [], lanes: [], lists: { projects: [], viewable_projects: [], assignees: [], trackers: [], priorities: [], creatable_projects: [] }, labels: {} };
+const snapshot = { ok: true, contract_version: 3, scope_fingerprint: 'narrow', meta: { complete: true, entity_count: 0, project_id: 1, current_user_id: 7, can_move: false, can_create: false, can_delete: false, lane_type: 'assignee' }, entities: [], tree: { root_ids: [], children_by_parent_id: {} }, columns: [], lanes: [], lists: { projects: [], viewable_projects: [], assignees: [], trackers: [], priorities: [], creatable_projects: [] }, labels: {} };
 function setup() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
@@ -17,13 +18,13 @@ function setup() {
 }
 describe('snapshot recovery without a successful cache', () => {
   it('rejects a declared complete snapshot with an unrepresented Entity', () => {
-    expect(() => parseBoardSnapshotV3({ ...snapshot, meta: { ...snapshot.meta, entity_count: 1 }, entities: [{ id: 1 }] })).toThrow('Invalid board snapshot');
+    expect(() => parseBoardSnapshotV3({ ...snapshot, meta: { ...snapshot.meta, entity_count: 1 }, entities: makeBoardSnapshot().entities })).toThrow('Invalid board snapshot');
   });
   it('rejects a snapshot without the server Entity count', () => {
-    expect(() => parseBoardSnapshotV3({ ...snapshot, meta: { complete: true } })).toThrow('Invalid board snapshot');
+    expect(() => parseBoardSnapshotV3({ ...snapshot, meta: { ...snapshot.meta, entity_count: undefined } })).toThrow('Invalid board snapshot');
   });
   it('rejects a response without the complete v3 snapshot contract', async () => {
-    vi.mocked(getJson).mockImplementation(async (url) => url.endsWith('/metadata') ? metadata : { ...snapshot, meta: { complete: false } });
+    vi.mocked(getJson).mockImplementation(async (url) => url.endsWith('/metadata') ? metadata : { ...snapshot, meta: { ...snapshot.meta, complete: false } });
     const { result } = setup();
     await waitFor(() => expect(result.current.boardQuery.isError).toBe(true));
     expect(result.current.data).toBeNull();

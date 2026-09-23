@@ -20,7 +20,7 @@ export type Subtask = {
   can_log_time?: boolean;
   status_is_closed?: boolean;
   tracker_id?: number | null;
-  description?: string;
+  description?: string | null;
   assigned_to_id?: number | null;
   assigned_to_name?: string | null;
   start_date?: string | null;
@@ -71,7 +71,7 @@ export type Issue = {
   can_log_time?: boolean;
   lock_version?: number;
   tracker_id: number | null;
-  description: string;
+  description: string | null;
   assigned_to_id: number | null;
   assigned_to_name?: string | null;
   due_date?: string | null;
