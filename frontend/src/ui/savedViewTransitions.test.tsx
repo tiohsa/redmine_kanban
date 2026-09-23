@@ -7,11 +7,11 @@ import { getJson, HttpError } from './http';
 import { useKanbanPreferences } from './useKanbanPreferences';
 import { useBoardSnapshot } from './useBoardSnapshot';
 import { useBoardFilterNormalization } from './useBoardFilterNormalization';
-import { validateViewReferences } from './savedViewValidation';
-import type { SavedViewSettings } from './savedViews';
+import { validateViewReferences } from '../model/view/validation';
+import type { SavedViewSettings } from '../model/view/savedViews';
 vi.mock('./http', async (original) => ({ ...await original<typeof import('./http')>(), getJson: vi.fn() }));
 const metadata = { ok: true, board: { id: 1, name: 'B', identifier: 'b' }, projects: [{ id: 1 }, { id: 2 }], viewable_projects: [{ id: 1 }, { id: 2 }], statuses: [{ id: 1 }, { id: 2 }], server_entity_limit: 5000 };
-const makeSnapshot = (project: number) => ({ ok: true, contract_version: 3, scope_fingerprint: String(project), meta: { complete: true, project_id: 1, project_ids: [project] }, entities: [], tree: { root_ids: [], children_by_parent_id: {} }, columns: [], lanes: [], lists: { projects: metadata.projects, viewable_projects: metadata.projects, assignees: [{ id: project }], trackers: [{ id: project }], priorities: [], creatable_projects: [] }, labels: {} });
+const makeSnapshot = (project: number) => ({ ok: true, contract_version: 3, scope_fingerprint: String(project), meta: { complete: true, entity_count: 0, project_id: 1, project_ids: [project] }, entities: [], tree: { root_ids: [], children_by_parent_id: {} }, columns: [], lanes: [], lists: { projects: metadata.projects, viewable_projects: metadata.projects, assignees: [{ id: project }], trackers: [{ id: project }], priorities: [], creatable_projects: [] }, labels: {} });
 const view = (project: number): SavedViewSettings => ({ filters: { projectIds: [project], statusIds: [project], trackerIds: [project], assigneeIds: [String(project)], q: '', due: 'all', priority: [], priorityFilterEnabled: false }, sortConfig: [{ field: 'updated', direction: 'desc' }], laneType: 'priority', hiddenStatusIds: [], viewableProjectsEnabled: true });
 beforeEach(() => localStorage.clear());
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
@@ -29,7 +29,7 @@ it.each(['success', 'failure'])('keeps B when saved view A completes late with %
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   const { result } = renderHook(() => {
     const preferences = useKanbanPreferences('/projects/demo/kanban/data', 7);
-    const snapshot = useBoardSnapshot({ baseUrl: preferences.projectScope, currentUserId: 7, projectIds: preferences.filters.projectIds, statusIds: preferences.filters.statusIds, hiddenStatusIds: preferences.hiddenStatusIds, viewableProjectsEnabled: preferences.viewableProjectsEnabled, preferencesReady: preferences.preferencesReady, maximumBoardEntityCount: 1500, initialLabels: {}, agingWarnDays: 3, agingDangerDays: 7, agingExcludeClosed: true });
+    const snapshot = useBoardSnapshot({ baseUrl: preferences.projectScope, currentUserId: 7, projectIds: preferences.filters.projectIds, statusIds: preferences.filters.statusIds, hiddenStatusIds: preferences.hiddenStatusIds, viewableProjectsEnabled: preferences.viewableProjectsEnabled, preferencesReady: preferences.preferencesReady, maximumBoardEntityCount: 1500, initialLabels: {} });
     useBoardFilterNormalization({ data: snapshot.data, filters: preferences.filters, viewableProjectsEnabled: preferences.viewableProjectsEnabled });
     return { preferences, snapshot, validation: validateViewReferences(preferences.viewSettings, snapshot.metadata, snapshot.data, {}) };
   }, { wrapper });

@@ -1,5 +1,5 @@
 import type { Issue, Subtask } from './types';
-import { normalizeTrackerId, resolveClosedState } from './kanbanShared';
+import { normalizeTrackerId, resolveClosedState } from '../model/issue/issue';
 
 type TreeNode = Issue | Subtask;
 

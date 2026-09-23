@@ -10,8 +10,8 @@ import { KanbanPopupHost } from './KanbanPopupHost';
 import { DatePopup, PriorityPopup, ProgressPopup } from './KanbanPopups';
 import { KanbanToolbar } from './KanbanToolbar';
 import { HelpDialog } from './HelpDialog';
-import { buildIssueTitle, payloadFieldError, payloadMessage, resolveMutationError } from './kanbanShared';
-import { findIssueInBoard } from './kanbanShared';
+import { buildIssueTitle, findIssueInBoard } from '../model/board/selectors';
+import { payloadFieldError, payloadMessage, resolveMutationError } from '../infrastructure/api/errors';
 import { useKanbanActions } from './useKanbanActions';
 import { invalidateBoardSnapshot } from './useIssueMutation';
 import { useKanbanDialogs } from './useKanbanDialogs';
@@ -21,8 +21,8 @@ import { GlobalTimer, OtherNoticeModal, TimerStartModal } from './workTimer/Work
 import { createTimeEntryOperation, type TimeEntryOperation } from './iframe/timeEntryOperation';
 import { resolveDefaultCreateProjectId, useBoardFilterNormalization } from './useBoardFilterNormalization';
 import { useBoardPresentation } from './useBoardPresentation';
-import { savedViewsKey } from './savedViews';
-import { validateViewReferences } from './savedViewValidation';
+import { savedViewsKey } from '../infrastructure/storage/savedViewsRepository';
+import { validateViewReferences } from '../model/view/validation';
 import { SavedViewsPopover } from './toolbar/SavedViewsPopover';
 import { useBoardSnapshot } from './useBoardSnapshot';
 
@@ -93,9 +93,6 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     maximumBoardEntityCount,
     preferencesReady,
     initialLabels,
-    agingWarnDays,
-    agingDangerDays,
-    agingExcludeClosed,
     currentUserId: initialCurrentUserId,
     viewableProjectsEnabled,
   });

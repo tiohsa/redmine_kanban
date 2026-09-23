@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { BoardApiResponse, BoardData, BoardMetadata } from './types';
+import type { BoardMetadata, ToolbarViewModel } from './types';
 import { getJson, isHttpError } from './http';
 import { buildBoardDataUrl, buildBoardQueryKey } from './boardQuery';
-import { normalizeBoardData } from './kanbanShared';
+import { normalizeBoardData, parseBoardSnapshotV3 } from '../infrastructure/api/boardSnapshot';
 
 type Args = {
   baseUrl: string;
@@ -13,9 +13,6 @@ type Args = {
   maximumBoardEntityCount: number;
   preferencesReady: boolean;
   initialLabels: Record<string, string>;
-  agingWarnDays: number;
-  agingDangerDays: number;
-  agingExcludeClosed: boolean;
   currentUserId: number;
   viewableProjectsEnabled?: boolean;
 };
@@ -28,9 +25,6 @@ export function useBoardSnapshot({
   maximumBoardEntityCount,
   preferencesReady,
   initialLabels,
-  agingWarnDays,
-  agingDangerDays,
-  agingExcludeClosed,
   currentUserId,
   viewableProjectsEnabled = false,
 }: Args) {
@@ -62,7 +56,7 @@ export function useBoardSnapshot({
   const boardQuery = useQuery({
     queryKey: boardQueryKey,
     queryFn: async () => normalizeBoardData(
-      await getJson<BoardApiResponse>(buildBoardDataUrl(baseUrl, projectIds, statusIds, hiddenStatusIds, maximumBoardEntityCount)),
+      parseBoardSnapshotV3(await getJson<unknown>(buildBoardDataUrl(baseUrl, projectIds, statusIds, hiddenStatusIds, maximumBoardEntityCount))),
     ),
     retry: false,
     enabled: preferencesReady && scopeChoicesReady && !invalidScope && !permissionLost,
@@ -71,40 +65,22 @@ export function useBoardSnapshot({
   const accessDenied = permissionLost || (isHttpError(boardQuery.error) && [401, 403, 404].includes(boardQuery.error.status));
   const data = accessDenied || invalidScope || !scopeChoicesReady ? null : boardQuery.data ?? null;
   const metadata = accessDenied || metadataQuery.error ? null : metadataQuery.data;
-  const emptyBoardData = useMemo<BoardData>(() => ({
-    ok: true,
-    contract_version: 3,
-    scope_fingerprint: `pending:${baseUrl}`,
+  const toolbarData = useMemo<ToolbarViewModel>(() => data ?? ({
     meta: {
-      project_id: 0,
-      project_ids: [],
-      scope_status_ids: [],
-      current_user_id: 0,
+      project_id: metadata?.board.id ?? 0,
       can_move: false,
       can_create: false,
       can_delete: false,
-      lane_type: 'assignee',
-      aging_warn_days: agingWarnDays,
-      aging_danger_days: agingDangerDays,
-      aging_exclude_closed: agingExcludeClosed,
       complete: false,
-      entity_count: 0,
-      requested_entity_limit: maximumBoardEntityCount,
-      effective_entity_limit: maximumBoardEntityCount,
-      server_entity_limit: undefined,
+      server_entity_limit: metadata?.server_entity_limit,
     },
-    columns: [],
-    lanes: [],
-    lists: { assignees: [], trackers: [], priorities: [], projects: [], viewable_projects: [], creatable_projects: [] },
-    issues: [],
+    columns: metadata?.statuses ?? [],
+    lists: {
+      assignees: [], trackers: [], priorities: [], creatable_projects: [],
+      projects: metadata?.projects ?? [], viewable_projects: metadata?.viewable_projects ?? [],
+    },
     labels: initialLabels,
-  }), [agingDangerDays, agingExcludeClosed, agingWarnDays, baseUrl, initialLabels, maximumBoardEntityCount]);
-  const toolbarData = data ?? (metadata?.board ? {
-    ...emptyBoardData,
-    meta: { ...emptyBoardData.meta, project_id: metadata.board.id, server_entity_limit: metadata.server_entity_limit },
-    columns: metadata.statuses,
-    lists: { ...emptyBoardData.lists, projects: metadata.projects, viewable_projects: metadata.viewable_projects },
-  } : emptyBoardData);
+  }), [data, initialLabels, metadata]);
   const errorScope = JSON.stringify(boardQueryKey);
   const suppressNextBoardErrorRef = useRef<string | null>(null);
 

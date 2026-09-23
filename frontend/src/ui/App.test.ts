@@ -167,7 +167,11 @@ describe('App board scope helpers', () => {
       columns: [{ id: 1, name: 'Open', is_closed: false }, { id: 2, name: 'Closed', is_closed: true }],
       lanes: [],
       lists: { assignees: [{ id: null, name: 'Unassigned' }], trackers: [{ id: 1, name: 'Bug' }], priorities: [], projects: [{ id: 4, name: 'Demo', level: 0 }], viewable_projects: [{ id: 4, name: 'Demo', level: 0 }], creatable_projects: [{ id: 4, name: 'Demo', level: 0 }] },
-      issues: [{ id: 9, subject: 'Parent', status_id: 2, tracker_id: 1, project: { id: 4, name: 'Demo' }, description: '', assigned_to_id: null, lock_version: 1, urls: { issue: '/issues/9', issue_edit: '/issues/9/edit' }, subtasks: [{ id: 10, subject: 'Child', status_id: 1, tracker_id: 1, parent_id: 9, project: { id: 4, name: 'Demo' }, description: '', assigned_to_id: null, lock_version: 1, urls: { issue: '/issues/10', issue_edit: '/issues/10/edit' } }] }],
+      entities: [
+        { id: 9, subject: 'Parent', status_id: 2, tracker_id: 1, project: { id: 4, name: 'Demo' }, description: '', assigned_to_id: null, lock_version: 1, urls: { issue: '/issues/9', issue_edit: '/issues/9/edit' } },
+        { id: 10, subject: 'Child', status_id: 1, tracker_id: 1, parent_id: 9, project: { id: 4, name: 'Demo' }, description: '', assigned_to_id: null, lock_version: 1, urls: { issue: '/issues/10', issue_edit: '/issues/10/edit' } },
+      ],
+      tree: { root_ids: [9], children_by_parent_id: { '9': [10] } },
       labels: {},
     };
     vi.mocked(getJson).mockResolvedValueOnce(metadata).mockResolvedValueOnce(boardData);

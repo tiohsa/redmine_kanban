@@ -28,4 +28,14 @@ export default defineConfig([
       'react-refresh/only-export-components': 'off',
     },
   },
+  {
+    files: ['src/model/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: ['react', 'react-dom', '@tanstack/react-query'],
+        patterns: [{ group: ['**/ui/**', '**/application/**', '**/infrastructure/**'], message: 'Model code must depend only on model code.' }],
+      }],
+      'no-restricted-globals': ['error', 'document', 'window', 'localStorage', 'sessionStorage', 'fetch'],
+    },
+  },
 ]);

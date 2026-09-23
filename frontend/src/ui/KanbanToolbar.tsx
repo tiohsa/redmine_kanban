@@ -1,8 +1,8 @@
 import React from 'react';
-import type { BoardData } from './types';
+import type { ToolbarViewModel } from './types';
 import type { Filters } from './boardFilters';
 import type { SortConfig } from './board/sort';
-import type { FitMode } from './kanbanShared';
+import type { FitMode } from '../model/view/types';
 import type { CardDisplayMode, LaneType } from './useKanbanPreferences';
 import { buildToolbarOptions, togglePriorityFilter } from './toolbar/toolbarOptions';
 import { SearchPopover } from './toolbar/SearchPopover';
@@ -11,7 +11,7 @@ import { DisplaySettingsPopover, SettingsToggle } from './toolbar/DisplaySetting
 import { ToolbarDropdown, ToolbarMultiSelect } from './toolbar/ToolbarDropdown';
 
 type ToolbarProps = {
-  data: BoardData;
+  data: ToolbarViewModel;
   savedViews?: React.ReactNode;
   filters: Filters;
   onChange: (filters: Filters) => void;

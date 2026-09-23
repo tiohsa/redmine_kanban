@@ -1,7 +1,9 @@
 import { useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { useRef } from 'react';
 import type { BoardData, Issue, Subtask } from './types';
-import { findIssueInBoard, resolveClosedState, type AncestorIssueUpdate, type IssueMutationResult } from './kanbanShared';
+import { findIssueInBoard } from '../model/board/selectors';
+import { resolveClosedState } from '../model/issue/issue';
+import type { AncestorIssueUpdate, IssueMutationResult } from '../infrastructure/api/contracts';
 import { mapSubtasksTree, updateSubtasksTree } from './subtasksTree';
 import { applyBoardResponse, createNormalizedBoardState, rollbackLocalIssuePatch, selectBoardData } from './boardState';
 import { getBoardFreshnessAuthority, releaseBoardFreshnessAuthority } from './asyncFreshness';

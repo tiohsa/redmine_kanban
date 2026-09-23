@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import type { TimeEntryOperation } from './iframe/timeEntryOperation';
 import type { BoardData } from './types';
 import { buildDefaultIssueCreateUrl, type ModalContext } from './issueDialog';
-import { buildIssueTitle, resolveBoardIssue } from './kanbanShared';
+import { buildIssueTitle, resolveBoardIssue } from '../model/board/selectors';
 
 type DialogRuntimeContext = {
   baseUrl: string;
