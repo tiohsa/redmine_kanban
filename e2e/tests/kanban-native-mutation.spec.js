@@ -148,7 +148,7 @@ test('native create at the admission limit leaves the board without a stale comp
   const { payload: initial } = await boardSnapshot(page, redmineBase);
   expect(initial.entities.length).toBe(2);
 
-  const settingsTrigger = page.locator('[role="button"][title="Display settings"]');
+  const settingsTrigger = page.getByRole('button', { name: 'Display settings', exact: true });
   await settingsTrigger.click();
   const settings = page.getByRole('dialog', { name: /display settings/i });
   await settings.locator('input[type="text"]').fill('2');
@@ -161,7 +161,7 @@ test('native create at the admission limit leaves the board without a stale comp
   await settingsTrigger.click();
   await expect(settings).toHaveCount(0);
 
-  await page.locator('.rk-toolbar .rk-dropdown-trigger[role="button"]').first().click();
+  await page.locator('.rk-toolbar').getByRole('button', { name: 'Create', exact: true }).click();
   await expect(page.locator('iframe.rk-iframe-dialog-frame')).toBeVisible();
   const issueForm = page.frameLocator('iframe.rk-iframe-dialog-frame');
   await expect(issueForm.locator('#issue_subject')).toBeVisible();

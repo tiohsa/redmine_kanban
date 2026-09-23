@@ -12,6 +12,7 @@ import { ToolbarDropdown, ToolbarMultiSelect } from './toolbar/ToolbarDropdown';
 
 type ToolbarProps = {
   data: BoardData;
+  savedViews?: React.ReactNode;
   filters: Filters;
   onChange: (filters: Filters) => void;
   sortConfig: SortConfig;
@@ -49,6 +50,7 @@ type ToolbarProps = {
 
 export function KanbanToolbar({
   data,
+  savedViews,
   filters,
   onChange,
   sortConfig,
@@ -109,9 +111,9 @@ export function KanbanToolbar({
       {canCreate ? (
         <>
           <div className="rk-toolbar-group">
-            <div className="rk-dropdown-trigger" onClick={onCreate} title={labels.create} role="button">
-              <span className="rk-icon">add</span>
-            </div>
+            <button type="button" className="rk-dropdown-trigger" onClick={onCreate} title={labels.create} aria-label={labels.create}>
+              <span className="rk-icon" aria-hidden="true">add</span>
+            </button>
           </div>
           <div className="rk-toolbar-separator" />
         </>
@@ -263,6 +265,7 @@ export function KanbanToolbar({
 
       <div className="rk-toolbar-separator" />
 
+      {savedViews}
       <div className="rk-toolbar-spacer" />
 
       <div className="rk-toolbar-group">
@@ -291,16 +294,16 @@ export function KanbanToolbar({
           serverEntityLimit={serverEntityLimit}
         />
 
-        <button type="button" className={`rk-btn ${fullWindow ? 'rk-btn-toggle-active' : ''}`} onClick={onToggleFullWindow} title={fullWindow ? labels.normal_view : labels.fullscreen_view}>
+        <button type="button" className={`rk-btn ${fullWindow ? 'rk-btn-toggle-active' : ''}`} onClick={onToggleFullWindow} aria-label={fullWindow ? labels.normal_view : labels.fullscreen_view} title={fullWindow ? labels.normal_view : labels.fullscreen_view}>
           <span className="rk-icon">{fullWindowIcon}</span>
           {fullWindow ? <span className="rk-indicator-dot" /> : null}
         </button>
 
-        <button type="button" className="rk-btn" onClick={onScrollToTop} title={labels.scroll_top}>
+        <button type="button" className="rk-btn" onClick={onScrollToTop} aria-label={labels.scroll_top} title={labels.scroll_top}>
           <span className="rk-icon">vertical_align_top</span>
         </button>
 
-        <button type="button" className="rk-btn" onClick={onOpenHelp} title={labels.help}>
+        <button type="button" className="rk-btn" onClick={onOpenHelp} aria-label={labels.help} title={labels.help}>
           <span className="rk-icon">help_outline</span>
         </button>
       </div>

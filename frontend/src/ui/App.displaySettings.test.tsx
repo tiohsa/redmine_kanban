@@ -17,7 +17,7 @@ vi.mock('./board/CanvasBoard', async () => {
 });
 
 vi.mock('./http', () => ({
-  getJson: vi.fn(() => Promise.resolve({
+  getJson: vi.fn((url: string) => Promise.resolve(url.endsWith('/metadata') ? { ok: true, board: { id: 1 }, projects: [], viewable_projects: [], statuses: [], server_entity_limit: 5000 } : {
     ok: true, contract_version: 3, scope_fingerprint: 'sha256:test',
     meta: { project_id: 1, project_ids: [1], scope_status_ids: [], current_user_id: 7, can_move: false, can_create: false, can_delete: false, complete: true, entity_count: 0 },
     columns: [], lanes: [], entities: [], tree: { root_ids: [], children_by_parent_id: {} },
@@ -62,6 +62,36 @@ describe('App display settings', () => {
     fireEvent.click(await screen.findByRole('button', { name: /表示設定/ }));
     return view;
   }
+
+  it('returns focus on Escape, prevents propagation, and dismisses on outside mouse action', async () => {
+    await openDisplaySettings();
+    const trigger = screen.getByRole('button', { name: '表示設定' });
+    expect(trigger.tagName).toBe('BUTTON');
+    expect(trigger.getAttribute('type')).toBe('button');
+    const menu = screen.getByRole('dialog', { name: '表示設定' });
+    expect(trigger.getAttribute('aria-controls')).toBe(menu.id);
+    const behind = vi.fn();
+    window.addEventListener('keydown', behind);
+    screen.getByRole('combobox', { name: 'フォントサイズ' }).focus();
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: '表示設定' })).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(behind).not.toHaveBeenCalled();
+    window.removeEventListener('keydown', behind);
+    fireEvent.click(trigger);
+    const outside = document.createElement('button'); document.body.appendChild(outside); outside.focus();
+    fireEvent.mouseDown(outside);
+    expect(screen.queryByRole('dialog', { name: '表示設定' })).toBeNull();
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
+  });
+
+  it.each([13, 18])('shows the same font size %i in settings and Canvas', async (size) => {
+    if (size !== 13) localStorage.setItem('rk_font_size:user:7', String(size));
+    await openDisplaySettings();
+    expect(screen.getByRole<HTMLSelectElement>('combobox', { name: 'フォントサイズ' }).value).toBe(String(size));
+    expect(screen.getByTestId('canvas-board').getAttribute('data-font-size')).toBe(String(size));
+  });
 
   it('switches and persists both display modes through the toolbar independently of subtasks', async () => {
     const view = await openDisplaySettings();

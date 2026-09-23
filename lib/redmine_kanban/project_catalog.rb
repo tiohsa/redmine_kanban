@@ -9,7 +9,7 @@ module RedmineKanban
 
     def subtree_projects(root:)
       build_project_list(
-        root.self_and_descendants.visible.to_a.select(&:active?),
+        root.self_and_descendants.visible(@user).to_a.select(&:active?),
         base_depth: root.ancestors.count,
       )
     end

@@ -24,6 +24,70 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     super
   end
 
+  def test_metadata_survives_server_limit_without_loading_issues_or_building_a_snapshot
+    previous = ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES']
+    ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = '1'
+    build_issue(subject: 'Recovery one')
+    build_issue(subject: 'Recovery two')
+    get :index, params: { project_id: @project.identifier }
+    assert_response :unprocessable_entity
+    assert_equal 'BOARD_SCOPE_TOO_LARGE', JSON.parse(@response.body).dig('error', 'code')
+
+    RedmineKanban::BoardData.expects(:new).never
+    RedmineKanban::BoardListsBuilder.expects(:new).never
+    RedmineKanban::BoardTreeBuilder.expects(:new).never
+    Issue.expects(:visible).never
+    get :metadata, params: { project_id: @project.identifier }
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal @project.id, json.dig('board', 'id')
+    assert_equal 1, json['server_entity_limit']
+    assert_includes json['projects'].map { |project| project['id'] }, @project.id
+    assert_equal IssueStatus.sorted.pluck(:id), json['statuses'].map { |status| status['id'] }
+    refute json.key?('entities')
+    refute json.key?('tree')
+    refute json.key?('meta')
+  ensure
+    ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = previous
+  end
+
+  def test_metadata_hides_private_projects
+    hidden = Project.create!(name: 'Private recovery project', identifier: 'private-recovery', is_public: false)
+    get :metadata, params: { project_id: @project.identifier }
+    assert_response :success
+    json = JSON.parse(@response.body)
+    refute_includes json['viewable_projects'].map { |project| project['id'] }, hidden.id
+    refute_includes json['projects'].map { |project| project['id'] }, hidden.id
+  end
+
+  def test_metadata_does_not_disclose_an_invisible_board
+    hidden = Project.create!(name: 'Hidden metadata board', identifier: 'hidden-metadata-board', is_public: false)
+    RedmineKanban::BoardMetadata.expects(:new).never
+    get :metadata, params: { project_id: hidden.identifier }
+    assert_response :not_found
+    assert_equal({ 'ok' => false }, JSON.parse(@response.body))
+  end
+
+  def test_metadata_route_uses_redmine_view_permission_mapping
+    assert_recognizes(
+      { controller: 'redmine_kanban/api', action: 'metadata', project_id: @project.identifier },
+      { path: "/projects/#{@project.identifier}/kanban/metadata", method: :get }
+    )
+    @user.roles_for_project(@project).each { |role| role.remove_permission!(:view_redmine_kanban) }
+    @user.reload
+    RedmineKanban::BoardMetadata.expects(:new).never
+    get :metadata, params: { project_id: @project.identifier }
+    assert_response :forbidden
+    refute_includes @response.body, @project.name
+  end
+
+  def test_metadata_requires_board_view_permission
+    RedmineKanban::PermissionPolicy.any_instance.stubs(:can_view_board?).returns(false)
+    get :metadata, params: { project_id: @project.identifier }
+    assert_response :forbidden
+    refute JSON.parse(@response.body).key?('projects')
+  end
+
   def test_index_returns_a_complete_flat_snapshot_and_tree_relation
     parent = build_issue(subject: 'Snapshot parent')
     child = build_issue(subject: 'Snapshot child', parent_issue_id: parent.id)

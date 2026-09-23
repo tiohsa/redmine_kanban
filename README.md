@@ -221,3 +221,13 @@ The verification entry points live under `script/ci/` so local container runs an
 Plugin code: GPLv2. Bundled third-party fonts: see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 This project is licensed under the GNU General Public License v2.0 (GPLv2).
+
+### Recovery and saved views
+
+If the initial snapshot exceeds a resource limit, the toolbar still loads project and status choices from `GET /projects/:project_id/kanban/metadata`. This permission-checked endpoint returns `board` identity, `projects` (the board subtree), `viewable_projects`, `statuses`, and `server_entity_limit`; it does not return Issues, counts, assignees, or a snapshot. The existing `bootstrap` response remains unchanged. Narrow projects or statuses to request a complete snapshot. Subject, assignee and due-date filters operate on the client and do not reduce the fetched entity count. Metadata failures have a Retry action; entity, response-size and query-limit errors remain distinct.
+
+The **Saved views** toolbar control supports Save new, Apply, Overwrite, Rename and confirmed Delete. A view stores all filters (including due days and priority selection semantics), ordered sorting, lane type, hidden status IDs and the viewable-projects switch. Font size, full screen, fit mode, card mode, subtasks, aging, entity limits and timers are excluded. Manual changes show **Modified** and are saved only with an explicit operation. Deleting a view retains the current conditions.
+
+Views are stored in localStorage under `rk_saved_views:<Redmine subpath>/projects/<board>/kanban:user:<id>`, isolated by browser origin, instance subpath, user and board. The JSON document is `{ "version": 1, "views": [{ "id": "stable UUID", "name": "name", "settings": { ... } }] }`. Each scope permits 20 views; trimmed names must be 1–80 characters and unique. This initial version has no sharing or built-in presets. Corrupt/unknown documents are retained and reported; failed writes never report success. Unavailable references remain selected with a warning, and validation waits for choices from the current scope. Invalid server scope IDs do not silently become an unfiltered request.
+
+Toolbar controls support Tab, Enter/Space, and Escape. Escape closes the active popover and returns focus to its trigger; outside clicks retain their own focus. Display settings offer the unchanged default font size of 13px. A saved aging warning threshold of 0 remains 0 after reload.

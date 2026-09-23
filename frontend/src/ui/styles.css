@@ -526,6 +526,11 @@
 }
 
 .rk-dropdown-item {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  font-family: inherit;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1957,3 +1962,13 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 .rk-help-close-x:hover {
   color: var(--rk-danger);
 }
+
+.rk-toolbar button:focus-visible, .rk-toolbar select:focus-visible, .rk-toolbar input:focus-visible {
+  outline: 2px solid var(--rk-primary, #2563eb);
+  outline-offset: 2px;
+}
+.rk-recovery { padding: 8px 16px; }
+
+.rk-saved-views { width: 340px; max-width: 90vw; }
+.rk-saved-views > label { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.rk-saved-views .rk-settings-actions { flex-wrap: wrap; }

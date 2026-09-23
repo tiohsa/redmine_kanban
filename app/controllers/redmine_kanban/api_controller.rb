@@ -2,10 +2,14 @@ module RedmineKanban
   class ApiController < ApplicationController
     include ArrayParamNormalizer
 
-    skip_before_action :authorize, only: [:move, :create, :update, :destroy, :bulk_create]
+    # Metadata uses the same Redmine permission policy with JSON errors, so a
+    # denied request cannot render project names in Redmine's HTML navigation.
+    skip_before_action :authorize, only: [:metadata, :move, :create, :update, :destroy, :bulk_create]
+    skip_before_action :find_project_by_project_id, only: [:metadata]
+    before_action :find_metadata_project, only: [:metadata]
 
     before_action :find_issue, only: [:move, :update, :destroy]
-    before_action :require_view_permission, only: [:index, :bootstrap, :entities, :counts, :trackers]
+    before_action :require_view_permission, only: [:index, :bootstrap, :metadata, :entities, :counts, :trackers]
     before_action :require_move_permission, only: [:move]
     before_action :require_create_permission, only: [:create]
     before_action :require_create_permission, only: [:bulk_create]
@@ -20,6 +24,10 @@ module RedmineKanban
     def bootstrap
       payload = board_payload
       render_board_payload(payload)
+    end
+
+    def metadata
+      render json: BoardMetadata.new(project: @project, user: User.current).to_h
     end
 
     def entities
@@ -127,6 +135,13 @@ module RedmineKanban
     end
 
     private
+
+    def find_metadata_project
+      value = params[:project_id].to_s
+      scope = Project.visible(User.current)
+      @project = value.match?(/\A\d+\z/) ? scope.find_by(id: value.to_i) : scope.find_by(identifier: value)
+      render json: { ok: false }, status: :not_found unless @project
+    end
 
     def board_payload
       if legacy_pagination_param_present?

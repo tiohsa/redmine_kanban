@@ -3,7 +3,7 @@ import type { FitMode } from '../kanbanShared';
 import { DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT, MAXIMUM_BOARD_ENTITY_COUNT, parseMaximumBoardEntityCount, type CardDisplayMode, type LaneType } from '../useKanbanPreferences';
 import { useDropdownDismiss } from './useDropdownDismiss';
 
-const FONT_SIZE_OPTIONS = ['10', '12', '14', '16', '18', '20', '22', '24', '26', '28', '30'] as const;
+const FONT_SIZE_OPTIONS = ['10', '12', '13', '14', '16', '18', '20', '22', '24', '26', '28', '30'] as const;
 
 export function SettingsToggle({ label, checked, onChange, disabled = false }: { label: string; checked: boolean; onChange: () => void; disabled?: boolean }) {
   return (
@@ -78,7 +78,7 @@ export function DisplaySettingsPopover({
   const [maximumEntityCountDraft, setMaximumEntityCountDraft] = useState(String(maximumBoardEntityCount));
   const [maximumEntityCountError, setMaximumEntityCountError] = useState<string | null>(null);
   const [maximumEntityCountSaved, setMaximumEntityCountSaved] = useState(false);
-  const { triggerRef, menuRef } = useDropdownDismiss(open, () => setOpen(false));
+  const { triggerRef, menuRef, menuId } = useDropdownDismiss(open, () => setOpen(false));
   useEffect(() => {
     setMaximumEntityCountDraft(String(maximumBoardEntityCount));
   }, [maximumBoardEntityCount]);
@@ -92,12 +92,12 @@ export function DisplaySettingsPopover({
 
   return (
     <div className="rk-dropdown-container">
-      <div ref={triggerRef} className={`rk-btn rk-btn-labeled ${open ? 'rk-btn-toggle-active' : ''}`} onClick={() => setOpen(!open)} title={title} aria-expanded={open} role="button" tabIndex={0}>
+      <button type="button" ref={triggerRef} aria-label={title} aria-expanded={open} aria-controls={open ? menuId : undefined} aria-haspopup="dialog" className={`rk-btn rk-btn-labeled ${open ? 'rk-btn-toggle-active' : ''}`} onClick={() => setOpen(!open)} title={title}>
         <span className="rk-icon">tune</span>
         <span className="rk-btn-label">{title}</span>
-      </div>
+      </button>
       {open ? (
-        <div ref={menuRef} className="rk-settings-menu" role="dialog" aria-label={title}>
+        <div id={menuId} ref={menuRef} className="rk-settings-menu" role="dialog" aria-label={title}>
           <div className="rk-settings-title">{title}</div>
           <SettingsToggle label={labels.show_subtasks_short} checked={isSingleLineMode ? false : showSubtasks} onChange={onToggleShowSubtasks} disabled={isSingleLineMode} />
           <SettingsSelect label={labels.lane_type} value={laneType} options={[

@@ -28,7 +28,7 @@ describe('SortPopover', () => {
     const onChangeSort = openPopover();
 
     expect(screen.getAllByRole('combobox')).toHaveLength(1);
-    fireEvent.click(screen.getByRole('menuitem', { name: labels.add }));
+    fireEvent.click(screen.getByRole('button', { name: labels.add }));
 
     expect(onChangeSort).toHaveBeenCalledWith([
       { field: 'updated', direction: 'desc' },
@@ -54,20 +54,20 @@ describe('SortPopover', () => {
       { field: 'updated', direction: 'asc' },
     ]);
 
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Sort 1: Due Date ↑' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sort 1: Due Date ↑' }));
     expect(onChangeSort).toHaveBeenCalledWith([
       { field: 'due', direction: 'desc' },
       { field: 'priority', direction: 'desc' },
       { field: 'updated', direction: 'asc' },
     ]);
 
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete: Sort 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete: Sort 2' }));
     expect(onChangeSort).toHaveBeenCalledWith([
       { field: 'due', direction: 'asc' },
       { field: 'updated', direction: 'asc' },
     ]);
 
-    fireEvent.click(screen.getByRole('menuitem', { name: labels.reset }));
+    fireEvent.click(screen.getByRole('button', { name: labels.reset }));
     expect(onChangeSort).toHaveBeenCalledWith([{ field: 'updated', direction: 'desc' }]);
   });
 
@@ -78,12 +78,12 @@ describe('SortPopover', () => {
       { field: 'updated', direction: 'asc' },
     ]);
 
-    expect(screen.getByRole('menuitem', { name: labels.add })).toHaveProperty('disabled', true);
-    expect(screen.getAllByRole('menuitem', { name: /Delete:/ })).toHaveLength(3);
+    expect(screen.getByRole('button', { name: labels.add })).toHaveProperty('disabled', true);
+    expect(screen.getAllByRole('button', { name: /Delete:/ })).toHaveLength(3);
 
     const singleOnChangeSort = vi.fn();
     render(<SortPopover sortConfig={[{ field: 'due', direction: 'asc' }]} onChangeSort={singleOnChangeSort} labels={labels} />);
     fireEvent.click(screen.getAllByTitle('Sort')[1]);
-    expect(screen.getAllByRole('menuitem', { name: /Delete:/ }).find((element) => (element as HTMLButtonElement).disabled)).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: /Delete:/ }).find((element) => (element as HTMLButtonElement).disabled)).toBeTruthy();
   });
 });

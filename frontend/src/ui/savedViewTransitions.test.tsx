@@ -1,0 +1,54 @@
+// @vitest-environment jsdom
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { getJson, HttpError } from './http';
+import { useKanbanPreferences } from './useKanbanPreferences';
+import { useBoardSnapshot } from './useBoardSnapshot';
+import { useBoardFilterNormalization } from './useBoardFilterNormalization';
+import { validateViewReferences } from './savedViewValidation';
+import type { SavedViewSettings } from './savedViews';
+vi.mock('./http', async (original) => ({ ...await original<typeof import('./http')>(), getJson: vi.fn() }));
+const metadata = { ok: true, board: { id: 1, name: 'B', identifier: 'b' }, projects: [{ id: 1 }, { id: 2 }], viewable_projects: [{ id: 1 }, { id: 2 }], statuses: [{ id: 1 }, { id: 2 }], server_entity_limit: 5000 };
+const makeSnapshot = (project: number) => ({ ok: true, contract_version: 3, scope_fingerprint: String(project), meta: { complete: true, project_id: 1, project_ids: [project] }, entities: [], tree: { root_ids: [], children_by_parent_id: {} }, columns: [], lanes: [], lists: { projects: metadata.projects, viewable_projects: metadata.projects, assignees: [{ id: project }], trackers: [{ id: project }], priorities: [], creatable_projects: [] }, labels: {} });
+const view = (project: number): SavedViewSettings => ({ filters: { projectIds: [project], statusIds: [project], trackerIds: [project], assigneeIds: [String(project)], q: '', due: 'all', priority: [], priorityFilterEnabled: false }, sortConfig: [{ field: 'updated', direction: 'desc' }], laneType: 'priority', hiddenStatusIds: [], viewableProjectsEnabled: true });
+beforeEach(() => localStorage.clear());
+afterEach(() => { cleanup(); vi.clearAllMocks(); });
+it.each(['success', 'failure'])('keeps B when saved view A completes late with %s, retaining unverified choices', async (outcome) => {
+  let finishA: () => void = () => {};
+  let finishB: () => void = () => {};
+  vi.mocked(getJson).mockImplementation((url) => {
+    if (url.endsWith('/metadata')) return Promise.resolve(metadata);
+    const projects = new URL(url, 'http://localhost').searchParams.getAll('project_ids[]');
+    if (projects[0] === '1') return new Promise((resolve, reject) => { finishA = () => outcome === 'success' ? resolve(makeSnapshot(1)) : reject(new HttpError(422, { error: { code: 'BOARD_SCOPE_TOO_LARGE' } })); });
+    if (projects[0] === '2') return new Promise((resolve) => { finishB = () => resolve(makeSnapshot(2)); });
+    return Promise.resolve(makeSnapshot(1));
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  const { result } = renderHook(() => {
+    const preferences = useKanbanPreferences('/projects/demo/kanban/data', 7);
+    const snapshot = useBoardSnapshot({ baseUrl: preferences.projectScope, currentUserId: 7, projectIds: preferences.filters.projectIds, statusIds: preferences.filters.statusIds, hiddenStatusIds: preferences.hiddenStatusIds, viewableProjectsEnabled: preferences.viewableProjectsEnabled, preferencesReady: preferences.preferencesReady, maximumBoardEntityCount: 1500, initialLabels: {}, agingWarnDays: 3, agingDangerDays: 7, agingExcludeClosed: true });
+    useBoardFilterNormalization({ data: snapshot.data, filters: preferences.filters, viewableProjectsEnabled: preferences.viewableProjectsEnabled });
+    return { preferences, snapshot, validation: validateViewReferences(preferences.viewSettings, snapshot.metadata, snapshot.data, {}) };
+  }, { wrapper });
+  await waitFor(() => expect(result.current.snapshot.data).not.toBeNull());
+  act(() => result.current.preferences.applyViewSettings(view(1)));
+  expect(result.current.preferences.filters.assigneeIds).toEqual(['1']);
+  act(() => result.current.preferences.applyViewSettings(view(2)));
+  expect(result.current.snapshot.data).toBeNull();
+  expect(result.current.validation.pending).toBe(true);
+  expect(result.current.preferences.filters.assigneeIds).toEqual(['2']);
+  expect(result.current.preferences.filters.trackerIds).toEqual([2]);
+  await act(async () => finishB());
+  await waitFor(() => expect(result.current.snapshot.data?.scope_fingerprint).toBe('2'));
+  await act(async () => finishA());
+  expect(result.current.snapshot.data?.scope_fingerprint).toBe('2');
+  expect(result.current.snapshot.loadError).toBeNull();
+  expect(result.current.preferences.viewSettings).toEqual(view(2));
+  expect(result.current.validation).toEqual({ pending: false, unavailable: [] });
+  const requestedProjects = vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/data?')).map(([url]) => new URL(url, 'http://localhost').searchParams.getAll('project_ids[]'));
+  expect(requestedProjects).toEqual([[], ['1'], ['2']]);
+  client.clear();
+});
