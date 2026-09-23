@@ -122,6 +122,35 @@ describe('useKanbanDialogs issue resolution', () => {
     });
   });
 
+  it('preserves server URLs when opening a nested issue under a Redmine subdirectory', () => {
+    const data = makeBoardData([
+      makeIssue(10, {
+        urls: { issue: '/redmine/issues/10', issue_edit: '/redmine/issues/10/edit' },
+        subtasks: [{
+          id: 20,
+          subject: 'Child',
+          status_id: 1,
+          is_closed: false,
+          subtasks: [{
+            id: 30,
+            subject: 'Grandchild',
+            status_id: 1,
+            tracker_id: 1,
+            is_closed: false,
+            urls: { issue: '/redmine/issues/30', issue_edit: '/redmine/issues/30/edit' },
+          }],
+        }],
+      }),
+    ]);
+    const { result } = renderHook(() => useKanbanDialogs('/redmine/projects/test/kanban', data, 'assignee'));
+
+    act(() => result.current.openView(30));
+    expect(result.current.iframeEditContext?.url).toBe('/redmine/issues/30');
+
+    act(() => result.current.openEdit(30));
+    expect(result.current.iframeEditContext?.url).toBe('/redmine/issues/30/edit');
+  });
+
   it('keeps the opening runtime context when board data becomes unavailable', () => {
     const data = makeBoardData([makeIssue(10, { project: { id: 3, name: 'Subproject' } })]);
     data.meta.project_ids = [3];

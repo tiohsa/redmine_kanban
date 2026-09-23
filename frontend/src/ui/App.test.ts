@@ -5,9 +5,12 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App, canCreateInBoard, normalizeAssigneeIds, normalizeProjectIds, normalizeTrackerIds, resolveDefaultCreateProjectId } from './App';
 import { getJson } from './http';
+import { parseBoardSnapshotV3 } from '../infrastructure/api/boardSnapshot';
+import { makeBoardSnapshot } from '../test/fixtures/boardSnapshot';
 
 const metadata = vi.hoisted(() => ({ ok: true, board: { id: 1 }, projects: [{ id: 4, name: 'Demo', level: 0 }], viewable_projects: [{ id: 4, name: 'Demo', level: 0 }], statuses: [{ id: 1 }, { id: 2 }], server_entity_limit: 5000 }));
 const iframeUnmountSpy = vi.hoisted(() => vi.fn());
+const canvasRenderSpy = vi.hoisted(() => vi.fn());
 const mockPreferenceFilters = vi.hoisted(() => ({
   projectIds: [4],
   statusIds: [2],
@@ -24,12 +27,15 @@ const mockHiddenStatuses = vi.hoisted(() => ({ ids: [] as number[] }));
 vi.mock('./board/CanvasBoard', async () => {
   const ReactModule = await import('react');
   return {
-    CanvasBoard: ReactModule.forwardRef(({ onEdit, state }: { onEdit: (issueId: number) => void; state?: { cardsById?: Map<number, unknown> } }, _ref) => ReactModule.createElement(
+    CanvasBoard: ReactModule.forwardRef(({ onEdit, state }: { onEdit: (issueId: number) => void; state?: { cardsById?: Map<number, unknown> } }, _ref) => {
+      canvasRenderSpy();
+      return ReactModule.createElement(
       ReactModule.Fragment,
       null,
       ReactModule.createElement('button', { type: 'button', onClick: () => onEdit(9) }, 'Open issue 9'),
       ReactModule.createElement('div', { 'data-testid': 'canvas-issue-ids' }, [...(state?.cardsById?.keys() ?? [])].join(',')),
-    )),
+      );
+    }),
   };
 });
 
@@ -111,11 +117,33 @@ describe('App board scope helpers', () => {
 
   beforeEach(() => {
     vi.mocked(getJson).mockClear();
+    canvasRenderSpy.mockClear();
     mockPreferenceFilters.projectIds = [4];
     mockPreferenceFilters.statusIds = [2];
     mockHiddenStatuses.ids = [];
   });
   afterEach(() => cleanup());
+
+  it.each(['missing lists', 'missing issue URLs', 'numeric tracker name'])('rejects %s before board rendering', async (scenario) => {
+    const valid = makeBoardSnapshot();
+    const malformed = scenario === 'missing lists' ? { ...valid, lists: {} }
+      : scenario === 'missing issue URLs' ? { ...valid, entities: valid.entities.map(({ urls: _urls, ...issue }) => issue) }
+        : { ...valid, lists: { ...valid.lists, trackers: [{ id: 1, name: 123 }] } };
+    expect(() => parseBoardSnapshotV3(malformed)).toThrow('Invalid board snapshot');
+    vi.mocked(getJson).mockResolvedValueOnce(metadata).mockResolvedValueOnce(malformed);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(React.createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      React.createElement(App, { dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7, initialLabels: { load_failed: 'Snapshot load failed' } }),
+    ));
+
+    await screen.findByText('Snapshot load failed');
+    expect(canvasRenderSpy).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('canvas-issue-ids')).toBeNull();
+    expect(queryClient.getQueriesData({ queryKey: ['kanban', 'board'] }).every(([, data]) => data === undefined)).toBe(true);
+    queryClient.clear();
+  });
 
   it('uses hydrated preferences in the first board request', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -167,7 +195,11 @@ describe('App board scope helpers', () => {
       columns: [{ id: 1, name: 'Open', is_closed: false }, { id: 2, name: 'Closed', is_closed: true }],
       lanes: [],
       lists: { assignees: [{ id: null, name: 'Unassigned' }], trackers: [{ id: 1, name: 'Bug' }], priorities: [], projects: [{ id: 4, name: 'Demo', level: 0 }], viewable_projects: [{ id: 4, name: 'Demo', level: 0 }], creatable_projects: [{ id: 4, name: 'Demo', level: 0 }] },
-      issues: [{ id: 9, subject: 'Parent', status_id: 2, tracker_id: 1, project: { id: 4, name: 'Demo' }, description: '', assigned_to_id: null, lock_version: 1, urls: { issue: '/issues/9', issue_edit: '/issues/9/edit' }, subtasks: [{ id: 10, subject: 'Child', status_id: 1, tracker_id: 1, parent_id: 9, project: { id: 4, name: 'Demo' }, description: '', assigned_to_id: null, lock_version: 1, urls: { issue: '/issues/10', issue_edit: '/issues/10/edit' } }] }],
+      entities: [
+        { id: 9, subject: 'Parent', status_id: 2, tracker_id: 1, project: { id: 4, name: 'Demo' }, description: '', assigned_to_id: null, lock_version: 1, urls: { issue: '/issues/9', issue_edit: '/issues/9/edit' } },
+        { id: 10, subject: 'Child', status_id: 1, tracker_id: 1, parent_id: 9, project: { id: 4, name: 'Demo' }, description: '', assigned_to_id: null, lock_version: 1, urls: { issue: '/issues/10', issue_edit: '/issues/10/edit' } },
+      ],
+      tree: { root_ids: [9], children_by_parent_id: { '9': [10] } },
       labels: {},
     };
     vi.mocked(getJson).mockResolvedValueOnce(metadata).mockResolvedValueOnce(boardData);

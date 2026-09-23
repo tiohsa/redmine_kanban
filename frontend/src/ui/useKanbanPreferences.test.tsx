@@ -3,7 +3,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { StrictMode, useEffect } from 'react';
 import { describe, expect, it, beforeEach } from 'vitest';
-import type { SavedViewSettings } from './savedViews';
+import type { SavedViewSettings } from '../model/view/savedViews';
 import { MAXIMUM_BOARD_ENTITY_COUNT, parseMaximumBoardEntityCount, useKanbanPreferences } from './useKanbanPreferences';
 
 describe('parseMaximumBoardEntityCount', () => {

@@ -4,17 +4,31 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getJson, HttpError } from './http';
+import { parseBoardSnapshotV3 } from '../infrastructure/api/boardSnapshot';
 import { useBoardSnapshot } from './useBoardSnapshot';
+import { makeBoardSnapshot } from '../test/fixtures/boardSnapshot';
 vi.mock('./http', async (original) => ({ ...await original<typeof import('./http')>(), getJson: vi.fn() }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 const metadata = { ok: true, board: { id: 1, name: 'Board', identifier: 'demo' }, server_entity_limit: 2, projects: [{ id: 1, name: 'Board', level: 0 }], viewable_projects: [], statuses: [{ id: 1, name: 'New', is_closed: false }] };
-const snapshot = { ok: true, contract_version: 3, scope_fingerprint: 'narrow', meta: { complete: true }, entities: [], tree: { root_ids: [], children_by_parent_id: {} }, columns: [], lanes: [], lists: { projects: [], viewable_projects: [], assignees: [], trackers: [], priorities: [], creatable_projects: [] }, labels: {} };
+const snapshot = { ok: true, contract_version: 3, scope_fingerprint: 'narrow', meta: { complete: true, entity_count: 0, project_id: 1, current_user_id: 7, can_move: false, can_create: false, can_delete: false, lane_type: 'assignee' }, entities: [], tree: { root_ids: [], children_by_parent_id: {} }, columns: [], lanes: [], lists: { projects: [], viewable_projects: [], assignees: [], trackers: [], priorities: [], creatable_projects: [] }, labels: {} };
 function setup() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
-  return renderHook(({ statusIds }) => useBoardSnapshot({ baseUrl: '/projects/demo/kanban', currentUserId: 7, projectIds: [], statusIds, hiddenStatusIds: [], maximumBoardEntityCount: 1500, preferencesReady: true, initialLabels: { board_scope_too_large: 'Limit %{limit}', board_response_too_large: 'Bytes %{bytes}', load_failed: 'Failed' }, agingWarnDays: 3, agingDangerDays: 7, agingExcludeClosed: true }), { initialProps: { statusIds: [] as number[] }, wrapper });
+  return renderHook(({ statusIds }) => useBoardSnapshot({ baseUrl: '/projects/demo/kanban', currentUserId: 7, projectIds: [], statusIds, hiddenStatusIds: [], maximumBoardEntityCount: 1500, preferencesReady: true, initialLabels: { board_scope_too_large: 'Limit %{limit}', board_response_too_large: 'Bytes %{bytes}', load_failed: 'Failed' } }), { initialProps: { statusIds: [] as number[] }, wrapper });
 }
 describe('snapshot recovery without a successful cache', () => {
+  it('rejects a declared complete snapshot with an unrepresented Entity', () => {
+    expect(() => parseBoardSnapshotV3({ ...snapshot, meta: { ...snapshot.meta, entity_count: 1 }, entities: makeBoardSnapshot().entities })).toThrow('Invalid board snapshot');
+  });
+  it('rejects a snapshot without the server Entity count', () => {
+    expect(() => parseBoardSnapshotV3({ ...snapshot, meta: { ...snapshot.meta, entity_count: undefined } })).toThrow('Invalid board snapshot');
+  });
+  it('rejects a response without the complete v3 snapshot contract', async () => {
+    vi.mocked(getJson).mockImplementation(async (url) => url.endsWith('/metadata') ? metadata : { ...snapshot, meta: { ...snapshot.meta, complete: false } });
+    const { result } = setup();
+    await waitFor(() => expect(result.current.boardQuery.isError).toBe(true));
+    expect(result.current.data).toBeNull();
+  });
   it('offers independent choices after overflow, then clears only its load error on recovery', async () => {
     vi.mocked(getJson).mockImplementation(async (url) => {
       if (url.endsWith('/metadata')) return metadata;

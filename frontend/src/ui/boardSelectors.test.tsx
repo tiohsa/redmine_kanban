@@ -2,14 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   buildIssueTitle,
   buildDisplayData,
-  buildTrackerCatalog,
   findIssueInBoard,
   findSubtask,
-  normalizeBoardData,
-  normalizeTrackerId,
   resolveBoardIssue,
-  resolveTrackerName,
-} from './kanbanShared';
+} from '../model/board/selectors';
+import { buildTrackerCatalog, normalizeTrackerId, resolveTrackerName } from '../model/issue/issue';
+import { normalizeBoardData } from '../infrastructure/api/boardSnapshot';
 import type { BoardData, Issue } from './types';
 
 function makeIssue(id: number, attrs: Partial<Issue> = {}): Issue {
@@ -281,7 +279,7 @@ describe('findIssueInBoard', () => {
 
 describe('resolveSubtaskStatus', () => {
   it('selects an allowed closed status instead of the first closed board column', async () => {
-    const { resolveSubtaskStatus } = await import('./kanbanShared');
+    const { resolveSubtaskStatus } = await import('../model/board/selectors');
     const data = makeBoardData([]);
     data.columns = [
       { id: 1, name: 'Open', is_closed: false },
@@ -293,7 +291,7 @@ describe('resolveSubtaskStatus', () => {
   });
 
   it('returns null when the workflow offers no status for the requested transition', async () => {
-    const { resolveSubtaskStatus } = await import('./kanbanShared');
+    const { resolveSubtaskStatus } = await import('../model/board/selectors');
     const data = makeBoardData([]);
 
     expect(resolveSubtaskStatus(data, false, [1])).toBeNull();

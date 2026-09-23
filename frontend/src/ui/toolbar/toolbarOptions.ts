@@ -1,10 +1,10 @@
 import type { Filters } from '../boardFilters';
-import type { BoardData } from '../types';
+import type { ToolbarViewModel } from '../types';
 
 type ToolbarOption = { id: string; name: string };
 
 export function buildToolbarOptions(
-  data: BoardData,
+  data: ToolbarViewModel,
   filters: Filters,
   viewableProjectsEnabled: boolean,
 ) {

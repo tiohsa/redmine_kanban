@@ -1,7 +1,4 @@
-import type { Filters } from './boardFilters';
-import type { SortConfig } from './board/sort';
-import type { LaneType } from './useKanbanPreferences';
-import { buildProjectScopeFromDataUrl, makeScopedStorageKey } from './utils/storage';
+import type { Filters, SortConfig, LaneType } from './types';
 
 export type SavedViewSettings = {
   filters: Filters;
@@ -14,10 +11,6 @@ export type SavedView = { id: string; name: string; settings: SavedViewSettings 
 export type SavedViewsDocument = { version: 1; views: SavedView[] };
 export const MAX_SAVED_VIEWS = 20;
 
-export function savedViewsKey(dataUrl: string, userId: number): string {
-  const url = new URL(dataUrl, window.location.origin);
-  return makeScopedStorageKey('rk_saved_views', `${buildProjectScopeFromDataUrl(url.pathname)}:user:${userId}`);
-}
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
 const id = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 const ids = (value: unknown): value is number[] => Array.isArray(value) && value.every(id);
@@ -61,6 +54,26 @@ export function validateViewName(name: string, views: SavedView[], exceptId?: st
   if ([...trimmed].length < 1 || [...trimmed].length > 80) throw new Error('saved_views_name_invalid');
   if (views.some((view) => view.id !== exceptId && view.name === trimmed)) throw new Error('saved_views_duplicate');
   return trimmed;
+}
+export function createSavedView(views: SavedView[], name: string, settings: SavedViewSettings, createCandidateId: () => string): { views: SavedView[]; view: SavedView } {
+  const trimmed = validateViewName(name, views);
+  if (views.length >= MAX_SAVED_VIEWS) throw new Error('saved_views_limit');
+  const candidateId = createCandidateId();
+  let id = candidateId;
+  for (let suffix = 1; views.some((view) => view.id === id); suffix++) id = `${candidateId}_${suffix}`;
+  const view = { id, name: trimmed, settings: copyViewSettings(settings) };
+  return { views: [...views, view], view };
+}
+export function updateSavedView(views: SavedView[], id: string, operation: 'rename' | 'overwrite', name: string, settings: SavedViewSettings): { views: SavedView[]; name: string } {
+  const current = views.find((view) => view.id === id);
+  if (!current) throw new Error('saved_views_unreadable');
+  const latestName = operation === 'rename' ? validateViewName(name, views, id) : current.name;
+  return {
+    name: latestName,
+    views: views.map((view) => view.id !== id ? view : operation === 'overwrite'
+      ? { ...view, settings: copyViewSettings(settings) }
+      : { ...view, name: latestName }),
+  };
 }
 export function viewSettingsEqual(a: SavedViewSettings, b: SavedViewSettings): boolean {
   const canonical = (settings: SavedViewSettings) => {

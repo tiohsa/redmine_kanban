@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import type { BoardData, Issue } from './types';
 import { buildBoardState, type BoardState } from './board/state';
 import { applyBoardDataFilters, buildPresentationProjection, buildVisibleIssues, type Filters } from './boardFilters';
-import { buildDisplayData } from './kanbanShared';
+import { buildDisplayData } from '../model/board/selectors';
 import type { SortConfig } from './board/sort';
 
 type Args = {

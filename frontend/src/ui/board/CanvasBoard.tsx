@@ -24,7 +24,7 @@ import type { BoardState } from './state';
 import { cellKey } from './state';
 import { findSubtaskInTree, flattenSubtasks } from '../subtasksTree';
 import { truncateText, truncateTextLines } from './canvasText';
-import { buildTrackerCatalog, normalizeTrackerId, resolveClosedState, resolveTrackerName, type TrackerCatalog } from '../kanbanShared';
+import { buildTrackerCatalog, normalizeTrackerId, resolveClosedState, resolveTrackerName, type TrackerCatalog } from '../../model/issue/issue';
 import { layoutCardMetadata } from './canvasMetadata';
 import {
   computeLayout,

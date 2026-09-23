@@ -1,4 +1,4 @@
-import type { BoardData } from './types';
+export { effectiveScopeStatusIds, effectiveDependencyStatusIds } from '../model/board/scope';
 
 function serializeNumberSelection(values: Iterable<number>): string {
   return Array.from(new Set(values)).filter(Number.isFinite).sort((a, b) => a - b).join(',');
@@ -70,14 +70,6 @@ export function buildBoardEntitiesUrl(baseUrl: string, projectIds: number[], iss
   appendScopeStatusParams(params, scopeStatusIds);
   appendDependencyStatusParams(params, dependencyStatusIds);
   return `${baseUrl}/issues/entities?${params.toString()}`;
-}
-
-export function effectiveScopeStatusIds(data: BoardData): number[] {
-  return data.meta.scope_status_ids ?? data.columns.map((column) => column.id);
-}
-
-export function effectiveDependencyStatusIds(data: BoardData): number[] {
-  return data.meta.dependency_status_ids ?? effectiveScopeStatusIds(data);
 }
 
 export function appendScopeStatusParams(params: URLSearchParams, scopeStatusIds: Iterable<number>): void {

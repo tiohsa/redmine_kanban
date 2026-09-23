@@ -1,4 +1,4 @@
-import type { BoardData, BoardMetadata } from './types';
+import type { BoardData, BoardMetadata } from '../board/types';
 import type { SavedViewSettings } from './savedViews';
 
 export type ViewValidation = { pending: boolean; unavailable: string[] };

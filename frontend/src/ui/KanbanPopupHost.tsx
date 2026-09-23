@@ -1,11 +1,11 @@
 import React, { useEffect } from 'react';
-import type { BoardData, Issue } from './types';
+import type { Issue, ToolbarViewModel } from './types';
 
 export const NOTICE_AUTO_DISMISS_MS = 5_000;
 export const DELETE_NOTICE_AUTO_DISMISS_MS = 8_000;
 
 type Props = {
-  data: BoardData | null;
+  data: Pick<ToolbarViewModel, 'labels'> | null;
   loading: boolean;
   notice: string | null;
   error: string | null;

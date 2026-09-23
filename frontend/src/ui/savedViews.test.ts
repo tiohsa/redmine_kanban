@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { copyViewSettings, parseSavedViews, savedViewsKey, validateViewName, viewSettingsEqual, type SavedViewSettings } from './savedViews';
-import { validateViewReferences } from './savedViewValidation';
+import { copyViewSettings, parseSavedViews, validateViewName, viewSettingsEqual, type SavedViewSettings } from '../model/view/savedViews';
+import { savedViewsKey } from '../infrastructure/storage/savedViewsRepository';
+import { validateViewReferences } from '../model/view/validation';
 export const settings: SavedViewSettings = {
   filters: { assigneeIds: ['2', 'unassigned'], q: 'test', due: 'custom', dueDays: 3, priority: [], priorityFilterEnabled: true, projectIds: [1], statusIds: [2], trackerIds: [3] },
   sortConfig: [{ field: 'due', direction: 'asc' }, { field: 'priority', direction: 'desc' }], laneType: 'category', hiddenStatusIds: [4], viewableProjectsEnabled: true,

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { FitMode } from '../kanbanShared';
+import type { FitMode } from '../../model/view/types';
 import { DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT, MAXIMUM_BOARD_ENTITY_COUNT, parseMaximumBoardEntityCount, type CardDisplayMode, type LaneType } from '../useKanbanPreferences';
 import { useDropdownDismiss } from './useDropdownDismiss';
 

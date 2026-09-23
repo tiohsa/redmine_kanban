@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useQueryClient, type QueryKey } from '@tanstack/react-query';
 import type { BoardData } from './types';
-import type { IssueMutationResult } from './kanbanShared';
+import type { IssueMutationResult } from '../infrastructure/api/contracts';
 import { getJson } from './http';
 import { applyAncestorIssueUpdates, applyEntityReconciliation, applyMutationResponse, invalidateBoardSnapshot, isBoardSnapshotInvalidated, unresolvedInvalidationIds, type EntityReconciliationOptions } from './useIssueMutation';
 import { buildBoardCountsUrl, buildBoardEntitiesUrl, effectiveDependencyStatusIds, effectiveScopeStatusIds } from './boardQuery';

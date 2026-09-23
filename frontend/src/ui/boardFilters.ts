@@ -1,17 +1,7 @@
-import type { BoardData, Column, Issue } from './types';
+import type { BoardData, Column, Issue, ToolbarViewModel } from './types';
 import { flattenIssueTree, nestedIssueIds } from './boardTree';
-
-export type Filters = {
-  assigneeIds: string[];
-  q: string;
-  due: 'all' | 'overdue' | 'thisweek' | '3days' | '7days' | '1day' | 'custom' | 'none';
-  dueDays?: number;
-  priority: string[];
-  priorityFilterEnabled: boolean;
-  projectIds: number[];
-  statusIds: number[];
-  trackerIds: number[];
-};
+import type { Filters } from '../model/view/types';
+export type { Filters } from '../model/view/types';
 
 export type BoardPresentationProjection = {
   columns: Column[];
@@ -142,7 +132,7 @@ export function projectPresentationRoots(rootIssues: Issue[], renderedColumnIds:
 }
 
 export function resolvePreferredTrackerId(
-  data: BoardData,
+  data: Pick<ToolbarViewModel, 'lists'>,
   selectedTrackerIds: number[],
   targetProjectId: number | undefined,
 ): number | undefined {
@@ -160,7 +150,7 @@ export function defaultCreateStatusId(columns: Column[], preferredStatusId?: num
 }
 
 export function resolveCreateStatusId(
-  data: BoardData,
+  data: Pick<ToolbarViewModel, 'lists'>,
   candidateColumns: Column[],
   selectedTrackerIds: number[],
   targetProjectId: number | undefined,

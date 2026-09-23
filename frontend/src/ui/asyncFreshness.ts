@@ -1,6 +1,6 @@
 import type { QueryClient, QueryKey } from '@tanstack/react-query';
 import type { BoardData } from './types';
-import { findIssueInBoard } from './kanbanShared';
+import { findIssueInBoard } from '../model/board/selectors';
 
 export type FreshnessRequestKind = 'entity' | 'aggregate';
 
