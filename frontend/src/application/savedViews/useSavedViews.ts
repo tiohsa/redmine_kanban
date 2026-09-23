@@ -30,22 +30,32 @@ export function useSavedViews(storageKey: string, current: SavedViewSettings, on
   };
 
   return {
-    stored, selectedId, name, selected, active, changed, error, saved,
+    stored, selectedId, activeId, name, selected, active, changed, error, saved,
     select(id: string) {
       setSelectedId(id);
       setName(stored.views.find((view) => view.id === id)?.name ?? '');
       setSaved(false);
+      setError(null);
     },
-    editName(value: string) { setName(value); setSaved(false); },
-    apply() {
-      if (!selected) return;
-      onApply(copyViewSettings(selected.settings));
-      setActiveId(selected.id);
+    editName(value: string) { setName(value); setSaved(false); setError(null); },
+    applyView(id: string): boolean {
+      const view = stored.views.find((item) => item.id === id);
+      if (!view) return false;
+      onApply(copyViewSettings(view.settings));
+      setActiveId(view.id);
+      setSelectedId(view.id);
+      setName(view.name);
+      setSaved(false);
+      setError(null);
+      return true;
+    },
+    clearActiveView() {
+      setActiveId('');
       setSaved(false);
       setError(null);
     },
     create() {
-      run((views) => {
+      return run((views) => {
         const next = createSavedView(views, name, current, newSavedViewCandidateId);
         return { views: next.views, result: next.view };
       }, (view) => {
@@ -55,11 +65,12 @@ export function useSavedViews(storageKey: string, current: SavedViewSettings, on
       });
     },
     update(operation: 'rename' | 'overwrite') {
-      if (!selected) return;
-      run((views) => {
-        const next = updateSavedView(views, selected.id, operation, name, current);
+      const target = operation === 'overwrite' ? active : selected;
+      if (!target) return false;
+      return run((views) => {
+        const next = updateSavedView(views, target.id, operation, name, current);
         return { views: next.views, result: next.name };
-      }, setName);
+      }, (latestName) => { if (selectedId === target.id) setName(latestName); });
     },
     remove(id: string): boolean {
       return run((views) => ({ views: views.filter((view) => view.id !== id), result: id }), () => {
@@ -68,6 +79,6 @@ export function useSavedViews(storageKey: string, current: SavedViewSettings, on
         setName('');
       });
     },
-    clearSaved() { setSaved(false); },
+    clearFeedback() { setSaved(false); setError(null); },
   };
 }
