@@ -27,6 +27,7 @@ services:
       REDMINE_SECRET_KEY_BASE: test_secret_key_base
       SECRET_KEY_BASE: test_secret_key_base
       RAILS_ENV: production
+      REDMINE_KANBAN_MAX_BOARD_ENTITIES: ${REDMINE_KANBAN_MAX_BOARD_ENTITIES:-}
     volumes:
       - ../../:/usr/src/redmine/plugins/redmine_kanban
     healthcheck:

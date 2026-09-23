@@ -74,6 +74,39 @@ test('a narrow saved view recovers a fresh failed snapshot and retains its saved
   expect(raw.views[0].settings.filters.projectIds).toEqual([target.id]);
 });
 
+test('an unavailable hidden status is explicitly removed from current conditions before a complete snapshot loads', async ({ page, baseURL }) => {
+  await login(page, baseURL);
+  await page.goto(`${baseURL}/projects/kanban-native/kanban`);
+  const l = await labels(page);
+  const userId = Number(await page.locator('#redmine-kanban-root').getAttribute('data-current-user-id'));
+  const hiddenKey = `rk_hidden_status_ids:/projects/kanban-native/kanban:user:${userId}`;
+  const viewsKey = `rk_saved_views:/projects/kanban-native/kanban:user:${userId}`;
+  await page.evaluate(({ hiddenKey, viewsKey }) => {
+    localStorage.setItem(hiddenKey, JSON.stringify([99999]));
+    localStorage.setItem(viewsKey, JSON.stringify({ version: 1, views: [{ id: 'unchanged', name: 'Unchanged', settings: { filters: { projectIds: [], statusIds: [], trackerIds: [], assigneeIds: [], q: '', due: 'all', priority: [], priorityFilterEnabled: false }, sortConfig: [{ field: 'updated', direction: 'desc' }], laneType: 'none', hiddenStatusIds: [99999], viewableProjectsEnabled: false } }] }));
+  }, { hiddenKey, viewsKey });
+  const boardRequests = [];
+  page.on('request', (request) => { if (isSnapshot(request)) boardRequests.push(request.url()); });
+  await page.reload();
+  const remove = page.getByRole('button', { name: l.hidden_statuses_remove_unavailable });
+  await expect(remove).toBeVisible();
+  expect(boardRequests).toHaveLength(0);
+  await expect(page.getByText(`${l.hidden_statuses}: 99999`, { exact: false })).toBeVisible();
+  await remove.click();
+  const confirmation = page.getByRole('group', { name: l.hidden_statuses_remove_unavailable });
+  await expect(confirmation).toContainText('99999');
+  await confirmation.getByRole('button', { name: l.cancel }).click();
+  await expect(remove).toBeVisible();
+  expect(boardRequests).toHaveLength(0);
+  await remove.click();
+  const recovered = page.waitForResponse((response) => isSnapshot(response) && response.ok());
+  await confirmation.getByRole('button', { name: l.hidden_statuses_remove_action }).click();
+  expect((await (await recovered).json()).meta.complete).toBe(true);
+  await expect(remove).toHaveCount(0);
+  const persisted = await page.evaluate(({ hiddenKey, viewsKey }) => ({ hidden: JSON.parse(localStorage.getItem(hiddenKey)), view: JSON.parse(localStorage.getItem(viewsKey)).views[0].settings.hiddenStatusIds }), { hiddenKey, viewsKey });
+  expect(persisted).toEqual({ hidden: [], view: [99999] });
+});
+
 test('toolbar keyboard activation, focus return, outside click and saved view operations', async ({ page, baseURL }) => {
   await login(page, baseURL);
   await page.goto(`${baseURL}/projects/kanban-native/kanban`);

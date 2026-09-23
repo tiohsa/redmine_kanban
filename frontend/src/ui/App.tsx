@@ -162,6 +162,11 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     [defaultCreateProjectId, filters.trackerIds, primaryFilteredData?.columns, toolbarData],
   );
   const viewValidation = validateViewReferences(viewSettings, snapshot.metadata, data, toolbarData.labels);
+  const metadata = snapshot.metadata;
+  const unavailableHiddenStatusIds = metadata
+    ? [...hiddenStatusIds].filter((id) => !metadata.statuses.some((status) => status.id === id))
+    : [];
+  const [confirmHiddenStatusRemoval, setConfirmHiddenStatusRemoval] = useState<string | null>(null);
   const viewsStorageKey = savedViewsKey(dataUrl, initialCurrentUserId);
   const canCreate = canCreateInBoard(defaultCreateProjectId, createStatusId);
 
@@ -229,6 +234,17 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
 
       {viewValidation.unavailable.length ? <div className="rk-recovery" role="alert">
         {toolbarData.labels.saved_views_unavailable} {viewValidation.unavailable.join('; ')}
+        {unavailableHiddenStatusIds.length ? <div>
+          <button type="button" className="rk-btn" onClick={() => setConfirmHiddenStatusRemoval(unavailableHiddenStatusIds.join(','))}>{toolbarData.labels.hidden_statuses_remove_unavailable}</button>
+          {confirmHiddenStatusRemoval === unavailableHiddenStatusIds.join(',') ? <div role="group" aria-label={toolbarData.labels.hidden_statuses_remove_unavailable}>
+            <p>{toolbarData.labels.hidden_statuses_remove_confirm.replace('%{ids}', unavailableHiddenStatusIds.join(', '))}</p>
+            <button type="button" className="rk-btn" onClick={() => {
+              setHiddenStatusIds((previous) => new Set([...previous].filter((id) => !unavailableHiddenStatusIds.includes(id))));
+              setConfirmHiddenStatusRemoval(null);
+            }}>{toolbarData.labels.hidden_statuses_remove_action}</button>
+            <button type="button" className="rk-btn" onClick={() => setConfirmHiddenStatusRemoval(null)}>{toolbarData.labels.cancel}</button>
+          </div> : null}
+        </div> : null}
       </div> : null}
       {!data && snapshot.boardQuery.isError ? (
         <div className="rk-recovery" role="region" aria-label={toolbarData.labels.board_recovery}>

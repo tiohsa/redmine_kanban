@@ -19,6 +19,7 @@ const mockPreferenceFilters = vi.hoisted(() => ({
   due: 'all' as const,
   dueDays: 7,
 }));
+const mockHiddenStatuses = vi.hoisted(() => ({ ids: [] as number[] }));
 
 vi.mock('./board/CanvasBoard', async () => {
   const ReactModule = await import('react');
@@ -61,30 +62,33 @@ vi.mock('./http', () => ({
 }));
 
 vi.mock('./useKanbanPreferences', () => ({
-  useKanbanPreferences: () => ({
-    viewSettings: { filters: mockPreferenceFilters, sortConfig: [{ field: 'updated', direction: 'desc' }], laneType: 'none', hiddenStatusIds: [], viewableProjectsEnabled: false },
-    applyViewSettings: vi.fn(),
-    projectScope: '/projects/demo/kanban',
-    preferencesReady: true,
-    filters: mockPreferenceFilters,
-    fullWindow: false,
-    fitMode: 'none',
-    showSubtasks: true,
-    sortConfig: [{ field: 'updated', direction: 'desc' }],
-    hiddenStatusIds: new Set<number>(),
-    fontSize: 14,
-    timeEntryOnClose: false,
-    laneType: 'none',
-    agingWarnDays: 7,
-    agingDangerDays: 14,
-    agingExcludeClosed: false,
-    viewableProjectsEnabled: false,
-    maximumBoardEntityCount: 3000,
-    setFilters: vi.fn(), setFullWindow: vi.fn(), setFitMode: vi.fn(), setShowSubtasks: vi.fn(), setSortConfig: vi.fn(),
-    setHiddenStatusIds: vi.fn(), setFontSize: vi.fn(), setTimeEntryOnClose: vi.fn(), setLaneType: vi.fn(),
-    setAgingWarnDays: vi.fn(), setAgingDangerDays: vi.fn(), setAgingExcludeClosed: vi.fn(), setViewableProjectsEnabled: vi.fn(),
-    setMaximumBoardEntityCount: vi.fn(), setCurrentUserId: vi.fn(),
-  }),
+  useKanbanPreferences: () => {
+    const [hiddenStatusIds, setHiddenStatusIds] = React.useState(() => new Set(mockHiddenStatuses.ids));
+    return {
+      viewSettings: { filters: mockPreferenceFilters, sortConfig: [{ field: 'updated', direction: 'desc' }], laneType: 'none', hiddenStatusIds: [...hiddenStatusIds], viewableProjectsEnabled: false },
+      applyViewSettings: vi.fn(),
+      projectScope: '/projects/demo/kanban',
+      preferencesReady: true,
+      filters: mockPreferenceFilters,
+      fullWindow: false,
+      fitMode: 'none',
+      showSubtasks: true,
+      sortConfig: [{ field: 'updated', direction: 'desc' }],
+      hiddenStatusIds,
+      fontSize: 14,
+      timeEntryOnClose: false,
+      laneType: 'none',
+      agingWarnDays: 7,
+      agingDangerDays: 14,
+      agingExcludeClosed: false,
+      viewableProjectsEnabled: false,
+      maximumBoardEntityCount: 3000,
+      setFilters: vi.fn(), setFullWindow: vi.fn(), setFitMode: vi.fn(), setShowSubtasks: vi.fn(), setSortConfig: vi.fn(),
+      setHiddenStatusIds, setFontSize: vi.fn(), setTimeEntryOnClose: vi.fn(), setLaneType: vi.fn(),
+      setAgingWarnDays: vi.fn(), setAgingDangerDays: vi.fn(), setAgingExcludeClosed: vi.fn(), setViewableProjectsEnabled: vi.fn(),
+      setMaximumBoardEntityCount: vi.fn(), setCurrentUserId: vi.fn(),
+    };
+  },
 }));
 
 describe('App board scope helpers', () => {
@@ -109,6 +113,7 @@ describe('App board scope helpers', () => {
     vi.mocked(getJson).mockClear();
     mockPreferenceFilters.projectIds = [4];
     mockPreferenceFilters.statusIds = [2];
+    mockHiddenStatuses.ids = [];
   });
   afterEach(() => cleanup());
 
@@ -122,6 +127,35 @@ describe('App board scope helpers', () => {
 
     await waitFor(() => expect(getJson).toHaveBeenCalledWith('/projects/demo/kanban/data?project_ids%5B%5D=4&issue_status_ids%5B%5D=2&board_entity_limit=3000'));
     expect(vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/data?'))[0][0]).toBe('/projects/demo/kanban/data?project_ids%5B%5D=4&issue_status_ids%5B%5D=2&board_entity_limit=3000');
+  });
+
+  it('requires explicit confirmation to remove an unavailable hidden status before loading a complete snapshot', async () => {
+    mockHiddenStatuses.ids = [999];
+    const saved = '{"version":1,"views":[]}';
+    localStorage.setItem('rk_saved_views:/projects/demo/kanban:user:7', saved);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(React.createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      React.createElement(App, { dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7, initialLabels: {
+        saved_views_unavailable: 'Unavailable', hidden_statuses: 'Hidden statuses',
+        hidden_statuses_remove_unavailable: 'Remove unavailable', hidden_statuses_remove_confirm: 'Remove %{ids}?',
+        hidden_statuses_remove_action: 'Remove now', cancel: 'Cancel',
+      } }),
+    ));
+    const remove = await screen.findByRole('button', { name: 'Remove unavailable' });
+    expect(screen.getByRole('alert').textContent).toContain('Hidden statuses: 999');
+    expect(vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/data?'))).toHaveLength(0);
+    fireEvent.click(remove);
+    expect(screen.getByText('Remove 999?')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/data?'))).toHaveLength(0);
+    fireEvent.click(remove);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove now' }));
+    await waitFor(() => expect(screen.getByTestId('canvas-issue-ids')).toBeTruthy());
+    expect(vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/data?'))).toHaveLength(1);
+    expect(localStorage.getItem('rk_saved_views:/projects/demo/kanban:user:7')).toBe(saved);
+    queryClient.clear();
   });
 
   it('passes a promoted descendant to Canvas when an explicit status filter hides its parent', async () => {
