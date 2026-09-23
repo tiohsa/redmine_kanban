@@ -8,7 +8,7 @@ export function SortPopover({ sortConfig, onChangeSort, labels }: {
   labels: Record<string, string>;
 }) {
   const [open, setOpen] = useState(false);
-  const { triggerRef, menuRef } = useDropdownDismiss(open, () => setOpen(false));
+  const { triggerRef, menuRef, menuId } = useDropdownDismiss(open, () => setOpen(false));
   const options: { field: SortCriterion['field']; label: string }[] = [
     { field: 'due', label: labels.issue_due_date },
     { field: 'priority', label: labels.issue_priority },
@@ -22,25 +22,13 @@ export function SortPopover({ sortConfig, onChangeSort, labels }: {
   const title = labels.sort;
 
   return (
-    <div className="rk-dropdown-container" onKeyDown={(event) => {
-      if (open && event.key === 'Escape') {
-        event.preventDefault();
-        event.stopPropagation();
-        setOpen(false);
-        triggerRef.current?.focus();
-      }
-    }}>
-      <div ref={triggerRef} className={`rk-btn rk-btn-labeled ${open || sortConfig.length > 0 ? 'rk-btn-toggle-active' : ''}`} onClick={() => setOpen(!open)} onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          setOpen((value) => !value);
-        }
-      }} title={title} aria-expanded={open} aria-haspopup="menu" role="button" tabIndex={0}>
+    <div className="rk-dropdown-container">
+      <button type="button" ref={triggerRef} aria-label={title} aria-expanded={open} aria-controls={open ? menuId : undefined} aria-haspopup="dialog" className={`rk-btn rk-btn-labeled ${open || sortConfig.length > 0 ? 'rk-btn-toggle-active' : ''}`} onClick={() => setOpen(!open)} title={title}>
         <span className="rk-icon">sort</span>
         <span className="rk-btn-label">{title}</span>
-      </div>
+      </button>
       {open ? (
-        <div ref={menuRef} className="rk-sort-menu" role="menu" aria-label={title}>
+        <div id={menuId} ref={menuRef} className="rk-sort-menu" role="dialog" aria-label={title}>
           <div className="rk-settings-title">{title}</div>
           {sortConfig.map((criterion, index) => {
             const availableOptions = options.filter((option) => !sortConfig.some((other, otherIndex) => otherIndex !== index && other.field === option.field));
@@ -55,10 +43,10 @@ export function SortPopover({ sortConfig, onChangeSort, labels }: {
                 }}>
                   {availableOptions.map((option) => <option key={option.field} value={option.field}>{option.label}</option>)}
                 </select>
-                <button type="button" className="rk-btn rk-btn-sm rk-sort-direction" role="menuitem" aria-label={`${title} ${index + 1}: ${label} ${direction}`} title={`${label} ${direction}`} onClick={() => {
+                <button type="button" className="rk-btn rk-btn-sm rk-sort-direction" aria-label={`${title} ${index + 1}: ${label} ${direction}`} title={`${label} ${direction}`} onClick={() => {
                   updateCriterion(index, { direction: criterion.direction === 'asc' ? 'desc' : 'asc' });
                 }}>{direction}</button>
-                <button type="button" className="rk-btn rk-btn-sm" role="menuitem" aria-label={`${labels.delete}: ${title} ${index + 1}`} title={labels.delete} disabled={sortConfig.length <= 1} onClick={() => {
+                <button type="button" className="rk-btn rk-btn-sm" aria-label={`${labels.delete}: ${title} ${index + 1}`} title={labels.delete} disabled={sortConfig.length <= 1} onClick={() => {
                   if (sortConfig.length <= 1) return;
                   menuRef.current?.querySelectorAll('select')[Math.min(index, sortConfig.length - 2)]?.focus();
                   onChangeSort(sortConfig.filter((_, criterionIndex) => criterionIndex !== index));
@@ -66,10 +54,10 @@ export function SortPopover({ sortConfig, onChangeSort, labels }: {
               </div>
             );
           })}
-          <button type="button" className="rk-sort-row" role="menuitem" disabled={!canAdd} onClick={() => {
+          <button type="button" className="rk-sort-row" disabled={!canAdd} onClick={() => {
             if (canAdd && nextOption) onChangeSort([...sortConfig, { field: nextOption.field, direction: 'asc' }]);
           }}>{labels.add}</button>
-          <button type="button" className="rk-sort-row" role="menuitem" onClick={() => onChangeSort([{ field: 'updated', direction: 'desc' }])}>{labels.reset}</button>
+          <button type="button" className="rk-sort-row" onClick={() => onChangeSort([{ field: 'updated', direction: 'desc' }])}>{labels.reset}</button>
         </div>
       ) : null}
     </div>

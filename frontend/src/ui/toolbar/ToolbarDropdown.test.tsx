@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ToolbarMultiSelect } from './ToolbarDropdown';
 
@@ -92,7 +92,7 @@ describe('ToolbarMultiSelect search', () => {
     const input = screen.getByRole('textbox');
     fireEvent.change(input, { target: { value: 'Kanban' } });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Project' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Project' })).getByRole('button', { name: 'Project' }));
 
     expect((input as HTMLInputElement).value).toBe('');
     expect(screen.getByText('Project Alpha')).toBeTruthy();

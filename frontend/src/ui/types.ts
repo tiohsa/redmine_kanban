@@ -156,6 +156,15 @@ export type BoardApiResponse = Omit<BoardData, 'issues'> & {
   tree: BoardSnapshotTree;
 };
 
+export type BoardMetadata = {
+  ok: true;
+  board: { id: number; identifier: string; name: string };
+  server_entity_limit: number;
+  projects: ProjectListItem[];
+  viewable_projects: ProjectListItem[];
+  statuses: Column[];
+};
+
 export type BoardErrorResponse = {
   ok: false;
   contract_version: 3;

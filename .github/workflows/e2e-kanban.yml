@@ -443,6 +443,97 @@ jobs:
         if: always()
         run: docker compose -f .github/e2e/docker-compose.yml down -v
 
+  e2e-recovery:
+    name: Redmine 7.0 Snapshot recovery
+    needs:
+      - build
+      - lint
+      - typecheck
+      - test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      REDMINE_IMAGE: redmine:7.0
+      REDMINE_KANBAN_MAX_BOARD_ENTITIES: '2'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            e2e/package-lock.json
+
+      - name: Install and build frontend
+        run: |
+          npm ci --prefix frontend
+          bash script/ci/frontend-static.sh build
+
+      - name: Install E2E dependencies and browser
+        run: |
+          npm ci --prefix e2e
+          npx --prefix e2e playwright install --with-deps chromium
+
+      - name: Start Redmine stack and wait for health
+        run: docker compose -f .github/e2e/docker-compose.yml up -d --wait --wait-timeout 600
+
+      - name: Configure Redmine database.yml for production
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T redmine sh -lc \
+            "printf '%s\n' \
+            'production:' \
+            '  adapter: mysql2' \
+            '  database: redmine' \
+            '  host: db' \
+            '  username: redmine' \
+            '  password: password' \
+            '  encoding: utf8mb4' \
+            > /usr/src/redmine/config/database.yml"
+
+      - name: Migrate Redmine and plugin
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+            env RAILS_ENV=production bundle exec rake db:migrate redmine:plugins:migrate
+
+      - name: Load default data
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+            env REDMINE_LANG=en RAILS_ENV=production bundle exec rake redmine:load_default_data
+
+      - name: Seed project/module for recovery E2E
+        run: |
+          docker compose -f .github/e2e/docker-compose.yml exec -T --user redmine redmine \
+            bundle exec rails runner -e production plugins/redmine_kanban/e2e/setup_redmine.rb
+
+      - name: Run snapshot recovery E2E
+        env:
+          REDMINE_BASE_URL: http://127.0.0.1:3002
+          REDMINE_KANBAN_RECOVERY_TEST: '1'
+          CI: true
+        run: bash script/ci/e2e-full.sh e2e/tests/kanban-recovery-views.spec.js --grep 'first visit recovers|a narrow saved view recovers'
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-recovery
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          if-no-files-found: ignore
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose -f .github/e2e/docker-compose.yml logs --no-color
+
+      - name: Stop Redmine stack
+        if: always()
+        run: docker compose -f .github/e2e/docker-compose.yml down -v
+
   e2e-large-data:
     name: Redmine 7.0 Large snapshot resource gate
     needs:

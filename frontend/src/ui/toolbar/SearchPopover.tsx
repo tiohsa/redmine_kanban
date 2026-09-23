@@ -21,7 +21,7 @@ export function SearchPopover({
   showTriggerLabel?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const { triggerRef, menuRef } = useDropdownDismiss(open, () => setOpen(false));
+  const { triggerRef, menuRef, menuId } = useDropdownDismiss(open, () => setOpen(false), () => onChange(''));
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -32,11 +32,6 @@ export function SearchPopover({
         event.preventDefault();
         setOpen(true);
       }
-      if (event.key === 'Escape' && open) {
-        onChange('');
-        setOpen(false);
-        event.preventDefault();
-      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -44,8 +39,8 @@ export function SearchPopover({
 
   return (
     <div className="rk-dropdown-container">
-      <div
-        ref={triggerRef}
+      <button type="button"
+        ref={triggerRef} aria-label={label} aria-expanded={open} aria-controls={open ? menuId : undefined} aria-haspopup="dialog"
         className={triggerClass(showTriggerLabel, open, Boolean(value))}
         onClick={() => setOpen(!open)}
         title={label}
@@ -53,9 +48,9 @@ export function SearchPopover({
         <span className="rk-icon">filter_list</span>
         {showTriggerLabel ? <span>{label}</span> : null}
         {value ? <span className="rk-indicator-dot" /> : null}
-      </div>
+      </button>
       {open ? (
-        <div ref={menuRef} className="rk-dropdown-menu" style={{ width: '300px' }}>
+        <div id={menuId} ref={menuRef} role="dialog" aria-label={label} className="rk-dropdown-menu" style={{ width: '300px' }}>
           <div className="rk-dropdown-title">{title}</div>
           <div style={{ padding: '12px' }}>
             <div className="rk-search-box">

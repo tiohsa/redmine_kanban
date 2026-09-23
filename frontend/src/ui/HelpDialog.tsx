@@ -83,6 +83,14 @@ export function HelpDialog({ labels, onClose }: Props) {
             </div>
           </Section>
 
+          <Section title={labels.saved_views}>
+            <p>{labels.saved_views_help}</p>
+            <p>{labels.saved_views_unavailable}</p>
+          </Section>
+          <Section title={labels.board_recovery}>
+            <p>{labels.board_recovery_help}</p>
+          </Section>
+
           <Section title={labels.help_chapter2_title}>
             <SubSection title={labels.help_drag_drop_title}>
               <p>{labels.help_drag_drop_desc}</p>

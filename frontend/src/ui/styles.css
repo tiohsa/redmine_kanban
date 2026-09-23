@@ -526,6 +526,11 @@
 }
 
 .rk-dropdown-item {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  font-family: inherit;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1957,3 +1962,41 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 .rk-help-close-x:hover {
   color: var(--rk-danger);
 }
+
+.rk-toolbar button:focus-visible, .rk-toolbar select:focus-visible, .rk-toolbar input:focus-visible {
+  outline: 2px solid var(--rk-primary, #2563eb);
+  outline-offset: 2px;
+}
+.rk-recovery { padding: 8px 16px; }
+
+.rk-saved-views-trigger.rk-btn {
+  max-width: min(320px, calc(100vw - 32px));
+}
+
+.rk-saved-views-trigger-label { overflow: hidden; min-width: 0; text-overflow: ellipsis; white-space: nowrap; }
+
+.rk-saved-views.rk-settings-menu {
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  height: auto;
+}
+
+.rk-saved-views-section { display: flex; flex-direction: column; gap: 8px; padding: 8px 12px; }
+.rk-saved-views-section + .rk-saved-views-section { border-top: 1px solid var(--rk-border-light); }
+.rk-saved-views-selection { flex-direction: row; align-items: flex-end; }
+.rk-saved-views-field { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 4px; color: var(--rk-text-secondary); font-size: 12px; font-weight: 500; line-height: 1.5; }
+.rk-saved-views-field select, .rk-saved-views-field input { box-sizing: border-box; width: 100%; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid var(--rk-border); border-radius: 8px; outline: none; color: var(--rk-text-primary); background: #fff; font: 400 13px/1.5 var(--rk-font-main); }
+.rk-saved-views-field select:focus-visible, .rk-saved-views-field input:focus-visible { outline: 2px solid var(--rk-primary); outline-offset: 2px; }
+.rk-saved-views .rk-btn:disabled { cursor: not-allowed; opacity: .5; }
+.rk-saved-views .rk-btn:disabled:hover { color: var(--rk-text-dark); background: #fff; }
+.rk-saved-views .rk-saved-views-apply { flex: 0 0 auto; width: auto; }
+.rk-saved-views-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.rk-saved-views-actions .rk-btn { width: 100%; min-width: 0; }
+.rk-saved-views-confirm { margin: 4px 12px 8px; padding: 8px; border: 1px solid #fecaca; border-radius: 8px; background: var(--rk-danger-bg); }
+.rk-saved-views-confirm p { margin: 0 0 8px; color: var(--rk-text-primary); font-size: 12px; line-height: 1.5; }
+.rk-saved-views-confirm-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.rk-saved-views-confirm-actions .rk-btn { width: auto; }
+.rk-saved-views-message { margin: 0 12px 8px; padding: 6px 8px; border-radius: 8px; color: var(--rk-brand-blue); background: #eff6ff; font-size: 12px; line-height: 1.5; }
+.rk-saved-views-message.is-error { color: #b91c1c; background: var(--rk-danger-bg); }
+.rk-saved-views-message.is-success { color: #166534; background: var(--rk-success-bg); }
+.rk-saved-views > .rk-settings-help { margin: 0; padding: 8px 12px; border-top: 1px solid var(--rk-border-light); color: var(--rk-text-secondary); font-size: 11px; line-height: 1.5; }

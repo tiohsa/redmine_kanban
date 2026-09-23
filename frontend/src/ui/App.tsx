@@ -21,6 +21,9 @@ import { GlobalTimer, OtherNoticeModal, TimerStartModal } from './workTimer/Work
 import { createTimeEntryOperation, type TimeEntryOperation } from './iframe/timeEntryOperation';
 import { resolveDefaultCreateProjectId, useBoardFilterNormalization } from './useBoardFilterNormalization';
 import { useBoardPresentation } from './useBoardPresentation';
+import { savedViewsKey } from './savedViews';
+import { validateViewReferences } from './savedViewValidation';
+import { SavedViewsPopover } from './toolbar/SavedViewsPopover';
 import { useBoardSnapshot } from './useBoardSnapshot';
 
 type Props = { dataUrl: string; initialCurrentUserId: number; initialLabels?: Record<string, string> };
@@ -45,6 +48,8 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
   const [workTimeEntry, setWorkTimeEntry] = useState<Extract<TimeEntryOperation, { origin: 'work_timer' }> | null>(null);
 
   const {
+    viewSettings,
+    applyViewSettings,
     projectScope,
     filters,
     setFilters,
@@ -91,7 +96,8 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     agingWarnDays,
     agingDangerDays,
     agingExcludeClosed,
-    setError,
+    currentUserId: initialCurrentUserId,
+    viewableProjectsEnabled,
   });
   const { boardQueryKey, data, loading, refresh, toolbarData } = snapshot;
   const timerInstanceKey = useMemo(() => {
@@ -106,7 +112,6 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
   const { creatableProjectIds } = useBoardFilterNormalization({
     data,
     filters,
-    setFilters,
     viewableProjectsEnabled,
   });
 
@@ -156,19 +161,26 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     ),
     [defaultCreateProjectId, filters.trackerIds, primaryFilteredData?.columns, toolbarData],
   );
+  const viewValidation = validateViewReferences(viewSettings, snapshot.metadata, data, toolbarData.labels);
+  const metadata = snapshot.metadata;
+  const unavailableHiddenStatusIds = metadata
+    ? [...hiddenStatusIds].filter((id) => !metadata.statuses.some((status) => status.id === id))
+    : [];
+  const [confirmHiddenStatusRemoval, setConfirmHiddenStatusRemoval] = useState<string | null>(null);
+  const viewsStorageKey = savedViewsKey(dataUrl, initialCurrentUserId);
   const canCreate = canCreateInBoard(defaultCreateProjectId, createStatusId);
 
   return (
     <div className={`rk-root${fullWindow ? ' rk-root-fullwindow' : ''}`}>
       <KanbanPopupHost
-        data={data}
+        data={toolbarData}
         loading={loading}
         notice={notice}
-        error={error}
+        error={error ?? snapshot.loadError}
         pendingDeleteIssue={actions.pendingDeleteIssue}
         isRestoring={actions.isRestoring}
         onCloseNotice={dismissNotice}
-        onCloseError={dismissError}
+        onCloseError={() => { dismissError(); snapshot.dismissLoadError(); }}
         onDismissDeleteNotice={actions.dismissDeleteNotice}
         onUndoDelete={() => { void actions.handleUndo(); }}
       />
@@ -176,6 +188,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
       {toolbarData ? (
         <KanbanToolbar
           data={toolbarData}
+          savedViews={preferencesReady ? <SavedViewsPopover key={viewsStorageKey} storageKey={viewsStorageKey} current={viewSettings} onApply={applyViewSettings} validation={viewValidation} labels={toolbarData.labels} /> : null}
           filters={filters}
           onChange={setFilters}
           sortConfig={sortConfig}
@@ -219,6 +232,32 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
         />
       ) : null}
 
+      {viewValidation.unavailable.length ? <div className="rk-recovery" role="alert">
+        {toolbarData.labels.saved_views_unavailable} {viewValidation.unavailable.join('; ')}
+        {unavailableHiddenStatusIds.length ? <div>
+          <button type="button" className="rk-btn" onClick={() => setConfirmHiddenStatusRemoval(unavailableHiddenStatusIds.join(','))}>{toolbarData.labels.hidden_statuses_remove_unavailable}</button>
+          {confirmHiddenStatusRemoval === unavailableHiddenStatusIds.join(',') ? <div role="group" aria-label={toolbarData.labels.hidden_statuses_remove_unavailable}>
+            <p>{toolbarData.labels.hidden_statuses_remove_confirm.replace('%{ids}', unavailableHiddenStatusIds.join(', '))}</p>
+            <button type="button" className="rk-btn" onClick={() => {
+              setHiddenStatusIds((previous) => new Set([...previous].filter((id) => !unavailableHiddenStatusIds.includes(id))));
+              setConfirmHiddenStatusRemoval(null);
+            }}>{toolbarData.labels.hidden_statuses_remove_action}</button>
+            <button type="button" className="rk-btn" onClick={() => setConfirmHiddenStatusRemoval(null)}>{toolbarData.labels.cancel}</button>
+          </div> : null}
+        </div> : null}
+      </div> : null}
+      {!data && snapshot.boardQuery.isError ? (
+        <div className="rk-recovery" role="region" aria-label={toolbarData.labels.board_recovery}>
+          <p>{toolbarData.labels.board_recovery_help}</p>
+          <button type="button" className="rk-btn" onClick={() => { void refresh(); }}>{toolbarData.labels.retry}</button>
+        </div>
+      ) : null}
+      {snapshot.metadataQuery.isError ? (
+        <div className="rk-recovery" role="alert">
+          {toolbarData.labels.board_metadata_failed}
+          <button type="button" className="rk-btn" onClick={() => { void snapshot.metadataQuery.refetch(); }}>{toolbarData.labels.retry}</button>
+        </div>
+      ) : null}
       <div className="rk-board">
         {filteredData && boardState ? (
           <CanvasBoard

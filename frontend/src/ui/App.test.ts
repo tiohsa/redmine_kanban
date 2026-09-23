@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App, canCreateInBoard, normalizeAssigneeIds, normalizeProjectIds, normalizeTrackerIds, resolveDefaultCreateProjectId } from './App';
 import { getJson } from './http';
 
+const metadata = vi.hoisted(() => ({ ok: true, board: { id: 1 }, projects: [{ id: 4, name: 'Demo', level: 0 }], viewable_projects: [{ id: 4, name: 'Demo', level: 0 }], statuses: [{ id: 1 }, { id: 2 }], server_entity_limit: 5000 }));
 const iframeUnmountSpy = vi.hoisted(() => vi.fn());
 const mockPreferenceFilters = vi.hoisted(() => ({
   projectIds: [4],
@@ -18,6 +19,7 @@ const mockPreferenceFilters = vi.hoisted(() => ({
   due: 'all' as const,
   dueDays: 7,
 }));
+const mockHiddenStatuses = vi.hoisted(() => ({ ids: [] as number[] }));
 
 vi.mock('./board/CanvasBoard', async () => {
   const ReactModule = await import('react');
@@ -50,7 +52,7 @@ vi.stubGlobal('ResizeObserver', class {
 });
 
 vi.mock('./http', () => ({
-  getJson: vi.fn(() => Promise.resolve({
+  getJson: vi.fn((url: string) => Promise.resolve(url.endsWith('/metadata') ? metadata : {
     ok: true, contract_version: 3, scope_fingerprint: 'sha256:test',
     meta: { project_id: 1, project_ids: [4], scope_status_ids: [2], scope_fingerprint: 'sha256:test', current_user_id: 7, can_move: false, can_create: false, can_delete: false, lane_type: 'none', aging_warn_days: 7, aging_danger_days: 14, aging_exclude_closed: false, complete: true, entity_count: 0 },
     columns: [], lanes: [], lists: { assignees: [], trackers: [], priorities: [], projects: [], viewable_projects: [], creatable_projects: [] }, issues: [], entities: [], tree: { root_ids: [], children_by_parent_id: {} }, labels: {},
@@ -60,28 +62,33 @@ vi.mock('./http', () => ({
 }));
 
 vi.mock('./useKanbanPreferences', () => ({
-  useKanbanPreferences: () => ({
-    projectScope: '/projects/demo/kanban',
-    preferencesReady: true,
-    filters: mockPreferenceFilters,
-    fullWindow: false,
-    fitMode: 'none',
-    showSubtasks: true,
-    sortConfig: [{ field: 'updated', direction: 'desc' }],
-    hiddenStatusIds: new Set<number>(),
-    fontSize: 14,
-    timeEntryOnClose: false,
-    laneType: 'none',
-    agingWarnDays: 7,
-    agingDangerDays: 14,
-    agingExcludeClosed: false,
-    viewableProjectsEnabled: false,
-    maximumBoardEntityCount: 3000,
-    setFilters: vi.fn(), setFullWindow: vi.fn(), setFitMode: vi.fn(), setShowSubtasks: vi.fn(), setSortConfig: vi.fn(),
-    setHiddenStatusIds: vi.fn(), setFontSize: vi.fn(), setTimeEntryOnClose: vi.fn(), setLaneType: vi.fn(),
-    setAgingWarnDays: vi.fn(), setAgingDangerDays: vi.fn(), setAgingExcludeClosed: vi.fn(), setViewableProjectsEnabled: vi.fn(),
-    setMaximumBoardEntityCount: vi.fn(), setCurrentUserId: vi.fn(),
-  }),
+  useKanbanPreferences: () => {
+    const [hiddenStatusIds, setHiddenStatusIds] = React.useState(() => new Set(mockHiddenStatuses.ids));
+    return {
+      viewSettings: { filters: mockPreferenceFilters, sortConfig: [{ field: 'updated', direction: 'desc' }], laneType: 'none', hiddenStatusIds: [...hiddenStatusIds], viewableProjectsEnabled: false },
+      applyViewSettings: vi.fn(),
+      projectScope: '/projects/demo/kanban',
+      preferencesReady: true,
+      filters: mockPreferenceFilters,
+      fullWindow: false,
+      fitMode: 'none',
+      showSubtasks: true,
+      sortConfig: [{ field: 'updated', direction: 'desc' }],
+      hiddenStatusIds,
+      fontSize: 14,
+      timeEntryOnClose: false,
+      laneType: 'none',
+      agingWarnDays: 7,
+      agingDangerDays: 14,
+      agingExcludeClosed: false,
+      viewableProjectsEnabled: false,
+      maximumBoardEntityCount: 3000,
+      setFilters: vi.fn(), setFullWindow: vi.fn(), setFitMode: vi.fn(), setShowSubtasks: vi.fn(), setSortConfig: vi.fn(),
+      setHiddenStatusIds, setFontSize: vi.fn(), setTimeEntryOnClose: vi.fn(), setLaneType: vi.fn(),
+      setAgingWarnDays: vi.fn(), setAgingDangerDays: vi.fn(), setAgingExcludeClosed: vi.fn(), setViewableProjectsEnabled: vi.fn(),
+      setMaximumBoardEntityCount: vi.fn(), setCurrentUserId: vi.fn(),
+    };
+  },
 }));
 
 describe('App board scope helpers', () => {
@@ -106,6 +113,7 @@ describe('App board scope helpers', () => {
     vi.mocked(getJson).mockClear();
     mockPreferenceFilters.projectIds = [4];
     mockPreferenceFilters.statusIds = [2];
+    mockHiddenStatuses.ids = [];
   });
   afterEach(() => cleanup());
 
@@ -117,8 +125,37 @@ describe('App board scope helpers', () => {
       React.createElement(App, { dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7 }),
     ));
 
-    await waitFor(() => expect(getJson).toHaveBeenCalled());
-    expect(vi.mocked(getJson).mock.calls[0][0]).toBe('/projects/demo/kanban/data?project_ids%5B%5D=4&issue_status_ids%5B%5D=2&board_entity_limit=3000');
+    await waitFor(() => expect(getJson).toHaveBeenCalledWith('/projects/demo/kanban/data?project_ids%5B%5D=4&issue_status_ids%5B%5D=2&board_entity_limit=3000'));
+    expect(vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/data?'))[0][0]).toBe('/projects/demo/kanban/data?project_ids%5B%5D=4&issue_status_ids%5B%5D=2&board_entity_limit=3000');
+  });
+
+  it('requires explicit confirmation to remove an unavailable hidden status before loading a complete snapshot', async () => {
+    mockHiddenStatuses.ids = [999];
+    const saved = '{"version":1,"views":[]}';
+    localStorage.setItem('rk_saved_views:/projects/demo/kanban:user:7', saved);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(React.createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      React.createElement(App, { dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7, initialLabels: {
+        saved_views_unavailable: 'Unavailable', hidden_statuses: 'Hidden statuses',
+        hidden_statuses_remove_unavailable: 'Remove unavailable', hidden_statuses_remove_confirm: 'Remove %{ids}?',
+        hidden_statuses_remove_action: 'Remove now', cancel: 'Cancel',
+      } }),
+    ));
+    const remove = await screen.findByRole('button', { name: 'Remove unavailable' });
+    expect(screen.getByRole('alert').textContent).toContain('Hidden statuses: 999');
+    expect(vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/data?'))).toHaveLength(0);
+    fireEvent.click(remove);
+    expect(screen.getByText('Remove 999?')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/data?'))).toHaveLength(0);
+    fireEvent.click(remove);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove now' }));
+    await waitFor(() => expect(screen.getByTestId('canvas-issue-ids')).toBeTruthy());
+    expect(vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/data?'))).toHaveLength(1);
+    expect(localStorage.getItem('rk_saved_views:/projects/demo/kanban:user:7')).toBe(saved);
+    queryClient.clear();
   });
 
   it('passes a promoted descendant to Canvas when an explicit status filter hides its parent', async () => {
@@ -133,7 +170,7 @@ describe('App board scope helpers', () => {
       issues: [{ id: 9, subject: 'Parent', status_id: 2, tracker_id: 1, project: { id: 4, name: 'Demo' }, description: '', assigned_to_id: null, lock_version: 1, urls: { issue: '/issues/9', issue_edit: '/issues/9/edit' }, subtasks: [{ id: 10, subject: 'Child', status_id: 1, tracker_id: 1, parent_id: 9, project: { id: 4, name: 'Demo' }, description: '', assigned_to_id: null, lock_version: 1, urls: { issue: '/issues/10', issue_edit: '/issues/10/edit' } }] }],
       labels: {},
     };
-    vi.mocked(getJson).mockResolvedValueOnce(boardData);
+    vi.mocked(getJson).mockResolvedValueOnce(metadata).mockResolvedValueOnce(boardData);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(React.createElement(
       QueryClientProvider,
@@ -157,6 +194,7 @@ describe('App board scope helpers', () => {
     };
     let resolvePendingBoard: ((value: typeof boardData) => void) | undefined;
     vi.mocked(getJson)
+      .mockResolvedValueOnce(metadata)
       .mockImplementationOnce(() => Promise.resolve(boardData))
       .mockImplementationOnce(() => new Promise((resolve) => { resolvePendingBoard = resolve; }));
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });

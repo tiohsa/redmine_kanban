@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 
 import { act, renderHook } from '@testing-library/react';
-import { StrictMode } from 'react';
+import { StrictMode, useEffect } from 'react';
 import { describe, expect, it, beforeEach } from 'vitest';
+import type { SavedViewSettings } from './savedViews';
 import { MAXIMUM_BOARD_ENTITY_COUNT, parseMaximumBoardEntityCount, useKanbanPreferences } from './useKanbanPreferences';
 
 describe('parseMaximumBoardEntityCount', () => {
@@ -17,6 +18,60 @@ describe('parseMaximumBoardEntityCount', () => {
 describe('useKanbanPreferences', () => {
   beforeEach(() => {
     localStorage.clear();
+  });
+
+  it('applies all saved settings in one render and preserves excluded settings', () => {
+    const observed: SavedViewSettings[] = [];
+    const { result } = renderHook(() => {
+      const preferences = useKanbanPreferences('/projects/demo/kanban/data', 7);
+      useEffect(() => { if (preferences.preferencesReady) observed.push(preferences.viewSettings); }, [preferences.preferencesReady, preferences.viewSettings]);
+      return preferences;
+    });
+    act(() => { result.current.setFontSize(18); result.current.setAgingWarnDays(0); result.current.setCardDisplayMode('single_line'); result.current.setMaximumBoardEntityCount(400); });
+    observed.length = 0;
+    const saved: SavedViewSettings = { filters: { assigneeIds: ['12'], q: 'saved', due: 'custom', dueDays: 5, priority: [], priorityFilterEnabled: true, projectIds: [4], statusIds: [2], trackerIds: [3] }, sortConfig: [{ field: 'due', direction: 'asc' }], laneType: 'category', hiddenStatusIds: [6], viewableProjectsEnabled: true };
+    act(() => result.current.applyViewSettings(saved));
+    expect(observed).toEqual([saved]);
+    expect(result.current.fontSize).toBe(18);
+    expect(result.current.agingWarnDays).toBe(0);
+    expect(result.current.cardDisplayMode).toBe('single_line');
+    expect(result.current.maximumBoardEntityCount).toBe(400);
+    expect(JSON.parse(localStorage.getItem('rk_filters:/projects/demo/kanban:user:7') ?? '{}')).toEqual(saved.filters);
+  });
+
+  it('does not persist old filters into a newly mounted board scope during hydration', () => {
+    localStorage.setItem('rk_filters:/projects/b/kanban:user:7', JSON.stringify({ projectIds: [9], q: 'B' }));
+    const { result, rerender } = renderHook(({ url }) => useKanbanPreferences(url, 7), { initialProps: { url: '/projects/a/kanban/data' } });
+    act(() => result.current.setFilters((f) => ({ ...f, projectIds: [1], q: 'A' })));
+    rerender({ url: '/projects/b/kanban/data' });
+    expect(result.current.filters.projectIds).toEqual([9]);
+    expect(JSON.parse(localStorage.getItem('rk_filters:/projects/b/kanban:user:7') ?? '{}').q).toBe('B');
+  });
+
+  it('preserves zero warning days through persistence and remount', () => {
+    const first = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data', 7));
+    act(() => { first.result.current.setAgingWarnDays(0); });
+    first.unmount();
+    const second = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data', 7));
+    expect(second.result.current.agingWarnDays).toBe(0);
+  });
+
+  it.each([null, '', ' ', 'bad', 'NaN', 'Infinity', '-1', '1.5'])('uses defaults for invalid aging days %j', (value) => {
+    if (value !== null) {
+      localStorage.setItem('rk_aging_warn_days:/projects/demo/kanban:user:7', value);
+      localStorage.setItem('rk_aging_danger_days:/projects/demo/kanban:user:7', value);
+    }
+    const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data', 7));
+    expect(result.current.agingWarnDays).toBe(3);
+    expect(result.current.agingDangerDays).toBe(7);
+  });
+
+  it('keeps nonzero aging days and clamps danger to warning on restore', () => {
+    localStorage.setItem('rk_aging_warn_days:/projects/demo/kanban:user:7', '14');
+    localStorage.setItem('rk_aging_danger_days:/projects/demo/kanban:user:7', '7');
+    const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data', 7));
+    expect(result.current.agingWarnDays).toBe(14);
+    expect(result.current.agingDangerDays).toBe(14);
   });
 
   it('defaults card display to standard without writing before the user is known', () => {

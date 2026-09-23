@@ -35,22 +35,22 @@ export function ToolbarDropdown<T extends string>({
   showTriggerLabel?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const { triggerRef, menuRef } = useDropdownDismiss(open, () => setOpen(false));
+  const { triggerRef, menuRef, menuId } = useDropdownDismiss(open, () => setOpen(false));
   const selectedName = options.find((option) => option.id === value)?.name ?? value;
 
   return (
     <div className="rk-dropdown-container">
-      <div ref={triggerRef} className={triggerClass(showTriggerLabel, open, Boolean(showDot))} onClick={() => setOpen(!open)} title={selectedName}>
+      <button type="button" ref={triggerRef} aria-label={label} aria-expanded={open} aria-controls={open ? menuId : undefined} aria-haspopup="dialog" className={triggerClass(showTriggerLabel, open, Boolean(showDot))} onClick={() => setOpen(!open)} title={selectedName}>
         <span className="rk-icon">{icon}</span>
         {showTriggerLabel ? <span>{label}</span> : null}
         {showDot ? <span className="rk-indicator-dot" /> : null}
-      </div>
+      </button>
       {open ? (
-        <div ref={menuRef} className="rk-dropdown-menu" style={{ width }}>
+        <div id={menuId} ref={menuRef} role="dialog" aria-label={label} className="rk-dropdown-menu" style={{ width }}>
           <div className="rk-dropdown-title">{label}</div>
           <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
             {options.map((option) => (
-              <div
+              <button type="button" aria-pressed={option.id === value}
                 key={option.id}
                 className={`rk-dropdown-item ${option.id === value ? 'selected' : ''}`}
                 onClick={() => {
@@ -58,9 +58,9 @@ export function ToolbarDropdown<T extends string>({
                   if (closeOnSelect) setOpen(false);
                 }}
               >
-                <div className="rk-dropdown-checkbox" />
+                <span className="rk-dropdown-checkbox" aria-hidden="true" />
                 <span>{option.name}</span>
-              </div>
+              </button>
             ))}
           </div>
           {onReset ? (
@@ -120,7 +120,7 @@ export function ToolbarMultiSelect({
     setOpen(false);
     setQuery('');
   };
-  const { triggerRef, menuRef } = useDropdownDismiss(open, closeDropdown);
+  const { triggerRef, menuRef, menuId } = useDropdownDismiss(open, closeDropdown);
   const visibleOptions = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     if (!searchable || !normalizedQuery) return options;
@@ -139,13 +139,13 @@ export function ToolbarMultiSelect({
 
   return (
     <div className="rk-dropdown-container">
-      <div ref={triggerRef} className={triggerClass(showTriggerLabel, open, active ?? Boolean(showDot))} onClick={() => open ? closeDropdown() : setOpen(true)} title={title}>
+      <button type="button" ref={triggerRef} aria-label={label} aria-expanded={open} aria-controls={open ? menuId : undefined} aria-haspopup="dialog" className={triggerClass(showTriggerLabel, open, active ?? Boolean(showDot))} onClick={() => open ? closeDropdown() : setOpen(true)} title={title}>
         <span className="rk-icon">{icon}</span>
         {showTriggerLabel ? <span>{selectedCount > 0 ? `${label} (${selectedCount})` : label}</span> : null}
         {showDot ? <span className="rk-indicator-dot" /> : null}
-      </div>
+      </button>
       {open ? (
-        <div ref={menuRef} className="rk-dropdown-menu" style={{ width }}>
+        <div id={menuId} ref={menuRef} role="dialog" aria-label={label} className="rk-dropdown-menu" style={{ width }}>
           <div className="rk-dropdown-title">{label}</div>
           {searchable ? (
             <div style={{ padding: '8px 12px' }}>
@@ -177,10 +177,10 @@ export function ToolbarMultiSelect({
           {extraContent ? <div className="rk-dropdown-extra">{extraContent}</div> : null}
           <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
             {includeAllOption ? (
-              <div className={`rk-dropdown-item ${allSelected ? 'selected' : ''}`} onClick={() => onChange(allSelected ? [] : optionIds)}>
-                <div className="rk-dropdown-checkbox" />
+              <button type="button" aria-pressed={allSelected} className={`rk-dropdown-item ${allSelected ? 'selected' : ''}`} onClick={() => onChange(allSelected ? [] : optionIds)}>
+                <span className="rk-dropdown-checkbox" aria-hidden="true" />
                 <span>{resolvedAllLabel}</span>
-              </div>
+              </button>
             ) : null}
             {searchable && visibleOptions.length === 0 ? (
               <div role="status" style={{ padding: '8px 12px', color: 'var(--rk-text-secondary)', fontSize: '13px' }}>
@@ -190,14 +190,14 @@ export function ToolbarMultiSelect({
             {visibleOptions.map((option) => {
               const checked = value.includes(option.id);
               return (
-                <div
+                <button type="button" aria-pressed={checked}
                   key={option.id}
                   className={`rk-dropdown-item ${checked ? 'selected' : ''}`}
                   onClick={() => onChange(checked ? value.filter((selected) => selected !== option.id) : [...value, option.id])}
                 >
-                  <div className="rk-dropdown-checkbox" />
+                  <span className="rk-dropdown-checkbox" aria-hidden="true" />
                   <span>{option.name}</span>
-                </div>
+                </button>
               );
             })}
           </div>

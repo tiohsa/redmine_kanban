@@ -1,5 +1,4 @@
-import { useEffect, useMemo } from 'react';
-import type { Dispatch, SetStateAction } from 'react';
+import { useMemo } from 'react';
 import type { BoardData } from './types';
 import type { Filters } from './boardFilters';
 
@@ -29,49 +28,19 @@ export function resolveDefaultCreateProjectId(
 type Args = {
   data: BoardData | null;
   filters: Filters;
-  setFilters: Dispatch<SetStateAction<Filters>>;
   viewableProjectsEnabled: boolean;
 };
 
-export function useBoardFilterNormalization({ data, filters, setFilters, viewableProjectsEnabled }: Args) {
+export function useBoardFilterNormalization({ data, viewableProjectsEnabled }: Args) {
   const projectOptions = useMemo(
     () => (viewableProjectsEnabled ? data?.lists.viewable_projects : data?.lists.projects) ?? [],
     [data, viewableProjectsEnabled],
   );
   const allowedProjectIds = useMemo(() => new Set(projectOptions.map((project) => project.id)), [projectOptions]);
-  const allowedAssigneeIds = useMemo(
-    () => new Set((data?.lists.assignees ?? []).filter((assignee) => assignee.id !== null).map((assignee) => String(assignee.id))),
-    [data],
-  );
-  const allowedTrackerIds = useMemo(
-    () => new Set((data?.lists.trackers ?? []).map((tracker) => tracker.id)),
-    [data],
-  );
   const creatableProjectIds = useMemo(
     () => new Set((data?.lists.creatable_projects ?? []).map((project) => project.id)),
     [data],
   );
-
-  useEffect(() => {
-    if (!data) return;
-    const normalizedProjectIds = normalizeProjectIds(filters.projectIds, allowedProjectIds);
-    if (normalizedProjectIds.length === filters.projectIds.length) return;
-    setFilters((previous) => ({ ...previous, projectIds: normalizedProjectIds }));
-  }, [allowedProjectIds, data, filters.projectIds, setFilters]);
-
-  useEffect(() => {
-    if (!data) return;
-    const normalizedAssigneeIds = normalizeAssigneeIds(filters.assigneeIds, allowedAssigneeIds);
-    if (normalizedAssigneeIds.length === filters.assigneeIds.length) return;
-    setFilters((previous) => ({ ...previous, assigneeIds: normalizedAssigneeIds }));
-  }, [allowedAssigneeIds, data, filters.assigneeIds, setFilters]);
-
-  useEffect(() => {
-    if (!data) return;
-    const normalizedTrackerIds = normalizeTrackerIds(filters.trackerIds, allowedTrackerIds);
-    if (normalizedTrackerIds.length === filters.trackerIds.length) return;
-    setFilters((previous) => ({ ...previous, trackerIds: normalizedTrackerIds }));
-  }, [allowedTrackerIds, data, filters.trackerIds, setFilters]);
 
   return { allowedProjectIds, creatableProjectIds, projectOptions };
 }

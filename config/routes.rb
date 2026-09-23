@@ -4,6 +4,7 @@ Rails.application.routes.draw do
 
   scope 'projects/:project_id/kanban', module: 'redmine_kanban' do
     get 'data', to: 'api#index', as: 'redmine_kanban_data'
+    get 'metadata', to: 'api#metadata', as: 'redmine_kanban_metadata'
     get 'bootstrap', to: 'api#bootstrap', as: 'redmine_kanban_bootstrap'
     get 'issues/entities', to: 'api#entities', as: 'redmine_kanban_issue_entities'
     get 'counts', to: 'api#counts', as: 'redmine_kanban_counts'
