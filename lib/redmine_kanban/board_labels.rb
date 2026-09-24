@@ -54,6 +54,7 @@ module RedmineKanban
       board_recovery_help: "redmine_kanban.label_board_recovery_help",
       board_metadata_failed: "redmine_kanban.label_board_metadata_failed",
       board_query_limit_exceeded: "redmine_kanban.label_board_query_limit_exceeded",
+      board_total_query_limit_exceeded: "redmine_kanban.label_board_total_query_limit_exceeded",
       retry: "redmine_kanban.label_retry",
       saved_views: "redmine_kanban.label_saved_views",
       saved_views_select: "redmine_kanban.label_saved_views_select",

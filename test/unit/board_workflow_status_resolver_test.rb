@@ -15,11 +15,27 @@ class RedmineKanbanBoardWorkflowStatusResolverTest < ActiveSupport::TestCase
     scenarios = workflow_scenarios
     skip 'fixture project has no issue' if scenarios.empty?
 
-    resolver = RedmineKanban::BoardWorkflowStatusResolver.new(user: @user, issues: scenarios.values)
-    scenarios.each do |name, issue|
-      expected = ([issue.status] + issue.new_statuses_allowed_to(@user)).compact.map(&:id).uniq.sort
-      actual = ([issue.status] + resolver.call(issue)).compact.map(&:id).uniq.sort
-      assert_equal expected, actual, "workflow mismatch for #{name} issue ##{issue.id}"
+    [nil, IssueStatus.sorted.to_a].each do |statuses|
+      resolver = RedmineKanban::BoardWorkflowStatusResolver.new(user: @user, issues: scenarios.values, statuses: statuses)
+      scenarios.each do |name, issue|
+        expected = ([issue.status] + issue.new_statuses_allowed_to(@user)).compact.map(&:id).uniq.sort
+        actual = ([issue.status] + resolver.call(issue)).compact.map(&:id).uniq.sort
+        assert_equal expected, actual, "workflow mismatch for #{name} issue ##{issue.id}, preloaded statuses: #{!!statuses}"
+      end
+    end
+  end
+
+  def test_batched_roles_match_redmine_for_admin_member_and_nonmember_projects
+    projects_by_id = Project.order(:id).to_a.index_by(&:id)
+    [users(:users_001), users(:users_002), users(:users_003)].each do |user|
+      resolver = RedmineKanban::BoardWorkflowStatusResolver.new(user: user, issues: [])
+      resolver.send(:preload_roles, projects_by_id)
+
+      projects_by_id.each_value do |project|
+        expected = (user.admin? ? Role.all.to_a : user.roles_for_project(project)).select(&:consider_workflow?).map(&:id).sort
+        actual = resolver.send(:roles_for_workflow, project).map(&:id).sort
+        assert_equal expected, actual, "role mismatch for user ##{user.id}, project ##{project.id}"
+      end
     end
   end
 

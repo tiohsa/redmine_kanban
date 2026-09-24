@@ -14,7 +14,7 @@ const snapshot = { ok: true, contract_version: 3, scope_fingerprint: 'narrow', m
 function setup() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
-  return renderHook(({ statusIds }) => useBoardSnapshot({ baseUrl: '/projects/demo/kanban', currentUserId: 7, projectIds: [], statusIds, hiddenStatusIds: [], maximumBoardEntityCount: 1500, preferencesReady: true, initialLabels: { board_scope_too_large: 'Limit %{limit}', board_response_too_large: 'Bytes %{bytes}', load_failed: 'Failed' } }), { initialProps: { statusIds: [] as number[] }, wrapper });
+  return renderHook(({ statusIds }) => useBoardSnapshot({ baseUrl: '/projects/demo/kanban', currentUserId: 7, projectIds: [], statusIds, hiddenStatusIds: [], maximumBoardEntityCount: 1500, preferencesReady: true, initialLabels: { board_scope_too_large: 'Limit %{limit}', board_response_too_large: 'Bytes %{bytes}', board_query_limit_exceeded: 'Issue query limit', board_total_query_limit_exceeded: 'Total query limit', load_failed: 'Failed' } }), { initialProps: { statusIds: [] as number[] }, wrapper });
 }
 describe('snapshot recovery without a successful cache', () => {
   it('rejects a declared complete snapshot with an unrepresented Entity', () => {
@@ -56,6 +56,17 @@ describe('snapshot recovery without a successful cache', () => {
     vi.mocked(getJson).mockResolvedValue(metadata);
     await act(async () => { await result.current.metadataQuery.refetch(); });
     await waitFor(() => expect(result.current.metadataQuery.isError).toBe(false));
+  });
+  it.each([
+    ['BOARD_QUERY_LIMIT_EXCEEDED', 'Issue query limit'],
+    ['BOARD_TOTAL_QUERY_LIMIT_EXCEEDED', 'Total query limit'],
+  ])('shows a distinct message for %s', async (code, message) => {
+    vi.mocked(getJson).mockImplementation(async (url) => {
+      if (url.endsWith('/metadata')) return metadata;
+      throw new HttpError(422, { error: { code } });
+    });
+    const { result } = setup();
+    await waitFor(() => expect(result.current.loadError).toBe(message));
   });
   it('does not let a slow old failure overwrite a newer scope', async () => {
     let rejectOld: (error: Error) => void = () => {};

@@ -4,8 +4,9 @@ module RedmineKanban
   # Resolves workflow transitions for a complete board without repeating the
   # same role/workflow queries for every Issue Entity.
   class BoardWorkflowStatusResolver
-    def initialize(user:, issues: [])
+    def initialize(user:, issues: [], statuses: nil)
       @user = user
+      @statuses_by_id = statuses&.index_by(&:id)
       @roles_by_project_id = {}
       @group_ids = nil
       @transitions_by_key = {}
@@ -50,7 +51,7 @@ module RedmineKanban
           next unless role_ids.include?(transition.role_id)
           next unless transition_allowed_for_actor?(transition, author_transition, assignee_transition)
 
-          transition.new_status
+          @statuses_by_id ? @statuses_by_id[transition.new_status_id] : transition.new_status
         end
         statuses.uniq.sort
       end
@@ -60,6 +61,39 @@ module RedmineKanban
       @roles_by_project_id[project.id] ||= begin
         roles = @user.admin? ? Role.all.to_a : @user.roles_for_project(project)
         roles.select(&:consider_workflow?)
+      end
+    end
+
+    def preload_roles(project_by_id)
+      return if project_by_id.empty?
+
+      if @user.admin?
+        roles = Role.all.to_a.select(&:consider_workflow?)
+        project_by_id.each_key { |project_id| @roles_by_project_id[project_id] = roles }
+        return
+      end
+
+      builtin_role = @user.builtin_role
+      group_type = builtin_role.anonymous? ? 'GroupAnonymous' : 'GroupNonMember'
+      members = Member.joins(:principal)
+                      .where(project_id: project_by_id.keys)
+                      .where('members.user_id = :user_id OR users.type = :group_type', user_id: @user.id, group_type: group_type)
+                      .includes(:roles)
+                      .to_a
+      memberships = members.select { |member| member.user_id == @user.id }.index_by(&:project_id)
+      override_members = members.reject { |member| member.user_id == @user.id }.index_by(&:project_id)
+
+      project_by_id.each do |project_id, project|
+        roles = if project.archived?
+          []
+        elsif membership = memberships[project_id]
+          membership.roles.to_a
+        elsif project.is_public?
+          override_members[project_id]&.roles&.to_a || [builtin_role]
+        else
+          []
+        end
+        @roles_by_project_id[project_id] = roles.select(&:consider_workflow?)
       end
     end
 
@@ -79,17 +113,15 @@ module RedmineKanban
     def preload_workflow_transitions(issues)
       issue_list = Array(issues)
       project_by_id = issue_list.to_h { |issue| [issue.project_id, issue.project] }
-      project_by_id.each_value { |project| roles_for_workflow(project) }
+      preload_roles(project_by_id)
 
       role_ids = @roles_by_project_id.values.flatten.map(&:id).uniq
       old_status_ids = issue_list.map { |issue| issue.status_was&.id }.compact.uniq
       tracker_ids = issue_list.map(&:tracker_id).compact.uniq
       return if role_ids.empty? || old_status_ids.empty? || tracker_ids.empty?
 
-      @workflow_transitions = WorkflowTransition
-        .where(old_status_id: old_status_ids, tracker_id: tracker_ids, role_id: role_ids)
-        .includes(:new_status)
-        .to_a
+      transitions = WorkflowTransition.where(old_status_id: old_status_ids, tracker_id: tracker_ids, role_id: role_ids)
+      @workflow_transitions = (@statuses_by_id ? transitions : transitions.includes(:new_status)).to_a
     end
 
     def transition_allowed_for_actor?(transition, author, assignee)

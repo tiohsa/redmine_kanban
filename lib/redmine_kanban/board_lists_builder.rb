@@ -34,7 +34,8 @@ module RedmineKanban
 
     def assignees_list
       projects = Project.where(id: @project_ids).to_a
-      users = projects.map(&:assignable_users).flatten.uniq.sort_by { |user| user.name.to_s.downcase }
+      scope = projects.map(&:assignable_users).reduce { |combined, project_scope| combined.or(project_scope) }
+      users = (scope ? scope.to_a : []).uniq.sort_by { |user| user.name.to_s.downcase }
       [{ id: nil, name: ::I18n.t("redmine_kanban.label_unassigned") }] + users.map { |user| { id: user.id, name: user.name } }
     end
 

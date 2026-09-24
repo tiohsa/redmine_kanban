@@ -48,6 +48,7 @@ module RedmineKanban
         result = yield
       end
 
+      completed_meta = result[:meta] if result[:ok]
       result[:meta][:query_count] = snapshot_query_count if result[:ok] && result[:meta]
       if snapshot_query_count > @board_context.query_limit && result[:ok]
         result = resource_error(
@@ -86,9 +87,10 @@ module RedmineKanban
           "snapshot_query_count=#{snapshot_query_count} " \
           "metadata_query_count=#{metadata_query_count} " \
           "total_query_count=#{total_query_count} " \
-          "entity_count=#{result.dig(:meta, :entity_count)} " \
-          "id_probe_count=#{result.dig(:meta, :id_probe_count)} " \
-          "materialized_row_count=#{result.dig(:meta, :materialized_row_count)} " \
+          "entity_count=#{completed_meta&.dig(:entity_count)} " \
+          "id_probe_count=#{completed_meta&.dig(:id_probe_count)} " \
+          "materialized_row_count=#{completed_meta&.dig(:materialized_row_count)} " \
+          "error_code=#{result.dig(:error, :code)} " \
           "json_bytes=#{result.to_json.bytesize} elapsed_ms=#{elapsed_ms}"
         )
       end
@@ -135,24 +137,31 @@ module RedmineKanban
       status_ids = columns.map { |c| c[:id] }
       @count_snapshot_queries = true
       begin
-        snapshot = BoardMembershipResolver.new(board_context: @board_context).snapshot_issue_ids(limit: @board_context.effective_entity_limit)
+        visible_scope = Issue.visible(@user)
+        snapshot = BoardMembershipResolver.new(board_context: @board_context, visible_scope: visible_scope).snapshot_issue_ids(limit: @board_context.effective_entity_limit)
         return too_large_error(snapshot[:count_at_least]) if snapshot[:count_at_least]
         issue_ids = snapshot[:ids]
 
-        issues = fetch_issues(issue_ids)
+        issues = fetch_issues(issue_ids, statuses: statuses, visible_scope: visible_scope)
         presenter = IssueEntityPresenter.new(
           user: @user,
           board_project: @project,
-          workflow_status_resolver: BoardWorkflowStatusResolver.new(user: @user, issues: issues),
+          workflow_status_resolver: BoardWorkflowStatusResolver.new(user: @user, issues: issues, statuses: statuses),
           permission_policy: permission_policy
         )
         warm_permission_cache(issues)
         entities = presenter.issues_to_h(issues)
         tree = BoardTreeBuilder.new(issues).build
-        lane_assignee_ids = fetch_lane_assignee_ids(@board_context.scope_status_ids)
+        lane_assignee_ids = issues.filter_map do |issue|
+          issue.assigned_to_id if @board_context.scope_status_ids.include?(issue.status_id)
+        end.uniq
         lanes = build_lanes(lane_assignee_ids)
 
-        counts = fetch_column_counts(status_ids)
+        counts = if @board_context.scope_status_ids.sort == status_ids.sort
+          issues.each_with_object(Hash.new(0)) { |issue, grouped| grouped[issue.status_id] += 1 }
+        else
+          fetch_column_counts(status_ids, visible_scope: visible_scope)
+        end
         lists = with_metadata_query_count { without_snapshot_query_count { cached_lists } }
         labels = with_metadata_query_count { without_snapshot_query_count { cached_labels } }
       ensure
@@ -210,14 +219,16 @@ module RedmineKanban
 
     def warm_permission_cache(issues)
       without_snapshot_query_count do
-        permission_policy.can_move_issue?(@project)
-        permission_policy.can_create_issue?(@project)
-        permission_policy.can_delete_issue?(@project)
-        issues.each do |issue|
-          permission_policy.can_log_time?(issue.project)
-          permission_policy.can_move_issue?(issue, @project)
-          permission_policy.can_update_issue?(issue, @project)
-          permission_policy.can_delete_issue?(issue, @project)
+        ProjectCatalog.new(user: @user).with_preloaded_permission_context([@project, *issues.map(&:project)]) do
+          permission_policy.can_move_issue?(@project)
+          permission_policy.can_create_issue?(@project)
+          permission_policy.can_delete_issue?(@project)
+          issues.each do |issue|
+            permission_policy.can_log_time?(issue.project)
+            permission_policy.can_move_issue?(issue, @project)
+            permission_policy.can_update_issue?(issue, @project)
+            permission_policy.can_delete_issue?(issue, @project)
+          end
         end
       end
     end
@@ -226,21 +237,28 @@ module RedmineKanban
       @permission_policy ||= PermissionPolicy.new(user: @user)
     end
 
-    def fetch_issues(issue_ids)
-      Issue.visible(@user)
-           .where(id: issue_ids, project_id: @project_ids)
-           .includes(:assigned_to, :author, :priority, :status, :project, :tracker, :category)
-           .order(updated_on: :desc, id: :desc)
-           .to_a
-    end
-
-    def fetch_lane_assignee_ids(status_ids)
-      base_issue_scope(status_ids)
-        .order(updated_on: :desc)
-        .limit(@board_context.effective_entity_limit)
-        .pluck(:assigned_to_id)
-        .compact
-        .uniq
+    def fetch_issues(issue_ids, statuses:, visible_scope:)
+      issues = visible_scope
+                    .where(id: issue_ids, project_id: @project_ids)
+                    .includes(:priority, { project: :enabled_modules }, :tracker, :category)
+                    .order(updated_on: :desc, id: :desc)
+                    .to_a
+      statuses_by_id = statuses.index_by(&:id)
+      principal_ids = issues.flat_map { |issue| [issue.assigned_to_id, issue.author_id] }.compact.uniq
+      principals = Principal.where(id: principal_ids).index_by(&:id)
+      issues.each do |issue|
+        status_association = issue.association(:status)
+        status_association.target = statuses_by_id[issue.status_id]
+        status_association.loaded!
+        { assigned_to: issue.assigned_to_id, author: issue.author_id }.each do |association_name, id|
+          association = issue.association(association_name)
+          target = principals[id]
+          target = nil if association_name == :author && !target.is_a?(User)
+          association.target = target
+          association.loaded!
+        end
+      end
+      issues
     end
 
     def build_lanes(assigned_to_ids)
@@ -251,12 +269,8 @@ module RedmineKanban
       lanes
     end
 
-    def fetch_column_counts(status_ids)
-      base_issue_scope(status_ids).group(:status_id).count
-    end
-
-    def base_issue_scope(status_ids)
-      Issue.visible(@user).where(project_id: @project_ids, status_id: status_ids)
+    def fetch_column_counts(status_ids, visible_scope:)
+      visible_scope.where(project_id: @project_ids, status_id: status_ids).group(:status_id).count
     end
 
     def filtered_status_ids(status_ids)

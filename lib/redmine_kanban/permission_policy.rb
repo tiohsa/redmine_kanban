@@ -34,11 +34,11 @@ module RedmineKanban
       allowed_to?(:log_time, project)
     end
 
-    private
-
     def can_manage_board?(project)
       can_view_board?(project) && allowed_to?(:manage_redmine_kanban, project)
     end
+
+    private
 
     def allowed_to?(permission, project)
       return false unless project
