@@ -1,5 +1,6 @@
 require File.expand_path('../../../../test/test_helper', File.expand_path(__dir__))
 require_relative '../../lib/redmine_kanban/board_data'
+require 'stringio'
 
 class RedmineKanbanBoardDataTest < ActiveSupport::TestCase
   def setup
@@ -72,6 +73,34 @@ class RedmineKanbanBoardDataTest < ActiveSupport::TestCase
     assert_equal false, result[:ok]
     assert_equal 'BOARD_TOTAL_QUERY_LIMIT_EXCEEDED', result.dig(:error, :code)
     assert_equal 2, result.dig(:error, :query_count)
+  end
+
+  def test_performance_log_keeps_entity_counts_when_total_query_limit_is_exceeded
+    previous_perf_log = ENV['REDMINE_KANBAN_PERF_LOG']
+    previous_logger = Rails.logger
+    output = StringIO.new
+    Rails.logger = ActiveSupport::Logger.new(output)
+    ENV['REDMINE_KANBAN_PERF_LOG'] = '1'
+    board_data = RedmineKanban::BoardData.new(project: stub(id: 1), user: stub(id: 2))
+    board_data.instance_variable_set(:@board_context, stub(query_limit: 20, total_query_limit: 1, scope_fingerprint: 'scope', response_byte_limit: 1000))
+    board_data.define_singleton_method(:build_payload) do
+      @count_snapshot_queries = true
+      ActiveRecord::Base.connection.select_value('SELECT 1001')
+      @count_snapshot_queries = false
+      ActiveRecord::Base.connection.select_value('SELECT 1002')
+      { ok: true, meta: { entity_count: 5, id_probe_count: 7, materialized_row_count: 5 } }
+    end
+    ActiveRecord::Base.connection.clear_query_cache
+
+    result = board_data.to_h
+
+    assert_equal 'BOARD_TOTAL_QUERY_LIMIT_EXCEEDED', result.dig(:error, :code)
+    assert_match(/total_query_count=2/, output.string)
+    assert_match(/entity_count=5 id_probe_count=7 materialized_row_count=5/, output.string)
+    assert_match(/error_code=BOARD_TOTAL_QUERY_LIMIT_EXCEEDED/, output.string)
+  ensure
+    Rails.logger = previous_logger
+    ENV['REDMINE_KANBAN_PERF_LOG'] = previous_perf_log
   end
 
   private

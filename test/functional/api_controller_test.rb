@@ -110,6 +110,71 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     refute json.key?('pagination')
   end
 
+  def test_board_query_count_stays_bounded_with_fifty_and_one_hundred_projects_on_cache_miss_and_hit
+    assigned_issue = build_issue(subject: 'Kanban query assigned issue', assigned_to: @user)
+    fifty_project_query_count = nil
+    hundred_project_query_count = nil
+    100.times do |index|
+      project = Project.create!(name: "Kanban query project #{index}", identifier: "kanban-query-project-#{index}", parent: @project, is_public: true)
+      EnabledModule.create!(project: project, name: 'redmine_kanban')
+      ensure_member!(@user, project) if index.even?
+      build_issue(subject: "Kanban query project issue #{index}", project: project)
+
+      next unless [49, 99].include?(index)
+
+      Rails.cache.clear
+      result, statements = measured_board_snapshot
+      assert_equal true, result[:ok], result.dig(:error, :code)
+      assert_operator result.dig(:meta, :entity_count), :>=, index / 2
+      assert_operator result.dig(:meta, :query_count), :<=, 20
+      assert_operator statements.size, :<, 80
+      fifty_project_query_count = statements.size if index == 49
+      if index == 99
+        hundred_project_query_count = statements.size
+        assigned_entity = result[:entities].find { |entity| entity[:id] == assigned_issue.id }
+        assert_equal @user.name, assigned_entity[:assigned_to_name]
+        assert_equal assigned_issue.status.name, assigned_entity[:status_name]
+        visible_ids = Project.visible(User.find(@user.id)).pluck(:id)
+        expected_counts = Issue.visible(User.find(@user.id)).where(project_id: visible_ids).group(:status_id).count
+        assert_equal expected_counts, result[:columns].to_h { |column| [column[:id], column[:count]] }.reject { |_id, count| count.zero? }
+        expected_assignees = Issue.visible(User.find(@user.id)).where(project_id: visible_ids).pluck(:assigned_to_id).compact.uniq.sort
+        assert_equal expected_assignees, result[:lanes].filter_map { |lane| lane[:assigned_to_id] }.sort
+      end
+    end
+
+    assert_operator hundred_project_query_count - fifty_project_query_count, :<=, 10
+    hit_result, hit_statements = measured_board_snapshot
+    assert_equal true, hit_result[:ok], hit_result.dig(:error, :code)
+    assert_operator hit_statements.size, :<=, hundred_project_query_count
+  end
+
+  def test_board_query_count_stays_bounded_with_five_hundred_issues
+    500.times { |index| build_issue(subject: "Kanban query issue #{index}") }
+    Rails.cache.clear
+
+    result, statements = measured_board_snapshot
+
+    assert_equal true, result[:ok], result.dig(:error, :code)
+    assert_operator result.dig(:meta, :entity_count), :>=, 500
+    assert_operator result.dig(:meta, :query_count), :<=, 20
+    assert_operator statements.size, :<, 80
+  end
+
+  def test_scoped_board_preserves_all_column_counts_and_scope_assignees
+    selected_status = IssueStatus.sorted.first
+    build_issue(subject: 'Scoped assigned query issue', status: selected_status, assigned_to: @user)
+    Rails.cache.clear
+
+    result, = measured_board_snapshot(issue_status_ids: [selected_status.id])
+
+    assert_equal true, result[:ok], result.dig(:error, :code)
+    visible_ids = Project.visible(User.find(@user.id)).pluck(:id)
+    expected_counts = Issue.visible(User.find(@user.id)).where(project_id: visible_ids).group(:status_id).count
+    assert_equal expected_counts, result[:columns].to_h { |column| [column[:id], column[:count]] }.reject { |_id, count| count.zero? }
+    expected_assignees = Issue.visible(User.find(@user.id)).where(project_id: visible_ids, status_id: selected_status.id).pluck(:assigned_to_id).compact.uniq.sort
+    assert_equal expected_assignees, result[:lanes].filter_map { |lane| lane[:assigned_to_id] }.sort
+  end
+
   def test_index_tracker_list_includes_workflow_metadata
     json = index_response
     tracker = @project.trackers.first || Tracker.first
@@ -1091,5 +1156,25 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     get :index, params: { project_id: @project.identifier, board_entity_limit: 1500 }.merge(extra_params)
     assert_response :success
     JSON.parse(@response.body)
+  end
+
+  def measured_board_snapshot(issue_status_ids: nil)
+    ActiveRecord::Base.connection.clear_query_cache
+    project = Project.find(@project.id)
+    user = User.find(@user.id)
+    project_ids = Project.visible(user).pluck(:id)
+    previous_user = User.current
+    User.current = user
+    statements = []
+    callback = lambda do |_name, _start, _finish, _id, payload|
+      statements << payload[:sql] unless payload[:cached] || payload[:name] == 'SCHEMA'
+    end
+    result = nil
+    ActiveSupport::Notifications.subscribed(callback, 'sql.active_record') do
+      result = RedmineKanban::BoardData.new(project: project, user: user, project_ids: project_ids, issue_status_ids: issue_status_ids).to_h
+    end
+    [result, statements]
+  ensure
+    User.current = previous_user
   end
 end

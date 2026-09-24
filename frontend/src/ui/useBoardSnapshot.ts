@@ -107,9 +107,12 @@ export function useBoardSnapshot({
       setLoadError(toolbarData.labels.board_scope_too_large.replace('%{limit}', limit.toLocaleString()) + serverSuffix);
     } else if (boardError?.code === 'BOARD_RESPONSE_TOO_LARGE') {
       setLoadError(toolbarData.labels.board_response_too_large.replace('%{bytes}', (boardError.maximum_response_bytes ?? 0).toLocaleString()));
+    } else if (boardError?.code === 'BOARD_QUERY_LIMIT_EXCEEDED') {
+      setLoadError(toolbarData.labels.board_query_limit_exceeded);
+    } else if (boardError?.code === 'BOARD_TOTAL_QUERY_LIMIT_EXCEEDED') {
+      setLoadError(toolbarData.labels.board_total_query_limit_exceeded);
     } else {
-      setLoadError(boardError?.code === 'BOARD_QUERY_LIMIT_EXCEEDED' || boardError?.code === 'BOARD_TOTAL_QUERY_LIMIT_EXCEEDED'
-        ? toolbarData.labels.board_query_limit_exceeded : toolbarData.labels.load_failed);
+      setLoadError(toolbarData.labels.load_failed);
     }
   }, [boardQuery.data, boardQuery.error, errorScope, maximumBoardEntityCount, toolbarData.labels]);
 
