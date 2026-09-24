@@ -2,8 +2,9 @@ require 'set'
 
 module RedmineKanban
   class BoardMembershipResolver
-    def initialize(board_context:)
+    def initialize(board_context:, visible_scope: nil)
       @context = board_context
+      @visible_scope = visible_scope
     end
 
     def snapshot_issue_ids(limit:)
@@ -99,7 +100,7 @@ module RedmineKanban
     end
 
     def visible_issue_ids
-      Issue.visible(@context.user).select(:id)
+      (@visible_scope ||= Issue.visible(@context.user)).select(:id)
     end
 
     def descendant_scope(primary_ids)

@@ -137,11 +137,12 @@ module RedmineKanban
       status_ids = columns.map { |c| c[:id] }
       @count_snapshot_queries = true
       begin
-        snapshot = BoardMembershipResolver.new(board_context: @board_context).snapshot_issue_ids(limit: @board_context.effective_entity_limit)
+        visible_scope = Issue.visible(@user)
+        snapshot = BoardMembershipResolver.new(board_context: @board_context, visible_scope: visible_scope).snapshot_issue_ids(limit: @board_context.effective_entity_limit)
         return too_large_error(snapshot[:count_at_least]) if snapshot[:count_at_least]
         issue_ids = snapshot[:ids]
 
-        issues = fetch_issues(issue_ids, statuses: statuses)
+        issues = fetch_issues(issue_ids, statuses: statuses, visible_scope: visible_scope)
         presenter = IssueEntityPresenter.new(
           user: @user,
           board_project: @project,
@@ -159,7 +160,7 @@ module RedmineKanban
         counts = if @board_context.scope_status_ids.sort == status_ids.sort
           issues.each_with_object(Hash.new(0)) { |issue, grouped| grouped[issue.status_id] += 1 }
         else
-          fetch_column_counts(status_ids)
+          fetch_column_counts(status_ids, visible_scope: visible_scope)
         end
         lists = with_metadata_query_count { without_snapshot_query_count { cached_lists } }
         labels = with_metadata_query_count { without_snapshot_query_count { cached_labels } }
@@ -236,8 +237,8 @@ module RedmineKanban
       @permission_policy ||= PermissionPolicy.new(user: @user)
     end
 
-    def fetch_issues(issue_ids, statuses:)
-      issues = Issue.visible(@user)
+    def fetch_issues(issue_ids, statuses:, visible_scope:)
+      issues = visible_scope
                     .where(id: issue_ids, project_id: @project_ids)
                     .includes(:priority, { project: :enabled_modules }, :tracker, :category)
                     .order(updated_on: :desc, id: :desc)
@@ -268,12 +269,8 @@ module RedmineKanban
       lanes
     end
 
-    def fetch_column_counts(status_ids)
-      base_issue_scope(status_ids).group(:status_id).count
-    end
-
-    def base_issue_scope(status_ids)
-      Issue.visible(@user).where(project_id: @project_ids, status_id: status_ids)
+    def fetch_column_counts(status_ids, visible_scope:)
+      visible_scope.where(project_id: @project_ids, status_id: status_ids).group(:status_id).count
     end
 
     def filtered_status_ids(status_ids)
