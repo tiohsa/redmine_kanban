@@ -704,6 +704,7 @@ aria-label={labels.board_aria}
       <canvas
         ref={canvasRef}
         className="rk-canvas"
+        tabIndex={-1}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}

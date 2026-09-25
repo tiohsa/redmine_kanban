@@ -516,6 +516,8 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
           x={dialogs.datePopup.x}
           y={dialogs.datePopup.y}
           value={dialogs.datePopup.currentDate}
+          labels={data.labels}
+          restoreFocusTo={document.querySelector<HTMLElement>('.rk-canvas')}
           onClose={() => dialogs.setDatePopup(null)}
           onCommit={async (newDate) => {
             const popup = dialogs.datePopup;
@@ -529,8 +531,6 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
               });
             } catch (caught: unknown) {
               setError(caught instanceof Error ? caught.message : data.labels.date_update_failed);
-            } finally {
-              dialogs.setDatePopup(null);
             }
           }}
         />
