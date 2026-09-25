@@ -531,8 +531,6 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
               });
             } catch (caught: unknown) {
               setError(caught instanceof Error ? caught.message : data.labels.date_update_failed);
-            } finally {
-              dialogs.setDatePopup(null);
             }
           }}
         />

@@ -211,4 +211,61 @@ describe('DatePopup', () => {
     expect(onCommit).not.toHaveBeenCalled();
     source.remove();
   });
+
+  it('does not restore focus from A after B opens', async () => {
+    const source = document.createElement('button');
+    document.body.append(source);
+    source.focus();
+    const focusOldSource = vi.spyOn(source, 'focus');
+    function Harness() {
+      const [open, setOpen] = useState<'A' | 'B' | null>('A');
+      return <>
+        <button type="button" onClick={() => setOpen('B')}>Open B</button>
+        {open ? <DatePopup key={open} x={0} y={0} value="2026-09-20" labels={labels}
+          restoreFocusTo={source} onClose={() => setOpen(null)} onCommit={vi.fn()} /> : null}
+      </>;
+    }
+    render(<Harness />);
+    await waitFor(() => expect(document.activeElement?.className).toContain('react-datepicker__day--selected'));
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Open B' }));
+    await waitFor(() => expect(document.activeElement?.className).toContain('react-datepicker__day--selected'));
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    expect(focusOldSource).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true);
+    source.remove();
+  });
+
+  it.each(['outside', 'day', 'today', 'clear'] as const)('restores focus after %s closes the calendar', async (action) => {
+    const source = document.createElement('button');
+    document.body.append(source);
+    source.focus();
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return open ? <DatePopup x={0} y={0} value="2026-09-20" labels={labels}
+        restoreFocusTo={source} onClose={() => setOpen(false)} onCommit={vi.fn()} /> : null;
+    }
+    render(<Harness />);
+    await waitFor(() => expect(document.activeElement?.className).toContain('react-datepicker__day--selected'));
+    if (action === 'outside') fireEvent.mouseDown(document.body);
+    else if (action === 'day') clickDay(21);
+    else fireEvent.click(screen.getByRole('button', { name: action === 'today' ? 'Today' : 'Clear' }));
+    await waitFor(() => expect(document.activeElement).toBe(source));
+    source.remove();
+  });
+
+  it('skips focus restoration when the source was removed', async () => {
+    const source = document.createElement('button');
+    document.body.append(source);
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return open ? <DatePopup x={0} y={0} value="2026-09-20" labels={labels}
+        restoreFocusTo={source} onClose={() => { source.remove(); setOpen(false); }} onCommit={vi.fn()} /> : null;
+    }
+    render(<Harness />);
+    await waitFor(() => expect(document.activeElement?.className).toContain('react-datepicker__day--selected'));
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    expect(document.activeElement).not.toBe(source);
+  });
 });

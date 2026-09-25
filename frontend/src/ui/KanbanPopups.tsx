@@ -123,9 +123,10 @@ export function DatePopup({
     window.setTimeout(() => {
       const target = focusTarget.current;
       const active = document.activeElement;
+      // A later popup may already be mounted when this timer runs.
       const calendar = document.querySelector('.rk-minimax-datepicker');
-      if (target?.isConnected && target !== document.body
-        && (!active || active === document.body || active === document.documentElement || (calendar?.contains(active) ?? false))) {
+      if (!calendar && target?.isConnected && target !== document.body
+        && (!active || active === document.body || active === document.documentElement)) {
         target.focus({ preventScroll: true });
       }
     }, 0);

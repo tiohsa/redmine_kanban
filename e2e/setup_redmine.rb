@@ -91,6 +91,18 @@ Issue.find_or_create_by!(
   issue.status = status
 end
 
+# A standalone card is needed for due-date writes. Redmine derives a parent
+# Issue's dates from its children, so writing the parent cannot test persistence.
+calendar_issue = Issue.find_or_create_by!(
+  project: project,
+  subject: 'Kanban E2E calendar issue'
+) do |issue|
+  issue.author = admin
+  issue.tracker = tracker
+  issue.status = status
+end
+calendar_issue.update_column(:due_date, nil)
+
 if ENV['REDMINE_KANBAN_E2E_TREE_FIXTURE'] == '1'
   truncation_parent = Issue.find_or_initialize_by(
     project: project,

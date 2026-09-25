@@ -1,6 +1,31 @@
 const { test, expect } = require('@playwright/test');
 
 async function openBoard(page, baseURL) {
+  // Observe public Canvas drawing calls in the test browser to locate the
+  // rendered date badge. The application has no DOM node for an individual card.
+  await page.addInitScript(() => {
+    window.__rkCalendarDraws = [];
+    const clearRect = CanvasRenderingContext2D.prototype.clearRect;
+    const fillText = CanvasRenderingContext2D.prototype.fillText;
+    CanvasRenderingContext2D.prototype.clearRect = function (...args) {
+      if (this.canvas.classList.contains('rk-canvas')) window.__rkCalendarDraws = [];
+      return clearRect.apply(this, args);
+    };
+    CanvasRenderingContext2D.prototype.fillText = function (value, x, y, ...rest) {
+      if (this.canvas.classList.contains('rk-canvas') && (value.startsWith('#') || value === 'calendar_today')) {
+        const matrix = this.getTransform();
+        const rect = this.canvas.getBoundingClientRect();
+        const ratioX = rect.width / this.canvas.width;
+        const ratioY = rect.height / this.canvas.height;
+        window.__rkCalendarDraws.push({
+          value,
+          x: rect.left + (matrix.a * x + matrix.c * y + matrix.e) * ratioX,
+          y: rect.top + (matrix.b * x + matrix.d * y + matrix.f) * ratioY,
+        });
+      }
+      return fillText.call(this, value, x, y, ...rest);
+    };
+  });
   await page.goto(`${baseURL}/login`);
   await page.locator('#username').fill('admin');
   await page.locator('#password').fill(process.env.REDMINE_PASSWORD || 'admin1234');
@@ -9,21 +34,23 @@ async function openBoard(page, baseURL) {
   await expect(page.locator('.rk-canvas')).toBeVisible();
 }
 
-async function openAt(page, issueId, currentDate, x, y) {
-  // Canvas cards have no DOM nodes. Invoke their existing date callback to test
-  // popover placement at coordinates that the fixture cannot place a card at.
-  await page.evaluate(({ issueId: id, currentDate: date, x: left, y: top }) => {
-    const canvas = document.querySelector('.rk-canvas');
-    const fiberKey = Object.keys(canvas).find((key) => key.startsWith('__reactFiber$'));
-    let fiber = canvas[fiberKey];
-    while (fiber && typeof fiber.memoizedProps?.onDateClick !== 'function') fiber = fiber.return;
-    if (!fiber) throw new Error('Canvas date callback was not found');
-    fiber.memoizedProps.onDateClick(id, date, left, top);
-  }, { issueId, currentDate, x, y });
+async function openIssueCalendar(page, issueId) {
+  const point = await page.waitForFunction((id) => {
+    const draws = window.__rkCalendarDraws || [];
+    const idLabel = draws.find((entry) => entry.value === `#${id}`);
+    if (!idLabel) return null;
+    const icon = draws.filter((entry) => entry.value === 'calendar_today'
+      && entry.y > idLabel.y && entry.y - idLabel.y < 80
+      && entry.x >= idLabel.x && entry.x - idLabel.x < 180)
+      .sort((a, b) => a.y - b.y || a.x - b.x)[0];
+    return icon ? { x: icon.x + 5, y: icon.y + 6 } : null;
+  }, issueId);
+  const { x, y } = await point.jsonValue();
+  await page.mouse.click(x, y);
   await expect(page.locator('.rk-minimax-datepicker')).toBeVisible();
 }
 
-test('calendar stays in the viewport at four corners in English and Japanese', async ({ page, baseURL }) => {
+test('calendar placement stays in the viewport at four corners in English and Japanese', async ({ page, baseURL }) => {
   const root = baseURL || 'http://127.0.0.1:3002';
   await page.setViewportSize({ width: 1280, height: 800 });
   await openBoard(page, root);
@@ -33,9 +60,21 @@ test('calendar stays in the viewport at four corners in English and Japanese', a
 
   for (const language of ['en', 'ja']) {
     await page.evaluate((lang) => { document.documentElement.lang = lang; }, language);
-    for (const [x, y] of [[2, 2], [1278, 2], [2, 798], [1278, 798]]) {
-      await openAt(page, issue.id, issue.due_date, x, y);
+    for (const [x, y] of [[8, 8], [1272, 8], [8, 792], [1272, 792]]) {
+      await openIssueCalendar(page, issue.id);
+      // Placement is tested separately from the user click: move the real
+      // portal anchor to each viewport edge without calling React internals.
+      await page.locator('.rk-date-popup-anchor').evaluate((anchor, point) => {
+        anchor.style.left = `${point.x}px`;
+        anchor.style.top = `${point.y}px`;
+        window.dispatchEvent(new Event('resize'));
+      }, { x, y });
       const calendar = page.locator('.rk-minimax-datepicker');
+      await expect.poll(async () => {
+        const box = await calendar.boundingBox();
+        return box && (x < 640 ? box.x < 100 : box.x > 800)
+          && (y < 400 ? box.y < 100 : box.y > 350);
+      }).toBe(true);
       const box = await calendar.boundingBox();
       expect(box.x).toBeGreaterThanOrEqual(0);
       expect(box.y).toBeGreaterThanOrEqual(0);
@@ -69,17 +108,14 @@ test('month navigation does not update Redmine and selecting a day updates once'
   await openBoard(page, root);
   const dataUrl = `${root}/projects/ecookbook/kanban/data`;
   const board = await (await page.request.get(dataUrl)).json();
-  const parent = board.entities.find((entity) => entity.subject === 'Kanban E2E parent issue');
-  const issue = board.entities.find((entity) => entity.subject === 'Kanban E2E grandchild');
-  expect(parent?.due_date).toBeNull();
+  const issue = board.entities.find((entity) => entity.subject === 'Kanban E2E calendar issue');
   expect(issue?.due_date).toBeNull();
   const updates = [];
   page.on('request', (request) => {
     if (request.method() === 'PATCH' && /\/kanban\/issues\/\d+/.test(request.url())) updates.push(request);
   });
 
-  // The seeded parent card's empty-date badge is in its first metadata row.
-  await page.locator('.rk-canvas').click({ position: { x: 216, y: 108 } });
+  await openIssueCalendar(page, issue.id);
   await expect(page.locator('.rk-minimax-datepicker')).toBeVisible();
   await page.getByRole('combobox', { name: board.labels.calendar_year }).selectOption('2040');
   await page.getByRole('combobox', { name: board.labels.calendar_month }).selectOption('1');
@@ -89,13 +125,13 @@ test('month navigation does not update Redmine and selecting a day updates once'
   await expect(page.locator('.rk-canvas')).toBeFocused();
   expect(updates).toHaveLength(0);
 
-  await openAt(page, parent.id, null, 216, 298);
-  await page.mouse.click(10, 650);
+  await openIssueCalendar(page, issue.id);
+  await page.locator('.rk-root').click({ position: { x: 1, y: 1 } });
   await expect(page.locator('.rk-minimax-datepicker')).toHaveCount(0);
   await expect(page.locator('.rk-canvas')).toBeFocused();
   expect(updates).toHaveLength(0);
 
-  await openAt(page, issue.id, null, 216, 298);
+  await openIssueCalendar(page, issue.id);
   await page.getByRole('combobox', { name: board.labels.calendar_year }).selectOption('2040');
   await page.getByRole('combobox', { name: board.labels.calendar_month }).selectOption('1');
   expect(updates).toHaveLength(0);
@@ -105,7 +141,7 @@ test('month navigation does not update Redmine and selecting a day updates once'
   expect(updates).toHaveLength(1);
   await expect.poll(async () => (await (await page.request.get(dataUrl)).json()).entities.find((entity) => entity.id === issue.id)?.due_date).toBe('2040-02-14');
 
-  await openAt(page, issue.id, '2040-02-14', 216, 298);
+  await openIssueCalendar(page, issue.id);
   const selected = page.locator('.rk-minimax-datepicker .react-datepicker__day--selected');
   const before = await selected.evaluate((node) => ({ background: getComputedStyle(node).backgroundColor, color: getComputedStyle(node).color }));
   await selected.hover();
