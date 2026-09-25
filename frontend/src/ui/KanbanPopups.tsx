@@ -1,4 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import { format as formatMonthName } from 'date-fns';
+import { enUS, ja } from 'date-fns/locale';
 
 export function PriorityPopup({
   x,
@@ -72,43 +76,39 @@ export function PriorityPopup({
   );
 }
 
+function formatPopupDate(date: Date): string {
+  return String(date.getFullYear()).padStart(4, '0') + '-'
+    + String(date.getMonth() + 1).padStart(2, '0') + '-'
+    + String(date.getDate()).padStart(2, '0');
+}
+
 export function DatePopup({
   x,
   y,
   value,
+  labels,
   onClose,
   onCommit,
 }: {
   x: number;
   y: number;
   value: string | null;
+  labels: Record<string, string>;
   onClose: () => void;
   onCommit: (val: string | null) => void;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  // State to hold the temporary selection during calendar navigation
-  const [currentValue, setCurrentValue] = useState<string>(value || '');
-
-  // An empty baseline means the first selected date is always an explicit choice.
-  const initialValueRef = useRef<string>(value || '');
-
-  // Prevent multiple commits
   const hasCommitted = useRef(false);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      inputRef.current?.focus();
-      if (inputRef.current && typeof inputRef.current.showPicker === 'function') {
-        try {
-          inputRef.current.showPicker();
-        } catch {
-          // ignore
-        }
-      }
-    }, 10);
-    return () => clearTimeout(timer);
-  }, []);
+  const [year, month, day] = value?.split('-').map(Number) ?? [];
+  const selected = year && month && day ? new Date(year, month - 1, day) : null;
+  const language = (document.documentElement.lang || navigator.language).toLowerCase();
+  const locale = language.startsWith('ja') ? ja : enUS;
+  const yearMonthOrder = language.startsWith('ja') ? 'year-month' : 'month-year';
+  const currentYear = new Date().getFullYear();
+  const selectableYears = Array.from({ length: 11 }, (_, index) => currentYear - 5 + index);
+  const monthOptions = Array.from({ length: 12 }, (_, index) => ({
+    value: index,
+    label: formatMonthName(new Date(2000, index, 1), 'LLLL', { locale }),
+  }));
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -118,78 +118,126 @@ export function DatePopup({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  const commitAndClose = (val: string | null) => {
+  const commitAndClose = (nextValue: string | null) => {
     if (hasCommitted.current) return;
     hasCommitted.current = true;
-    onCommit(val);
+    onCommit(nextValue);
     onClose();
   };
 
-  // Check if the change event corresponds to a real day selection rather than month/year navigation
-  const isRealDaySelection = (oldValStr: string, newValStr: string) => {
-    if (!oldValStr) return true;
-
-    const oldParts = oldValStr.split('-');
-    const newParts = newValStr.split('-');
-    if (oldParts.length !== 3 || newParts.length !== 3) return true;
-
-    const oldDay = parseInt(oldParts[2], 10);
-
-    const newYear = parseInt(newParts[0], 10);
-    const newMonth = parseInt(newParts[1], 10);
-    const newDay = parseInt(newParts[2], 10);
-
-    // Calculate maximum days in the new month
-    const maxDayInNewMonth = new Date(newYear, newMonth, 0).getDate();
-
-    // Check if the day was auto-clipped to the end of the new month (e.g. May 31 -> June 30)
-    const isClipped = oldDay > maxDayInNewMonth && newDay === maxDayInNewMonth;
-
-    if (isClipped) {
-      return false; // Month changed, day was just clipped. Not a real day click.
-    }
-
-    return oldValStr !== newValStr;
-  };
-
   return (
-    <input
-      ref={inputRef}
-      type="date"
-      value={currentValue}
+    <div
+      className="rk-date-popup-anchor"
       style={{
-        position: 'fixed',
-        left: x,
-        top: y,
-        opacity: 0,
-        width: '1px',
-        height: '1px',
-        border: 'none',
-        padding: 0,
-        margin: 0,
-        zIndex: 2000,
+        left: Math.max(8, Math.min(x, window.innerWidth - 8)),
+        top: Math.max(8, Math.min(y, window.innerHeight - 8)),
       }}
-      onBlur={() => {
-        // Commit and close after picker UI is dismissed
-        setTimeout(() => {
-          commitAndClose(currentValue || null);
-        }, 150);
-      }}
-      onChange={(event) => {
-        const newValue = event.target.value;
-        setCurrentValue(newValue);
+    >
+      <DatePicker
+        selected={selected}
+        onChange={(date: Date | null) => commitAndClose(date ? formatPopupDate(date) : null)}
+        onClickOutside={onClose}
+        startOpen
+        autoFocus
+        portalId="redmine-kanban-datepicker-portal"
+        popperClassName="rk-datepicker-popper"
+        calendarClassName={'rk-minimax-datepicker rk-minimax-datepicker--' + yearMonthOrder}
+        showPopperArrow={false}
+        locale={locale}
+        dateFormat="yyyy-MM-dd"
+        customInput={<button type="button" className="rk-date-popup-trigger" aria-label={labels.issue_due_date} />}
+        renderCustomHeader={({
+          date,
+          decreaseMonth,
+          increaseMonth,
+          changeYear,
+          changeMonth,
+          prevMonthButtonDisabled,
+          nextMonthButtonDisabled,
+        }) => {
+          const selectedYear = date.getFullYear();
+          const years = selectableYears.includes(selectedYear)
+            ? selectableYears
+            : [...selectableYears, selectedYear].sort((a, b) => a - b);
+          const yearSelect = (
+            <select
+              className="rk-minimax-datepicker-select rk-minimax-datepicker-select--year"
+              aria-label={labels.calendar_year}
+              value={selectedYear}
+              onChange={(event) => changeYear(Number(event.target.value))}
+              onClick={(event) => event.stopPropagation()}
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              {years.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          );
+          const monthSelect = (
+            <select
+              className="rk-minimax-datepicker-select rk-minimax-datepicker-select--month"
+              aria-label={labels.calendar_month}
+              value={date.getMonth()}
+              onChange={(event) => changeMonth(Number(event.target.value))}
+              onClick={(event) => event.stopPropagation()}
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              {monthOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          );
 
-        if (!newValue) {
-          commitAndClose(null);
-          return;
-        }
-
-        if (isRealDaySelection(initialValueRef.current, newValue)) {
-          // Commit and close immediately when a new day is explicitly selected
-          commitAndClose(newValue);
-        }
-      }}
-    />
+          return (
+            <div className="rk-minimax-datepicker-custom-header" onClick={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()}>
+              <button
+                type="button"
+                className="rk-minimax-datepicker-nav-btn"
+                aria-label={labels.calendar_previous_month}
+                disabled={prevMonthButtonDisabled}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  decreaseMonth();
+                }}
+              >‹</button>
+              <div className="rk-minimax-datepicker-header-dropdowns">
+                {yearMonthOrder === 'year-month' ? yearSelect : monthSelect}
+                {yearMonthOrder === 'year-month' ? monthSelect : yearSelect}
+              </div>
+              <button
+                type="button"
+                className="rk-minimax-datepicker-nav-btn"
+                aria-label={labels.calendar_next_month}
+                disabled={nextMonthButtonDisabled}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  increaseMonth();
+                }}
+              >›</button>
+            </div>
+          );
+        }}
+      >
+        <div className="rk-minimax-datepicker-footer" onClick={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()}>
+          <button
+            type="button"
+            className="rk-minimax-datepicker-btn"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              commitAndClose(formatPopupDate(new Date()));
+            }}
+          >{labels.calendar_today}</button>
+          <button
+            type="button"
+            className="rk-minimax-datepicker-btn rk-minimax-datepicker-btn--clear"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              commitAndClose(null);
+            }}
+          >{labels.calendar_clear}</button>
+        </div>
+      </DatePicker>
+    </div>
   );
 }
 

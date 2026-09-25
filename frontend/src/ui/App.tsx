@@ -516,6 +516,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
           x={dialogs.datePopup.x}
           y={dialogs.datePopup.y}
           value={dialogs.datePopup.currentDate}
+          labels={data.labels}
           onClose={() => dialogs.setDatePopup(null)}
           onCommit={async (newDate) => {
             const popup = dialogs.datePopup;

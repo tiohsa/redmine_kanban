@@ -19,8 +19,10 @@
     "@fontsource-variable/noto-sans-jp": "^5.2.10",
     "@fontsource/material-symbols-outlined": "^5.2.42",
     "@tanstack/react-query": "^5.62.7",
+    "date-fns": "4.1.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-datepicker": "9.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
