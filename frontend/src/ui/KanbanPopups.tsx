@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { format as formatMonthName } from 'date-fns';
@@ -89,6 +89,7 @@ export function DatePopup({
   labels,
   onClose,
   onCommit,
+  restoreFocusTo,
 }: {
   x: number;
   y: number;
@@ -96,33 +97,65 @@ export function DatePopup({
   labels: Record<string, string>;
   onClose: () => void;
   onCommit: (val: string | null) => void;
+  restoreFocusTo?: HTMLElement | null;
 }) {
   const hasCommitted = useRef(false);
+  const hasClosed = useRef(false);
+  const focusTarget = useRef(restoreFocusTo ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null));
   const [year, month, day] = value?.split('-').map(Number) ?? [];
   const selected = year && month && day ? new Date(year, month - 1, day) : null;
   const language = (document.documentElement.lang || navigator.language).toLowerCase();
   const locale = language.startsWith('ja') ? ja : enUS;
   const yearMonthOrder = language.startsWith('ja') ? 'year-month' : 'month-year';
   const currentYear = new Date().getFullYear();
-  const selectableYears = Array.from({ length: 11 }, (_, index) => currentYear - 5 + index);
+  const selectableYears = Array.from({ length: 41 }, (_, index) => currentYear - 20 + index);
+  if (year && !selectableYears.includes(year)) selectableYears.push(year);
+  selectableYears.sort((a, b) => a - b);
   const monthOptions = Array.from({ length: 12 }, (_, index) => ({
     value: index,
     label: formatMonthName(new Date(2000, index, 1), 'LLLL', { locale }),
   }));
 
+  const close = useCallback(() => {
+    if (hasClosed.current) return;
+    hasClosed.current = true;
+    onClose();
+    window.setTimeout(() => {
+      const target = focusTarget.current;
+      const active = document.activeElement;
+      const calendar = document.querySelector('.rk-minimax-datepicker');
+      if (target?.isConnected && target !== document.body
+        && (!active || active === document.body || active === document.documentElement || (calendar?.contains(active) ?? false))) {
+        target.focus({ preventScroll: true });
+      }
+    }, 0);
+  }, [onClose]);
+
+  useEffect(() => {
+    const focusCalendar = () => {
+      const calendar = document.querySelector<HTMLElement>('#redmine-kanban-datepicker-portal .rk-minimax-datepicker');
+      const focusable = calendar?.querySelector<HTMLElement>('.react-datepicker__day--selected:not(.react-datepicker__day--outside-month)')
+        ?? calendar?.querySelector<HTMLElement>('.react-datepicker__day--keyboard-selected:not(.react-datepicker__day--outside-month)')
+        ?? calendar?.querySelector<HTMLElement>('.rk-minimax-datepicker-select--year');
+      focusable?.focus({ preventScroll: true });
+    };
+    const timer = window.setTimeout(focusCalendar, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') close();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [close]);
 
   const commitAndClose = (nextValue: string | null) => {
     if (hasCommitted.current) return;
     hasCommitted.current = true;
-    onCommit(nextValue);
-    onClose();
+    if (nextValue !== value) onCommit(nextValue);
+    close();
   };
 
   return (
@@ -136,16 +169,16 @@ export function DatePopup({
       <DatePicker
         selected={selected}
         onChange={(date: Date | null) => commitAndClose(date ? formatPopupDate(date) : null)}
-        onClickOutside={onClose}
+        onClickOutside={close}
         startOpen
-        autoFocus
         portalId="redmine-kanban-datepicker-portal"
         popperClassName="rk-datepicker-popper"
+        popperPlacement={x > window.innerWidth / 2 ? 'bottom-end' : 'bottom-start'}
         calendarClassName={'rk-minimax-datepicker rk-minimax-datepicker--' + yearMonthOrder}
         showPopperArrow={false}
         locale={locale}
         dateFormat="yyyy-MM-dd"
-        customInput={<button type="button" className="rk-date-popup-trigger" aria-label={labels.issue_due_date} />}
+        customInput={<button type="button" className="rk-date-popup-trigger" aria-label={labels.issue_due_date} tabIndex={-1} />}
         renderCustomHeader={({
           date,
           decreaseMonth,

@@ -671,7 +671,10 @@
   background-color: var(--rk-datepicker-surface-muted) !important;
 }
 
-.rk-minimax-datepicker .react-datepicker__day--selected {
+.rk-minimax-datepicker .react-datepicker__day--selected,
+.rk-minimax-datepicker .react-datepicker__day--selected:hover,
+.rk-minimax-datepicker .react-datepicker__day--selected.react-datepicker__day--keyboard-selected,
+.rk-minimax-datepicker .react-datepicker__day--selected.react-datepicker__day--keyboard-selected:hover {
   background-color: var(--rk-brand-blue) !important;
   color: #ffffff !important;
 }
@@ -681,8 +684,20 @@
   color: var(--rk-text-primary) !important;
 }
 
-.rk-minimax-datepicker .react-datepicker__day--outside-month {
+.rk-minimax-datepicker .react-datepicker__day--outside-month:not(.react-datepicker__day--selected) {
   color: #ccc !important;
+}
+
+.rk-minimax-datepicker .react-datepicker__day:focus,
+.rk-minimax-datepicker-select:focus,
+.rk-minimax-datepicker-nav-btn:focus,
+.rk-minimax-datepicker-btn:focus {
+  outline: 2px solid var(--rk-brand-blue) !important;
+  outline-offset: 2px !important;
+}
+
+.rk-minimax-datepicker .react-datepicker__day--selected:focus {
+  outline-color: var(--rk-text-primary) !important;
 }
 
 .rk-minimax-datepicker .react-datepicker__navigation {
@@ -950,6 +965,11 @@
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.rk-canvas:focus-visible {
+  outline: 2px solid var(--rk-brand-blue);
+  outline-offset: -2px;
 }
 
 .rk-header-row {

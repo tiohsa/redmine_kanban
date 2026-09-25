@@ -517,6 +517,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
           y={dialogs.datePopup.y}
           value={dialogs.datePopup.currentDate}
           labels={data.labels}
+          restoreFocusTo={document.querySelector<HTMLElement>('.rk-canvas')}
           onClose={() => dialogs.setDatePopup(null)}
           onCommit={async (newDate) => {
             const popup = dialogs.datePopup;
