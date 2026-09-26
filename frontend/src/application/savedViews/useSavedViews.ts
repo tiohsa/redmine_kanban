@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { copyViewSettings, createSavedView, updateSavedView, viewSettingsEqual, type SavedView, type SavedViewSettings } from '../../model/view/savedViews';
-import { newSavedViewCandidateId, readSavedViews, writeSavedViews } from '../../infrastructure/storage/savedViewsRepository';
+import { newSavedViewCandidateId, readActiveSavedViewId, readSavedViews, writeActiveSavedViewId, writeSavedViews } from '../../infrastructure/storage/savedViewsRepository';
 
 export function useSavedViews(storageKey: string, current: SavedViewSettings, onApply: (settings: SavedViewSettings) => void) {
   const [stored, setStored] = useState(() => readSavedViews(storageKey));
   const [selectedId, setSelectedId] = useState('');
-  const [activeId, setActiveId] = useState('');
+  const [activeId, setActiveId] = useState(() => readActiveSavedViewId(storageKey, stored.views));
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -13,14 +13,23 @@ export function useSavedViews(storageKey: string, current: SavedViewSettings, on
   const active = stored.views.find((view) => view.id === activeId);
   const changed = Boolean(active && !viewSettingsEqual(current, active.settings));
 
-  const run = <T,>(update: (views: SavedView[]) => { views: SavedView[]; result: T }, after: (result: T) => void): boolean => {
+  const persistActive = (id: string): boolean => {
+    try {
+      writeActiveSavedViewId(storageKey, id);
+      return true;
+    } catch {
+      setError('saved_views_write_failed');
+      return false;
+    }
+  };
+
+  const run = <T,>(update: (views: SavedView[]) => { views: SavedView[]; result: T }, after: (result: T) => boolean): boolean => {
     setSaved(false);
     setError(null);
     try {
       const next = writeSavedViews(storageKey, update);
       setStored({ views: next.views, error: null });
-      setSaved(true);
-      after(next.result);
+      setSaved(after(next.result));
       return true;
     } catch (caught) {
       const code = caught instanceof Error && caught.message.startsWith('saved_views_') ? caught.message : 'saved_views_write_failed';
@@ -41,27 +50,32 @@ export function useSavedViews(storageKey: string, current: SavedViewSettings, on
     applyView(id: string): boolean {
       const view = stored.views.find((item) => item.id === id);
       if (!view) return false;
+      setSaved(false);
+      setError(null);
+      if (!persistActive(view.id)) return false;
       onApply(copyViewSettings(view.settings));
       setActiveId(view.id);
       setSelectedId(view.id);
       setName(view.name);
-      setSaved(false);
-      setError(null);
       return true;
     },
-    clearActiveView() {
-      setActiveId('');
+    clearActiveView(): boolean {
       setSaved(false);
       setError(null);
+      if (!persistActive('')) return false;
+      setActiveId('');
+      return true;
     },
     create() {
       return run((views) => {
         const next = createSavedView(views, name, current, newSavedViewCandidateId);
         return { views: next.views, result: next.view };
       }, (view) => {
-        setActiveId(view.id);
+        const activeSaved = persistActive(view.id);
+        if (activeSaved) setActiveId(view.id);
         setSelectedId(view.id);
         setName(view.name);
+        return activeSaved;
       });
     },
     update(operation: 'rename' | 'overwrite') {
@@ -70,13 +84,21 @@ export function useSavedViews(storageKey: string, current: SavedViewSettings, on
       return run((views) => {
         const next = updateSavedView(views, target.id, operation, name, current);
         return { views: next.views, result: next.name };
-      }, (latestName) => { if (selectedId === target.id) setName(latestName); });
+      }, (latestName) => {
+        if (selectedId === target.id) setName(latestName);
+        return true;
+      });
     },
     remove(id: string): boolean {
       return run((views) => ({ views: views.filter((view) => view.id !== id), result: id }), () => {
-        if (activeId === id) setActiveId('');
+        let activeSaved = true;
+        if (activeId === id) {
+          setActiveId('');
+          activeSaved = persistActive('');
+        }
         setSelectedId('');
         setName('');
+        return activeSaved;
       });
     },
     clearFeedback() { setSaved(false); setError(null); },

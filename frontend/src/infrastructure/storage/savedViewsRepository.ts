@@ -1,9 +1,25 @@
 import { parseSavedViews, type SavedView } from '../../model/view/savedViews';
 import { buildProjectScopeFromDataUrl, makeScopedStorageKey } from './scopedStorage';
+import { readStorageValue } from './preferencesRepository';
 
 export function savedViewsKey(dataUrl: string, userId: number): string {
   const url = new URL(dataUrl, window.location.origin);
   return makeScopedStorageKey('rk_saved_views', `${buildProjectScopeFromDataUrl(url.pathname)}:user:${userId}`);
+}
+
+export function activeSavedViewKey(savedViewsStorageKey: string): string {
+  return `${savedViewsStorageKey}:active`;
+}
+
+export function readActiveSavedViewId(key: string, views: SavedView[]): string {
+  const id = readStorageValue(activeSavedViewKey(key));
+  return id !== null && views.some((view) => view.id === id) ? id : '';
+}
+
+export function writeActiveSavedViewId(key: string, id: string): void {
+  const activeKey = activeSavedViewKey(key);
+  if (id) localStorage.setItem(activeKey, id);
+  else localStorage.removeItem(activeKey);
 }
 
 export function readSavedViews(key: string): { views: SavedView[]; error: string | null } {
