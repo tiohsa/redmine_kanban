@@ -447,3 +447,35 @@ describe('production differential normalized snapshot state machine', () => {
     expect(selectBoardData(production).issues[0].subject).toBe('native authoritative issue');
   });
 });
+
+describe('out-of-scope response freshness', () => {
+  it.each([
+    { scopeId: 1, currentProjectId: 1, staleProjectId: 2 },
+    { scopeId: 2, currentProjectId: 2, staleProjectId: 1 },
+  ])('keeps a newer issue in project $scopeId when an older project move arrives', ({ scopeId, currentProjectId, staleProjectId }) => {
+    const initial = board([issue(1, null, 3, 'Current', currentProjectId)], `project:${scopeId}`, [scopeId]);
+    const next = applyBoardResponse(createNormalizedBoardState(initial), {
+      kind: 'mutation',
+      issue_updates: [issue(1, null, 2, 'Stale move', staleProjectId)],
+    });
+    expect(selectBoardData(next).issues[0]?.subject).toBe('Current');
+  });
+
+  it('accepts a newer move out of scope', () => {
+    const initial = board([issue(1, null, 2, 'Current', 1)], 'project:1', [1]);
+    const next = applyBoardResponse(createNormalizedBoardState(initial), {
+      kind: 'mutation',
+      issue_updates: [issue(1, null, 3, 'Moved', 2)],
+    });
+    expect(selectBoardData(next).issues).toEqual([]);
+  });
+
+  it('does not evict a newer issue from an older created_issues response', () => {
+    const initial = board([issue(1, null, 3, 'Current', 1)], 'project:1', [1]);
+    const next = applyBoardResponse(createNormalizedBoardState(initial), {
+      kind: 'mutation',
+      created_issues: [issue(1, null, 2, 'Stale create', 2)],
+    });
+    expect(selectBoardData(next).issues[0]?.subject).toBe('Current');
+  });
+});

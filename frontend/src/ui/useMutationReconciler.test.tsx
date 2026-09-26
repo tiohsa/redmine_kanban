@@ -163,18 +163,18 @@ describe('mutation follow-up reconciliation', () => {
       invalidations: { issue_ids: [1, 2, 3, 4, 4], parent_ids: [2, 2], column_counts: true },
     }));
 
-    expect(getJsonMock).toHaveBeenCalledTimes(3);
+    expect(getJsonMock).toHaveBeenCalledTimes(2);
     const urls = getJsonMock.mock.calls.map(([url]) => new URL(url, 'http://localhost'));
-    expect(urls.map((url) => url.searchParams.getAll('ids[]'))).toEqual([['4'], ['2'], []]);
+    expect(urls.map((url) => url.searchParams.getAll('ids[]'))).toEqual([['2', '4'], []]);
     expect(urls.map((url) => url.pathname)).toEqual([
-      '/projects/demo/kanban/issues/entities', '/projects/demo/kanban/issues/entities', '/projects/demo/kanban/counts',
+      '/projects/demo/kanban/issues/entities', '/projects/demo/kanban/counts',
     ]);
     for (const url of urls) expect(url.searchParams.getAll('project_ids[]')).toEqual(['1', '7']);
-    for (const url of urls.slice(0, 2)) {
+    for (const url of urls.slice(0, 1)) {
       expect(url.searchParams.getAll('scope_status_ids[]')).toEqual(['1']);
       expect(url.searchParams.getAll('dependency_status_ids[]')).toEqual(['1', '2', '3']);
     }
-    expect(observedSubjects).toEqual(['Applied', 'Applied', 'Applied']);
+    expect(observedSubjects).toEqual(['Applied', 'Applied']);
     expect(findIssueInBoard(current(), 2)?.lock_version).toBe(3);
     expect(findIssueInBoard(current(), 4)?.lock_version).toBe(3);
     expect(current().columns[0]?.count).toBe(12);
@@ -312,5 +312,90 @@ describe('reconciliation freshness', () => {
     expect(current().columns[0]?.count).toBe(20);
     expect(authority.activeRequestCount).toBe(0);
     expect(getBoardFreshnessAuthority(queryClient, queryKey)).not.toBe(authority);
+  });
+});
+
+describe('entity reconciliation races', () => {
+  it('does not restore a deleted issue from a pending entity response', async () => {
+    const { result, queryClient, current } = renderReconciler();
+    const response = deferred<{ ok: boolean; entities: Issue[] }>();
+    getJsonMock.mockReturnValue(response.promise);
+    const pending = result.current.reconcileIssues([1]);
+    queryClient.setQueryData(queryKey, { ...current(), issues: [] });
+
+    await act(async () => {
+      response.resolve({ ok: true, entities: [issue(1, { subject: 'Before deletion', lock_version: 2 })] });
+      expect(await pending).toBe(false);
+    });
+    expect(current().issues).toEqual([]);
+  });
+
+  it('keeps the newer entity result when requests complete in reverse order', async () => {
+    const { result, current } = renderReconciler();
+    const older = deferred<{ ok: boolean; entities: Issue[] }>();
+    const newer = deferred<{ ok: boolean; entities: Issue[] }>();
+    getJsonMock.mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+    const first = result.current.reconcileIssues([1]);
+    const second = result.current.reconcileIssues([1]);
+
+    await act(async () => {
+      newer.resolve({ ok: true, entities: [issue(1, { subject: 'Newer', lock_version: 3 })] });
+      expect(await second).toBe(true);
+      older.resolve({ ok: true, entities: [issue(1, { subject: 'Older', lock_version: 2 })] });
+      expect(await first).toBe(false);
+    });
+    expect(current().issues[0]?.subject).toBe('Newer');
+  });
+
+  it('applies a fresh entity read', async () => {
+    const { result, current } = renderReconciler();
+    getJsonMock.mockResolvedValue({ ok: true, entities: [issue(1, { subject: 'Updated', lock_version: 2 })] });
+    await act(async () => { expect(await result.current.reconcileIssues([1])).toBe(true); });
+    expect(current().issues[0]?.subject).toBe('Updated');
+  });
+});
+
+describe('batched entity reconciliation', () => {
+  it('deduplicates parent and issue invalidations into one read', async () => {
+    const { result } = renderReconciler(board([issue(1), issue(2)]));
+    getJsonMock.mockResolvedValue({ ok: true, entities: [issue(2)] });
+    await act(async () => result.current.reconcileMutationResult({ invalidations: { issue_ids: [2, 2], parent_ids: [2, 2] } }));
+    expect(getJsonMock).toHaveBeenCalledTimes(1);
+    expect(new URL(getJsonMock.mock.calls[0]![0], 'http://localhost').searchParams.getAll('ids[]')).toEqual(['2']);
+  });
+
+  it('splits oversized requests and keeps successful batches when another fails', async () => {
+    const ids = Array.from({ length: 101 }, (_, index) => index + 1);
+    const { result, current } = renderReconciler(board(ids.map((id) => issue(id))));
+    getJsonMock.mockImplementation((url: string) => {
+      const batch = new URL(url, 'http://localhost').searchParams.getAll('ids[]').map(Number);
+      if (batch.includes(1)) return Promise.reject(new Error('offline'));
+      return Promise.resolve({ ok: true, entities: batch.map((id) => issue(id, { subject: 'Updated', lock_version: 2 })) });
+    });
+    await act(async () => { expect(await result.current.reconcileIssues(ids)).toBe(false); });
+    expect(getJsonMock).toHaveBeenCalledTimes(2);
+    expect(new URL(getJsonMock.mock.calls[0]![0], 'http://localhost').searchParams.getAll('ids[]')).toHaveLength(100);
+    expect(new URL(getJsonMock.mock.calls[1]![0], 'http://localhost').searchParams.getAll('ids[]')).toEqual(['101']);
+    expect(findIssueInBoard(current(), 101)?.subject).toBe('Updated');
+  });
+
+  it('rejects a stale batch after a newer issue update', async () => {
+    const ids = Array.from({ length: 101 }, (_, index) => index + 1);
+    const { result, queryClient, current } = renderReconciler(board(ids.map((id) => issue(id))));
+    const delayed = deferred<{ ok: boolean; entities: Issue[] }>();
+    getJsonMock.mockImplementation((url: string) => {
+      const batch = new URL(url, 'http://localhost').searchParams.getAll('ids[]').map(Number);
+      return batch.includes(101) ? delayed.promise : Promise.resolve({ ok: true, entities: batch.map((id) => issue(id)) });
+    });
+    const pending = result.current.reconcileIssues(ids);
+    queryClient.setQueryData(queryKey, {
+      ...current(),
+      issues: current().issues.map((candidate) => candidate.id === 101 ? issue(101, { subject: 'Newer', lock_version: 3 }) : candidate),
+    });
+    await act(async () => {
+      delayed.resolve({ ok: true, entities: [issue(101, { subject: 'Stale', lock_version: 2 })] });
+      expect(await pending).toBe(false);
+    });
+    expect(findIssueInBoard(current(), 101)?.subject).toBe('Newer');
   });
 });

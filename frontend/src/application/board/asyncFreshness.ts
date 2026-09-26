@@ -27,6 +27,7 @@ export class BoardFreshnessAuthority {
   private generation = 0;
   private nextRequestId = 0;
   private latestAggregateRequestId = 0;
+  private latestEntityRequestIds = new Map<number, number>();
   private currentScopeFingerprint: string | undefined;
   private activeRequests = new Set<number>();
 
@@ -34,6 +35,7 @@ export class BoardFreshnessAuthority {
     this.syncScope(data);
     const ids = [...new Set(issueIds)];
     const request = this.begin('entity', data, new Map(ids.map((id) => [id, snapshotIssue(data, id)])));
+    for (const id of ids) this.latestEntityRequestIds.set(id, request.id);
     return request;
   }
 
@@ -52,15 +54,21 @@ export class BoardFreshnessAuthority {
     return this.applicableNegativeIssueIds(request, current, negativeIssueIds) !== null;
   }
 
+  applicableEntityIds(request: FreshnessRequest, current: BoardData, issueIds: Iterable<number>): number[] | null {
+    if (!this.isCurrent(request, current) || request.kind !== 'entity') return null;
+    return [...new Set(issueIds)].filter((issueId) => (
+      request.entitySnapshots.has(issueId)
+      && this.latestEntityRequestIds.get(issueId) === request.id
+      && request.entitySnapshots.get(issueId) === snapshotIssue(current, issueId)
+    ));
+  }
+
   applicableNegativeIssueIds(
     request: FreshnessRequest,
     current: BoardData,
     negativeIssueIds: Iterable<number>,
   ): number[] | null {
-    if (!this.isCurrent(request, current) || request.kind !== 'entity') return null;
-    return [...new Set(negativeIssueIds)].filter((issueId) => (
-      request.entitySnapshots.get(issueId) === snapshotIssue(current, issueId)
-    ));
+    return this.applicableEntityIds(request, current, negativeIssueIds);
   }
 
   canApplyAggregateReconciliation(request: FreshnessRequest, current: BoardData): boolean {
@@ -71,11 +79,15 @@ export class BoardFreshnessAuthority {
 
   finish(request: FreshnessRequest): void {
     this.activeRequests.delete(request.id);
+    for (const issueId of request.entitySnapshots.keys()) {
+      if (this.latestEntityRequestIds.get(issueId) === request.id) this.latestEntityRequestIds.delete(issueId);
+    }
   }
 
   invalidate(): void {
     this.generation += 1;
     this.latestAggregateRequestId = 0;
+    this.latestEntityRequestIds.clear();
     this.activeRequests.clear();
   }
 

@@ -15,7 +15,7 @@ type DialogRuntimeContext = {
 };
 type IframeEditContext = DialogRuntimeContext & { url: string; issueId: number; issueTitle?: string; projectId?: number };
 type IframeCreateContext = DialogRuntimeContext & { url: string };
-type PriorityPopupState = { issueId: number; currentId: number; x: number; y: number };
+type PriorityPopupState = { issueId: number; currentId: number; x: number; y: number; restoreFocusTo?: HTMLElement | null };
 type DatePopupState = {
   issueId: number;
   currentDate: string | null;
@@ -25,7 +25,7 @@ type DatePopupState = {
   openingId: number;
   offscreen?: boolean;
 };
-type ProgressPopupState = { issueId: number; currentDoneRatio: number; x: number; y: number };
+type ProgressPopupState = { issueId: number; currentDoneRatio: number; x: number; y: number; restoreFocusTo?: HTMLElement | null };
 
 export function useKanbanDialogs(
   baseUrl: string,

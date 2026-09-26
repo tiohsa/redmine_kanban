@@ -4,6 +4,62 @@ import 'react-datepicker/dist/react-datepicker.css';
 import { format as formatMonthName } from 'date-fns';
 import { enUS, ja } from 'date-fns/locale';
 
+function useChoicePopup(onClose: () => void, restoreFocusTo?: HTMLElement | null) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const focusTarget = useRef(restoreFocusTo ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null));
+  const restoreFocus = useCallback(() => {
+    window.setTimeout(() => {
+      const target = focusTarget.current;
+      const active = document.activeElement;
+      if (target?.isConnected && target !== document.body
+        && (!active || active === document.body || active === document.documentElement)) {
+        target.focus({ preventScroll: true });
+      }
+    }, 0);
+  }, []);
+  const close = useCallback(() => {
+    onClose();
+    restoreFocus();
+  }, [onClose, restoreFocus]);
+
+  useEffect(() => {
+    const selected = menuRef.current?.querySelector<HTMLElement>('[aria-pressed="true"]');
+    (selected ?? menuRef.current?.querySelector<HTMLElement>('button'))?.focus({ preventScroll: true });
+  }, []);
+
+  useEffect(() => {
+    const handleClick = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) close();
+    };
+    const handleScroll = () => close();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close();
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('wheel', handleScroll, true);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('wheel', handleScroll, true);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [close]);
+
+  return { menuRef, restoreFocus };
+}
+
+function activateChoice(event: React.KeyboardEvent<HTMLButtonElement>, choose: () => void) {
+  if ((event.key === 'Enter' || event.key === ' ') && !event.repeat) {
+    event.preventDefault();
+    choose();
+  }
+}
+
 export function PriorityPopup({
   x,
   y,
@@ -11,6 +67,8 @@ export function PriorityPopup({
   options,
   onClose,
   onChange,
+  restoreFocusTo,
+  ariaLabel = 'Priority',
 }: {
   x: number;
   y: number;
@@ -18,34 +76,20 @@ export function PriorityPopup({
   options: { id: string; name: string }[];
   onClose: () => void;
   onChange: (val: string) => void;
+  restoreFocusTo?: HTMLElement | null;
+  ariaLabel?: string;
 }) {
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClick = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        onClose();
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [onClose]);
-
-  useEffect(() => {
-    const handleScroll = () => {
-      onClose();
-    };
-    window.addEventListener('scroll', handleScroll, true);
-    window.addEventListener('wheel', handleScroll, true);
-    return () => {
-      window.removeEventListener('scroll', handleScroll, true);
-      window.removeEventListener('wheel', handleScroll, true);
-    };
-  }, [onClose]);
+  const { menuRef, restoreFocus } = useChoicePopup(onClose, restoreFocusTo);
+  const choose = (id: string) => {
+    onChange(id);
+    restoreFocus();
+  };
 
   return (
     <div
       ref={menuRef}
+      role="group"
+      aria-label={ariaLabel}
       style={{
         position: 'fixed',
         left: x,
@@ -61,15 +105,19 @@ export function PriorityPopup({
     >
       {options.map((option) => {
         const checked = option.id === value;
+        const select = () => choose(option.id);
         return (
-          <div
+          <button
+            type="button"
             key={option.id}
             className={`rk-dropdown-item ${checked ? 'selected' : ''}`}
-            onClick={() => onChange(option.id)}
+            aria-pressed={checked}
+            onClick={select}
+            onKeyDown={(event) => activateChoice(event, select)}
           >
-            <div className="rk-dropdown-checkbox" />
+            <span className="rk-dropdown-checkbox" aria-hidden="true" />
             <span>{option.name}</span>
-          </div>
+          </button>
         );
       })}
     </div>
@@ -290,51 +338,35 @@ export function ProgressPopup({
   value,
   onClose,
   onChange,
+  restoreFocusTo,
+  ariaLabel = 'Progress',
 }: {
   x: number;
   y: number;
   value: number;
   onClose: () => void;
   onChange: (val: number) => void;
+  restoreFocusTo?: HTMLElement | null;
+  ariaLabel?: string;
 }) {
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClick = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        onClose();
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [onClose]);
-
-  useEffect(() => {
-    const handleScroll = () => {
-      onClose();
-    };
-    window.addEventListener('scroll', handleScroll, true);
-    window.addEventListener('wheel', handleScroll, true);
-    return () => {
-      window.removeEventListener('scroll', handleScroll, true);
-      window.removeEventListener('wheel', handleScroll, true);
-    };
-  }, [onClose]);
-
-  const options = Array.from({ length: 11 }, (_, i) => i * 10); // 0, 10, ..., 100
-
-  // Calculate show direction based on viewport to avoid screen overflow using pure CSS transform
+  const { menuRef, restoreFocus } = useChoicePopup(onClose, restoreFocusTo);
+  const options = Array.from({ length: 11 }, (_, i) => i * 10);
   const showUpward = y > window.innerHeight / 2;
   const showLeftward = x > window.innerWidth - 120;
-
   const transformStyle = [
     showLeftward ? 'translateX(-100%)' : 'translateX(0)',
     showUpward ? 'translateY(-100%)' : 'translateY(0)',
   ].join(' ');
+  const choose = (next: number) => {
+    onChange(next);
+    restoreFocus();
+  };
 
   return (
     <div
       ref={menuRef}
+      role="group"
+      aria-label={ariaLabel}
       style={{
         position: 'fixed',
         left: x,
@@ -351,15 +383,19 @@ export function ProgressPopup({
     >
       {options.map((option) => {
         const checked = option === value;
+        const select = () => choose(option);
         return (
-          <div
+          <button
+            type="button"
             key={option}
             className={`rk-dropdown-item ${checked ? 'selected' : ''}`}
-            onClick={() => onChange(option)}
+            aria-pressed={checked}
+            onClick={select}
+            onKeyDown={(event) => activateChoice(event, select)}
           >
-            <div className="rk-dropdown-checkbox" />
+            <span className="rk-dropdown-checkbox" aria-hidden="true" />
             <span>{option}%</span>
-          </div>
+          </button>
         );
       })}
     </div>

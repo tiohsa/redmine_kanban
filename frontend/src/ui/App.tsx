@@ -314,14 +314,14 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
               const issue = findIssueForAction(data, issueId);
               if (issue) workTimer.open(issue);
             }}
-            onPriorityClick={(issueId, currentPriorityId, x, y) => {
-              dialogs.setPriorityPopup({ issueId, currentId: currentPriorityId, x, y });
+            onPriorityClick={(issueId, currentPriorityId, x, y, source) => {
+              dialogs.setPriorityPopup({ issueId, currentId: currentPriorityId, x, y, restoreFocusTo: source ?? document.querySelector<HTMLElement>('.rk-canvas') });
             }}
             onDateClick={(issueId, currentDate, x, y, boardPoint) => {
               dialogs.setDatePopup({ issueId, currentDate, x, y, boardPoint, openingId: ++datePopupOpeningId.current });
             }}
-            onProgressClick={(issueId, currentDoneRatio, x, y) => {
-              dialogs.setProgressPopup({ issueId, currentDoneRatio, x, y });
+            onProgressClick={(issueId, currentDoneRatio, x, y, source) => {
+              dialogs.setProgressPopup({ issueId, currentDoneRatio, x, y, restoreFocusTo: source ?? document.querySelector<HTMLElement>('.rk-canvas') });
             }}
             onSubtaskToggle={actions.toggleSubtask}
             hiddenStatusIds={hiddenStatusIds}
@@ -499,6 +499,8 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
           y={dialogs.priorityPopup.y}
           value={String(dialogs.priorityPopup.currentId)}
           options={(data.lists.priorities ?? []).map((priority) => ({ id: String(priority.id), name: priority.name }))}
+          restoreFocusTo={dialogs.priorityPopup.restoreFocusTo}
+          ariaLabel={data.labels.issue_priority}
           onClose={() => dialogs.setPriorityPopup(null)}
           onChange={async (newId) => {
             const nextPriorityId = Number(newId);
@@ -563,6 +565,8 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
           x={dialogs.progressPopup.x}
           y={dialogs.progressPopup.y}
           value={dialogs.progressPopup.currentDoneRatio}
+          restoreFocusTo={dialogs.progressPopup.restoreFocusTo}
+          ariaLabel={data.labels.issue_done_ratio}
           onClose={() => dialogs.setProgressPopup(null)}
           onChange={async (newDoneRatio) => {
             const popup = dialogs.progressPopup;

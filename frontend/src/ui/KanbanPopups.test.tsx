@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DatePopup } from './KanbanPopups';
+import { DatePopup, PriorityPopup, ProgressPopup } from './KanbanPopups';
 
 const labels = {
   issue_due_date: 'Due date',
@@ -267,5 +267,56 @@ describe('DatePopup', () => {
     fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
     await new Promise((resolve) => window.setTimeout(resolve, 0));
     expect(document.activeElement).not.toBe(source);
+  });
+});
+
+describe.each(['priority', 'progress'] as const)('%s popup keyboard access', (kind) => {
+  function Harness({ onChange }: { onChange: (value: string | number) => void }) {
+    const [open, setOpen] = useState(false);
+    const [source, setSource] = useState<HTMLButtonElement | null>(null);
+    return <>
+      <button ref={setSource} type="button" onClick={() => setOpen(true)}>Open choices</button>
+      {open && (kind === 'priority'
+        ? <PriorityPopup x={0} y={0} value="1" options={[{ id: '1', name: 'Low' }, { id: '2', name: 'High' }]}
+            restoreFocusTo={source} onClose={() => setOpen(false)} onChange={(value) => { onChange(value); setOpen(false); }} />
+        : <ProgressPopup x={0} y={0} value={10} restoreFocusTo={source}
+            onClose={() => setOpen(false)} onChange={(value) => { onChange(value); setOpen(false); }} />)}
+    </>;
+  }
+
+  it('exposes selection and accepts Enter and Space', async () => {
+    const onChange = vi.fn();
+    render(<Harness onChange={onChange} />);
+    const source = screen.getByRole('button', { name: 'Open choices' });
+    fireEvent.click(source);
+    const selected = screen.getByRole('button', { name: kind === 'priority' ? 'Low' : '10%' });
+    const other = screen.getByRole('button', { name: kind === 'priority' ? 'High' : '20%' });
+    expect(selected.getAttribute('aria-pressed')).toBe('true');
+    expect(other.getAttribute('aria-pressed')).toBe('false');
+    expect(document.activeElement).toBe(selected);
+    other.focus();
+    fireEvent.keyDown(other, { key: 'Enter' });
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(kind === 'priority' ? '2' : 20);
+    await waitFor(() => expect(document.activeElement).toBe(source));
+
+    fireEvent.click(source);
+    const next = screen.getByRole('button', { name: kind === 'priority' ? 'High' : '20%' });
+    next.focus();
+    fireEvent.keyDown(next, { key: ' ' });
+    expect(onChange).toHaveBeenCalledTimes(2);
+  });
+
+  it('closes on Escape, restores focus and retains mouse selection', async () => {
+    const onChange = vi.fn();
+    render(<Harness onChange={onChange} />);
+    const source = screen.getByRole('button', { name: 'Open choices' });
+    fireEvent.click(source);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(document.activeElement).toBe(source));
+    expect(onChange).not.toHaveBeenCalled();
+
+    fireEvent.click(source);
+    fireEvent.click(screen.getByRole('button', { name: kind === 'priority' ? 'High' : '20%' }));
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(kind === 'priority' ? '2' : 20);
   });
 });

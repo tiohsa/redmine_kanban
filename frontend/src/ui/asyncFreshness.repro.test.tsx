@@ -462,3 +462,74 @@ describe('async freshness authority', () => {
     expect(queryClient.getQueryData<BoardData>(queryKey)?.issues.map((candidate) => candidate.id)).toEqual([2]);
   });
 });
+
+describe('versionless negative mutation effects', () => {
+  type Response = { issue: Issue; issue_updates?: Issue[]; deleted_issue_ids?: number[]; evicted_issue_ids?: number[] };
+  const applyServer = (current: BoardData, response: Response, payload: { issueId: number }, options: { applyTarget: boolean; excludeNegativeIssueIds?: number[] } = { applyTarget: true }) =>
+    options.applyTarget
+      ? applyMutationResponse(current, response, { excludeNegativeIssueIds: options.excludeNegativeIssueIds })
+      : applyMutationResponse(current, response, { excludeIssueId: payload.issueId });
+
+  it.each(['deleted_issue_ids', 'evicted_issue_ids'] as const)('keeps an independently updated issue against stale %s', async (field) => {
+    const queryKey = ['kanban', 'board', 'negative-effect', field] as const;
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    queryClient.setQueryData(queryKey, board([issue(1), issue(2)]));
+    let resolveMutation!: (value: Response) => void;
+    const pending = new Promise<Response>((resolve) => { resolveMutation = resolve; });
+    const { result } = renderHook(() => useIssueMutation({
+      queryKey,
+      mutationFn: () => pending,
+      applyOptimistic: (data: BoardData) => applyLocalIssuePatch(data, 1, { subject: 'Optimistic' }),
+      applyServer,
+    }), { wrapper: createWrapper(queryClient) });
+    act(() => result.current.mutate({ issueId: 1 }));
+    await waitFor(() => expect(result.current.isPending).toBe(true));
+    queryClient.setQueryData<BoardData>(queryKey, (current) => applyMutationResponse(current!, {
+      issue_updates: [issue(2, { subject: 'Newer sibling', lock_version: 3 })],
+    }));
+    await act(async () => {
+      resolveMutation({ issue: issue(1, { subject: 'Server target', lock_version: 2 }), [field]: [2] });
+      await Promise.resolve();
+    });
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues.find((candidate) => candidate.id === 2)?.subject).toBe('Newer sibling');
+  });
+
+  it.each([
+    { scopeId: 1, otherProjectId: 2 },
+    { scopeId: 2, otherProjectId: 1 },
+  ])('does not restore an evicted issue from an older mutation after the newer result settles in scope $scopeId', async ({ scopeId, otherProjectId }) => {
+    const queryKey = ['kanban', 'board', 'negative-reverse', scopeId] as const;
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const initial = board([issue(1, { project: { id: scopeId, name: 'Current' } })]);
+    initial.scope_fingerprint = `project:${scopeId}`;
+    initial.meta.scope_fingerprint = `project:${scopeId}`;
+    initial.meta.project_ids = [scopeId];
+    queryClient.setQueryData(queryKey, initial);
+    let resolveOld!: (value: Response) => void;
+    let resolveNew!: (value: Response) => void;
+    const old = new Promise<Response>((resolve) => { resolveOld = resolve; });
+    const fresh = new Promise<Response>((resolve) => { resolveNew = resolve; });
+    let calls = 0;
+    const { result } = renderHook(() => useIssueMutation({
+      queryKey,
+      mutationFn: () => ++calls === 1 ? old : fresh,
+      applyOptimistic: (data: BoardData, payload: { issueId: number; subject: string }) => applyLocalIssuePatch(data, payload.issueId, { subject: payload.subject }),
+      applyServer,
+    }), { wrapper: createWrapper(queryClient) });
+    act(() => {
+      result.current.mutate({ issueId: 1, subject: 'First optimistic' });
+      result.current.mutate({ issueId: 1, subject: 'Second optimistic' });
+    });
+    await waitFor(() => expect(calls).toBe(2));
+    await act(async () => {
+      resolveNew({ issue: issue(1, { project: { id: otherProjectId, name: 'Other' }, lock_version: 3 }), evicted_issue_ids: [1] });
+      await Promise.resolve();
+    });
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues).toEqual([]);
+    await act(async () => {
+      resolveOld({ issue: issue(1, { project: { id: scopeId, name: 'Current' }, subject: 'Stale return', lock_version: 2 }) });
+      await Promise.resolve();
+    });
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues).toEqual([]);
+  });
+});
