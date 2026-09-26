@@ -33,52 +33,20 @@ module RedmineKanban
     def entities
       ids = normalize_integer_array_param(params[:ids])
       context = mutation_board_context
-      member_ids = RedmineKanban::BoardMembershipResolver.new(board_context: context).member_ids(ids)
-      issues = Issue.visible(User.current)
-                     .where(id: member_ids.to_a, project_id: context.project_ids)
-                     .includes(:assigned_to, :priority, :status, :project)
-                     .to_a
-      presenter = IssueEntityPresenter.new(user: User.current, board_project: @project)
-      render json: {
-        ok: true,
-        contract_version: 3,
-        scope_fingerprint: context.scope_fingerprint,
-        scope_status_ids: context.scope_status_ids,
-        dependency_status_ids: context.dependency_status_ids,
-        entities: presenter.issues_to_h(issues),
-        missing_issue_ids: ids - issues.map(&:id)
-      }
+      render json: BoardEntityReader.new(board_context: context, user: User.current).read(ids: ids)
     end
 
     def counts
       context = mutation_board_context
-      statuses = IssueStatus.sorted.to_a
-      counts = Issue.visible(User.current)
-                    .where(project_id: context.project_ids, status_id: statuses.map(&:id))
-                    .group(:status_id)
-                    .count
-      render json: {
-        ok: true,
-        contract_version: 3,
-        scope_fingerprint: context.scope_fingerprint,
-        columns: statuses.map { |status| { id: status.id, name: status.name, is_closed: status.is_closed, count: counts[status.id].to_i } }
-      }
+      render json: BoardCountReader.new(board_context: context, user: User.current).read
     end
 
     def trackers
-      target_project_id = params[:target_project_id].to_i
-      target_project = target_project_id.positive? ? Project.visible(User.current).find_by(id: target_project_id) : @project
-      unless target_project && permission_policy.can_view_board?(@project)
+      metadata = ProjectTrackerReader.new(board_project: @project, user: User.current).read(target_project_id: params[:target_project_id])
+      unless metadata && permission_policy.can_view_board?(@project)
         render json: { ok: false, message: I18n.t('redmine_kanban.error_permission_denied') }, status: :forbidden
         return
       end
-
-      trackers = target_project.trackers.sorted.to_a
-      available_project_ids_by_tracker = trackers.to_h { |tracker| [tracker.id, [target_project.id]] }
-      metadata = TrackerMetadataBuilder.new(
-        trackers: trackers,
-        available_project_ids_by_tracker: available_project_ids_by_tracker,
-      ).build
 
       render json: { ok: true, trackers: metadata }
     end

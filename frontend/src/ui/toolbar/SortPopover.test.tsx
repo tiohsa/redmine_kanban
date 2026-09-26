@@ -24,6 +24,15 @@ function openPopover(sortConfig: SortConfig = [{ field: 'updated', direction: 'd
 }
 
 describe('SortPopover', () => {
+  it('shows the toolbar selection dot while a sort criterion is selected', () => {
+    const onChangeSort = vi.fn();
+    const { rerender } = render(<SortPopover sortConfig={[{ field: 'updated', direction: 'desc' }]} onChangeSort={onChangeSort} labels={labels} />);
+    const trigger = screen.getByRole('button', { name: labels.sort });
+    expect(trigger.querySelector('.rk-indicator-dot')).toBeTruthy();
+    rerender(<SortPopover sortConfig={[]} onChangeSort={onChangeSort} labels={labels} />);
+    expect(trigger.querySelector('.rk-indicator-dot')).toBeNull();
+  });
+
   it('adds a criterion and excludes fields already in use', () => {
     const onChangeSort = openPopover();
 

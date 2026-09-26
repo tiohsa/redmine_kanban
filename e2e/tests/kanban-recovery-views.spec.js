@@ -181,8 +181,9 @@ test('toolbar keyboard activation, focus return, outside click and saved view op
   await display.click();
   await settings.getByRole('combobox', { name: l.lane_type }).selectOption('none');
   await page.keyboard.press('Escape');
-  const activeView = toolbar.getByRole('button', { name: `${l.saved_views}: My view (${l.saved_views_changed})`, exact: true });
+  const activeView = toolbar.getByRole('button', { name: `${l.saved_views} (${l.saved_views_changed})`, exact: true });
   await expect(activeView).toBeVisible(); await activeView.click();
+  await expect(views.getByRole('button', { name: `My view (${l.saved_views_changed})`, exact: true })).toHaveAttribute('aria-pressed', 'true');
   const storedBeforeClear = await page.evaluate(() => Object.fromEntries(Object.entries(localStorage).filter(([key]) => key.startsWith('rk_saved_views:'))));
   await views.getByRole('button', { name: l.saved_views_manage }).focus();
   await page.keyboard.press('Tab');
@@ -198,7 +199,9 @@ test('toolbar keyboard activation, focus return, outside click and saved view op
   await expect(row).toHaveAttribute('aria-pressed', 'false');
   await expect(views.getByRole('button', { name: l.saved_views_overwrite })).toHaveCount(0);
   await expect(views.getByRole('button', { name: l.saved_views_clear })).toHaveCount(0);
-  expect(await page.evaluate(() => Object.fromEntries(Object.entries(localStorage).filter(([key]) => key.startsWith('rk_saved_views:'))))).toEqual(storedBeforeClear);
+  expect(await page.evaluate(() => Object.fromEntries(Object.entries(localStorage).filter(([key]) => key.startsWith('rk_saved_views:'))))).toEqual(
+    Object.fromEntries(Object.entries(storedBeforeClear).filter(([key]) => !key.endsWith(':active'))),
+  );
   await row.click();
   await expect(views).toBeVisible();
   await expect(row).toHaveAttribute('aria-pressed', 'true');
@@ -219,11 +222,12 @@ test('toolbar keyboard activation, focus return, outside click and saved view op
   await expect(views.getByRole('textbox', { name: l.saved_views_name })).toBeFocused();
   await views.getByRole('textbox', { name: l.saved_views_name }).fill('Renamed');
   await views.getByRole('button', { name: l.saved_views_rename_submit, exact: true }).click();
-  await expect(toolbar.getByRole('button', { name: `${l.saved_views}: Renamed`, exact: true })).toBeVisible();
+  await expect(views.getByText('Renamed', { exact: true })).toBeVisible();
+  await expect(viewTrigger).toHaveAccessibleName(l.saved_views);
   await views.getByRole('button', { name: l.saved_views_actions.replace('%{name}', 'Renamed') }).click();
   await views.getByRole('button', { name: l.delete, exact: true }).click();
   await views.getByRole('button', { name: l.cancel, exact: true }).click();
-  await expect(toolbar.getByRole('button', { name: `${l.saved_views}: Renamed`, exact: true })).toBeVisible();
+  await expect(views.getByText('Renamed', { exact: true })).toBeVisible();
   await views.getByRole('button', { name: l.saved_views_actions.replace('%{name}', 'Renamed') }).click();
   await views.getByRole('button', { name: l.delete, exact: true }).click();
   await views.getByRole('button', { name: l.saved_views_confirm_delete }).click();

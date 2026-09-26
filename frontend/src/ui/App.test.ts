@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App, canCreateInBoard, normalizeAssigneeIds, normalizeProjectIds, normalizeTrackerIds, resolveDefaultCreateProjectId } from './App';
-import { getJson } from './http';
+import { getJson } from '../infrastructure/api/http';
 import { parseBoardSnapshotV3 } from '../infrastructure/api/boardSnapshot';
 import { makeBoardSnapshot } from '../test/fixtures/boardSnapshot';
 
@@ -57,7 +57,7 @@ vi.stubGlobal('ResizeObserver', class {
   disconnect() {}
 });
 
-vi.mock('./http', () => ({
+vi.mock('../infrastructure/api/http', () => ({
   getJson: vi.fn((url: string) => Promise.resolve(url.endsWith('/metadata') ? metadata : {
     ok: true, contract_version: 3, scope_fingerprint: 'sha256:test',
     meta: { project_id: 1, project_ids: [4], scope_status_ids: [2], scope_fingerprint: 'sha256:test', current_user_id: 7, can_move: false, can_create: false, can_delete: false, lane_type: 'none', aging_warn_days: 7, aging_danger_days: 14, aging_exclude_closed: false, complete: true, entity_count: 0 },

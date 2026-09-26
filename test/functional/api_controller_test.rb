@@ -267,6 +267,15 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert item.key?('default_status_id')
   end
 
+  def test_trackers_endpoint_does_not_disclose_an_invisible_target_project
+    hidden = Project.create!(name: 'Private tracker project', identifier: 'private-tracker-project', is_public: false)
+
+    get :trackers, params: { project_id: @project.identifier, target_project_id: hidden.id }
+
+    assert_response :forbidden
+    refute JSON.parse(@response.body).key?('trackers')
+  end
+
   def test_scope_over_limit_returns_no_partial_entities
     build_issue(subject: 'Too large one')
     build_issue(subject: 'Too large two')

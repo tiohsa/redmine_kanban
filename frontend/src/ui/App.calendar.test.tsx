@@ -7,21 +7,29 @@ import { makeBoardSnapshot } from '../test/fixtures/boardSnapshot';
 import { App } from './App';
 import type { CanvasBoard, CanvasBoardHandle } from './board/CanvasBoard';
 
-const { mutateAsync } = vi.hoisted(() => ({ mutateAsync: vi.fn() }));
+const { mutateAsync, anchorY } = vi.hoisted(() => ({ mutateAsync: vi.fn(), anchorY: { value: 100 } }));
 
 vi.mock('./board/CanvasBoard', async () => {
-  const { forwardRef } = await import('react');
+  const { forwardRef, useImperativeHandle } = await import('react');
   return {
-    CanvasBoard: forwardRef<CanvasBoardHandle, ComponentProps<typeof CanvasBoard>>((props, _ref) => (
+    CanvasBoard: forwardRef<CanvasBoardHandle, ComponentProps<typeof CanvasBoard>>((props, ref) => {
+      useImperativeHandle(ref, () => ({
+        scrollToTop: () => {},
+        dateAnchorPosition: () => anchorY.value < 0 ? null : { x: 100, y: anchorY.value },
+      }));
+      return (
       <div>
         <canvas className="rk-canvas" tabIndex={-1} />
         {props.data.issues.map((issue) => (
-          <button key={issue.id} type="button" onClick={() => props.onDateClick?.(issue.id, issue.due_date ?? null, 100, 100)}>
+          <button key={issue.id} type="button" onClick={() => props.onDateClick?.(issue.id, issue.due_date ?? null, 100, 100, { x: 100, y: 100 })}>
             Open calendar {issue.id}
           </button>
         ))}
+        <button type="button" onClick={() => { anchorY.value = 60; props.onViewportChange?.(); }}>Scroll board</button>
+        <button type="button" onClick={() => { anchorY.value = -10; props.onViewportChange?.(); }}>Scroll away</button>
       </div>
-    )),
+      );
+    }),
   };
 });
 
@@ -35,7 +43,7 @@ vi.mock('./useKanbanActions', () => ({
   }),
 }));
 
-vi.mock('./http', () => ({
+vi.mock('../infrastructure/api/http', () => ({
   getJson: vi.fn((url: string) => Promise.resolve(url.endsWith('/metadata')
     ? { ok: true, board: { id: 4 }, projects: [], viewable_projects: [], statuses: [], server_entity_limit: 5000 }
     : boardSnapshot())),
@@ -86,6 +94,7 @@ describe('App calendar mutations', () => {
     vi.setSystemTime(new Date(2026, 8, 25, 12));
     client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     mutateAsync.mockReset();
+    anchorY.value = 100;
   });
 
   afterEach(() => {
@@ -143,6 +152,29 @@ describe('App calendar mutations', () => {
     clickDay(14);
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+  });
+
+  it('moves the open calendar on board and page scroll without resetting its month', async () => {
+    await mount();
+    await open(9);
+    fireEvent.click(screen.getByRole('button', { name: 'Next month' }));
+    expect(screen.getByRole('combobox', { name: 'Month' })).toHaveProperty('value', '9');
+    fireEvent.click(screen.getByRole('button', { name: 'Scroll board' }));
+    expect(document.querySelector<HTMLElement>('.rk-date-popup-anchor')?.style.top).toBe('60px');
+    expect(screen.getByRole('combobox', { name: 'Month' })).toHaveProperty('value', '9');
+    anchorY.value = 40;
+    fireEvent.scroll(window);
+    expect(document.querySelector<HTMLElement>('.rk-date-popup-anchor')?.style.top).toBe('40px');
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('closes without saving when the date anchor scrolls out of view', async () => {
+    await mount();
+    await open(9);
+    fireEvent.click(screen.getByRole('button', { name: 'Scroll away' }));
+    await waitFor(() => expect(document.querySelector('.rk-minimax-datepicker')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(document.querySelector('.rk-canvas')));
+    expect(mutateAsync).not.toHaveBeenCalled();
   });
 
   it('does not save when the selected date is unchanged', async () => {

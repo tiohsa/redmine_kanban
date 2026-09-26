@@ -13,8 +13,8 @@ import { getBoardFreshnessAuthority, releaseBoardFreshnessAuthority } from './as
 const getJsonMock = vi.hoisted(() => vi.fn());
 const postJsonMock = vi.hoisted(() => vi.fn());
 
-vi.mock('./http', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./http')>()),
+vi.mock('../infrastructure/api/http', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../infrastructure/api/http')>()),
   getJson: getJsonMock,
   postJson: postJsonMock,
 }));

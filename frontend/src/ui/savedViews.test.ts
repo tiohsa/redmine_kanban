@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { copyViewSettings, parseSavedViews, validateViewName, viewSettingsEqual, type SavedViewSettings } from '../model/view/savedViews';
-import { savedViewsKey } from '../infrastructure/storage/savedViewsRepository';
+import { activeSavedViewKey, savedViewsKey } from '../infrastructure/storage/savedViewsRepository';
 import { validateViewReferences } from '../model/view/validation';
 export const settings: SavedViewSettings = {
   filters: { assigneeIds: ['2', 'unassigned'], q: 'test', due: 'custom', dueDays: 3, priority: [], priorityFilterEnabled: true, projectIds: [1], statusIds: [2], trackerIds: [3] },
@@ -37,6 +37,8 @@ describe('saved view documents', () => {
     const keys = [savedViewsKey('/one/projects/a/kanban/data', 1), savedViewsKey('/two/projects/a/kanban/data', 1), savedViewsKey('/one/projects/a/kanban/data', 2), savedViewsKey('/one/projects/b/kanban/data', 1)];
     expect(new Set(keys).size).toBe(4);
     expect(keys[0]).toBe('rk_saved_views:/one/projects/a/kanban:user:1');
+    expect(new Set(keys.map(activeSavedViewKey)).size).toBe(4);
+    expect(activeSavedViewKey(keys[0])).toBe(`${keys[0]}:active`);
   });
   it('compares ID sets independently of order while retaining sort order', () => {
     const other = copyViewSettings(settings);

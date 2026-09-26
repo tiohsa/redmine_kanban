@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { BoardData, Issue } from './types';
 import { CanvasBoard, type CanvasBoardHandle } from './board/CanvasBoard';
@@ -43,6 +43,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const boardRef = useRef<CanvasBoardHandle>(null);
+  const datePopupOpeningId = useRef(0);
   const dismissNotice = useCallback(() => setNotice(null), []);
   const dismissError = useCallback(() => setError(null), []);
   const [workTimeEntry, setWorkTimeEntry] = useState<Extract<TimeEntryOperation, { origin: 'work_timer' }> | null>(null);
@@ -115,6 +116,25 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
   const effectiveLaneType = laneType;
   const effectiveShowSubtasks = cardDisplayMode === 'single_line' ? false : showSubtasks;
   const dialogs = useKanbanDialogs(baseUrl, data, effectiveLaneType, boardQueryKey);
+  const setDatePopup = dialogs.setDatePopup;
+  const repositionDatePopup = useCallback(() => {
+    setDatePopup((previous) => {
+      if (!previous || previous.offscreen) return previous;
+      const position = boardRef.current?.dateAnchorPosition(previous.boardPoint);
+      if (!position) return { ...previous, offscreen: true };
+      if (position.x === previous.x && position.y === previous.y) return previous;
+      return { ...previous, ...position };
+    });
+  }, [setDatePopup]);
+
+  useEffect(() => {
+    window.addEventListener('scroll', repositionDatePopup, true);
+    window.addEventListener('resize', repositionDatePopup);
+    return () => {
+      window.removeEventListener('scroll', repositionDatePopup, true);
+      window.removeEventListener('resize', repositionDatePopup);
+    };
+  }, [repositionDatePopup]);
   const actions = useKanbanActions({
     baseUrl,
     boardQueryKey,
@@ -259,6 +279,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
         {filteredData && boardState ? (
           <CanvasBoard
             ref={boardRef}
+            onViewportChange={repositionDatePopup}
             data={filteredData}
             state={boardState}
             canMove={canMove}
@@ -296,8 +317,8 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
             onPriorityClick={(issueId, currentPriorityId, x, y) => {
               dialogs.setPriorityPopup({ issueId, currentId: currentPriorityId, x, y });
             }}
-            onDateClick={(issueId, currentDate, x, y) => {
-              dialogs.setDatePopup({ issueId, currentDate, x, y });
+            onDateClick={(issueId, currentDate, x, y, boardPoint) => {
+              dialogs.setDatePopup({ issueId, currentDate, x, y, boardPoint, openingId: ++datePopupOpeningId.current });
             }}
             onProgressClick={(issueId, currentDoneRatio, x, y) => {
               dialogs.setProgressPopup({ issueId, currentDoneRatio, x, y });
@@ -512,9 +533,10 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
 
       {dialogs.datePopup && data ? (
         <DatePopup
-          key={`${dialogs.datePopup.issueId}-${dialogs.datePopup.x}-${dialogs.datePopup.y}`}
+          key={dialogs.datePopup.openingId}
           x={dialogs.datePopup.x}
           y={dialogs.datePopup.y}
+          offscreen={dialogs.datePopup.offscreen}
           value={dialogs.datePopup.currentDate}
           labels={data.labels}
           restoreFocusTo={document.querySelector<HTMLElement>('.rk-canvas')}

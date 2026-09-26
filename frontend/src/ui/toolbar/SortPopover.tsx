@@ -26,6 +26,7 @@ export function SortPopover({ sortConfig, onChangeSort, labels }: {
       <button type="button" ref={triggerRef} aria-label={title} aria-expanded={open} aria-controls={open ? menuId : undefined} aria-haspopup="dialog" className={`rk-btn rk-btn-labeled ${open || sortConfig.length > 0 ? 'rk-btn-toggle-active' : ''}`} onClick={() => setOpen(!open)} title={title}>
         <span className="rk-icon">sort</span>
         <span className="rk-btn-label">{title}</span>
+        {sortConfig.length > 0 ? <span className="rk-indicator-dot" aria-hidden="true" /> : null}
       </button>
       {open ? (
         <div id={menuId} ref={menuRef} className="rk-sort-menu" role="dialog" aria-label={title}>

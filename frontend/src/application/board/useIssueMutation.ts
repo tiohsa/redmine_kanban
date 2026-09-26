@@ -1,0 +1,434 @@
+import { useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
+import { useRef } from 'react';
+import type { BoardData, Issue, Subtask } from '../../model/board/types';
+import { findIssueInBoard } from '../../model/board/selectors';
+import { resolveClosedState } from '../../model/issue/issue';
+import type { AncestorIssueUpdate, IssueMutationResult } from '../../infrastructure/api/contracts';
+import { updateSubtasksTree } from '../../model/board/subtasksTree';
+import { applyBoardResponse, createNormalizedBoardState, rollbackLocalIssuePatch, selectBoardData } from '../../model/board/state';
+import { getBoardFreshnessAuthority, releaseBoardFreshnessAuthority } from './asyncFreshness';
+
+export type EntityReconciliationResponse = {
+  scope_fingerprint?: string;
+  scope_status_ids?: number[];
+  dependency_status_ids?: number[];
+  entities?: Issue[];
+  missing_issue_ids?: number[];
+  evicted_issue_ids?: number[];
+};
+
+export type EntityReconciliationOptions = {
+  treatAsCreated?: boolean;
+};
+
+export function isBoardSnapshotInvalidated(result: unknown): boolean {
+  if (!result || typeof result !== 'object') return false;
+  const invalidations = (result as { invalidations?: unknown }).invalidations;
+  return Boolean(invalidations && typeof invalidations === 'object' && (invalidations as { board_snapshot?: unknown }).board_snapshot === true);
+}
+
+export function invalidateBoardSnapshot(queryClient: QueryClient, queryKey: QueryKey): void {
+  const authority = getBoardFreshnessAuthority(queryClient, queryKey);
+  authority.invalidate();
+  releaseBoardFreshnessAuthority(queryClient, queryKey, authority);
+  void queryClient.resetQueries({ queryKey });
+}
+
+export type MutationResponseApplyOptions = {
+  excludeIssueId?: number;
+};
+
+export function applyMutationResponse(
+  data: BoardData,
+  result: Partial<IssueMutationResult>,
+  options: MutationResponseApplyOptions = {},
+): BoardData {
+  if (isBoardSnapshotInvalidated(result)) return data;
+  const applicableResult = options.excludeIssueId === undefined
+    ? result
+    : withoutIssueEffect(result, options.excludeIssueId);
+  const state = createNormalizedBoardState(data);
+  const issueUpdates = applicableResult.issue_updates ?? (applicableResult.issue ? [applicableResult.issue] : []);
+  return selectBoardData(applyBoardResponse(state, {
+    kind: 'mutation',
+    issue_updates: issueUpdates,
+    created_issues: applicableResult.created_issues,
+    deleted_issue_ids: applicableResult.deleted_issue_ids,
+    evicted_issue_ids: applicableResult.evicted_issue_ids,
+    tree_changes: applicableResult.tree_changes,
+    scopeFingerprint: applicableResult.scope_fingerprint,
+  }));
+}
+
+function withoutIssueEffect(result: Partial<IssueMutationResult>, issueId: number): Partial<IssueMutationResult> {
+  return {
+    ...result,
+    issue: result.issue?.id === issueId ? undefined : result.issue,
+    issue_updates: result.issue_updates?.filter((issue) => issue.id !== issueId),
+    created_issues: result.created_issues?.filter((issue) => issue.id !== issueId),
+    // A stale target does not prove that a negative membership/tree effect is
+    // still current. Let a fresh reconciliation or authoritative snapshot
+    // establish those effects instead of guessing from the old response.
+    deleted_issue_ids: undefined,
+    evicted_issue_ids: undefined,
+    tree_changes: undefined,
+    ancestor_updates: result.ancestor_updates?.filter((update) => update.id !== issueId),
+  };
+}
+
+export function applyEntityReconciliation(
+  data: BoardData,
+  response: EntityReconciliationResponse,
+  options: EntityReconciliationOptions = {},
+): BoardData {
+  const state = createNormalizedBoardState(data);
+  if (response.scope_fingerprint && response.scope_fingerprint !== state.scope.fingerprint) return data;
+
+  return selectBoardData(applyBoardResponse(state, {
+    kind: 'mutation',
+    issue_updates: options.treatAsCreated ? undefined : response.entities ?? [],
+    created_issues: options.treatAsCreated ? response.entities ?? [] : undefined,
+    tree_changes: options.treatAsCreated
+      ? (response.entities ?? []).flatMap((issue) => issue.parent_id == null
+        ? []
+        : [{ type: 'attach' as const, parent_id: issue.parent_id, child_id: issue.id }])
+      : undefined,
+    evicted_issue_ids: [...new Set(response.missing_issue_ids ?? [])],
+    scopeFingerprint: response.scope_fingerprint,
+  }));
+}
+
+export function unresolvedInvalidationIds(result: {
+  issue?: Issue;
+  issue_updates?: Issue[];
+  created_issues?: Issue[];
+  invalidations?: { issue_ids?: number[] };
+}): number[] {
+  const synchronizedIds = new Set([
+    ...(result.issue ? [result.issue.id] : []),
+    ...(result.issue_updates ?? []).map((issue) => issue.id),
+    ...(result.created_issues ?? []).map((issue) => issue.id),
+  ]);
+  return [...new Set(result.invalidations?.issue_ids ?? [])]
+    .filter((issueId) => !synchronizedIds.has(issueId));
+}
+
+type MutationContext = {
+  prev?: BoardData;
+  issueId: number;
+  optimisticIssue?: Issue | null;
+  revision: number;
+  overlapped: boolean;
+};
+
+type IssuePayload = { issueId: number };
+
+type UseIssueMutationOptions<TPayload extends IssuePayload, TResult> = {
+  queryKey: QueryKey;
+  mutationFn: (payload: TPayload) => Promise<TResult>;
+  applyOptimistic: (data: BoardData, payload: TPayload) => BoardData;
+  applyServer: (
+    data: BoardData,
+    result: TResult,
+    payload: TPayload,
+    options?: { applyTarget: boolean; applyNonTarget?: boolean },
+  ) => BoardData;
+  onError?: (error: unknown, payload: TPayload) => void;
+  onSuccess?: (result: TResult) => void;
+  onMutateIssue?: (issueId: number) => void;
+  onSettledIssue?: (issueId: number) => void;
+  onSettledMutation?: (issueId: number) => void;
+  refetchOnSettled?: boolean;
+};
+
+type IssueUpdater = (issue: Issue) => Issue;
+
+export function useIssueMutation<TPayload extends IssuePayload, TResult>({
+  queryKey,
+  mutationFn,
+  applyOptimistic,
+  applyServer,
+  onError,
+  onSuccess,
+  onMutateIssue,
+  onSettledIssue,
+  onSettledMutation,
+  refetchOnSettled = false,
+}: UseIssueMutationOptions<TPayload, TResult>) {
+  const queryClient = useQueryClient();
+  const mutationRevisions = useRef(new Map<number, number>());
+
+  // Optimistic UI + server normalization keeps Kanban behavior aligned with Gantt/list/detail.
+  return useMutation<TResult, unknown, TPayload, MutationContext>({
+    mutationFn,
+    onMutate: async (payload) => {
+      await queryClient.cancelQueries({ queryKey });
+
+      const prev = queryClient.getQueryData<BoardData>(queryKey);
+      const optimistic = prev ? applyOptimistic(prev, payload) : undefined;
+      if (prev) {
+        queryClient.setQueryData(queryKey, optimistic);
+      }
+
+      const previousRevision = mutationRevisions.current.get(payload.issueId) ?? 0;
+      const revision = previousRevision + 1;
+      mutationRevisions.current.set(payload.issueId, revision);
+      onMutateIssue?.(payload.issueId);
+      return {
+        prev,
+        issueId: payload.issueId,
+        revision,
+        overlapped: previousRevision > 0,
+        optimisticIssue: optimistic ? findIssueInBoard(optimistic, payload.issueId) : null,
+      };
+    },
+    onError: (_err, _payload, ctx) => {
+      const current = queryClient.getQueryData<BoardData>(queryKey);
+      const currentIssue = current && ctx ? findIssueInBoard(current, ctx.issueId) : null;
+      if (ctx?.prev && !ctx.overlapped && currentIssue && ctx.optimisticIssue) {
+        queryClient.setQueryData<BoardData>(queryKey, (current) => {
+          if (!current) return current;
+          const previousIssue = findIssueInBoard(ctx.prev!, ctx.issueId);
+          if (!previousIssue) return current;
+          return rollbackLocalIssuePatch(current, ctx.issueId, previousIssue, ctx.optimisticIssue!);
+        });
+      }
+      if (ctx?.overlapped) {
+        // Field-level rollback protects unrelated newer changes; an overlapping
+        // mutation still needs one authoritative reconciliation for server-side
+        // effects that cannot be represented by the local patch.
+        void queryClient.invalidateQueries({ queryKey });
+      }
+      onError?.(_err, _payload);
+    },
+    onSuccess: (result, payload, context) => {
+      if (isBoardSnapshotInvalidated(result)) {
+        invalidateBoardSnapshot(queryClient, queryKey);
+      } else {
+        queryClient.setQueryData<BoardData>(queryKey, (current) =>
+          current ? applyFreshServerResult(current, result, payload, context, mutationRevisions.current, applyServer) : current
+        );
+      }
+      onSuccess?.(result);
+    },
+    onSettled: (_result, _error, payload, context) => {
+      const isLatestMutation = Boolean(
+        payload && context && mutationRevisions.current.get(payload.issueId) === context.revision,
+      );
+      if (payload && isLatestMutation) {
+        onSettledIssue?.(payload.issueId);
+        mutationRevisions.current.delete(payload.issueId);
+      }
+      if (payload) onSettledMutation?.(payload.issueId);
+      if (refetchOnSettled) {
+        window.setTimeout(() => {
+          queryClient.invalidateQueries({ queryKey });
+        }, 400);
+      }
+    },
+  });
+}
+
+function applyFreshServerResult<TPayload extends IssuePayload, TResult>(
+  data: BoardData,
+  result: TResult,
+  payload: TPayload,
+  context: MutationContext | undefined,
+  revisions: Map<number, number>,
+  applyServer: (
+    data: BoardData,
+    result: TResult,
+    payload: TPayload,
+    options?: { applyTarget: boolean; applyNonTarget?: boolean },
+  ) => BoardData,
+): BoardData {
+  const currentIssue = findIssueInBoard(data, payload.issueId);
+  const incomingIssue = issueFromResult(result, payload.issueId);
+  const hasNewerMutation = context ? (revisions.get(payload.issueId) ?? 0) > context.revision : false;
+  if (!currentIssue || !incomingIssue || (!hasNewerMutation && isIssueFresh(currentIssue, incomingIssue))) {
+    return applyServer(data, result, payload, { applyTarget: true, applyNonTarget: true });
+  }
+
+  // Keep independent server effects from this response, but let the mutation
+  // path exclude the stale target effect itself.
+  const preservedResult = { ...(result as object), issue: currentIssue } as TResult;
+  return applyServer(data, preservedResult, payload, { applyTarget: false, applyNonTarget: true });
+}
+
+function issueFromResult<TResult>(result: TResult, issueId: number): Issue | null {
+  if (!result || typeof result !== 'object') return null;
+  const issue = (result as { issue?: unknown }).issue;
+  if (issue && typeof issue === 'object' && 'id' in issue && (issue as { id?: unknown }).id === issueId) {
+    return issue as Issue;
+  }
+  const issueUpdates = (result as { issue_updates?: unknown }).issue_updates;
+  if (!Array.isArray(issueUpdates)) return null;
+  const target = issueUpdates.find((candidate) => (
+    candidate && typeof candidate === 'object' && 'id' in candidate && (candidate as { id?: unknown }).id === issueId
+  ));
+  return target && typeof target === 'object' ? target as Issue : null;
+}
+
+export function isIssueFresh(current: Issue, incoming: Issue): boolean {
+  if (typeof current.lock_version === 'number' && typeof incoming.lock_version === 'number') {
+    if (incoming.lock_version < current.lock_version) return false;
+    if (incoming.lock_version > current.lock_version) return true;
+  }
+
+  const currentUpdatedOn = parseDate(current.updated_on);
+  const incomingUpdatedOn = parseDate(incoming.updated_on);
+  if (currentUpdatedOn !== null && incomingUpdatedOn !== null) return incomingUpdatedOn >= currentUpdatedOn;
+  if (currentUpdatedOn !== null && incomingUpdatedOn === null) return false;
+  return true;
+}
+
+export function updateIssueInBoard(
+  data: BoardData,
+  issueId: number,
+  updater: IssueUpdater
+): BoardData {
+  const previous = findIssueInBoard(data, issueId);
+  if (!previous) return data;
+
+  const updated = updater(previous);
+  const closed = data.columns.find((column) => column.id === updated.status_id)?.is_closed ?? false;
+  const issues = data.issues.map((issue) => {
+    const nextIssue = issue.id === issueId ? updated : issue;
+    const subtasks = updateSubtasksTree(nextIssue.subtasks, issueId, subtaskPatchFromIssue(updated, data, undefined, closed));
+    return subtasks === nextIssue.subtasks ? nextIssue : { ...nextIssue, subtasks };
+  });
+  return {
+    ...data,
+    issues,
+    columns: updateColumnCounts(data.columns, previous?.status_id, updated?.status_id),
+  };
+}
+
+export function updateSubtaskInBoard(
+  data: BoardData,
+  subtaskId: number,
+  patch: Partial<Pick<Subtask, 'status_id' | 'is_closed' | 'lock_version'>>,
+): BoardData {
+  let changed = false;
+  const issues = data.issues.map((issue) => {
+    let nextIssue = issue;
+    if (issue.id === subtaskId) {
+      nextIssue = { ...issue, ...patch };
+      changed = true;
+    }
+    const subtasks = updateSubtasksTree(nextIssue.subtasks, subtaskId, patch);
+    if (subtasks === nextIssue.subtasks) return nextIssue;
+
+    changed = true;
+    return { ...nextIssue, subtasks };
+  });
+
+  if (!changed) return data;
+
+  const previous = findIssueInBoard(data, subtaskId);
+  return {
+    ...data,
+    issues,
+    columns: updateColumnCounts(data.columns, previous?.status_id, patch.status_id),
+  };
+}
+
+export function applyAncestorIssueUpdates(
+  data: BoardData,
+  updates: AncestorIssueUpdate[] | undefined,
+): BoardData {
+  if (!updates?.length) return data;
+  const state = createNormalizedBoardState(data);
+  let changed = false;
+  for (const update of updates) {
+    const current = state.entitiesById.get(update.id);
+    if (!current) continue;
+    const incoming = { ...current, ...update } as Issue;
+    if (!isIssueFresh(current as Issue, incoming)) continue;
+    state.entitiesById.set(update.id, { ...current, ...update });
+    changed = true;
+  }
+  return changed ? selectBoardData(state) : data;
+}
+
+function parseDate(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? null : timestamp;
+}
+
+export function replaceIssueInBoard(data: BoardData, nextIssue: Issue): BoardData {
+  const previous = findIssueInBoard(data, nextIssue.id);
+  if (!previous) return data;
+
+  const direct = data.issues.some((issue) => issue.id === nextIssue.id);
+  if (direct) return updateIssueInBoard(data, nextIssue.id, () => nextIssue);
+
+  let changed = false;
+  const issues = data.issues.map((issue) => {
+    const subtasks = replaceSubtask(issue.subtasks, nextIssue, data);
+    if (subtasks === issue.subtasks) return issue;
+    changed = true;
+    return { ...issue, subtasks };
+  });
+  return changed ? {
+    ...data,
+    issues,
+    columns: updateColumnCounts(data.columns, previous.status_id, nextIssue.status_id),
+  } : data;
+}
+
+function replaceSubtask(
+  subtasks: Subtask[] | undefined,
+  nextIssue: Issue,
+  data: BoardData,
+): Subtask[] | undefined {
+  if (!subtasks) return subtasks;
+  let changed = false;
+  const next = subtasks.map((subtask) => {
+    if (subtask.id === nextIssue.id) {
+      changed = true;
+      return issueResponseToSubtask(subtask, nextIssue, data);
+    }
+    const nested = replaceSubtask(subtask.subtasks, nextIssue, data);
+    if (nested === subtask.subtasks) return subtask;
+    changed = true;
+    return { ...subtask, subtasks: nested };
+  });
+  return changed ? next : subtasks;
+}
+
+function issueResponseToSubtask(current: Subtask, nextIssue: Issue, data: BoardData): Subtask {
+  return { ...current, ...subtaskPatchFromIssue(nextIssue, data, current) };
+}
+
+function subtaskPatchFromIssue(nextIssue: Issue, data: BoardData, fallback?: Subtask, fallbackIsClosed?: boolean): Partial<Subtask> {
+  const isClosed = fallbackIsClosed ?? resolveClosedState(nextIssue, data.columns);
+
+  return {
+    subject: nextIssue.subject,
+    status_id: nextIssue.status_id,
+    tracker_id: nextIssue.tracker_id,
+    assigned_to_id: nextIssue.assigned_to_id,
+    due_date: nextIssue.due_date,
+    priority_id: nextIssue.priority_id,
+    is_closed: isClosed ?? fallback?.is_closed ?? false,
+    lock_version: nextIssue.lock_version,
+    updated_on: nextIssue.updated_on,
+    aging_days: nextIssue.aging_days,
+    done_ratio: nextIssue.done_ratio,
+    permissions: nextIssue.permissions ?? fallback?.permissions,
+    allowed_status_ids: nextIssue.allowed_status_ids ?? fallback?.allowed_status_ids,
+    project: nextIssue.project ?? fallback?.project,
+  };
+}
+
+function updateColumnCounts(columns: BoardData['columns'], previousStatusId?: number, nextStatusId?: number): BoardData['columns'] {
+  if (previousStatusId === undefined || nextStatusId === undefined || previousStatusId === nextStatusId) return columns;
+
+  return columns.map((column) => {
+    if (column.id === previousStatusId) return { ...column, count: Math.max(0, (column.count ?? 0) - 1) };
+    if (column.id === nextStatusId) return { ...column, count: (column.count ?? 0) + 1 };
+    return column;
+  });
+}

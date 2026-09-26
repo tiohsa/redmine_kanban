@@ -11,8 +11,8 @@ import { getBoardFreshnessAuthority } from './asyncFreshness';
 import { applyIssueMutationResponse, useMutationReconciler } from './useMutationReconciler';
 
 const getJsonMock = vi.hoisted(() => vi.fn());
-vi.mock('./http', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./http')>()),
+vi.mock('../infrastructure/api/http', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../infrastructure/api/http')>()),
   getJson: getJsonMock,
 }));
 
