@@ -43,7 +43,7 @@ vi.mock('./useKanbanActions', () => ({
   }),
 }));
 
-vi.mock('./http', () => ({
+vi.mock('../infrastructure/api/http', () => ({
   getJson: vi.fn((url: string) => Promise.resolve(url.endsWith('/metadata')
     ? { ok: true, board: { id: 4 }, projects: [], viewable_projects: [], statuses: [], server_entity_limit: 5000 }
     : boardSnapshot())),
