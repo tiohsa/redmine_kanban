@@ -42,15 +42,16 @@ export function SavedViewsPopover({ storageKey, current, onApply, labels, valida
       (activeView ?? firstView ?? menuRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled):not(.rk-saved-views-close)'))?.focus();
     }
   }, [mode, open, menuRef]);
-  const triggerLabel = `${labels.saved_views}${views.active ? `: ${views.active.name}` : ''}${views.changed ? ` (${labels.saved_views_changed})` : ''}`;
+  const triggerLabel = `${labels.saved_views}${views.changed ? ` (${labels.saved_views_changed})` : ''}`;
   const title = mode === 'create' ? labels.saved_views_create_title : mode === 'rename' ? labels.saved_views_rename_title : mode === 'manage' ? labels.saved_views_manage : labels.saved_views;
   const isForm = mode === 'create' || mode === 'rename';
   return (
     <div className="rk-dropdown-container">
       <button type="button" className={`rk-btn rk-btn-labeled rk-saved-views-trigger${open || views.active ? ' rk-btn-toggle-active' : ''}`} ref={triggerRef} aria-label={triggerLabel} aria-expanded={open} aria-controls={open ? menuId : undefined} aria-haspopup="dialog" onClick={() => { if (open) close(); else { views.clearFeedback(); setOpen(true); } }}>
         <span className="rk-icon" aria-hidden="true">bookmarks</span>
-        <span className="rk-btn-label rk-saved-views-trigger-label" aria-hidden="true">{labels.saved_views}{views.active ? `: ${views.active.name}` : ''}</span>
-        {views.changed ? <span className="rk-saved-views-dirty" aria-hidden="true">{labels.saved_views_changed}</span> : null}
+        <span className="rk-btn-label rk-saved-views-trigger-label" aria-hidden="true">{labels.saved_views}</span>
+        {views.active ? <span className="rk-indicator-dot" aria-hidden="true" /> : null}
+        {views.changed ? <span className="rk-icon rk-saved-views-dirty-icon" aria-hidden="true">error_outline</span> : null}
       </button>
       {open ? <div id={menuId} ref={menuRef} role="dialog" aria-label={title} className="rk-settings-menu rk-saved-views">
         <div className="rk-settings-title rk-saved-views-heading">

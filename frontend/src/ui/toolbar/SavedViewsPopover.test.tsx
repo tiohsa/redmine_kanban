@@ -27,15 +27,19 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 describe('saved view operations', () => {
   it('focuses the active view on reopen, then the first view or another action when none is active', () => {
     const view = setup();
+    const trigger = screen.getByRole('button', { name: 'saved_views' });
+    expect(trigger.querySelector('.rk-indicator-dot')).toBeNull();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'saved_views_new' }));
     createView('A'); createView('B'); createView('C');
-    click('close'); click('saved_views: C');
+    expect(trigger.querySelector('.rk-indicator-dot')).toBeTruthy();
+    click('close'); click('saved_views');
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'C', pressed: true }));
     const clear = screen.getByRole('button', { name: 'saved_views_clear' });
     const manage = screen.getByRole('button', { name: 'saved_views_manage' });
     expect(manage.compareDocumentPosition(clear) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(clear.getAttribute('title')).toBe('saved_views_clear_help');
     click('saved_views_clear'); click('saved_views');
+    expect(trigger.querySelector('.rk-indicator-dot')).toBeNull();
     expect(localStorage.getItem(activeSavedViewKey(key))).toBeNull();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'A', pressed: false }));
     expect(view.onApply).not.toHaveBeenCalled();
@@ -92,7 +96,9 @@ describe('saved view operations', () => {
     click('A');
     expect(view.onApply).toHaveBeenCalledExactlyOnceWith(current);
     expect(screen.getByRole('dialog', { name: 'saved_views' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'saved_views: A' }).getAttribute('aria-expanded')).toBe('true');
+    const trigger = screen.getByRole('button', { name: 'saved_views' });
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(trigger.querySelector('.rk-saved-views-trigger-label')?.textContent).toBe('saved_views');
     const active = screen.getByRole('button', { name: 'A', pressed: true });
     expect(document.activeElement).toBe(active);
     expect(active.querySelector('.rk-saved-views-check')?.textContent).toBe('check');
@@ -105,20 +111,20 @@ describe('saved view operations', () => {
     expect(screen.getByRole('dialog', { name: 'saved_views' })).toBeTruthy();
     click('close');
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'saved_views: B' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'saved_views' }));
   });
   it('keeps the active view separate from the management target when saving changes', () => {
     const view = setup();
     createView('A'); createView('B');
     manage('A'); click('saved_views_rename'); nameView(' Renamed A '); click('saved_views_rename_submit');
     expect(read().views[0]).toMatchObject({ name: 'Renamed A', settings: current });
-    expect(screen.getByRole('button', { name: 'saved_views: B' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'saved_views' })).toBeTruthy();
     click('saved_views_back');
     view.rerender(<SavedViewsPopover {...view.props} current={{ ...current, laneType: 'priority' }} />);
     click('saved_views_overwrite');
     expect(read().views.map((v: { settings: SavedViewSettings }) => v.settings.laneType)).toEqual(['none', 'priority']);
     manage('Renamed A'); click('delete'); click('saved_views_confirm_delete');
-    expect(screen.getByRole('button', { name: 'saved_views: B' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'saved_views' })).toBeTruthy();
     expect(view.onApply).not.toHaveBeenCalled();
   });
   it('focuses the name field and returns focus to the trigger on Escape from every screen', () => {
@@ -130,7 +136,7 @@ describe('saved view operations', () => {
       if (mode === 'create' || mode === 'rename') expect(document.activeElement).toBe(screen.getByRole('textbox'));
       fireEvent.keyDown(document.activeElement ?? document, { key: 'Escape' });
       expect(screen.queryByRole('dialog')).toBeNull();
-      const trigger = screen.getByRole('button', { name: 'saved_views: A' });
+      const trigger = screen.getByRole('button', { name: 'saved_views' });
       expect(document.activeElement).toBe(trigger);
       fireEvent.click(trigger);
       expect(screen.getByRole('dialog', { name: 'saved_views' })).toBeTruthy();
@@ -169,9 +175,11 @@ describe('saved view operations', () => {
     expect(view.onApply).toHaveBeenCalledExactlyOnceWith(current);
     const edited = { ...current, laneType: 'priority' as const };
     view.rerender(<SavedViewsPopover {...view.props} current={edited} />);
-    expect(screen.getByRole('button', { name: /saved_views: A \(saved_views_changed\)/ })).toBeTruthy();
+    const changedTrigger = screen.getByRole('button', { name: 'saved_views (saved_views_changed)' });
+    expect(changedTrigger.querySelector('.rk-saved-views-dirty-icon')?.textContent).toBe('error_outline');
+    expect(changedTrigger.textContent).not.toContain('saved_views_changed');
     expect(read().views[0].settings.laneType).toBe('none');
-    expect(screen.getByRole('button', { name: /A.*saved_views_changed/, pressed: true })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /A.*saved_views_changed/, pressed: true }).querySelector('.rk-saved-views-dirty')?.textContent).toBe('saved_views_changed');
     click('saved_views_overwrite');
     expect(read().views[0].settings.laneType).toBe('priority');
     expect(screen.queryAllByText('saved_views_changed')).toHaveLength(0);
@@ -261,7 +269,7 @@ describe('saved view operations', () => {
     expect(read().views[0].settings.laneType).toBe('priority');
     expect(parseSavedViews(localStorage.getItem(key)).views).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'B', pressed: true })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'saved_views: B' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'saved_views' })).toBeTruthy();
   });
   it('creates unique IDs without randomUUID and can reload and apply the saved view', () => {
     vi.stubGlobal('crypto', {});
@@ -275,7 +283,8 @@ describe('saved view operations', () => {
     expect(localStorage.getItem(activeSavedViewKey(key))).toBe(saved.views[1].id);
     view.unmount();
     const reloaded = setup();
-    expect(screen.getByRole('button', { name: 'saved_views: B' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'saved_views' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'saved_views' }).querySelector('.rk-indicator-dot')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'B', pressed: true })).toBeTruthy();
     expect(reloaded.onApply).not.toHaveBeenCalled();
     click('B');
@@ -288,7 +297,7 @@ describe('saved view operations', () => {
     const edited = { ...current, laneType: 'priority' as const };
     const onApply = vi.fn();
     render(<SavedViewsPopover storageKey={key} current={edited} onApply={onApply} labels={labels} validation={{ pending: false, unavailable: [] }} />);
-    expect(screen.getByRole('button', { name: 'saved_views: A (saved_views_changed)' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'saved_views (saved_views_changed)' })).toBeTruthy();
     expect(onApply).not.toHaveBeenCalled();
     expect(read().views[0].settings.laneType).toBe('none');
   });
