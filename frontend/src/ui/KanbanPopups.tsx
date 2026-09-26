@@ -85,6 +85,7 @@ function formatPopupDate(date: Date): string {
 export function DatePopup({
   x,
   y,
+  offscreen,
   value,
   labels,
   onClose,
@@ -93,6 +94,7 @@ export function DatePopup({
 }: {
   x: number;
   y: number;
+  offscreen?: boolean;
   value: string | null;
   labels: Record<string, string>;
   onClose: () => void;
@@ -152,6 +154,10 @@ export function DatePopup({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [close]);
 
+  useEffect(() => {
+    if (offscreen) close();
+  }, [offscreen, close]);
+
   const commitAndClose = (nextValue: string | null) => {
     if (hasCommitted.current) return;
     hasCommitted.current = true;
@@ -159,6 +165,8 @@ export function DatePopup({
     close();
   };
 
+  // Canvas scrolling changes x/y without a native scroll event for Floating UI.
+  // Updated middleware options make it recalculate the open popper's position.
   return (
     <div
       className="rk-date-popup-anchor"
@@ -173,6 +181,7 @@ export function DatePopup({
         onClickOutside={close}
         startOpen
         portalId="redmine-kanban-datepicker-portal"
+        popperModifiers={[{ name: 'board-anchor-position', options: { x, y }, fn: () => ({}) }]}
         popperClassName="rk-datepicker-popper"
         popperPlacement={x > window.innerWidth / 2 ? 'bottom-end' : 'bottom-start'}
         calendarClassName={'rk-minimax-datepicker rk-minimax-datepicker--' + yearMonthOrder}

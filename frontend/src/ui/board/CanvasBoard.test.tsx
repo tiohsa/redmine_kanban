@@ -4,7 +4,7 @@ import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BoardData, Issue } from '../types';
-import { CanvasBoard, makeSubtaskSignature, measureCardHeightCached } from './CanvasBoard';
+import { CanvasBoard, makeSubtaskSignature, measureCardHeightCached, type CanvasBoardHandle } from './CanvasBoard';
 import { layoutCardMetadata } from './canvasMetadata';
 import { getMetrics } from './metrics';
 import { buildBoardState } from './state';
@@ -122,22 +122,33 @@ function performFullDrag(canvas: HTMLCanvasElement, pointerId: number, startX = 
 }
 
 class ResizeObserverMock {
-  constructor(private readonly callback: ResizeObserverCallback) { }
+  static latest: ResizeObserverMock | null = null;
+  private target: Element | null = null;
+
+  constructor(private readonly callback: ResizeObserverCallback) {
+    ResizeObserverMock.latest = this;
+  }
 
   observe(target: Element) {
+    this.target = target;
+    this.resize(800, 600);
+  }
+
+  resize(width: number, height: number) {
+    if (!this.target) return;
     this.callback(
       [
         {
-          target,
+          target: this.target,
           contentRect: {
             x: 0,
             y: 0,
             top: 0,
             left: 0,
-            right: 800,
-            bottom: 600,
-            width: 800,
-            height: 600,
+            right: width,
+            bottom: height,
+            width,
+            height,
             toJSON: () => ({}),
           } as DOMRectReadOnly,
         } as ResizeObserverEntry,
@@ -307,9 +318,56 @@ afterEach(() => {
     expect(hitTestIndex.hitTest(point, rectMap, data)).toEqual({ kind: 'date', issueId: issue.id });
     const canvas = container.querySelector('canvas.rk-canvas')!;
     fireEvent.pointerDown(canvas, { clientX: point.x, clientY: point.y });
-    expect(onDateClick.mock.calls).toEqual(canEdit && !busy ? [[issue.id, dueDate ?? null, point.x, point.y]] : []);
+    expect(onDateClick.mock.calls).toEqual(canEdit && !busy ? [[issue.id, dueDate ?? null, point.x, point.y, point]] : []);
     expect(onView).not.toHaveBeenCalled();
     expect(onCommand).not.toHaveBeenCalled();
+  });
+
+  it('moves a date anchor with virtual board scroll and hides it beyond the viewport', async () => {
+    const issues = Array.from({ length: 30 }, (_, index) => makeIssue(index + 1));
+    const data = makeBoardData(issues[0]);
+    data.issues = issues;
+    data.columns = Array.from({ length: 5 }, (_, index) => ({ id: index + 1, name: `Column ${index}`, is_closed: false, count: 0 }));
+    const state = buildBoardState(data, issues, [{ field: 'updated', direction: 'desc' }], new Map());
+    const ref = React.createRef<CanvasBoardHandle>();
+    const onViewportChange = vi.fn();
+    const { container } = render(<CanvasBoard ref={ref} data={data} state={state} canMove canCreate
+      onCommand={vi.fn()} onCreate={vi.fn()} onEdit={vi.fn()} onView={vi.fn()} onDelete={vi.fn()}
+      onEditClick={vi.fn()} labels={data.labels} onViewportChange={onViewportChange} />);
+    const canvas = container.querySelector('canvas.rk-canvas')!;
+    await waitFor(() => expect(canvas).toHaveProperty('height', 600));
+    const point = { x: 300, y: 300 };
+    expect(ref.current?.dateAnchorPosition(point)).toEqual(point);
+    const callsBeforeScroll = onViewportChange.mock.calls.length;
+
+    fireEvent.wheel(canvas, { deltaX: 50, deltaY: 50 });
+    expect(ref.current?.dateAnchorPosition(point)).toEqual({ x: 250, y: 250 });
+    expect(onViewportChange).toHaveBeenCalledTimes(callsBeforeScroll + 1);
+
+    fireEvent.wheel(canvas, { deltaY: 500 });
+    expect(ref.current?.dateAnchorPosition(point)).toBeNull();
+    act(() => ref.current?.scrollToTop());
+    expect(ref.current?.dateAnchorPosition(point)).toEqual(point);
+  });
+
+  it('notifies after a resized fit-to-width board changes scale', async () => {
+    const issue = makeIssue(31);
+    const data = makeBoardData(issue);
+    data.columns = Array.from({ length: 5 }, (_, index) => ({ id: index + 1, name: `Column ${index}`, is_closed: false, count: 0 }));
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
+    const ref = React.createRef<CanvasBoardHandle>();
+    const onViewportChange = vi.fn();
+    render(<CanvasBoard ref={ref} data={data} state={state} canMove canCreate fitMode="width"
+      onCommand={vi.fn()} onCreate={vi.fn()} onEdit={vi.fn()} onView={vi.fn()} onDelete={vi.fn()}
+      onEditClick={vi.fn()} labels={data.labels} onViewportChange={onViewportChange} />);
+    const point = { x: 300, y: 300 };
+    await waitFor(() => expect(onViewportChange).toHaveBeenCalled());
+    const original = ref.current!.dateAnchorPosition(point)!;
+    const callsBeforeResize = onViewportChange.mock.calls.length;
+
+    act(() => ResizeObserverMock.latest?.resize(600, 600));
+    await waitFor(() => expect(ref.current!.dateAnchorPosition(point)!.x).toBeLessThan(original.x));
+    expect(onViewportChange.mock.calls.length).toBeGreaterThan(callsBeforeResize);
   });
 
   it.each(['none', 'width'] as const)('keeps empty date badges between priority, aging and progress in %s fit mode', async (fitMode) => {
@@ -349,7 +407,7 @@ afterEach(() => {
       fireEvent.pointerDown(canvas, { clientX: region.x + region.width / 2, clientY: region.y + region.height / 2 });
     }
     expect(onPriorityClick).toHaveBeenCalledWith(issue.id, 2, expect.any(Number), expect.any(Number));
-    expect(onDateClick).toHaveBeenCalledWith(issue.id, null, expect.any(Number), expect.any(Number));
+    expect(onDateClick).toHaveBeenCalledWith(issue.id, null, expect.any(Number), expect.any(Number), expect.any(Object));
     expect(onProgressClick).toHaveBeenCalledWith(issue.id, 20, expect.any(Number), expect.any(Number));
 
     const datedData = { ...data, issues: [{ ...issue, due_date: '2099-09-26' }] };

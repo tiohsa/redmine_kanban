@@ -83,6 +83,7 @@ type CanvasTheme = {
 
 export type CanvasBoardHandle = {
   scrollToTop: () => void;
+  dateAnchorPosition: (point: { x: number; y: number }) => { x: number; y: number } | null;
 };
 
 type Props = {
@@ -100,7 +101,8 @@ type Props = {
   timerSession?: { sessionId?: string; issueId: number | string; state: 'running' | 'expired' | 'stopped_pending_record' } | null;
   onSubtaskToggle?: (subtaskId: number, currentClosed: boolean) => void;
   onPriorityClick?: (issueId: number, currentPriorityId: number, x: number, y: number) => void;
-  onDateClick?: (issueId: number, currentDate: string | null, x: number, y: number) => void;
+  onDateClick?: (issueId: number, currentDate: string | null, x: number, y: number, boardPoint: { x: number; y: number }) => void;
+  onViewportChange?: () => void;
   onProgressClick?: (issueId: number, currentDoneRatio: number, x: number, y: number) => void;
 
   labels: Record<string, string>;
@@ -129,6 +131,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   onSubtaskToggle,
   onPriorityClick,
   onDateClick,
+  onViewportChange,
   onProgressClick,
 
   labels,
@@ -153,6 +156,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [cursor, setCursor] = useState('default');
   const scaleRef = useRef(1);
+  const anchorGeometryRef = useRef<{ left: number; top: number; width: number; height: number; scale: number } | null>(null);
   const hoverRef = useRef<{ kind: 'card_subject' | 'subtask_subject'; id: string } | null>(null);
   const hoveredCardIssueIdRef = useRef<number | null>(null);
   const hoveredSubtaskKeyRef = useRef<string | null>(null);
@@ -312,8 +316,9 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
       x: clamp(x, 0, maxX),
       y: clamp(y, 0, maxY),
     };
+    onViewportChange?.();
     scheduleRender();
-  }, [size.height, size.width, scheduleRender]);
+  }, [size.height, size.width, onViewportChange, scheduleRender]);
 
   useEffect(() => {
     if (!document.fonts?.ready) {
@@ -346,10 +351,24 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
 
   useImperativeHandle(ref, () => ({
     scrollToTop: () => {
-      scrollRef.current = { x: 0, y: 0 };
-      scheduleRender();
-    }
-  }), [scheduleRender]);
+      updateScroll(0, 0);
+    },
+    dateAnchorPosition: (point) => {
+      const canvas = canvasRef.current;
+      const container = containerRef.current;
+      if (!canvas || !container) return null;
+      const rect = canvas.getBoundingClientRect();
+      const bounds = container.getBoundingClientRect();
+      const scale = scaleRef.current;
+      const x = rect.left + (point.x - scrollRef.current.x) * scale;
+      const y = rect.top + (point.y - scrollRef.current.y) * scale;
+      const left = Math.max(0, rect.left, bounds.left);
+      const top = Math.max(0, rect.top, bounds.top);
+      const right = Math.min(window.innerWidth, rect.right, bounds.right);
+      const bottom = Math.min(window.innerHeight, rect.bottom, bounds.bottom);
+      return x >= left && x <= right && y >= top && y <= bottom ? { x, y } : null;
+    },
+  }), [updateScroll]);
 
   const draw = () => {
     const canvas = canvasRef.current;
@@ -456,6 +475,19 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         scroll.y,
       ),
     });
+
+    const rect = canvas.getBoundingClientRect();
+    const geometry = { left: rect.left, top: rect.top, width: rect.width, height: rect.height, scale };
+    const previousGeometry = anchorGeometryRef.current;
+    if (!previousGeometry
+      || geometry.left !== previousGeometry.left
+      || geometry.top !== previousGeometry.top
+      || geometry.width !== previousGeometry.width
+      || geometry.height !== previousGeometry.height
+      || geometry.scale !== previousGeometry.scale) {
+      anchorGeometryRef.current = geometry;
+      onViewportChange?.();
+    }
   };
 
   drawRef.current = draw;
@@ -546,7 +578,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         event.preventDefault();
         const issue = state.cardsById.get(hit.issueId);
         if (!canEditIssue(issue) || !issue || !onDateClick) return;
-        onDateClick(hit.issueId, issue.due_date ?? null, event.clientX, event.clientY);
+        onDateClick(hit.issueId, issue.due_date ?? null, event.clientX, event.clientY, point);
         return;
       }
       case 'progress': {
