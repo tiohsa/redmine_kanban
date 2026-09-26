@@ -36,6 +36,7 @@ export function invalidateBoardSnapshot(queryClient: QueryClient, queryKey: Quer
 
 export type MutationResponseApplyOptions = {
   excludeIssueId?: number;
+  excludeNegativeIssueIds?: number[];
 };
 
 export function applyMutationResponse(
@@ -49,12 +50,13 @@ export function applyMutationResponse(
     : withoutIssueEffect(result, options.excludeIssueId);
   const state = createNormalizedBoardState(data);
   const issueUpdates = applicableResult.issue_updates ?? (applicableResult.issue ? [applicableResult.issue] : []);
+  const excludedNegativeIds = new Set(options.excludeNegativeIssueIds ?? []);
   return selectBoardData(applyBoardResponse(state, {
     kind: 'mutation',
     issue_updates: issueUpdates,
     created_issues: applicableResult.created_issues,
-    deleted_issue_ids: applicableResult.deleted_issue_ids,
-    evicted_issue_ids: applicableResult.evicted_issue_ids,
+    deleted_issue_ids: applicableResult.deleted_issue_ids?.filter((id) => !excludedNegativeIds.has(id)),
+    evicted_issue_ids: applicableResult.evicted_issue_ids?.filter((id) => !excludedNegativeIds.has(id)),
     tree_changes: applicableResult.tree_changes,
     scopeFingerprint: applicableResult.scope_fingerprint,
   }));
@@ -131,7 +133,7 @@ type UseIssueMutationOptions<TPayload extends IssuePayload, TResult> = {
     data: BoardData,
     result: TResult,
     payload: TPayload,
-    options?: { applyTarget: boolean; applyNonTarget?: boolean },
+    options?: { applyTarget: boolean; applyNonTarget?: boolean; excludeNegativeIssueIds?: number[] },
   ) => BoardData;
   onError?: (error: unknown, payload: TPayload) => void;
   onSuccess?: (result: TResult) => void;
@@ -157,6 +159,7 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
 }: UseIssueMutationOptions<TPayload, TResult>) {
   const queryClient = useQueryClient();
   const mutationRevisions = useRef(new Map<number, number>());
+  const pendingMutationCounts = useRef(new Map<number, number>());
 
   // Optimistic UI + server normalization keeps Kanban behavior aligned with Gantt/list/detail.
   return useMutation<TResult, unknown, TPayload, MutationContext>({
@@ -172,13 +175,15 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
 
       const previousRevision = mutationRevisions.current.get(payload.issueId) ?? 0;
       const revision = previousRevision + 1;
+      const pendingCount = pendingMutationCounts.current.get(payload.issueId) ?? 0;
       mutationRevisions.current.set(payload.issueId, revision);
+      pendingMutationCounts.current.set(payload.issueId, pendingCount + 1);
       onMutateIssue?.(payload.issueId);
       return {
         prev,
         issueId: payload.issueId,
         revision,
-        overlapped: previousRevision > 0,
+        overlapped: pendingCount > 0,
         optimisticIssue: optimistic ? findIssueInBoard(optimistic, payload.issueId) : null,
       };
     },
@@ -215,9 +220,14 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
       const isLatestMutation = Boolean(
         payload && context && mutationRevisions.current.get(payload.issueId) === context.revision,
       );
-      if (payload && isLatestMutation) {
-        onSettledIssue?.(payload.issueId);
-        mutationRevisions.current.delete(payload.issueId);
+      if (payload && isLatestMutation) onSettledIssue?.(payload.issueId);
+      if (payload) {
+        const remaining = (pendingMutationCounts.current.get(payload.issueId) ?? 1) - 1;
+        if (remaining > 0) pendingMutationCounts.current.set(payload.issueId, remaining);
+        else {
+          pendingMutationCounts.current.delete(payload.issueId);
+          mutationRevisions.current.delete(payload.issueId);
+        }
       }
       if (payload) onSettledMutation?.(payload.issueId);
       if (refetchOnSettled) {
@@ -239,14 +249,21 @@ function applyFreshServerResult<TPayload extends IssuePayload, TResult>(
     data: BoardData,
     result: TResult,
     payload: TPayload,
-    options?: { applyTarget: boolean; applyNonTarget?: boolean },
+    options?: { applyTarget: boolean; applyNonTarget?: boolean; excludeNegativeIssueIds?: number[] },
   ) => BoardData,
 ): BoardData {
   const currentIssue = findIssueInBoard(data, payload.issueId);
   const incomingIssue = issueFromResult(result, payload.issueId);
   const hasNewerMutation = context ? (revisions.get(payload.issueId) ?? 0) > context.revision : false;
-  if (!currentIssue || !incomingIssue || (!hasNewerMutation && isIssueFresh(currentIssue, incomingIssue))) {
-    return applyServer(data, result, payload, { applyTarget: true, applyNonTarget: true });
+  if (!hasNewerMutation && (!currentIssue || !incomingIssue || isIssueFresh(currentIssue, incomingIssue))) {
+    const negativeIds = result && typeof result === 'object'
+      ? [...((result as { deleted_issue_ids?: number[] }).deleted_issue_ids ?? []), ...((result as { evicted_issue_ids?: number[] }).evicted_issue_ids ?? [])]
+      : [];
+    const excludeNegativeIssueIds = context?.prev ? negativeIds.filter((id) => {
+      const expected = id === payload.issueId ? context.optimisticIssue : findIssueInBoard(context.prev!, id);
+      return JSON.stringify(expected) !== JSON.stringify(findIssueInBoard(data, id));
+    }) : [];
+    return applyServer(data, result, payload, { applyTarget: true, applyNonTarget: true, excludeNegativeIssueIds });
   }
 
   // Keep independent server effects from this response, but let the mutation

@@ -216,6 +216,29 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+  it('offers keyboard-reachable priority and progress actions for a selected issue', async () => {
+    const issue = makeIssue(15, { priority_id: 2, done_ratio: 20 });
+    const data = makeBoardData(issue);
+    data.labels = { issue_priority: 'Priority', issue_done_ratio: 'Done Ratio', issue_subject: 'Issue' };
+    const onPriorityClick = vi.fn();
+    const onProgressClick = vi.fn();
+    const { container } = render(<CanvasBoard data={data}
+      state={buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map())}
+      canMove canCreate onCommand={vi.fn()} onCreate={vi.fn()} onEdit={vi.fn()} onView={vi.fn()}
+      onDelete={vi.fn()} onEditClick={vi.fn()} labels={data.labels}
+      onPriorityClick={onPriorityClick} onProgressClick={onProgressClick} />);
+    const details = container.querySelector('details')!;
+    expect(details.querySelector('summary')?.textContent).toBe('Priority / Done Ratio');
+    details.open = true;
+    fireEvent(details, new Event('toggle', { bubbles: true }));
+    await waitFor(() => expect(details.querySelector('select option')?.textContent).toContain('#15'));
+    const priority = [...details.querySelectorAll('button')].find((button) => button.textContent === 'Priority')!;
+    const progress = [...details.querySelectorAll('button')].find((button) => button.textContent === 'Done Ratio')!;
+    fireEvent.click(priority);
+    fireEvent.click(progress);
+    expect(onPriorityClick).toHaveBeenCalledWith(15, 2, 0, 600, priority);
+    expect(onProgressClick).toHaveBeenCalledWith(15, 20, 0, 600, progress);
+  });
   it('keeps a visible assignee representation when a long tracker consumes narrow-card width', () => {
     const layout = layoutCardMetadata(createCanvasContext(), {
       contentX: 13,

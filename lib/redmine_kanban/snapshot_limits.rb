@@ -5,6 +5,7 @@ module RedmineKanban
     DEFAULT_RESPONSE_BYTES = 8 * 1024 * 1024
     DEFAULT_QUERY_LIMIT = 20
     DEFAULT_TOTAL_QUERY_LIMIT = 100
+    MAX_ENTITY_RECONCILIATION_IDS = 100
     INTEGER_MAX = 2_147_483_647
 
     class InvalidLimit < StandardError; end
@@ -39,6 +40,9 @@ module RedmineKanban
       env_positive_integer('REDMINE_KANBAN_MAX_BOARD_ENTITIES', DEFAULT_SERVER_ENTITY_LIMIT)
     end
 
+    def self.entity_reconciliation_limit
+      [MAX_ENTITY_RECONCILIATION_IDS, server_entity_limit].min
+    end
     def self.response_bytes
       env_positive_integer('REDMINE_KANBAN_MAX_RESPONSE_BYTES', DEFAULT_RESPONSE_BYTES)
     end

@@ -546,6 +546,11 @@
   background: #f1f5f9;
 }
 
+.rk-dropdown-item:focus-visible {
+  outline: 2px solid var(--rk-primary);
+  outline-offset: -2px;
+}
+
 .rk-dropdown-checkbox {
   width: 18px;
   height: 18px;
@@ -961,6 +966,44 @@
   overflow: hidden;
 }
 
+.rk-board-keyboard-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  max-width: min(360px, calc(100% - 16px));
+  padding: 6px 10px;
+  border: 1px solid var(--rk-border);
+  border-radius: 6px;
+  background: var(--rk-bg-surface);
+  color: var(--rk-text-primary);
+  font-size: 13px;
+}
+
+.rk-board-keyboard-actions summary {
+  cursor: pointer;
+}
+
+.rk-board-keyboard-actions-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.rk-board-keyboard-actions-controls label,
+.rk-board-keyboard-actions-controls select {
+  width: 100%;
+}
+
+.rk-board-keyboard-actions-controls button {
+  padding: 4px 8px;
+  border: 1px solid var(--rk-border);
+  border-radius: 4px;
+  background: var(--rk-bg-surface);
+  color: var(--rk-text-primary);
+  cursor: pointer;
+}
 .rk-canvas {
   display: block;
   width: 100%;

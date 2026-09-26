@@ -4,7 +4,7 @@ import type { BoardData } from '../../model/board/types';
 import type { IssueMutationResult } from '../../infrastructure/api/contracts';
 import { getJson } from '../../infrastructure/api/http';
 import { applyAncestorIssueUpdates, applyEntityReconciliation, applyMutationResponse, invalidateBoardSnapshot, isBoardSnapshotInvalidated, unresolvedInvalidationIds, type EntityReconciliationOptions } from './useIssueMutation';
-import { buildBoardCountsUrl, buildBoardEntitiesUrl, effectiveDependencyStatusIds, effectiveScopeStatusIds } from '../../infrastructure/api/boardQuery';
+import { buildBoardCountsUrl, buildBoardEntitiesUrl, effectiveDependencyStatusIds, effectiveScopeStatusIds, ENTITY_RECONCILIATION_BATCH_SIZE } from '../../infrastructure/api/boardQuery';
 import { getBoardFreshnessAuthority, releaseBoardFreshnessAuthority } from './asyncFreshness';
 
 type Args = {
@@ -19,10 +19,10 @@ export function applyIssueMutationResponse(
   prev: BoardData,
   result: IssueMutationResult,
   payload: { issueId: number },
-  options: { applyTarget: boolean; applyNonTarget?: boolean } = { applyTarget: true },
+  options: { applyTarget: boolean; applyNonTarget?: boolean; excludeNegativeIssueIds?: number[] } = { applyTarget: true },
 ): BoardData {
   const next = options.applyTarget
-    ? applyMutationResponse(prev, result)
+    ? applyMutationResponse(prev, result, { excludeNegativeIssueIds: options.excludeNegativeIssueIds })
     : applyMutationResponse(prev, result, { excludeIssueId: payload.issueId });
   return applyAncestorIssueUpdates(options.applyTarget || options.applyNonTarget ? next : prev, result.ancestor_updates);
 }
@@ -36,7 +36,7 @@ export function useMutationReconciler({ baseUrl, boardQueryKey, data }: Args) {
     invalidateBoardSnapshot(queryClient, boardQueryKey);
   }, [boardQueryKey, queryClient]);
 
-  const reconcileIssues = useCallback(async (issueIds: number[], options: EntityReconciliationOptions = {}) => {
+  const reconcileIssueBatch = useCallback(async (issueIds: number[], options: EntityReconciliationOptions = {}) => {
     const ids = [...new Set(issueIds)];
     if (ids.length === 0) return true;
     const requestData = queryClient.getQueryData<BoardData>(boardQueryKey) ?? data;
@@ -51,13 +51,16 @@ export function useMutationReconciler({ baseUrl, boardQueryKey, data }: Args) {
       let applied = false;
       let complete = false;
       queryClient.setQueryData<BoardData>(boardQueryKey, (current) => {
-        if (!current) return current;
-        const missingIssueIds = freshnessAuthority.applicableNegativeIssueIds(request, current, response.missing_issue_ids ?? []);
-        if (missingIssueIds === null) return current;
+        if (!current || (response.scope_fingerprint && response.scope_fingerprint !== request.scopeFingerprint)) return current;
+        const applicableIds = freshnessAuthority.applicableEntityIds(request, current, ids);
+        if (applicableIds === null) return current;
+        const applicableIdSet = new Set(applicableIds);
+        const entities = (response.entities ?? []).filter((issue) => applicableIdSet.has(issue.id));
+        const missingIssueIds = (response.missing_issue_ids ?? []).filter((id) => applicableIdSet.has(id));
         applied = true;
         complete = missingIssueIds.length === 0
-          && ids.every((id) => response.entities?.some((issue) => issue.id === id));
-        return applyEntityReconciliation(current, { ...response, missing_issue_ids: missingIssueIds }, options);
+          && ids.every((id) => applicableIdSet.has(id) && entities.some((issue) => issue.id === id));
+        return applyEntityReconciliation(current, { ...response, entities, missing_issue_ids: missingIssueIds }, options);
       });
       return applied && complete;
     } catch (_error) {
@@ -69,6 +72,16 @@ export function useMutationReconciler({ baseUrl, boardQueryKey, data }: Args) {
     }
   }, [baseUrl, boardQueryKey, data, queryClient]);
 
+  const reconcileIssues = useCallback(async (issueIds: number[], options: EntityReconciliationOptions = {}) => {
+    const ids = [...new Set(issueIds)];
+    if (ids.length === 0) return true;
+    const requestData = queryClient.getQueryData<BoardData>(boardQueryKey) ?? data;
+    if (!requestData) return false;
+    const batchSize = Math.max(1, Math.min(ENTITY_RECONCILIATION_BATCH_SIZE, requestData.meta.server_entity_limit ?? ENTITY_RECONCILIATION_BATCH_SIZE));
+    const batches = Array.from({ length: Math.ceil(ids.length / batchSize) }, (_, index) => ids.slice(index * batchSize, (index + 1) * batchSize));
+    const results = await Promise.all(batches.map((batch) => reconcileIssueBatch(batch, options)));
+    return results.every(Boolean);
+  }, [boardQueryKey, data, queryClient, reconcileIssueBatch]);
   const reconcileIssueIds = useCallback(async (issueIds: number[], options: EntityReconciliationOptions = {}) => {
     await reconcileIssues(issueIds, options);
   }, [reconcileIssues]);
@@ -110,8 +123,8 @@ export function useMutationReconciler({ baseUrl, boardQueryKey, data }: Args) {
         current ? applyMutationResponse(current, result) : current
       ));
     }
-    void reconcileIssueIds(unresolvedInvalidationIds(result));
-    void reconcileIssueIds(result.invalidations?.parent_ids ?? []);
+    const invalidatedIds = [...new Set([...unresolvedInvalidationIds(result), ...(result.invalidations?.parent_ids ?? [])])];
+    void reconcileIssueIds(invalidatedIds);
     void reconcileColumnCounts(Boolean(result.invalidations?.column_counts));
   }, [boardQueryKey, invalidateSnapshot, queryClient, reconcileColumnCounts, reconcileIssueIds]);
 

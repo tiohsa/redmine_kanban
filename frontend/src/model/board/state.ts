@@ -99,9 +99,12 @@ function detachEdge(state: NormalizedBoardState, parentId: number, childId: numb
   state.tree.childrenByParentId.set(parentId, (state.tree.childrenByParentId.get(parentId) ?? []).filter((id) => id !== childId));
 }
 
-function mergeEntity(state: NormalizedBoardState, issue: Issue): boolean {
-  const incoming = entityOf(issue, state.board.columns);
-  if (state.deletedIssueIds.has(incoming.id) || !isFresh(state.entitiesById.get(incoming.id), incoming)) return false;
+function canApplyIssue(state: NormalizedBoardState, incoming: IssueEntity): boolean {
+  return !state.deletedIssueIds.has(incoming.id) && isFresh(state.entitiesById.get(incoming.id), incoming);
+}
+
+function mergeEntity(state: NormalizedBoardState, issue: Issue, incoming = entityOf(issue, state.board.columns)): boolean {
+  if (!canApplyIssue(state, incoming)) return false;
   const current = state.entitiesById.get(incoming.id);
   if (!current || !sameRevision(current, incoming)) {
     state.entitiesById.set(incoming.id, { ...current, ...incoming });
@@ -198,12 +201,16 @@ export function applyBoardResponse(previous: NormalizedBoardState, response: Boa
   const state = copyState(previous);
 
   for (const issue of response.issue_updates ?? []) {
+    const incoming = entityOf(issue, state.board.columns);
+    if (!canApplyIssue(state, incoming)) continue;
     if (outsideProjectScope(state, issue)) evictEntity(state, issue.id);
-    else if (mergeEntity(state, issue)) reconcileParent(state, issue);
+    else if (mergeEntity(state, issue, incoming)) reconcileParent(state, issue);
   }
   for (const issue of response.created_issues ?? []) {
+    const incoming = entityOf(issue, state.board.columns);
+    if (!canApplyIssue(state, incoming)) continue;
     if (outsideProjectScope(state, issue)) evictEntity(state, issue.id);
-    else if (mergeEntity(state, issue)) {
+    else if (mergeEntity(state, issue, incoming)) {
       const parentId = issue.parent_id ?? undefined;
       if (parentId !== undefined && state.entitiesById.has(parentId)) attachEdge(state, parentId, issue.id);
       else if (!state.tree.rootCandidateIds.includes(issue.id)) state.tree.rootCandidateIds.push(issue.id);

@@ -61,10 +61,10 @@ type Props = {
   onWorkTimer?: (issueId: number) => void;
   timerSession?: { sessionId?: string; issueId: number | string; state: 'running' | 'expired' | 'stopped_pending_record' } | null;
   onSubtaskToggle?: (subtaskId: number, currentClosed: boolean) => void;
-  onPriorityClick?: (issueId: number, currentPriorityId: number, x: number, y: number) => void;
+  onPriorityClick?: (issueId: number, currentPriorityId: number, x: number, y: number, source?: HTMLElement) => void;
   onDateClick?: (issueId: number, currentDate: string | null, x: number, y: number, boardPoint: { x: number; y: number }) => void;
   onViewportChange?: () => void;
-  onProgressClick?: (issueId: number, currentDoneRatio: number, x: number, y: number) => void;
+  onProgressClick?: (issueId: number, currentDoneRatio: number, x: number, y: number, source?: HTMLElement) => void;
 
   labels: Record<string, string>;
   busyIssueIds?: Set<number>;
@@ -123,6 +123,8 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   const hoveredSubtaskKeyRef = useRef<string | null>(null);
   const drawRef = useRef<() => void>(() => { });
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
+  const [keyboardActionsOpen, setKeyboardActionsOpen] = useState(false);
+  const keyboardIssueRef = useRef<HTMLSelectElement>(null);
 
   const scheduleRender = React.useCallback(() => {
     if (renderHandle.current !== null) return;
@@ -687,6 +689,17 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
 
   const handlePointerLeave = () => handlePointerLifecycle('pointerleave');
 
+  const keyboardIssues = keyboardActionsOpen
+    ? [...state.cardsById.values()].filter((issue) => canEditIssue(issue) && !busyIssueIds?.has(issue.id))
+    : [];
+  const openKeyboardPopup = (kind: 'priority' | 'progress', source: HTMLButtonElement) => {
+    const issue = state.cardsById.get(Number(keyboardIssueRef.current?.value));
+    if (!canEditIssue(issue) || !issue || busyIssueIds?.has(issue.id)) return;
+    const rect = source.getBoundingClientRect();
+    if (kind === 'priority') onPriorityClick?.(issue.id, issue.priority_id ?? 2, rect.left, rect.bottom, source);
+    else onProgressClick?.(issue.id, issue.done_ratio ?? 0, rect.left, rect.bottom, source);
+  };
+
   return (
     <div
       ref={containerRef}
@@ -705,6 +718,22 @@ aria-label={labels.board_aria}
         onLostPointerCapture={handleLostPointerCapture}
         onPointerLeave={handlePointerLeave}
       />
+      {(onPriorityClick || onProgressClick) && (
+        <details className="rk-board-keyboard-actions" onToggle={(event) => setKeyboardActionsOpen(event.currentTarget.open)}>
+          <summary>{labels.issue_priority} / {labels.issue_done_ratio}</summary>
+          {keyboardActionsOpen && (
+            <div className="rk-board-keyboard-actions-controls">
+              <label>{labels.issue_subject}
+                <select ref={keyboardIssueRef} disabled={keyboardIssues.length === 0}>
+                  {keyboardIssues.map((issue) => <option key={issue.id} value={issue.id}>#{issue.id} {issue.subject}</option>)}
+                </select>
+              </label>
+              {onPriorityClick && <button type="button" disabled={keyboardIssues.length === 0} onClick={(event) => openKeyboardPopup('priority', event.currentTarget)}>{labels.issue_priority}</button>}
+              {onProgressClick && <button type="button" disabled={keyboardIssues.length === 0} onClick={(event) => openKeyboardPopup('progress', event.currentTarget)}>{labels.issue_done_ratio}</button>}
+            </div>
+          )}
+        </details>
+      )}
       {tooltip && (
         <div
           style={{
