@@ -284,7 +284,7 @@ describe.each(['priority', 'progress'] as const)('%s popup keyboard access', (ki
     </>;
   }
 
-  it('exposes selection and accepts Enter and Space', async () => {
+  it('exposes selection state and retains mouse selection with focus restoration', async () => {
     const onChange = vi.fn();
     render(<Harness onChange={onChange} />);
     const source = screen.getByRole('button', { name: 'Open choices' });
@@ -295,14 +295,13 @@ describe.each(['priority', 'progress'] as const)('%s popup keyboard access', (ki
     expect(other.getAttribute('aria-pressed')).toBe('false');
     expect(document.activeElement).toBe(selected);
     other.focus();
-    fireEvent.keyDown(other, { key: 'Enter' });
+    fireEvent.click(other);
     expect(onChange).toHaveBeenCalledExactlyOnceWith(kind === 'priority' ? '2' : 20);
     await waitFor(() => expect(document.activeElement).toBe(source));
 
     fireEvent.click(source);
     const next = screen.getByRole('button', { name: kind === 'priority' ? 'High' : '20%' });
-    next.focus();
-    fireEvent.keyDown(next, { key: ' ' });
+    fireEvent.click(next);
     expect(onChange).toHaveBeenCalledTimes(2);
   });
 

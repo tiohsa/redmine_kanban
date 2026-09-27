@@ -20,6 +20,21 @@ describe('csrfToken', () => {
 });
 
 describe('getJson', () => {
+  it('forwards an optional AbortSignal and preserves the default call shape', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true }),
+    } as Response);
+    await getJson('/api/default');
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/default', { credentials: 'same-origin', cache: 'no-store' });
+
+    const controller = new AbortController();
+    await getJson('/api/cancellable', { signal: controller.signal });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/cancellable', {
+      credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
+    });
+  });
+
   it('throws when response is not ok', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: false,

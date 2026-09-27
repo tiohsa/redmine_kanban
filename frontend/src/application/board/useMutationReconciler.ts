@@ -1,11 +1,11 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useQueryClient, type QueryKey } from '@tanstack/react-query';
 import type { BoardData } from '../../model/board/types';
 import type { IssueMutationResult } from '../../infrastructure/api/contracts';
 import { getJson, isHttpError } from '../../infrastructure/api/http';
 import { applyAncestorIssueUpdates, applyEntityReconciliation, applyMutationResponse, invalidateBoardSnapshot, isBoardSnapshotInvalidated, unresolvedInvalidationIds, type EntityReconciliationOptions } from './useIssueMutation';
 import { buildBoardCountsUrl, buildBoardEntitiesUrl, effectiveDependencyStatusIds, effectiveScopeStatusIds, ENTITY_RECONCILIATION_BATCH_SIZE } from '../../infrastructure/api/boardQuery';
-import { getBoardFreshnessAuthority, releaseBoardFreshnessAuthority } from './asyncFreshness';
+import { getBoardFreshnessAuthority, releaseBoardFreshnessAuthority, type FreshnessRequest } from './asyncFreshness';
 
 type Args = {
   baseUrl: string;
@@ -15,7 +15,7 @@ type Args = {
 };
 
 export type ReconcileResult =
-  | { status: 'applied'; missingIds: number[] }
+  | { status: 'applied'; missingIds: number[]; supersededIds?: number[] }
   | { status: 'superseded' }
   | { status: 'failed'; reason: 'network' | 'server' };
 
@@ -44,67 +44,126 @@ export function applyIssueMutationResponse(
 export function useMutationReconciler({ baseUrl, boardQueryKey, data, onReconciliationFailure }: Args) {
   const queryClient = useQueryClient();
   const activeEntityReads = useRef(0);
-  const waitingEntityReads = useRef<Array<() => void>>([]);
-
-  const acquireEntitySlot = useCallback((): (() => void) | Promise<() => void> => {
-    const release = () => {
-      const next = waitingEntityReads.current.shift();
-      if (next) next();
-      else activeEntityReads.current -= 1;
+  const waitingEntityReads = useRef<Array<{ resolve: (release: () => void) => void; reject: (error: Error) => void; cancelled: boolean }>>([]);
+  const controllers = useRef(new Set<AbortController>());
+  const slotGeneration = useRef(0);
+  useEffect(() => {
+    const authority = getBoardFreshnessAuthority(queryClient, boardQueryKey);
+    const waitQueue = waitingEntityReads.current;
+    const activeControllers = controllers.current;
+    const unsubscribe = authority.onInvalidate(() => {
+      slotGeneration.current += 1;
+      activeEntityReads.current = 0;
+      waitQueue.splice(0).forEach((waiter) => {
+        waiter.cancelled = true;
+        waiter.reject(new DOMException('Aborted', 'AbortError'));
+      });
+      activeControllers.forEach((controller) => controller.abort());
+      activeControllers.clear();
+    });
+    const unsubscribeCache = queryClient.getQueryCache().subscribe((event) => {
+      if (event.type !== 'updated' || JSON.stringify(event.query.queryKey) !== JSON.stringify(boardQueryKey)) return;
+      const current = queryClient.getQueryData<BoardData>(boardQueryKey);
+      if (current) authority.observe(current);
+    });
+    return () => {
+      unsubscribe();
+      unsubscribeCache();
+      waitQueue.splice(0).forEach((waiter) => {
+        waiter.cancelled = true;
+        waiter.reject(new DOMException('Aborted', 'AbortError'));
+      });
+      activeControllers.forEach((controller) => controller.abort());
+      activeControllers.clear();
     };
+  }, [boardQueryKey, queryClient]);
+
+  const acquireEntitySlot = useCallback((signal: AbortSignal): (() => void) | Promise<() => void> => {
+    const generation = slotGeneration.current;
+    const createRelease = (leaseGeneration: number): (() => void) => {
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        if (leaseGeneration !== slotGeneration.current) return;
+        let next: (typeof waitingEntityReads.current)[number] | undefined;
+        while ((next = waitingEntityReads.current.shift())) {
+          if (!next.cancelled) { next.resolve(createRelease(leaseGeneration)); return; }
+        }
+        activeEntityReads.current -= 1;
+      };
+    };
+    if (signal.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
     if (activeEntityReads.current < MAX_CONCURRENT_ENTITY_READS) {
       activeEntityReads.current += 1;
-      return release;
+      return createRelease(generation);
     }
-    return new Promise<void>((resolve) => waitingEntityReads.current.push(resolve)).then(() => release);
+    return new Promise<() => void>((resolve, reject) => {
+      const waiter = { resolve, reject, cancelled: false };
+      signal.addEventListener('abort', () => { waiter.cancelled = true; reject(new DOMException('Aborted', 'AbortError')); }, { once: true });
+      waitingEntityReads.current.push(waiter);
+    });
   }, []);
 
   const invalidateSnapshot = useCallback(() => {
     void invalidateBoardSnapshot(queryClient, boardQueryKey);
   }, [boardQueryKey, queryClient]);
 
-  const reconcileIssueBatch = useCallback(async (issueIds: number[], options: EntityReconciliationOptions = {}) => {
+  const reconcileIssueBatch = useCallback(async (issueIds: number[], options: EntityReconciliationOptions = {}, request?: FreshnessRequest) => {
     const ids = [...new Set(issueIds)];
     if (ids.length === 0) return { status: 'applied', missingIds: [] } as ReconcileResult;
+    const requestedIds = [...ids];
     const requestData = queryClient.getQueryData<BoardData>(boardQueryKey) ?? data;
     if (!requestData) return { status: 'failed', reason: 'server' } as ReconcileResult;
     const freshnessAuthority = getBoardFreshnessAuthority(queryClient, boardQueryKey);
-    const request = freshnessAuthority.beginEntityReconciliation(requestData, ids);
+    const freshnessRequest = request ?? freshnessAuthority.beginEntityReconciliation(requestData, ids);
+    const controller = new AbortController();
+    freshnessAuthority.attachEntityAbortController(freshnessRequest, controller);
+    controllers.current.add(controller);
     let releaseSlot: (() => void) | undefined;
     try {
-      const slot = acquireEntitySlot();
+      const slot = acquireEntitySlot(controller.signal);
       releaseSlot = typeof slot === 'function' ? slot : await slot;
       const beforeSend = queryClient.getQueryData<BoardData>(boardQueryKey);
-      if (!beforeSend || freshnessAuthority.applicableEntityIds(request, beforeSend, ids)?.length !== ids.length) {
+      const applicableIds = beforeSend && freshnessAuthority.applicableEntityIds(freshnessRequest, beforeSend, ids);
+      if (!beforeSend || applicableIds === null || applicableIds === undefined) {
         return { status: 'superseded' } as ReconcileResult;
       }
+      const supersededBeforeSend = requestedIds.filter((id) => !applicableIds.includes(id));
+      ids.splice(0, ids.length, ...applicableIds);
+      if (!ids.length) return { status: 'superseded' } as ReconcileResult;
       const response = await getJson<{ ok: boolean } & Parameters<typeof applyEntityReconciliation>[1]>(
         buildBoardEntitiesUrl(baseUrl, requestData.meta.project_ids ?? [], ids, effectiveScopeStatusIds(requestData), effectiveDependencyStatusIds(requestData)),
+        { signal: controller.signal },
       );
       if (!response.ok) return { status: 'failed', reason: 'server' } as ReconcileResult;
       let applied = false;
       let missingIds: number[] = [];
       let completeResponse = false;
+      let resultSupersededIds = supersededBeforeSend;
       queryClient.setQueryData<BoardData>(boardQueryKey, (current) => {
-        if (!current || (response.scope_fingerprint && response.scope_fingerprint !== request.scopeFingerprint)) return current;
-        const applicableIds = freshnessAuthority.applicableEntityIds(request, current, ids);
+        if (!current || (response.scope_fingerprint && response.scope_fingerprint !== freshnessRequest.scopeFingerprint)) return current;
+        const applicableIds = freshnessAuthority.applicableEntityIds(freshnessRequest, current, ids);
         if (applicableIds === null) return current;
         const applicableIdSet = new Set(applicableIds);
+        const supersededIds = [...new Set([...resultSupersededIds, ...ids.filter((id) => !applicableIdSet.has(id))])];
         const entities = (response.entities ?? []).filter((issue) => applicableIdSet.has(issue.id));
         const missingIssueIds = (response.missing_issue_ids ?? []).filter((id) => applicableIdSet.has(id));
         applied = true;
         missingIds = missingIssueIds;
         completeResponse = applicableIds.every((id) => entities.some((issue) => issue.id === id) || missingIssueIds.includes(id));
-        if (applicableIds.length !== ids.length) applied = false;
+        resultSupersededIds = supersededIds;
         return applyEntityReconciliation(current, { ...response, entities, missing_issue_ids: missingIssueIds }, options);
       });
       if (!applied) return { status: 'superseded' } as ReconcileResult;
-      return completeResponse ? { status: 'applied', missingIds } as ReconcileResult : { status: 'failed', reason: 'server' } as ReconcileResult;
+      return completeResponse ? { status: 'applied', missingIds, ...(resultSupersededIds.length ? { supersededIds: resultSupersededIds } : {}) } as ReconcileResult : { status: 'failed', reason: 'server' } as ReconcileResult;
     } catch (error) {
+      if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return { status: 'superseded' } as ReconcileResult;
       return { status: 'failed', reason: isHttpError(error) ? 'server' : 'network' } as ReconcileResult;
     } finally {
       releaseSlot?.();
-      freshnessAuthority.finish(request);
+      controllers.current.delete(controller);
+      freshnessAuthority.finish(freshnessRequest);
       releaseBoardFreshnessAuthority(queryClient, boardQueryKey, freshnessAuthority);
     }
   }, [acquireEntitySlot, baseUrl, boardQueryKey, data, queryClient]);
@@ -118,6 +177,7 @@ export function useMutationReconciler({ baseUrl, boardQueryKey, data, onReconcil
     const batches = Array.from({ length: Math.ceil(ids.length / batchSize) }, (_, index) => ids.slice(index * batchSize, (index + 1) * batchSize));
     const authority = getBoardFreshnessAuthority(queryClient, boardQueryKey);
     const guard = authority.beginEntityReconciliation(requestData, []);
+    const requests = batches.map((batch) => authority.beginEntityReconciliation(requestData, batch));
     const results: ReconcileResult[] = new Array(batches.length);
     let nextIndex = 0;
     try {
@@ -129,21 +189,29 @@ export function useMutationReconciler({ baseUrl, boardQueryKey, data, onReconcil
             results[index] = { status: 'superseded' };
             continue;
           }
-          results[index] = await reconcileIssueBatch(batches[index]!, options);
+          results[index] = await reconcileIssueBatch(batches[index]!, options, requests[index]);
         }
       }));
     } finally {
+      requests.forEach((request) => authority.finish(request));
       authority.finish(guard);
       releaseBoardFreshnessAuthority(queryClient, boardQueryKey, authority);
     }
     const failed = results.find((result) => result.status === 'failed');
     if (failed) return failed;
-    if (results.some((result) => result.status === 'superseded')) return { status: 'superseded' } as ReconcileResult;
-    return { status: 'applied', missingIds: results.flatMap((result) => result.status === 'applied' ? result.missingIds : []) } as ReconcileResult;
+    if (results.every((result) => result.status === 'superseded')) return { status: 'superseded' } as ReconcileResult;
+    return {
+      status: 'applied',
+      missingIds: results.flatMap((result) => result.status === 'applied' ? result.missingIds : []),
+      ...(() => {
+        const staleIds = results.flatMap((result, index) => result.status === 'superseded' ? batches[index]! : result.status === 'applied' ? result.supersededIds ?? [] : []);
+        return staleIds.length ? { supersededIds: staleIds } : {};
+      })(),
+    } as ReconcileResult;
   }, [boardQueryKey, data, queryClient, reconcileIssueBatch]);
   const reconcileIssues = useCallback(async (issueIds: number[], options: EntityReconciliationOptions = {}) => {
     const result = await reconcileIssuesResult(issueIds, options);
-    return result.status === 'applied' && result.missingIds.length === 0;
+    return result.status === 'applied' && result.missingIds.length === 0 && (result.supersededIds?.length ?? 0) === 0;
   }, [reconcileIssuesResult]);
   const reconcileIssueIds = useCallback(async (issueIds: number[], options: EntityReconciliationOptions = {}) => {
     const initial = queryClient.getQueryData<BoardData>(boardQueryKey);

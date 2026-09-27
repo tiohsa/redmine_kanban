@@ -150,8 +150,11 @@ export function useSavedViews(storageKey: string, current: SavedViewSettings, on
       });
     },
     remove(id: string): boolean {
+      const target = selectedBaseline?.id === id ? selectedBaseline : stored.views.find((view) => view.id === id) ?? null;
+      if (!target) return false;
       return run((views) => {
-        if (!views.some((view) => view.id === id)) throw new Error('saved_views_unreadable');
+        const latest = views.find((view) => view.id === id);
+        if (!latest || JSON.stringify(latest) !== JSON.stringify(target)) throw new Error('saved_views_conflict');
         return { views: views.filter((view) => view.id !== id), result: id };
       }, () => {
         let activeSaved = true;
@@ -192,7 +195,7 @@ export function useSavedViews(storageKey: string, current: SavedViewSettings, on
       setStatus('complete');
       return true;
     },
-    reloadConflict(operation: 'rename' | 'overwrite'): 'reloaded' | 'missing' | 'unreadable' {
+    reloadConflict(operation: 'rename' | 'overwrite' | 'delete'): 'reloaded' | 'missing' | 'unreadable' {
       const latest = readSavedViews(storageKey);
       setStored(latest);
       if (latest.error) {
@@ -207,7 +210,7 @@ export function useSavedViews(storageKey: string, current: SavedViewSettings, on
       setActiveBaseline(activeLatest);
       if (!activeLatest && activeId) setActiveId('');
       const pendingLatest = pendingActiveWrite?.kind === 'select' ? latest.views.find((view) => view.id === pendingActiveWrite.view.id) ?? null : null;
-      const target = operation === 'rename' ? selectedLatest : pendingLatest ?? activeLatest;
+      const target = operation === 'rename' || operation === 'delete' ? selectedLatest : pendingLatest ?? activeLatest;
       if (operation === 'overwrite' && target) {
         onApply(copyViewSettings(target.settings));
         if (pendingLatest) {

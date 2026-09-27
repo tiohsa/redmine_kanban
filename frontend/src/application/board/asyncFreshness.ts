@@ -40,13 +40,27 @@ export class BoardFreshnessAuthority {
   private latestEntityRequestIds = new Map<number, number>();
   private currentScopeFingerprint: string | undefined;
   private activeRequests = new Set<number>();
+  private entityAbortControllers = new Map<number, AbortController>();
+  private invalidationListeners = new Set<() => void>();
 
   beginEntityReconciliation(data: BoardData, issueIds: Iterable<number>): FreshnessRequest {
     this.syncScope(data);
     const ids = [...new Set(issueIds)];
     const request = this.begin('entity', data, new Map(ids.map((id) => [id, snapshotIssue(data, id)])));
     for (const id of ids) this.latestEntityRequestIds.set(id, request.id);
+    for (const [requestId, controller] of this.entityAbortControllers) {
+      if (requestId !== request.id && this.activeRequests.has(requestId)
+        && [...request.entitySnapshots.keys()].some((id) => this.activeRequestEntityIds.get(requestId)?.has(id))) controller.abort();
+    }
     return request;
+  }
+
+  private activeRequestEntityIds = new Map<number, ReadonlySet<number>>();
+
+  attachEntityAbortController(request: FreshnessRequest, controller: AbortController): void {
+    if (request.kind !== 'entity' || !this.activeRequests.has(request.id)) return;
+    this.entityAbortControllers.set(request.id, controller);
+    this.activeRequestEntityIds.set(request.id, new Set(request.entitySnapshots.keys()));
   }
 
   beginAggregateReconciliation(data: BoardData): FreshnessRequest {
@@ -89,6 +103,8 @@ export class BoardFreshnessAuthority {
 
   finish(request: FreshnessRequest): void {
     this.activeRequests.delete(request.id);
+    this.entityAbortControllers.delete(request.id);
+    this.activeRequestEntityIds.delete(request.id);
     for (const issueId of request.entitySnapshots.keys()) {
       if (this.latestEntityRequestIds.get(issueId) === request.id) this.latestEntityRequestIds.delete(issueId);
     }
@@ -96,6 +112,10 @@ export class BoardFreshnessAuthority {
 
   invalidate(): void {
     this.generation += 1;
+    this.entityAbortControllers.forEach((controller) => controller.abort());
+    this.entityAbortControllers.clear();
+    this.activeRequestEntityIds.clear();
+    for (const listener of this.invalidationListeners) listener();
     this.latestAggregateRequestId = 0;
     this.latestEntityRequestIds.clear();
     this.activeRequests.clear();
@@ -107,6 +127,15 @@ export class BoardFreshnessAuthority {
 
   get currentGeneration(): number {
     return this.generation;
+  }
+
+  onInvalidate(listener: () => void): () => void {
+    this.invalidationListeners.add(listener);
+    return () => this.invalidationListeners.delete(listener);
+  }
+
+  observe(data: BoardData): void {
+    this.syncScope(data);
   }
 
   private begin(

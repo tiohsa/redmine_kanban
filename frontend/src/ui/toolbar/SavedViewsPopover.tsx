@@ -117,8 +117,8 @@ export function SavedViewsPopover({ storageKey, current, onApply, labels, valida
         </div> : null}
         {views.error || views.stored.error ? <p className="rk-saved-views-message is-error" role="alert">{labels[views.error ?? views.stored.error ?? 'saved_views_unreadable']}</p> : null}
         {views.error === 'saved_views_conflict' ? <div className="rk-saved-views-form-actions">
-          <button type="button" className="rk-btn rk-btn-sm" onClick={() => { if (views.reloadConflict(mode === 'rename' ? 'rename' : 'overwrite') === 'missing' && mode === 'rename') setMode('manage'); }}>{labels.saved_views_reload}</button>
-          {(mode === 'rename' ? views.selected : views.active) ? <button type="button" className="rk-btn rk-btn-sm" onClick={() => views.continueEditing()}>{labels.saved_views_continue}</button> : null}
+          <button type="button" className="rk-btn rk-btn-sm" onClick={() => { if (views.reloadConflict(mode === 'rename' ? 'rename' : mode === 'delete' ? 'delete' : 'overwrite') === 'missing' && (mode === 'rename' || mode === 'delete')) setMode('manage'); }}>{labels.saved_views_reload}</button>
+          {(mode === 'rename' || mode === 'delete' ? views.selected : views.active) ? <button type="button" className="rk-btn rk-btn-sm" onClick={() => views.continueEditing()}>{labels.saved_views_continue}</button> : null}
         </div> : null}
         {views.status === 'partial' && views.pendingActiveWrite ? <button type="button" className="rk-btn rk-btn-sm" onClick={() => views.retryActive()}>{labels[views.pendingActiveWrite.kind === 'clear' ? 'saved_views_retry_clear' : 'saved_views_retry_active']}</button> : null}
         {views.saved ? <p className="rk-saved-views-message is-success" role="status">{labels.saved_views_saved}</p> : null}

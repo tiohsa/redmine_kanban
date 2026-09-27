@@ -349,6 +349,19 @@ describe('saved view operations', () => {
     expect(read().views[0].settings.laneType).toBe('category');
     expect(screen.queryByRole('alert')).toBeNull();
   });
+  it('blocks deletion after another tab changes the target and allows deletion after reload', () => {
+    setup(); createView('A'); manage('A'); click('delete');
+    const original = read().views[0];
+    localStorage.setItem(key, JSON.stringify({ version: 1, views: [{ ...original, name: 'Changed in another tab' }] }));
+    click('saved_views_confirm_delete');
+    expect(read().views[0].name).toBe('Changed in another tab');
+    expect(screen.getByRole('alert').textContent).toBe('saved_views_conflict');
+    click('saved_views_reload');
+    expect(screen.getByRole('group', { name: 'delete' })).toBeTruthy();
+    expect(screen.getByText('saved_views_delete_confirm'.replace('%{name}', 'Changed in another tab'))).toBeTruthy();
+    click('saved_views_confirm_delete');
+    expect(read().views).toEqual([]);
+  });
   it('leaves a deleted rename form after conflict reload', () => {
     setup(); createView('A'); manage('A'); click('saved_views_rename'); nameView('Local');
     localStorage.setItem(key, JSON.stringify({ version: 1, views: [] }));

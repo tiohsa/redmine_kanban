@@ -425,6 +425,46 @@ describe('batched entity reconciliation', () => {
     });
   });
 
+  it('continues handing entity slots to every queued reconciliation call', async () => {
+    const { result } = renderReconciler(board([issue(1), issue(2), issue(3), issue(4), issue(5)]));
+    const responses = Array.from({ length: 5 }, () => deferred<{ ok: boolean; entities: Issue[] }>());
+    const started: number[] = [];
+    getJsonMock.mockImplementation((url: string) => {
+      const id = Number(new URL(url, 'http://localhost').searchParams.get('ids[]'));
+      started.push(id);
+      return responses[id - 1]!.promise;
+    });
+
+    const pending = [1, 2, 3, 4, 5].map((id) => result.current.reconcileIssues([id]));
+    expect(started).toEqual([1, 2]);
+    for (let id = 1; id <= 5; id += 1) {
+      await act(async () => {
+        responses[id - 1]!.resolve({ ok: true, entities: [issue(id)] });
+        await waitFor(() => expect(started).toContain(id));
+      });
+    }
+    await act(async () => { expect(await Promise.all(pending)).toEqual([true, true, true, true, true]); });
+    expect(started).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('finishes freshness requests for batches skipped after the board query is removed', async () => {
+    const ids = Array.from({ length: 201 }, (_, index) => index + 1);
+    const { result, queryClient } = renderReconciler(board(ids.map((id) => issue(id))));
+    const authority = getBoardFreshnessAuthority(queryClient, queryKey);
+    const first = deferred<{ ok: boolean; entities: Issue[] }>();
+    const second = deferred<{ ok: boolean; entities: Issue[] }>();
+    getJsonMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+
+    const pending = result.current.reconcileIssues(ids);
+    expect(authority.activeRequestCount).toBe(4); // outer guard + 3 batch requests
+    queryClient.removeQueries({ queryKey });
+    await act(async () => { first.resolve({ ok: true, entities: ids.slice(0, 100).map((id) => issue(id)) }); });
+    await act(async () => { second.resolve({ ok: true, entities: ids.slice(100, 200).map((id) => issue(id)) }); });
+    await act(async () => { await pending; });
+
+    expect(authority.activeRequestCount).toBe(0);
+  });
+
   it('never exceeds two concurrent entity reads across four batches', async () => {
     const ids = Array.from({ length: 301 }, (_, index) => index + 1);
     const { result } = renderReconciler(board(ids.map((id) => issue(id))));
@@ -507,5 +547,72 @@ describe('batched entity reconciliation', () => {
       expect(await pending).toBe(false);
     });
     expect(findIssueInBoard(current(), 101)?.subject).toBe('Newer');
+  });
+
+  it('sends only still-fresh IDs when one ID changes while a request waits for a slot', async () => {
+    const { result, queryClient, current } = renderReconciler(board([issue(1), issue(2), issue(3), issue(4), issue(5)]));
+    const blockers = [deferred<{ ok: boolean; entities: Issue[] }>(), deferred<{ ok: boolean; entities: Issue[] }>()];
+    let blockerIndex = 0;
+    const queued = deferred<{ ok: boolean; entities: Issue[]; missing_issue_ids: number[] }>();
+    const sent: number[][] = [];
+    getJsonMock.mockImplementation((url: string) => {
+      const ids = new URL(url, 'http://localhost').searchParams.getAll('ids[]').map(Number);
+      sent.push(ids);
+      if (ids[0] === 1 || ids[0] === 2) return blockers[blockerIndex++]!.promise;
+      return queued.promise;
+    });
+    const first = result.current.reconcileIssues([1]);
+    const second = result.current.reconcileIssues([2]);
+    const waiting = result.current.reconcileIssues([3, 4]);
+    expect(sent).toEqual([[1], [2]]);
+    queryClient.setQueryData(queryKey, {
+      ...current(), issues: current().issues.map((item) => item.id === 3 ? issue(3, { subject: 'Newest A', lock_version: 2 }) : item),
+    });
+    await act(async () => {
+      blockers[0]!.resolve({ ok: true, entities: [issue(1)] });
+      blockers[1]!.resolve({ ok: true, entities: [issue(2)] });
+      await Promise.all([first, second]);
+    });
+    expect(sent).toEqual([[1], [2], [4]]);
+    await act(async () => {
+      queued.resolve({ ok: true, entities: [issue(4, { subject: 'Fresh B', lock_version: 2 })], missing_issue_ids: [] });
+      expect(await waiting).toBe(false);
+    });
+    expect(findIssueInBoard(current(), 3)?.subject).toBe('Newest A');
+    expect(findIssueInBoard(current(), 4)?.subject).toBe('Fresh B');
+  });
+
+  it('aborts old-scope reads and does not send queued reads after a scope switch', async () => {
+    const initial = board([issue(1), issue(2), issue(3)]);
+    const { result, queryClient, current } = renderReconciler(initial);
+    const first = deferred<{ ok: boolean; entities: Issue[] }>();
+    const signals: AbortSignal[] = [];
+    const sent: number[][] = [];
+    getJsonMock.mockImplementation((url: string, options?: { signal?: AbortSignal }) => {
+      sent.push(new URL(url, 'http://localhost').searchParams.getAll('ids[]').map(Number));
+      if (options?.signal) signals.push(options.signal);
+      return new Promise((resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+        first.promise.then(resolve, reject);
+      });
+    });
+    const staleOne = result.current.reconcileIssues([1]);
+    const staleTwo = result.current.reconcileIssues([2]);
+    const queued = result.current.reconcileIssues([3]);
+    expect(sent).toEqual([[1], [2]]);
+    const replacement = { ...current(), scope_fingerprint: 'project:2', meta: { ...current().meta, scope_fingerprint: 'project:2' } };
+    queryClient.setQueryData(queryKey, replacement);
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
+    await act(async () => { await Promise.all([staleOne, staleTwo, queued]); });
+    expect(sent).toEqual([[1], [2]]);
+    const latestResponse = deferred<{ ok: boolean; entities: Issue[] }>();
+    getJsonMock.mockReturnValueOnce(latestResponse.promise);
+    const fresh = result.current.reconcileIssues([1]);
+    expect(getJsonMock).toHaveBeenCalledTimes(3);
+    await act(async () => {
+      latestResponse.resolve({ ok: true, entities: [issue(1, { subject: 'New scope' })] });
+      await fresh;
+    });
+    expect(getBoardFreshnessAuthority(queryClient, queryKey).activeRequestCount).toBe(0);
   });
 });

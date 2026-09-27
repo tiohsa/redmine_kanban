@@ -53,13 +53,6 @@ function useChoicePopup(onClose: () => void, restoreFocusTo?: HTMLElement | null
   return { menuRef, restoreFocus };
 }
 
-function activateChoice(event: React.KeyboardEvent<HTMLButtonElement>, choose: () => void) {
-  if ((event.key === 'Enter' || event.key === ' ') && !event.repeat) {
-    event.preventDefault();
-    choose();
-  }
-}
-
 export function PriorityPopup({
   x,
   y,
@@ -113,7 +106,6 @@ export function PriorityPopup({
             className={`rk-dropdown-item ${checked ? 'selected' : ''}`}
             aria-pressed={checked}
             onClick={select}
-            onKeyDown={(event) => activateChoice(event, select)}
           >
             <span className="rk-dropdown-checkbox" aria-hidden="true" />
             <span>{option.name}</span>
@@ -391,7 +383,6 @@ export function ProgressPopup({
             className={`rk-dropdown-item ${checked ? 'selected' : ''}`}
             aria-pressed={checked}
             onClick={select}
-            onKeyDown={(event) => activateChoice(event, select)}
           >
             <span className="rk-dropdown-checkbox" aria-hidden="true" />
             <span>{option}%</span>
