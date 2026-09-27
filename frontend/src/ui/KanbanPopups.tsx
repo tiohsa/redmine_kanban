@@ -4,48 +4,82 @@ import 'react-datepicker/dist/react-datepicker.css';
 import { format as formatMonthName } from 'date-fns';
 import { enUS, ja } from 'date-fns/locale';
 
+const FOCUS_RESTORE_DEADLINE_MS = 5_000;
+let cancelPendingFocusRestore: (() => void) | undefined;
+
+function isDetached(element: HTMLElement | null): boolean {
+  return !element?.isConnected;
+}
+
 function useChoicePopup(onClose: () => void, restoreFocusTo?: HTMLElement | null) {
   const menuRef = useRef<HTMLDivElement>(null);
   const focusTarget = useRef(restoreFocusTo ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null));
+  const closed = useRef(false);
   const restoreFocus = useCallback(() => {
+    cancelPendingFocusRestore?.();
     let observer: MutationObserver | undefined;
-    let timer = 0;
+    let deadlineTimer = 0;
+    let finished = false;
+    const target = focusTarget.current;
+    const canvas = document.querySelector<HTMLElement>('.rk-canvas');
+    const release = () => {
+      if (finished) return;
+      finished = true;
+      observer?.disconnect();
+      observer = undefined;
+      window.clearTimeout(deadlineTimer);
+      document.removeEventListener('focusin', handleFocusIn);
+      if (cancelPendingFocusRestore === release) cancelPendingFocusRestore = undefined;
+    };
     const handleFocusIn = () => {
       const active = document.activeElement;
       if (active && active !== document.body && active !== document.documentElement
-        && active !== focusTarget.current && !menuRef.current?.contains(active)) stop();
+        && active !== target && !menuRef.current?.contains(active)) release();
     };
-    const stop = () => {
-      observer?.disconnect();
-      observer = undefined;
-      window.clearTimeout(timer);
-      document.removeEventListener('focusin', handleFocusIn);
-    };
-    const tryRestore = () => {
-      const target = focusTarget.current;
+    const canFocus = (element: HTMLElement | null): element is HTMLElement => Boolean(
+      element?.isConnected && !element.matches(':disabled') && element !== document.body && element !== document.documentElement,
+    );
+    const tryRestore = (expired = false) => {
+      if (finished) return;
+      const destination = focusTarget.current;
       const active = document.activeElement;
-      if (!target?.isConnected || target === document.body) {
-        stop();
+      if (active && active !== document.body && active !== document.documentElement
+        && active !== target && !menuRef.current?.contains(active)) {
+        release();
         return;
       }
-      if (!active || active === document.body || active === document.documentElement) {
-        if ('disabled' in target && (target as HTMLButtonElement).disabled) {
-          timer = window.setTimeout(tryRestore, 50);
+      if (canFocus(destination)) {
+        destination.focus({ preventScroll: true });
+        release();
+        return;
+      }
+      if (expired || isDetached(destination)) {
+        if (menuRef.current?.contains(active)) {
+          if (expired) release();
           return;
         }
-        target.focus({ preventScroll: true });
+        if (active === document.body || active === document.documentElement || !active) {
+          if (canFocus(canvas)) canvas.focus({ preventScroll: true });
+        }
+        release();
       }
-      stop();
     };
-    timer = window.setTimeout(tryRestore, 0);
+    if (!target) return;
+    cancelPendingFocusRestore = release;
     document.addEventListener('focusin', handleFocusIn);
-    const target = focusTarget.current;
-    if (target && 'disabled' in target) {
-      observer = new MutationObserver(tryRestore);
-      observer.observe(target, { attributes: true, attributeFilter: ['disabled'] });
-    }
+    observer = new MutationObserver(() => tryRestore());
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['disabled'],
+      childList: true,
+      subtree: true,
+    });
+    deadlineTimer = window.setTimeout(() => tryRestore(true), FOCUS_RESTORE_DEADLINE_MS);
+    tryRestore();
   }, []);
   const close = useCallback(() => {
+    if (closed.current) return;
+    closed.current = true;
     onClose();
     restoreFocus();
   }, [onClose, restoreFocus]);
@@ -101,7 +135,10 @@ export function PriorityPopup({
   ariaLabel?: string;
 }) {
   const { menuRef, restoreFocus } = useChoicePopup(onClose, restoreFocusTo);
+  const selected = useRef(false);
   const choose = (id: string) => {
+    if (selected.current) return;
+    selected.current = true;
     onChange(id);
     restoreFocus();
   };
@@ -370,6 +407,7 @@ export function ProgressPopup({
   ariaLabel?: string;
 }) {
   const { menuRef, restoreFocus } = useChoicePopup(onClose, restoreFocusTo);
+  const selected = useRef(false);
   const options = Array.from({ length: 11 }, (_, i) => i * 10);
   const showUpward = y > window.innerHeight / 2;
   const showLeftward = x > window.innerWidth - 120;
@@ -378,6 +416,8 @@ export function ProgressPopup({
     showUpward ? 'translateY(-100%)' : 'translateY(0)',
   ].join(' ');
   const choose = (next: number) => {
+    if (selected.current) return;
+    selected.current = true;
     onChange(next);
     restoreFocus();
   };

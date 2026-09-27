@@ -21,6 +21,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  document.querySelectorAll('body > button, body > .rk-canvas').forEach((element) => element.remove());
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -344,5 +345,116 @@ describe.each(['priority', 'progress'] as const)('%s popup keyboard access', (ki
     fireEvent.click(option);
     const source = screen.getByRole('button', { name: 'Open async choices' });
     await waitFor(() => expect(document.activeElement).toBe(source));
+  });
+
+  it('stops watching a permanently disabled source after the focus deadline', async () => {
+    vi.useFakeTimers();
+    const source = document.createElement('button');
+    source.disabled = true;
+    source.textContent = 'Open choices';
+    document.body.append(source);
+    const onChange = vi.fn();
+    function Harness() {
+      const [show, setShow] = useState(true);
+      return <>
+        {show && kind === 'priority'
+          ? <PriorityPopup x={0} y={0} value="1" options={[{ id: '1', name: 'Low' }, { id: '2', name: 'High' }]}
+              restoreFocusTo={source} onClose={() => setShow(false)} onChange={(value) => { onChange(value); setShow(false); }} />
+          : show ? <ProgressPopup x={0} y={0} value={10} restoreFocusTo={source}
+              onClose={() => setShow(false)} onChange={(value) => { onChange(value); setShow(false); }} /> : null}
+      </>;
+    }
+    const disconnect = vi.spyOn(MutationObserver.prototype, 'disconnect');
+    const removeEventListener = vi.spyOn(document, 'removeEventListener');
+    const { unmount } = render(<Harness />);
+
+    fireEvent.click(screen.getByRole('button', { name: kind === 'priority' ? 'High' : '20%' }));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(disconnect).toHaveBeenCalled();
+    expect(removeEventListener).toHaveBeenCalledWith('focusin', expect.any(Function));
+    expect(vi.getTimerCount()).toBeLessThanOrEqual(1);
+    expect(document.activeElement).not.toBe(source);
+    unmount();
+    source.remove();
+  });
+
+  it('does not steal focus after the user moves elsewhere while the source is disabled', async () => {
+    vi.useFakeTimers();
+    const source = document.createElement('button');
+    source.disabled = true;
+    document.body.append(source);
+    const other = document.createElement('button');
+    other.textContent = 'Other action';
+    document.body.append(other);
+    const { unmount } = render(kind === 'priority'
+      ? <PriorityPopup x={0} y={0} value="1" options={[{ id: '1', name: 'Low' }, { id: '2', name: 'High' }]}
+          restoreFocusTo={source} onClose={vi.fn()} onChange={vi.fn()} />
+      : <ProgressPopup x={0} y={0} value={10} restoreFocusTo={source} onClose={vi.fn()} onChange={vi.fn()} />);
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await vi.advanceTimersByTimeAsync(0);
+    other.focus();
+    await vi.advanceTimersByTimeAsync(5_000);
+    source.disabled = false;
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(document.activeElement).toBe(other);
+    expect(vi.getTimerCount()).toBe(0);
+    unmount();
+    source.remove();
+    other.remove();
+  });
+
+  it('lets a newly opened choice popup supersede the older focus restoration', async () => {
+    vi.useFakeTimers();
+    const sourceA = document.createElement('button');
+    sourceA.disabled = true;
+    document.body.append(sourceA);
+    function Harness() {
+      const [open, setOpen] = useState<'A' | 'B'>('A');
+      return <>
+        <button type="button" onClick={() => setOpen('B')}>Open popup B</button>
+        {open === 'A'
+          ? <PriorityPopup x={0} y={0} value="1" options={[{ id: '1', name: 'A low' }, { id: '2', name: 'A high' }]}
+              restoreFocusTo={sourceA} onClose={() => setOpen('B')} onChange={vi.fn()} />
+          : <ProgressPopup x={0} y={0} value={10} onClose={vi.fn()} onChange={vi.fn()} />}
+      </>;
+    }
+    render(<Harness />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Open popup B' }));
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(document.activeElement?.closest('[aria-label="Progress"]')).not.toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+    sourceA.remove();
+  });
+
+  it('releases the pending restore when its source is removed', async () => {
+    vi.useFakeTimers();
+    const source = document.createElement('button');
+    source.disabled = true;
+    document.body.append(source);
+    const canvas = document.createElement('div');
+    canvas.className = 'rk-canvas';
+    canvas.tabIndex = -1;
+    document.body.append(canvas);
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return open ? <PriorityPopup x={0} y={0} value="1" options={[{ id: '1', name: 'Low' }]}
+        restoreFocusTo={source} onClose={() => { source.remove(); setOpen(false); }} onChange={vi.fn()} /> : null;
+    }
+    const disconnect = vi.spyOn(MutationObserver.prototype, 'disconnect');
+    render(<Harness />);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(document.activeElement).toBe(canvas);
+    expect(disconnect).toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    canvas.remove();
   });
 });
