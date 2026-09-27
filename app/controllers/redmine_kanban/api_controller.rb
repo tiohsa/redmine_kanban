@@ -31,9 +31,16 @@ module RedmineKanban
     end
 
     def entities
-      ids = normalize_integer_array_param(params[:ids])
+      ids = normalize_issue_ids_param(params[:ids])
       context = mutation_board_context
-      render json: BoardEntityReader.new(board_context: context, user: User.current).read(ids: ids)
+      payload = BoardEntityReader.new(board_context: context, user: User.current).read(ids: ids)
+      if payload.to_json.bytesize > SnapshotLimits.response_bytes
+        render json: { ok: false, contract_version: 3, error: { code: 'BOARD_RESPONSE_TOO_LARGE' } }, status: :unprocessable_entity
+      else
+        render json: payload
+      end
+    rescue ArrayParamNormalizer::InvalidIssueIds => error
+      render json: { ok: false, contract_version: 3, error: { code: error.code, maximum_ids: SnapshotLimits.entity_reconciliation_limit } }, status: :bad_request
     end
 
     def counts

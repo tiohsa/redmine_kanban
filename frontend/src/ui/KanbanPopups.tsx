@@ -1,8 +1,217 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { format as formatMonthName } from 'date-fns';
 import { enUS, ja } from 'date-fns/locale';
+
+const FOCUS_RESTORE_DEADLINE_MS = 5_000;
+let cancelPendingFocusRestore: (() => void) | undefined;
+
+function isDetached(element: HTMLElement | null): boolean {
+  return !element?.isConnected;
+}
+
+function focusRootFor(target: HTMLElement): HTMLElement {
+  return target.closest<HTMLElement>('#redmine-kanban-root')
+    ?? target.closest<HTMLElement>('.rk-canvas-board')
+    ?? target.parentElement
+    ?? document.documentElement;
+}
+
+function useChoicePopup(onClose: () => void, restoreFocusTo?: HTMLElement | null) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const focusTarget = useRef(restoreFocusTo ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null));
+  const focusRoot = useRef<HTMLElement | null>(null);
+  if (!focusRoot.current && focusTarget.current) focusRoot.current = focusRootFor(focusTarget.current);
+  const closed = useRef(false);
+
+  useLayoutEffect(() => {
+    // A newly opened choice popup owns focus and supersedes any older request.
+    cancelPendingFocusRestore?.();
+  }, []);
+
+  const restoreFocus = useCallback((after?: PromiseLike<unknown>) => {
+    cancelPendingFocusRestore?.();
+    let observer: MutationObserver | undefined;
+    let animationFrame: number | undefined;
+    let scheduledTimer: number | undefined;
+    let finished = false;
+    let semanticSettled = !after;
+    const target = focusTarget.current;
+    const boardRoot = focusRoot.current;
+
+    if (!target || !boardRoot) return;
+
+    const isPassiveFocus = (active: Element | null) => (
+      !active || active === document.body || active === document.documentElement || active === target
+    );
+    const canFocus = (element: HTMLElement | null): element is HTMLElement => Boolean(
+      element?.isConnected
+      && !element.matches(':disabled')
+      && element !== document.body
+      && element !== document.documentElement,
+    );
+    const focusFallback = () => {
+      const active = document.activeElement;
+      if (!isPassiveFocus(active) || menuRef.current?.contains(active)) return;
+      if (!boardRoot.isConnected) return;
+      const fallback = boardRoot.matches('.rk-canvas')
+        ? boardRoot
+        : boardRoot.querySelector<HTMLElement>('.rk-canvas');
+      if (!canFocus(fallback)) return;
+      fallback.focus({ preventScroll: true });
+    };
+
+    const release = () => {
+      if (finished) return;
+      finished = true;
+      observer?.disconnect();
+      observer = undefined;
+      window.clearTimeout(deadlineTimer);
+      if (scheduledTimer !== undefined) window.clearTimeout(scheduledTimer);
+      if (animationFrame !== undefined && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(animationFrame);
+      }
+      animationFrame = undefined;
+      scheduledTimer = undefined;
+      document.removeEventListener('focusin', handleFocusIn);
+      if (cancelPendingFocusRestore === release) cancelPendingFocusRestore = undefined;
+    };
+
+    const handleFocusIn = () => {
+      const active = document.activeElement;
+      if (active && active !== document.body && active !== document.documentElement
+        && active !== target && !menuRef.current?.contains(active)) release();
+    };
+
+    const tryRestore = (expired = false) => {
+      if (finished) return;
+      const active = document.activeElement;
+      if (active && active !== document.body && active !== document.documentElement
+        && active !== target && !menuRef.current?.contains(active)) {
+        release();
+        return;
+      }
+
+      // A detached/replaced board ends this request. A removed source can use a
+      // fallback only inside its still-connected board, and only when focus is idle.
+      if (!boardRoot.isConnected) {
+        release();
+        return;
+      }
+
+      if (isDetached(target)) {
+        focusFallback();
+        release();
+        return;
+      }
+      if (!boardRoot.contains(target)) {
+        release();
+        return;
+      }
+
+      // Expiry abandons the semantic wait. It never focuses the invoking control
+      // while its mutation promise is still pending.
+      if (expired) {
+        focusFallback();
+        release();
+        return;
+      }
+      if (!semanticSettled) return;
+      if (menuRef.current?.isConnected) return;
+
+      if (active === target) {
+        release();
+        return;
+      }
+      if (!canFocus(target)) return;
+
+      target.focus({ preventScroll: true });
+      if (document.activeElement === target) release();
+    };
+
+    const scheduleRestoreCheck = () => {
+      if (finished || animationFrame !== undefined || scheduledTimer !== undefined) return;
+      if (typeof window.requestAnimationFrame === 'function') {
+        animationFrame = window.requestAnimationFrame(() => {
+          animationFrame = undefined;
+          tryRestore();
+        });
+      } else {
+        scheduledTimer = window.setTimeout(() => {
+          scheduledTimer = undefined;
+          tryRestore();
+        }, 0);
+      }
+    };
+
+    cancelPendingFocusRestore = release;
+    document.addEventListener('focusin', handleFocusIn);
+    observer = new MutationObserver(scheduleRestoreCheck);
+    // One subtree observation covers source disabled/removal and board child
+    // changes. The parent observation detects the board root being detached.
+    observer.observe(boardRoot, {
+      attributes: true,
+      attributeFilter: ['disabled'],
+      childList: true,
+      subtree: true,
+    });
+    const rootParent = boardRoot.parentElement;
+    if (rootParent && rootParent !== boardRoot) observer.observe(rootParent, { childList: true });
+    const deadlineTimer = window.setTimeout(() => tryRestore(true), FOCUS_RESTORE_DEADLINE_MS);
+
+    if (after) {
+      void Promise.resolve(after).then(() => {
+        if (finished) return;
+        semanticSettled = true;
+        scheduleRestoreCheck();
+      }, () => {
+        if (finished) return;
+        semanticSettled = true;
+        scheduleRestoreCheck();
+      });
+    } else {
+      scheduleRestoreCheck();
+    }
+  }, []);
+
+  const close = useCallback(() => {
+    if (closed.current) return;
+    closed.current = true;
+    onClose();
+    restoreFocus();
+  }, [onClose, restoreFocus]);
+
+  useEffect(() => {
+    const selected = menuRef.current?.querySelector<HTMLElement>('[aria-pressed="true"]');
+    (selected ?? menuRef.current?.querySelector<HTMLElement>('button'))?.focus({ preventScroll: true });
+  }, []);
+
+  useEffect(() => {
+    const handleClick = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) close();
+    };
+    const handleScroll = () => close();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close();
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('wheel', handleScroll, true);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('wheel', handleScroll, true);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [close]);
+
+  return { menuRef, restoreFocus, close };
+}
 
 export function PriorityPopup({
   x,
@@ -11,41 +220,36 @@ export function PriorityPopup({
   options,
   onClose,
   onChange,
+  restoreFocusTo,
+  ariaLabel = 'Priority',
 }: {
   x: number;
   y: number;
   value: string;
   options: { id: string; name: string }[];
   onClose: () => void;
-  onChange: (val: string) => void;
+  onChange: (val: string) => void | PromiseLike<unknown>;
+  restoreFocusTo?: HTMLElement | null;
+  ariaLabel?: string;
 }) {
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClick = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        onClose();
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [onClose]);
-
-  useEffect(() => {
-    const handleScroll = () => {
-      onClose();
-    };
-    window.addEventListener('scroll', handleScroll, true);
-    window.addEventListener('wheel', handleScroll, true);
-    return () => {
-      window.removeEventListener('scroll', handleScroll, true);
-      window.removeEventListener('wheel', handleScroll, true);
-    };
-  }, [onClose]);
+  const { menuRef, restoreFocus, close } = useChoicePopup(onClose, restoreFocusTo);
+  const selected = useRef(false);
+  const choose = (id: string) => {
+    if (selected.current) return;
+    selected.current = true;
+    if (id === value) {
+      close();
+      return;
+    }
+    const completion = onChange(id);
+    restoreFocus(completion || undefined);
+  };
 
   return (
     <div
       ref={menuRef}
+      role="group"
+      aria-label={ariaLabel}
       style={{
         position: 'fixed',
         left: x,
@@ -61,15 +265,18 @@ export function PriorityPopup({
     >
       {options.map((option) => {
         const checked = option.id === value;
+        const select = () => choose(option.id);
         return (
-          <div
+          <button
+            type="button"
             key={option.id}
             className={`rk-dropdown-item ${checked ? 'selected' : ''}`}
-            onClick={() => onChange(option.id)}
+            aria-pressed={checked}
+            onClick={select}
           >
-            <div className="rk-dropdown-checkbox" />
+            <span className="rk-dropdown-checkbox" aria-hidden="true" />
             <span>{option.name}</span>
-          </div>
+          </button>
         );
       })}
     </div>
@@ -290,51 +497,42 @@ export function ProgressPopup({
   value,
   onClose,
   onChange,
+  restoreFocusTo,
+  ariaLabel = 'Progress',
 }: {
   x: number;
   y: number;
   value: number;
   onClose: () => void;
-  onChange: (val: number) => void;
+  onChange: (val: number) => void | PromiseLike<unknown>;
+  restoreFocusTo?: HTMLElement | null;
+  ariaLabel?: string;
 }) {
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClick = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        onClose();
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [onClose]);
-
-  useEffect(() => {
-    const handleScroll = () => {
-      onClose();
-    };
-    window.addEventListener('scroll', handleScroll, true);
-    window.addEventListener('wheel', handleScroll, true);
-    return () => {
-      window.removeEventListener('scroll', handleScroll, true);
-      window.removeEventListener('wheel', handleScroll, true);
-    };
-  }, [onClose]);
-
-  const options = Array.from({ length: 11 }, (_, i) => i * 10); // 0, 10, ..., 100
-
-  // Calculate show direction based on viewport to avoid screen overflow using pure CSS transform
+  const { menuRef, restoreFocus, close } = useChoicePopup(onClose, restoreFocusTo);
+  const selected = useRef(false);
+  const options = Array.from({ length: 11 }, (_, i) => i * 10);
   const showUpward = y > window.innerHeight / 2;
   const showLeftward = x > window.innerWidth - 120;
-
   const transformStyle = [
     showLeftward ? 'translateX(-100%)' : 'translateX(0)',
     showUpward ? 'translateY(-100%)' : 'translateY(0)',
   ].join(' ');
+  const choose = (next: number) => {
+    if (selected.current) return;
+    selected.current = true;
+    if (next === value) {
+      close();
+      return;
+    }
+    const completion = onChange(next);
+    restoreFocus(completion || undefined);
+  };
 
   return (
     <div
       ref={menuRef}
+      role="group"
+      aria-label={ariaLabel}
       style={{
         position: 'fixed',
         left: x,
@@ -351,15 +549,18 @@ export function ProgressPopup({
     >
       {options.map((option) => {
         const checked = option === value;
+        const select = () => choose(option);
         return (
-          <div
+          <button
+            type="button"
             key={option}
             className={`rk-dropdown-item ${checked ? 'selected' : ''}`}
-            onClick={() => onChange(option)}
+            aria-pressed={checked}
+            onClick={select}
           >
-            <div className="rk-dropdown-checkbox" />
+            <span className="rk-dropdown-checkbox" aria-hidden="true" />
             <span>{option}%</span>
-          </div>
+          </button>
         );
       })}
     </div>

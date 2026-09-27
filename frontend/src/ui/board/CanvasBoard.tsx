@@ -61,10 +61,10 @@ type Props = {
   onWorkTimer?: (issueId: number) => void;
   timerSession?: { sessionId?: string; issueId: number | string; state: 'running' | 'expired' | 'stopped_pending_record' } | null;
   onSubtaskToggle?: (subtaskId: number, currentClosed: boolean) => void;
-  onPriorityClick?: (issueId: number, currentPriorityId: number, x: number, y: number) => void;
+  onPriorityClick?: (issueId: number, currentPriorityId: number, x: number, y: number, source?: HTMLElement) => void;
   onDateClick?: (issueId: number, currentDate: string | null, x: number, y: number, boardPoint: { x: number; y: number }) => void;
   onViewportChange?: () => void;
-  onProgressClick?: (issueId: number, currentDoneRatio: number, x: number, y: number) => void;
+  onProgressClick?: (issueId: number, currentDoneRatio: number, x: number, y: number, source?: HTMLElement) => void;
 
   labels: Record<string, string>;
   busyIssueIds?: Set<number>;
@@ -531,7 +531,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         event.preventDefault();
         const issue = state.cardsById.get(hit.issueId);
         if (!canEditIssue(issue) || !issue || !onPriorityClick) return;
-        onPriorityClick(hit.issueId, issue.priority_id ?? 2, event.clientX, event.clientY);
+        onPriorityClick(hit.issueId, issue.priority_id ?? 2, event.clientX, event.clientY, event.currentTarget);
         return;
       }
       case 'date': {
@@ -547,7 +547,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         event.preventDefault();
         const issue = state.cardsById.get(hit.issueId);
         if (!canEditIssue(issue) || !issue || !onProgressClick) return;
-        onProgressClick(hit.issueId, issue.done_ratio ?? 0, event.clientX, event.clientY);
+        onProgressClick(hit.issueId, issue.done_ratio ?? 0, event.clientX, event.clientY, event.currentTarget);
         return;
       }
       case 'card':

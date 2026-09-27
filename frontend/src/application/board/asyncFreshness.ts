@@ -1,6 +1,7 @@
 import type { QueryClient, QueryKey } from '@tanstack/react-query';
-import type { BoardData } from '../../model/board/types';
+import type { BoardData, Issue } from '../../model/board/types';
 import { findIssueInBoard } from '../../model/board/selectors';
+import { normalizeTrackerId, resolveClosedState } from '../../model/issue/issue';
 
 export type FreshnessRequestKind = 'entity' | 'aggregate';
 
@@ -20,21 +21,47 @@ function scopeFingerprint(data: BoardData): string {
 
 function snapshotIssue(data: BoardData, issueId: number): string {
   const issue = findIssueInBoard(data, issueId);
-  return issue ? JSON.stringify(issue) : 'missing';
+  return issue ? JSON.stringify(canonicalIssue(issue, data.columns)) : 'missing';
+}
+
+function canonicalIssue(issue: Issue, columns: BoardData['columns']): Issue & { is_closed: boolean } {
+  return {
+    ...issue,
+    is_closed: resolveClosedState(issue, columns),
+    ...(issue.tracker_id === undefined ? {} : { tracker_id: normalizeTrackerId(issue.tracker_id) }),
+    subtasks: (issue.subtasks ?? []).map((child) => canonicalIssue(child as Issue, columns)),
+  };
 }
 
 export class BoardFreshnessAuthority {
   private generation = 0;
   private nextRequestId = 0;
   private latestAggregateRequestId = 0;
+  private latestEntityRequestIds = new Map<number, number>();
   private currentScopeFingerprint: string | undefined;
   private activeRequests = new Set<number>();
+  private entityAbortControllers = new Map<number, AbortController>();
+  private invalidationListeners = new Set<() => void>();
 
   beginEntityReconciliation(data: BoardData, issueIds: Iterable<number>): FreshnessRequest {
     this.syncScope(data);
     const ids = [...new Set(issueIds)];
     const request = this.begin('entity', data, new Map(ids.map((id) => [id, snapshotIssue(data, id)])));
+    for (const id of ids) this.latestEntityRequestIds.set(id, request.id);
+    for (const [requestId, controller] of this.entityAbortControllers) {
+      const replacedIds = this.activeRequestEntityIds.get(requestId);
+      if (requestId !== request.id && this.activeRequests.has(requestId) && replacedIds?.size
+        && [...replacedIds].every((id) => this.latestEntityRequestIds.get(id) !== requestId)) controller.abort();
+    }
     return request;
+  }
+
+  private activeRequestEntityIds = new Map<number, ReadonlySet<number>>();
+
+  attachEntityAbortController(request: FreshnessRequest, controller: AbortController): void {
+    if (request.kind !== 'entity' || !this.activeRequests.has(request.id)) return;
+    this.entityAbortControllers.set(request.id, controller);
+    this.activeRequestEntityIds.set(request.id, new Set(request.entitySnapshots.keys()));
   }
 
   beginAggregateReconciliation(data: BoardData): FreshnessRequest {
@@ -52,15 +79,21 @@ export class BoardFreshnessAuthority {
     return this.applicableNegativeIssueIds(request, current, negativeIssueIds) !== null;
   }
 
+  applicableEntityIds(request: FreshnessRequest, current: BoardData, issueIds: Iterable<number>): number[] | null {
+    if (!this.isCurrent(request, current) || request.kind !== 'entity') return null;
+    return [...new Set(issueIds)].filter((issueId) => (
+      request.entitySnapshots.has(issueId)
+      && this.latestEntityRequestIds.get(issueId) === request.id
+      && request.entitySnapshots.get(issueId) === snapshotIssue(current, issueId)
+    ));
+  }
+
   applicableNegativeIssueIds(
     request: FreshnessRequest,
     current: BoardData,
     negativeIssueIds: Iterable<number>,
   ): number[] | null {
-    if (!this.isCurrent(request, current) || request.kind !== 'entity') return null;
-    return [...new Set(negativeIssueIds)].filter((issueId) => (
-      request.entitySnapshots.get(issueId) === snapshotIssue(current, issueId)
-    ));
+    return this.applicableEntityIds(request, current, negativeIssueIds);
   }
 
   canApplyAggregateReconciliation(request: FreshnessRequest, current: BoardData): boolean {
@@ -71,16 +104,43 @@ export class BoardFreshnessAuthority {
 
   finish(request: FreshnessRequest): void {
     this.activeRequests.delete(request.id);
+    this.entityAbortControllers.delete(request.id);
+    this.activeRequestEntityIds.delete(request.id);
+    for (const issueId of request.entitySnapshots.keys()) {
+      if (this.latestEntityRequestIds.get(issueId) === request.id) this.latestEntityRequestIds.delete(issueId);
+    }
   }
 
   invalidate(): void {
     this.generation += 1;
+    this.entityAbortControllers.forEach((controller) => controller.abort());
+    this.entityAbortControllers.clear();
+    this.activeRequestEntityIds.clear();
+    for (const listener of this.invalidationListeners) listener();
     this.latestAggregateRequestId = 0;
+    this.latestEntityRequestIds.clear();
     this.activeRequests.clear();
   }
 
   get activeRequestCount(): number {
     return this.activeRequests.size;
+  }
+
+  get subscriberCount(): number {
+    return this.invalidationListeners.size;
+  }
+
+  get currentGeneration(): number {
+    return this.generation;
+  }
+
+  onInvalidate(listener: () => void): () => void {
+    this.invalidationListeners.add(listener);
+    return () => this.invalidationListeners.delete(listener);
+  }
+
+  observe(data: BoardData): void {
+    this.syncScope(data);
   }
 
   private begin(
@@ -139,7 +199,7 @@ export function releaseBoardFreshnessAuthority(
   queryKey: QueryKey,
   authority: BoardFreshnessAuthority,
 ): void {
-  if (authority.activeRequestCount > 0) return;
+  if (authority.activeRequestCount > 0 || authority.subscriberCount > 0) return;
   const authorities = authoritiesByClient.get(queryClient);
   if (authorities?.get(authorityKey(queryKey)) === authority) authorities.delete(authorityKey(queryKey));
 }

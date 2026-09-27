@@ -1,6 +1,7 @@
 import type { BoardData, Issue } from './types';
 import { normalizeTrackerId, resolveClosedState } from '../issue/issue';
 import { effectiveScopeStatusIds } from './scope';
+import { compareIssueFreshness } from './issueFreshness';
 
 export type IssueEntity = Omit<Issue, 'subtasks'>;
 export type IssueEntityPatch = Partial<IssueEntity> & { is_closed?: boolean };
@@ -49,27 +50,11 @@ function entityOf(issue: Issue, columns?: BoardData['columns']): IssueEntity {
 
 function isFresh(current: IssueEntity | undefined, incoming: IssueEntity): boolean {
   if (!current) return true;
-  if (typeof current.lock_version === 'number' && typeof incoming.lock_version === 'number') {
-    return incoming.lock_version >= current.lock_version;
-  }
-  if (current.updated_on && incoming.updated_on) {
-    const currentTime = Date.parse(current.updated_on);
-    const incomingTime = Date.parse(incoming.updated_on);
-    if (!Number.isNaN(currentTime) && !Number.isNaN(incomingTime)) return incomingTime >= currentTime;
-  }
-  return true;
+  return compareIssueFreshness(current, incoming) !== 'older';
 }
 
 function sameRevision(current: IssueEntity, incoming: IssueEntity): boolean {
-  if (typeof current.lock_version === 'number' && typeof incoming.lock_version === 'number') {
-    return current.lock_version === incoming.lock_version;
-  }
-  if (current.updated_on && incoming.updated_on) {
-    const currentTime = Date.parse(current.updated_on);
-    const incomingTime = Date.parse(incoming.updated_on);
-    return !Number.isNaN(currentTime) && currentTime === incomingTime;
-  }
-  return false;
+  return compareIssueFreshness(current, incoming) === 'same';
 }
 
 function wouldCreateCycle(state: NormalizedBoardState, parentId: number, childId: number): boolean {
@@ -99,9 +84,12 @@ function detachEdge(state: NormalizedBoardState, parentId: number, childId: numb
   state.tree.childrenByParentId.set(parentId, (state.tree.childrenByParentId.get(parentId) ?? []).filter((id) => id !== childId));
 }
 
-function mergeEntity(state: NormalizedBoardState, issue: Issue): boolean {
-  const incoming = entityOf(issue, state.board.columns);
-  if (state.deletedIssueIds.has(incoming.id) || !isFresh(state.entitiesById.get(incoming.id), incoming)) return false;
+function canApplyIssue(state: NormalizedBoardState, incoming: IssueEntity): boolean {
+  return !state.deletedIssueIds.has(incoming.id) && isFresh(state.entitiesById.get(incoming.id), incoming);
+}
+
+function mergeEntity(state: NormalizedBoardState, issue: Issue, incoming = entityOf(issue, state.board.columns)): boolean {
+  if (!canApplyIssue(state, incoming)) return false;
   const current = state.entitiesById.get(incoming.id);
   if (!current || !sameRevision(current, incoming)) {
     state.entitiesById.set(incoming.id, { ...current, ...incoming });
@@ -198,12 +186,16 @@ export function applyBoardResponse(previous: NormalizedBoardState, response: Boa
   const state = copyState(previous);
 
   for (const issue of response.issue_updates ?? []) {
+    const incoming = entityOf(issue, state.board.columns);
+    if (!canApplyIssue(state, incoming)) continue;
     if (outsideProjectScope(state, issue)) evictEntity(state, issue.id);
-    else if (mergeEntity(state, issue)) reconcileParent(state, issue);
+    else if (mergeEntity(state, issue, incoming)) reconcileParent(state, issue);
   }
   for (const issue of response.created_issues ?? []) {
+    const incoming = entityOf(issue, state.board.columns);
+    if (!canApplyIssue(state, incoming)) continue;
     if (outsideProjectScope(state, issue)) evictEntity(state, issue.id);
-    else if (mergeEntity(state, issue)) {
+    else if (mergeEntity(state, issue, incoming)) {
       const parentId = issue.parent_id ?? undefined;
       if (parentId !== undefined && state.entitiesById.has(parentId)) attachEdge(state, parentId, issue.id);
       else if (!state.tree.rootCandidateIds.includes(issue.id)) state.tree.rootCandidateIds.push(issue.id);

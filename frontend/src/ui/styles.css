@@ -546,6 +546,11 @@
   background: #f1f5f9;
 }
 
+.rk-dropdown-item:focus-visible {
+  outline: 2px solid var(--rk-primary);
+  outline-offset: -2px;
+}
+
 .rk-dropdown-checkbox {
   width: 18px;
   height: 18px;

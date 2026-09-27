@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { useRef } from 'react';
 import type { BoardData, Issue, Subtask } from '../../model/board/types';
+import { compareIssueFreshness } from '../../model/board/issueFreshness';
 import { findIssueInBoard } from '../../model/board/selectors';
 import { resolveClosedState } from '../../model/issue/issue';
 import type { AncestorIssueUpdate, IssueMutationResult } from '../../infrastructure/api/contracts';
@@ -27,15 +28,16 @@ export function isBoardSnapshotInvalidated(result: unknown): boolean {
   return Boolean(invalidations && typeof invalidations === 'object' && (invalidations as { board_snapshot?: unknown }).board_snapshot === true);
 }
 
-export function invalidateBoardSnapshot(queryClient: QueryClient, queryKey: QueryKey): void {
+export function invalidateBoardSnapshot(queryClient: QueryClient, queryKey: QueryKey): Promise<void> {
   const authority = getBoardFreshnessAuthority(queryClient, queryKey);
   authority.invalidate();
   releaseBoardFreshnessAuthority(queryClient, queryKey, authority);
-  void queryClient.resetQueries({ queryKey });
+  return queryClient.resetQueries({ queryKey });
 }
 
 export type MutationResponseApplyOptions = {
   excludeIssueId?: number;
+  excludeNegativeIssueIds?: number[];
 };
 
 export function applyMutationResponse(
@@ -49,12 +51,13 @@ export function applyMutationResponse(
     : withoutIssueEffect(result, options.excludeIssueId);
   const state = createNormalizedBoardState(data);
   const issueUpdates = applicableResult.issue_updates ?? (applicableResult.issue ? [applicableResult.issue] : []);
+  const excludedNegativeIds = new Set(options.excludeNegativeIssueIds ?? []);
   return selectBoardData(applyBoardResponse(state, {
     kind: 'mutation',
     issue_updates: issueUpdates,
     created_issues: applicableResult.created_issues,
-    deleted_issue_ids: applicableResult.deleted_issue_ids,
-    evicted_issue_ids: applicableResult.evicted_issue_ids,
+    deleted_issue_ids: applicableResult.deleted_issue_ids?.filter((id) => !excludedNegativeIds.has(id)),
+    evicted_issue_ids: applicableResult.evicted_issue_ids?.filter((id) => !excludedNegativeIds.has(id)),
     tree_changes: applicableResult.tree_changes,
     scopeFingerprint: applicableResult.scope_fingerprint,
   }));
@@ -131,7 +134,7 @@ type UseIssueMutationOptions<TPayload extends IssuePayload, TResult> = {
     data: BoardData,
     result: TResult,
     payload: TPayload,
-    options?: { applyTarget: boolean; applyNonTarget?: boolean },
+    options?: { applyTarget: boolean; applyNonTarget?: boolean; excludeNegativeIssueIds?: number[] },
   ) => BoardData;
   onError?: (error: unknown, payload: TPayload) => void;
   onSuccess?: (result: TResult) => void;
@@ -157,6 +160,7 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
 }: UseIssueMutationOptions<TPayload, TResult>) {
   const queryClient = useQueryClient();
   const mutationRevisions = useRef(new Map<number, number>());
+  const pendingMutationCounts = useRef(new Map<number, number>());
 
   // Optimistic UI + server normalization keeps Kanban behavior aligned with Gantt/list/detail.
   return useMutation<TResult, unknown, TPayload, MutationContext>({
@@ -172,13 +176,15 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
 
       const previousRevision = mutationRevisions.current.get(payload.issueId) ?? 0;
       const revision = previousRevision + 1;
+      const pendingCount = pendingMutationCounts.current.get(payload.issueId) ?? 0;
       mutationRevisions.current.set(payload.issueId, revision);
+      pendingMutationCounts.current.set(payload.issueId, pendingCount + 1);
       onMutateIssue?.(payload.issueId);
       return {
         prev,
         issueId: payload.issueId,
         revision,
-        overlapped: previousRevision > 0,
+        overlapped: pendingCount > 0,
         optimisticIssue: optimistic ? findIssueInBoard(optimistic, payload.issueId) : null,
       };
     },
@@ -215,9 +221,14 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
       const isLatestMutation = Boolean(
         payload && context && mutationRevisions.current.get(payload.issueId) === context.revision,
       );
-      if (payload && isLatestMutation) {
-        onSettledIssue?.(payload.issueId);
-        mutationRevisions.current.delete(payload.issueId);
+      if (payload && isLatestMutation) onSettledIssue?.(payload.issueId);
+      if (payload) {
+        const remaining = (pendingMutationCounts.current.get(payload.issueId) ?? 1) - 1;
+        if (remaining > 0) pendingMutationCounts.current.set(payload.issueId, remaining);
+        else {
+          pendingMutationCounts.current.delete(payload.issueId);
+          mutationRevisions.current.delete(payload.issueId);
+        }
       }
       if (payload) onSettledMutation?.(payload.issueId);
       if (refetchOnSettled) {
@@ -239,20 +250,33 @@ function applyFreshServerResult<TPayload extends IssuePayload, TResult>(
     data: BoardData,
     result: TResult,
     payload: TPayload,
-    options?: { applyTarget: boolean; applyNonTarget?: boolean },
+    options?: { applyTarget: boolean; applyNonTarget?: boolean; excludeNegativeIssueIds?: number[] },
   ) => BoardData,
 ): BoardData {
+  if (context?.prev && boardScopeFingerprint(context.prev) !== boardScopeFingerprint(data)) return data;
   const currentIssue = findIssueInBoard(data, payload.issueId);
   const incomingIssue = issueFromResult(result, payload.issueId);
   const hasNewerMutation = context ? (revisions.get(payload.issueId) ?? 0) > context.revision : false;
-  if (!currentIssue || !incomingIssue || (!hasNewerMutation && isIssueFresh(currentIssue, incomingIssue))) {
-    return applyServer(data, result, payload, { applyTarget: true, applyNonTarget: true });
+  const removedAfterStart = Boolean(context?.prev && findIssueInBoard(context.prev, payload.issueId) && !currentIssue);
+  if (!hasNewerMutation && !removedAfterStart && (!currentIssue || !incomingIssue || isIssueFresh(currentIssue, incomingIssue))) {
+    const negativeIds = result && typeof result === 'object'
+      ? [...((result as { deleted_issue_ids?: number[] }).deleted_issue_ids ?? []), ...((result as { evicted_issue_ids?: number[] }).evicted_issue_ids ?? [])]
+      : [];
+    const excludeNegativeIssueIds = context?.prev ? negativeIds.filter((id) => {
+      const expected = id === payload.issueId ? context.optimisticIssue : findIssueInBoard(context.prev!, id);
+      return JSON.stringify(expected) !== JSON.stringify(findIssueInBoard(data, id));
+    }) : [];
+    return applyServer(data, result, payload, { applyTarget: true, applyNonTarget: true, excludeNegativeIssueIds });
   }
 
   // Keep independent server effects from this response, but let the mutation
   // path exclude the stale target effect itself.
   const preservedResult = { ...(result as object), issue: currentIssue } as TResult;
   return applyServer(data, preservedResult, payload, { applyTarget: false, applyNonTarget: true });
+}
+
+function boardScopeFingerprint(data: BoardData): string {
+  return data.scope_fingerprint ?? data.meta.scope_fingerprint ?? `project:${(data.meta.project_ids ?? [data.meta.project_id]).join(',')}`;
 }
 
 function issueFromResult<TResult>(result: TResult, issueId: number): Issue | null {
@@ -270,16 +294,7 @@ function issueFromResult<TResult>(result: TResult, issueId: number): Issue | nul
 }
 
 export function isIssueFresh(current: Issue, incoming: Issue): boolean {
-  if (typeof current.lock_version === 'number' && typeof incoming.lock_version === 'number') {
-    if (incoming.lock_version < current.lock_version) return false;
-    if (incoming.lock_version > current.lock_version) return true;
-  }
-
-  const currentUpdatedOn = parseDate(current.updated_on);
-  const incomingUpdatedOn = parseDate(incoming.updated_on);
-  if (currentUpdatedOn !== null && incomingUpdatedOn !== null) return incomingUpdatedOn >= currentUpdatedOn;
-  if (currentUpdatedOn !== null && incomingUpdatedOn === null) return false;
-  return true;
+  return compareIssueFreshness(current, incoming) !== 'older';
 }
 
 export function updateIssueInBoard(
@@ -349,12 +364,6 @@ export function applyAncestorIssueUpdates(
     changed = true;
   }
   return changed ? selectBoardData(state) : data;
-}
-
-function parseDate(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const timestamp = Date.parse(value);
-  return Number.isNaN(timestamp) ? null : timestamp;
 }
 
 export function replaceIssueInBoard(data: BoardData, nextIssue: Issue): BoardData {

@@ -130,6 +130,20 @@ describe('async freshness authority', () => {
     expect(getBoardFreshnessAuthority(queryClient, queryKey)).not.toBe(authority);
   });
 
+  it('keeps a subscribed authority registered until its hook unsubscribes', () => {
+    const queryClient = new QueryClient();
+    const queryKey = ['kanban', 'board', 'repro-subscribed-authority'] as const;
+    const authority = getBoardFreshnessAuthority(queryClient, queryKey);
+    const unsubscribe = authority.onInvalidate(vi.fn());
+
+    releaseBoardFreshnessAuthority(queryClient, queryKey, authority);
+    expect(getBoardFreshnessAuthority(queryClient, queryKey)).toBe(authority);
+
+    unsubscribe();
+    releaseBoardFreshnessAuthority(queryClient, queryKey, authority);
+    expect(getBoardFreshnessAuthority(queryClient, queryKey)).not.toBe(authority);
+  });
+
   it('keeps a fresh non-target issue update when the target response is stale', async () => {
     const queryKey = ['kanban', 'board', 'repro-t1'] as const;
     const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
@@ -186,7 +200,7 @@ describe('async freshness authority', () => {
     const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     const initial = board([issue(1, { subject: 'X before' })]);
     queryClient.setQueryData(queryKey, initial);
-    let resolveReconciliation!: (value: { scope_fingerprint: string; entities: Issue[]; missing_issue_ids: number[] }) => void;
+    let resolveReconciliation!: (value: { ok: boolean; scope_fingerprint: string; entities: Issue[]; missing_issue_ids: number[] }) => void;
     getJsonMock.mockReturnValueOnce(new Promise((resolve) => { resolveReconciliation = resolve; }));
 
     const { result } = renderHook(
@@ -202,7 +216,7 @@ describe('async freshness authority', () => {
       { wrapper: createWrapper(queryClient) },
     );
 
-    let reconciliation!: Promise<void>;
+    let reconciliation!: Promise<unknown>;
     await act(async () => {
       reconciliation = result.current.reconcileIssueIds([1]);
       await waitFor(() => expect(getJsonMock).toHaveBeenCalledTimes(1));
@@ -210,7 +224,7 @@ describe('async freshness authority', () => {
     queryClient.setQueryData(queryKey, applyMutationResponse(initial, {
       issue_updates: [issue(1, { subject: 'X newer', lock_version: 2 })],
     }));
-    resolveReconciliation({ scope_fingerprint: 'project:1', entities: [], missing_issue_ids: [1] });
+    resolveReconciliation({ ok: true, scope_fingerprint: 'project:1', entities: [], missing_issue_ids: [1] });
     await act(async () => { await reconciliation; });
 
     expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0]?.subject).toBe('X newer');
@@ -221,9 +235,9 @@ describe('async freshness authority', () => {
     const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     const initial = board([issue(1)]);
     queryClient.setQueryData(queryKey, initial);
-    let resolveSecond!: (value: { scope_fingerprint: string; entities: Issue[]; missing_issue_ids: number[] }) => void;
+    let resolveSecond!: (value: { ok: boolean; scope_fingerprint: string; entities: Issue[]; missing_issue_ids: number[] }) => void;
     getJsonMock
-      .mockResolvedValueOnce({ scope_fingerprint: 'project:1', entities: [], missing_issue_ids: [] })
+      .mockResolvedValueOnce({ ok: true, scope_fingerprint: 'project:1', entities: [issue(1)], missing_issue_ids: [] })
       .mockReturnValueOnce(new Promise((resolve) => { resolveSecond = resolve; }));
 
     const { result } = renderHook(
@@ -242,7 +256,7 @@ describe('async freshness authority', () => {
 
     await act(async () => { await reconcileIssueIds([1]); });
 
-    let second!: Promise<void>;
+    let second!: Promise<unknown>;
     await act(async () => {
       second = reconcileIssueIds([1]);
       await waitFor(() => expect(getJsonMock).toHaveBeenCalledTimes(2));
@@ -251,7 +265,7 @@ describe('async freshness authority', () => {
     invalidateBoardSnapshot(queryClient, queryKey);
     const authoritative = { ...beforeReset, columns: countResponse(42, 0).columns };
     queryClient.setQueryData(queryKey, authoritative);
-    resolveSecond({ scope_fingerprint: 'project:1', entities: [], missing_issue_ids: [1] });
+    resolveSecond({ ok: true, scope_fingerprint: 'project:1', entities: [], missing_issue_ids: [1] });
     await act(async () => { await second; });
 
     expect(queryClient.getQueryData<BoardData>(queryKey)?.issues.map((candidate) => candidate.id)).toEqual([1]);
@@ -263,9 +277,9 @@ describe('async freshness authority', () => {
     const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     const initial = board([issue(1)]);
     queryClient.setQueryData(queryKey, initial);
-    let resolveSecond!: (value: { scope_fingerprint: string; entities: Issue[]; missing_issue_ids: number[] }) => void;
+    let resolveSecond!: (value: { ok: boolean; scope_fingerprint: string; entities: Issue[]; missing_issue_ids: number[] }) => void;
     getJsonMock
-      .mockResolvedValueOnce({ scope_fingerprint: 'project:1', entities: [], missing_issue_ids: [] })
+      .mockResolvedValueOnce({ ok: true, scope_fingerprint: 'project:1', entities: [issue(1)], missing_issue_ids: [] })
       .mockReturnValueOnce(new Promise((resolve) => { resolveSecond = resolve; }));
 
     const { result } = renderHook(
@@ -284,7 +298,7 @@ describe('async freshness authority', () => {
 
     await act(async () => { await reconcileIssueIds([1]); });
 
-    let second!: Promise<void>;
+    let second!: Promise<unknown>;
     await act(async () => {
       second = reconcileIssueIds([1]);
       await waitFor(() => expect(getJsonMock).toHaveBeenCalledTimes(2));
@@ -293,7 +307,7 @@ describe('async freshness authority', () => {
     const authoritative = board([issue(1, { subject: 'Authoritative', lock_version: 5 })]);
     queryClient.setQueryData(queryKey, authoritative);
     resolveSecond({
-      scope_fingerprint: 'project:1',
+      ok: true, scope_fingerprint: 'project:1',
       entities: [issue(1, { subject: 'Old positive response', lock_version: 6 })],
       missing_issue_ids: [],
     });
@@ -430,7 +444,7 @@ describe('async freshness authority', () => {
     const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     const scopeA = board([issue(1, { subject: 'Scope A' })]);
     queryClient.setQueryData(queryKey, scopeA);
-    let resolveReconciliation!: (value: { scope_fingerprint: string; entities: Issue[]; missing_issue_ids: number[] }) => void;
+    let resolveReconciliation!: (value: { ok: boolean; scope_fingerprint: string; entities: Issue[]; missing_issue_ids: number[] }) => void;
     getJsonMock.mockReturnValueOnce(new Promise((resolve) => { resolveReconciliation = resolve; }));
 
     const { result } = renderHook(
@@ -446,7 +460,7 @@ describe('async freshness authority', () => {
       { wrapper: createWrapper(queryClient) },
     );
 
-    let reconciliation!: Promise<void>;
+    let reconciliation!: Promise<unknown>;
     await act(async () => {
       reconciliation = result.current.reconcileIssueIds([1]);
       await waitFor(() => expect(getJsonMock).toHaveBeenCalledTimes(1));
@@ -456,9 +470,80 @@ describe('async freshness authority', () => {
     scopeB.meta.scope_fingerprint = 'project:2';
     scopeB.meta.project_ids = [2];
     queryClient.setQueryData(queryKey, scopeB);
-    resolveReconciliation({ scope_fingerprint: 'project:1', entities: [issue(1, { subject: 'Old scope response' })], missing_issue_ids: [] });
+    resolveReconciliation({ ok: true, scope_fingerprint: 'project:1', entities: [issue(1, { subject: 'Old scope response' })], missing_issue_ids: [] });
     await act(async () => { await reconciliation; });
 
     expect(queryClient.getQueryData<BoardData>(queryKey)?.issues.map((candidate) => candidate.id)).toEqual([2]);
+  });
+});
+
+describe('versionless negative mutation effects', () => {
+  type Response = { issue: Issue; issue_updates?: Issue[]; deleted_issue_ids?: number[]; evicted_issue_ids?: number[] };
+  const applyServer = (current: BoardData, response: Response, payload: { issueId: number }, options: { applyTarget: boolean; excludeNegativeIssueIds?: number[] } = { applyTarget: true }) =>
+    options.applyTarget
+      ? applyMutationResponse(current, response, { excludeNegativeIssueIds: options.excludeNegativeIssueIds })
+      : applyMutationResponse(current, response, { excludeIssueId: payload.issueId });
+
+  it.each(['deleted_issue_ids', 'evicted_issue_ids'] as const)('keeps an independently updated issue against stale %s', async (field) => {
+    const queryKey = ['kanban', 'board', 'negative-effect', field] as const;
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    queryClient.setQueryData(queryKey, board([issue(1), issue(2)]));
+    let resolveMutation!: (value: Response) => void;
+    const pending = new Promise<Response>((resolve) => { resolveMutation = resolve; });
+    const { result } = renderHook(() => useIssueMutation({
+      queryKey,
+      mutationFn: () => pending,
+      applyOptimistic: (data: BoardData) => applyLocalIssuePatch(data, 1, { subject: 'Optimistic' }),
+      applyServer,
+    }), { wrapper: createWrapper(queryClient) });
+    act(() => result.current.mutate({ issueId: 1 }));
+    await waitFor(() => expect(result.current.isPending).toBe(true));
+    queryClient.setQueryData<BoardData>(queryKey, (current) => applyMutationResponse(current!, {
+      issue_updates: [issue(2, { subject: 'Newer sibling', lock_version: 3 })],
+    }));
+    await act(async () => {
+      resolveMutation({ issue: issue(1, { subject: 'Server target', lock_version: 2 }), [field]: [2] });
+      await Promise.resolve();
+    });
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues.find((candidate) => candidate.id === 2)?.subject).toBe('Newer sibling');
+  });
+
+  it.each([
+    { scopeId: 1, otherProjectId: 2 },
+    { scopeId: 2, otherProjectId: 1 },
+  ])('does not restore an evicted issue from an older mutation after the newer result settles in scope $scopeId', async ({ scopeId, otherProjectId }) => {
+    const queryKey = ['kanban', 'board', 'negative-reverse', scopeId] as const;
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const initial = board([issue(1, { project: { id: scopeId, name: 'Current' } })]);
+    initial.scope_fingerprint = `project:${scopeId}`;
+    initial.meta.scope_fingerprint = `project:${scopeId}`;
+    initial.meta.project_ids = [scopeId];
+    queryClient.setQueryData(queryKey, initial);
+    let resolveOld!: (value: Response) => void;
+    let resolveNew!: (value: Response) => void;
+    const old = new Promise<Response>((resolve) => { resolveOld = resolve; });
+    const fresh = new Promise<Response>((resolve) => { resolveNew = resolve; });
+    let calls = 0;
+    const { result } = renderHook(() => useIssueMutation({
+      queryKey,
+      mutationFn: () => ++calls === 1 ? old : fresh,
+      applyOptimistic: (data: BoardData, payload: { issueId: number; subject: string }) => applyLocalIssuePatch(data, payload.issueId, { subject: payload.subject }),
+      applyServer,
+    }), { wrapper: createWrapper(queryClient) });
+    act(() => {
+      result.current.mutate({ issueId: 1, subject: 'First optimistic' });
+      result.current.mutate({ issueId: 1, subject: 'Second optimistic' });
+    });
+    await waitFor(() => expect(calls).toBe(2));
+    await act(async () => {
+      resolveNew({ issue: issue(1, { project: { id: otherProjectId, name: 'Other' }, lock_version: 3 }), evicted_issue_ids: [1] });
+      await Promise.resolve();
+    });
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues).toEqual([]);
+    await act(async () => {
+      resolveOld({ issue: issue(1, { project: { id: scopeId, name: 'Current' }, subject: 'Stale return', lock_version: 2 }) });
+      await Promise.resolve();
+    });
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues).toEqual([]);
   });
 });

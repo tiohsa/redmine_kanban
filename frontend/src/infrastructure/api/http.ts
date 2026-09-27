@@ -19,8 +19,8 @@ export function isHttpError<TPayload = unknown>(error: unknown): error is HttpEr
   return error instanceof HttpError;
 }
 
-export async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
+export async function getJson<T>(url: string, options: { signal?: AbortSignal } = {}): Promise<T> {
+  const res = await fetch(url, { credentials: 'same-origin', cache: 'no-store', ...(options.signal ? { signal: options.signal } : {}) });
   const json = typeof res.json === 'function' ? await res.json().catch(() => null) : null;
   if (!res.ok) throw new HttpError(res.status, json);
   return json as T;

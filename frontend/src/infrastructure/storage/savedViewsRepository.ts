@@ -22,13 +22,20 @@ export function writeActiveSavedViewId(key: string, id: string): void {
   else localStorage.removeItem(activeKey);
 }
 
+export function clearActiveSavedViewIdIfMatches(key: string, expectedId: string): void {
+  const activeKey = activeSavedViewKey(key);
+  if (localStorage.getItem(activeKey) === expectedId) localStorage.removeItem(activeKey);
+}
+
 export function readSavedViews(key: string): { views: SavedView[]; error: string | null } {
   try { return { views: parseSavedViews(localStorage.getItem(key)).views, error: null }; }
   catch { return { views: [], error: 'saved_views_unreadable' }; }
 }
 
 export function writeSavedViews<T>(key: string, update: (views: SavedView[]) => { views: SavedView[]; result: T }): { views: SavedView[]; result: T } {
-  // Keep the read and final document validation adjacent to the write.
+  // Keep the read and validation adjacent to the write. localStorage does not
+  // make this read/compare/write atomic across tabs; strict concurrent-write
+  // control would require a different persistence mechanism.
   const latest = parseSavedViews(localStorage.getItem(key));
   const next = update(latest.views);
   const serialized = JSON.stringify({ version: 1, views: next.views });

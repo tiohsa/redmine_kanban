@@ -1,5 +1,7 @@
 export { effectiveScopeStatusIds, effectiveDependencyStatusIds } from '../../model/board/scope';
 
+export const ENTITY_RECONCILIATION_BATCH_SIZE = 100;
+
 function serializeNumberSelection(values: Iterable<number>): string {
   return Array.from(new Set(values)).filter(Number.isFinite).sort((a, b) => a - b).join(',');
 }

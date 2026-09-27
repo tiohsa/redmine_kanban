@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { BoardData, Issue } from './types';
-import { applyAncestorIssueUpdates, isBoardSnapshotInvalidated, isIssueFresh, replaceIssueInBoard, updateIssueInBoard, updateSubtaskInBoard, useIssueMutation } from './useIssueMutation';
+import { applyAncestorIssueUpdates, applyMutationResponse, isBoardSnapshotInvalidated, isIssueFresh, replaceIssueInBoard, updateIssueInBoard, updateSubtaskInBoard, useIssueMutation } from './useIssueMutation';
 
 function makeIssue(id: number, attrs: Partial<Issue> = {}): Issue {
   return {
@@ -452,6 +452,22 @@ describe('replaceIssueInBoard', () => {
 });
 
 describe('isIssueFresh', () => {
+  it('keeps normalized state and mutation checks aligned for equal versions and dates', () => {
+    const current = makeIssue(1, { subject: 'Current', lock_version: 3, updated_on: '2026-07-22T00:02:00Z' });
+    const older = makeIssue(1, { subject: 'Older', lock_version: 3, updated_on: '2026-07-22T00:01:00Z' });
+    const newer = makeIssue(1, { subject: 'Newer', lock_version: 3, updated_on: '2026-07-22T00:03:00Z' });
+    expect(isIssueFresh(current, older)).toBe(false);
+    expect(applyMutationResponse(makeBoardData([current]), { issue_updates: [older] }).issues[0]?.subject).toBe('Current');
+    expect(isIssueFresh(current, newer)).toBe(true);
+    expect(applyMutationResponse(makeBoardData([current]), { issue_updates: [newer] }).issues[0]?.subject).toBe('Newer');
+  });
+
+  it('uses dates for versionless responses and does not overwrite known dates with absent ones', () => {
+    const current = makeIssue(1, { lock_version: undefined, updated_on: '2026-07-22T00:02:00Z' });
+    expect(isIssueFresh(current, makeIssue(1, { lock_version: undefined, updated_on: '2026-07-22T00:01:00Z' }))).toBe(false);
+    expect(isIssueFresh(current, makeIssue(1, { lock_version: undefined, updated_on: null }))).toBe(false);
+  });
+
   it('rejects an older normal success response by lock version', () => {
     expect(isIssueFresh(
       makeIssue(1, { lock_version: 12, done_ratio: 80 }),
@@ -468,6 +484,29 @@ describe('isIssueFresh', () => {
 });
 
 describe('useIssueMutation', () => {
+  it('does not restore an issue removed by a newer board snapshot while its update is pending', async () => {
+    const queryKey = ['kanban', 'removed-during-mutation'] as const;
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    queryClient.setQueryData(queryKey, makeBoardData([makeIssue(2, { subtasks: [{ id: 1, subject: 'Child', status_id: 1, is_closed: false }] })]));
+    let complete!: (value: { issue: Issue; issue_updates: Issue[] }) => void;
+    const response = new Promise<{ issue: Issue; issue_updates: Issue[] }>((resolve) => { complete = resolve; });
+    const { result } = renderHook(() => useIssueMutation({
+      queryKey,
+      mutationFn: () => response,
+      applyOptimistic: (data) => data,
+      applyServer: (data, value, payload, options) => applyMutationResponse(data, value, options?.applyTarget ? {} : { excludeIssueId: payload.issueId }),
+    }), { wrapper: createWrapper(queryClient) });
+
+    let pending!: Promise<unknown>;
+    await act(async () => { pending = result.current.mutateAsync({ issueId: 1 }); });
+    act(() => queryClient.setQueryData(queryKey, makeBoardData([makeIssue(2)])));
+    await act(async () => {
+      complete({ issue: makeIssue(1, { subject: 'Old', parent_id: 2 }), issue_updates: [makeIssue(1, { parent_id: 2 }), makeIssue(2, { subject: 'Independent', lock_version: 2 })] });
+      await pending;
+    });
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0]?.subtasks).toEqual([]);
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0]?.subject).toBe('Independent');
+  });
   it('clears the complete board and refetches when the server invalidates the snapshot', async () => {
     const queryKey = ['kanban', 'board', 'snapshot-overflow'] as const;
     const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });

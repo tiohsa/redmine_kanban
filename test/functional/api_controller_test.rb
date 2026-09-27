@@ -797,6 +797,76 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_equal 'Updated', json.fetch('issue_updates').find { |candidate| candidate['id'] == issue.id }['subject']
   end
 
+  def test_entity_reconciliation_deduplicates_valid_ids
+    first = build_issue(subject: 'First entity')
+    second = build_issue(subject: 'Second entity')
+    get :entities, params: { project_id: @project.identifier, ids: [first.id.to_s, second.id.to_s, first.id.to_s] }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal [first.id, second.id].sort, json.fetch('entities').map { |entity| entity.fetch('id') }.sort
+    assert_equal [], json.fetch('missing_issue_ids')
+  end
+
+  def test_entity_reconciliation_rejects_invalid_ids
+    ['12abc', '0', '-1', '2147483648'].each do |invalid|
+      get :entities, params: { project_id: @project.identifier, ids: [invalid] }
+      assert_response :bad_request
+      json = JSON.parse(@response.body)
+      assert_equal false, json.fetch('ok')
+      assert_equal 3, json.fetch('contract_version')
+      assert_equal 'INVALID_ENTITY_IDS', json.dig('error', 'code')
+      refute json.key?('entities')
+    end
+  end
+
+  def test_entity_reconciliation_rejects_too_many_ids_before_reading
+    limit = RedmineKanban::SnapshotLimits.entity_reconciliation_limit
+    RedmineKanban::BoardEntityReader.expects(:new).never
+    get :entities, params: { project_id: @project.identifier, ids: Array.new(limit + 1) { |index| index + 1 } }
+
+    assert_response :bad_request
+    json = JSON.parse(@response.body)
+    assert_equal 'ENTITY_IDS_LIMIT_EXCEEDED', json.dig('error', 'code')
+    assert_equal limit, json.dig('error', 'maximum_ids')
+  end
+
+  def test_entity_reconciliation_hides_invisible_issues
+    @role.update!(issues_visibility: 'own')
+    @role.remove_permission!(:view_private_issues) if @role.permissions.include?(:view_private_issues)
+    visible = build_issue(subject: 'Visible entity')
+    other_user = users(:users_001)
+    ensure_member!(other_user)
+    private_issue = build_issue(subject: 'Private entity', author: other_user)
+    private_issue.update_column(:is_private, true)
+    hidden_project = Project.create!(name: 'Hidden entity project', identifier: 'hidden-entity-project', is_public: false)
+    hidden_issue = build_issue(subject: 'Hidden project entity', project: hidden_project)
+
+    get :entities, params: {
+      project_id: @project.identifier,
+      project_ids: [@project.id, hidden_project.id],
+      ids: [visible.id, private_issue.id, hidden_issue.id]
+    }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal [visible.id], json.fetch('entities').map { |entity| entity.fetch('id') }
+    assert_equal [private_issue.id, hidden_issue.id].sort, json.fetch('missing_issue_ids').sort
+  end
+
+  def test_entity_reconciliation_rejects_oversized_response_without_partial_entities
+    issue = build_issue(subject: 'Entity response limit')
+    previous = ENV['REDMINE_KANBAN_MAX_RESPONSE_BYTES']
+    ENV['REDMINE_KANBAN_MAX_RESPONSE_BYTES'] = '1'
+
+    get :entities, params: { project_id: @project.identifier, ids: [issue.id] }
+    assert_response :unprocessable_entity
+    json = JSON.parse(@response.body)
+    assert_equal 'BOARD_RESPONSE_TOO_LARGE', json.dig('error', 'code')
+    refute json.key?('entities')
+  ensure
+    ENV['REDMINE_KANBAN_MAX_RESPONSE_BYTES'] = previous
+  end
   def test_entity_reconciliation_applies_status_scope
     status_a, status_b = distinct_open_statuses
     issue = build_issue(subject: 'Scoped entity', status: status_a)
