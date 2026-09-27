@@ -318,4 +318,31 @@ describe.each(['priority', 'progress'] as const)('%s popup keyboard access', (ki
     fireEvent.click(screen.getByRole('button', { name: kind === 'priority' ? 'High' : '20%' }));
     expect(onChange).toHaveBeenCalledExactlyOnceWith(kind === 'priority' ? '2' : 20);
   });
+
+  it('waits for a temporarily disabled source before restoring focus', async () => {
+    function AsyncHarness() {
+      const [open, setOpen] = useState(false);
+      const [busy, setBusy] = useState(false);
+      const [source, setSource] = useState<HTMLButtonElement | null>(null);
+      const change = () => {
+        setBusy(true);
+        setOpen(false);
+        window.setTimeout(() => setBusy(false), 80);
+      };
+      return <>
+        <button ref={setSource} type="button" disabled={busy} onClick={() => setOpen(true)}>Open async choices</button>
+        {open && (kind === 'priority'
+          ? <PriorityPopup x={0} y={0} value="1" options={[{ id: '1', name: 'Low' }, { id: '2', name: 'High' }]}
+              restoreFocusTo={source} onClose={() => setOpen(false)} onChange={change} />
+          : <ProgressPopup x={0} y={0} value={10} restoreFocusTo={source}
+              onClose={() => setOpen(false)} onChange={change} />)}
+      </>;
+    }
+    render(<AsyncHarness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open async choices' }));
+    const option = screen.getByRole('button', { name: kind === 'priority' ? 'High' : '20%' });
+    fireEvent.click(option);
+    const source = screen.getByRole('button', { name: 'Open async choices' });
+    await waitFor(() => expect(document.activeElement).toBe(source));
+  });
 });

@@ -49,8 +49,9 @@ export class BoardFreshnessAuthority {
     const request = this.begin('entity', data, new Map(ids.map((id) => [id, snapshotIssue(data, id)])));
     for (const id of ids) this.latestEntityRequestIds.set(id, request.id);
     for (const [requestId, controller] of this.entityAbortControllers) {
-      if (requestId !== request.id && this.activeRequests.has(requestId)
-        && [...request.entitySnapshots.keys()].some((id) => this.activeRequestEntityIds.get(requestId)?.has(id))) controller.abort();
+      const replacedIds = this.activeRequestEntityIds.get(requestId);
+      if (requestId !== request.id && this.activeRequests.has(requestId) && replacedIds?.size
+        && [...replacedIds].every((id) => this.latestEntityRequestIds.get(id) !== requestId)) controller.abort();
     }
     return request;
   }
@@ -125,6 +126,10 @@ export class BoardFreshnessAuthority {
     return this.activeRequests.size;
   }
 
+  get subscriberCount(): number {
+    return this.invalidationListeners.size;
+  }
+
   get currentGeneration(): number {
     return this.generation;
   }
@@ -194,7 +199,7 @@ export function releaseBoardFreshnessAuthority(
   queryKey: QueryKey,
   authority: BoardFreshnessAuthority,
 ): void {
-  if (authority.activeRequestCount > 0) return;
+  if (authority.activeRequestCount > 0 || authority.subscriberCount > 0) return;
   const authorities = authoritiesByClient.get(queryClient);
   if (authorities?.get(authorityKey(queryKey)) === authority) authorities.delete(authorityKey(queryKey));
 }

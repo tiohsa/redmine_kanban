@@ -79,6 +79,13 @@ afterEach(() => {
 });
 
 describe('mutation response application', () => {
+  it('releases its subscribed freshness authority on unmount', () => {
+    const { queryClient, unmount } = renderReconciler();
+    const authority = getBoardFreshnessAuthority(queryClient, queryKey);
+    unmount();
+    expect(getBoardFreshnessAuthority(queryClient, queryKey)).not.toBe(authority);
+  });
+
   it('applies target, membership and tree effects while retaining counts until reconciliation', () => {
     const { result, queryClient, current } = renderReconciler(board([issue(1), issue(2), issue(3)]));
     const reset = vi.spyOn(queryClient, 'resetQueries');
@@ -234,7 +241,7 @@ describe('mutation follow-up reconciliation', () => {
     else getJsonMock.mockResolvedValue({ ok: failure !== 'not ok', entities: [] });
     await act(async () => { expect(await result.current.reconcileIssues([1])).toBe(false); });
     expect(authority.activeRequestCount).toBe(0);
-    expect(getBoardFreshnessAuthority(queryClient, queryKey)).not.toBe(authority);
+    expect(getBoardFreshnessAuthority(queryClient, queryKey)).toBe(authority);
   });
 
   it('keeps a successful delta when the auxiliary counts request fails', async () => {
@@ -248,7 +255,7 @@ describe('mutation follow-up reconciliation', () => {
     expect(findIssueInBoard(current(), 1)?.subject).toBe('Saved');
     expect(reset).not.toHaveBeenCalled();
     expect(authority.activeRequestCount).toBe(0);
-    expect(getBoardFreshnessAuthority(queryClient, queryKey)).not.toBe(authority);
+    expect(getBoardFreshnessAuthority(queryClient, queryKey)).toBe(authority);
   });
 });
 
@@ -311,11 +318,90 @@ describe('reconciliation freshness', () => {
     await act(async () => { first.resolve({ ok: true, columns: [{ ...column, count: 10 }] }); });
     expect(current().columns[0]?.count).toBe(20);
     expect(authority.activeRequestCount).toBe(0);
-    expect(getBoardFreshnessAuthority(queryClient, queryKey)).not.toBe(authority);
+    expect(getBoardFreshnessAuthority(queryClient, queryKey)).toBe(authority);
   });
 });
 
 describe('entity reconciliation races', () => {
+  it('keeps non-overlapping IDs from an older partially replaced request', async () => {
+    const { result, current } = renderReconciler(board([issue(1), issue(2)]));
+    const older = deferred<{ ok: boolean; entities: Issue[]; missing_issue_ids: number[] }>();
+    const newer = deferred<{ ok: boolean; entities: Issue[]; missing_issue_ids: number[] }>();
+    const signals: AbortSignal[] = [];
+    getJsonMock.mockImplementation((_url: string, options?: { signal?: AbortSignal }) => {
+      if (options?.signal) signals.push(options.signal);
+      return signals.length === 1 ? older.promise : newer.promise;
+    });
+
+    const oldRequest = result.current.reconcileIssues([1, 2]);
+    const newRequest = result.current.reconcileIssues([1]);
+    expect(signals).toHaveLength(2);
+    expect(signals[0]?.aborted).toBe(false);
+
+    await act(async () => {
+      newer.resolve({ ok: true, entities: [issue(1, { subject: 'Newest A', lock_version: 3 })], missing_issue_ids: [] });
+      await newRequest;
+      older.resolve({ ok: true, entities: [issue(1, { subject: 'Old A' }), issue(2, { subject: 'Fresh B', lock_version: 2 })], missing_issue_ids: [] });
+      expect(await oldRequest).toBe(false);
+    });
+
+    expect(findIssueInBoard(current(), 1)?.subject).toBe('Newest A');
+    expect(findIssueInBoard(current(), 2)?.subject).toBe('Fresh B');
+  });
+
+  it('aborts an older request when every requested ID has been replaced', async () => {
+    const { result, current } = renderReconciler(board([issue(1)]));
+    const signals: AbortSignal[] = [];
+    getJsonMock.mockImplementation((_url: string, options?: { signal?: AbortSignal }) => {
+      if (options?.signal) signals.push(options.signal);
+      if (signals.length > 1) return Promise.resolve({ ok: true, entities: [issue(1, { subject: 'Newest', lock_version: 2 })], missing_issue_ids: [] });
+      return new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+      });
+    });
+
+    const oldRequest = result.current.reconcileIssues([1]);
+    const newRequest = result.current.reconcileIssues([1]);
+    expect(signals[0]?.aborted).toBe(true);
+    await act(async () => {
+      await Promise.all([oldRequest, newRequest]);
+    });
+    expect(findIssueInBoard(current(), 1)?.subject).toBe('Newest');
+  });
+
+  it('does not let old query-key requests hold slots after the hook switches keys', async () => {
+    const nextQueryKey = ['kanban', 'reconciler-next'] as const;
+    const initial = board([issue(1), issue(2), issue(3), issue(4)]);
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(queryKey, initial);
+    queryClient.setQueryData(nextQueryKey, initial);
+    let activeKey: typeof queryKey | typeof nextQueryKey = queryKey;
+    const oldSignals: AbortSignal[] = [];
+    const hook = renderHook(() => useMutationReconciler({
+      baseUrl: '/projects/demo/kanban', boardQueryKey: activeKey, data: initial,
+    }), {
+      wrapper: ({ children }: PropsWithChildren) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>,
+    });
+    getJsonMock.mockImplementation((_url: string, options?: { signal?: AbortSignal }) => {
+      if (activeKey !== queryKey) return Promise.resolve({ ok: true, entities: [issue(4, { subject: 'New key' })], missing_issue_ids: [] });
+      if (options?.signal) oldSignals.push(options.signal);
+      return new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+      });
+    });
+
+    const oldReads = [1, 2, 3].map((id) => hook.result.current.reconcileIssues([id]));
+    expect(getJsonMock).toHaveBeenCalledTimes(2);
+    activeKey = nextQueryKey;
+    hook.rerender();
+    expect(oldSignals.every((signal) => signal.aborted)).toBe(true);
+    await act(async () => {
+      expect(await hook.result.current.reconcileIssues([4])).toBe(true);
+      await Promise.all(oldReads);
+    });
+    expect(getJsonMock).toHaveBeenCalledTimes(3);
+  });
+
   it('treats a reported missing issue as a successful read without retrying', async () => {
     const { result, current } = renderReconciler();
     getJsonMock.mockResolvedValue({ ok: true, entities: [], missing_issue_ids: [1] });

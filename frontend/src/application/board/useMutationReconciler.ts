@@ -69,12 +69,15 @@ export function useMutationReconciler({ baseUrl, boardQueryKey, data, onReconcil
     return () => {
       unsubscribe();
       unsubscribeCache();
+      slotGeneration.current += 1;
+      activeEntityReads.current = 0;
       waitQueue.splice(0).forEach((waiter) => {
         waiter.cancelled = true;
         waiter.reject(new DOMException('Aborted', 'AbortError'));
       });
       activeControllers.forEach((controller) => controller.abort());
       activeControllers.clear();
+      releaseBoardFreshnessAuthority(queryClient, boardQueryKey, authority);
     };
   }, [boardQueryKey, queryClient]);
 

@@ -8,14 +8,42 @@ function useChoicePopup(onClose: () => void, restoreFocusTo?: HTMLElement | null
   const menuRef = useRef<HTMLDivElement>(null);
   const focusTarget = useRef(restoreFocusTo ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null));
   const restoreFocus = useCallback(() => {
-    window.setTimeout(() => {
+    let observer: MutationObserver | undefined;
+    let timer = 0;
+    const handleFocusIn = () => {
+      const active = document.activeElement;
+      if (active && active !== document.body && active !== document.documentElement
+        && active !== focusTarget.current && !menuRef.current?.contains(active)) stop();
+    };
+    const stop = () => {
+      observer?.disconnect();
+      observer = undefined;
+      window.clearTimeout(timer);
+      document.removeEventListener('focusin', handleFocusIn);
+    };
+    const tryRestore = () => {
       const target = focusTarget.current;
       const active = document.activeElement;
-      if (target?.isConnected && target !== document.body
-        && (!active || active === document.body || active === document.documentElement)) {
+      if (!target?.isConnected || target === document.body) {
+        stop();
+        return;
+      }
+      if (!active || active === document.body || active === document.documentElement) {
+        if ('disabled' in target && (target as HTMLButtonElement).disabled) {
+          timer = window.setTimeout(tryRestore, 50);
+          return;
+        }
         target.focus({ preventScroll: true });
       }
-    }, 0);
+      stop();
+    };
+    timer = window.setTimeout(tryRestore, 0);
+    document.addEventListener('focusin', handleFocusIn);
+    const target = focusTarget.current;
+    if (target && 'disabled' in target) {
+      observer = new MutationObserver(tryRestore);
+      observer.observe(target, { attributes: true, attributeFilter: ['disabled'] });
+    }
   }, []);
   const close = useCallback(() => {
     onClose();

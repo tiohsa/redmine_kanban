@@ -130,6 +130,20 @@ describe('async freshness authority', () => {
     expect(getBoardFreshnessAuthority(queryClient, queryKey)).not.toBe(authority);
   });
 
+  it('keeps a subscribed authority registered until its hook unsubscribes', () => {
+    const queryClient = new QueryClient();
+    const queryKey = ['kanban', 'board', 'repro-subscribed-authority'] as const;
+    const authority = getBoardFreshnessAuthority(queryClient, queryKey);
+    const unsubscribe = authority.onInvalidate(vi.fn());
+
+    releaseBoardFreshnessAuthority(queryClient, queryKey, authority);
+    expect(getBoardFreshnessAuthority(queryClient, queryKey)).toBe(authority);
+
+    unsubscribe();
+    releaseBoardFreshnessAuthority(queryClient, queryKey, authority);
+    expect(getBoardFreshnessAuthority(queryClient, queryKey)).not.toBe(authority);
+  });
+
   it('keeps a fresh non-target issue update when the target response is stale', async () => {
     const queryKey = ['kanban', 'board', 'repro-t1'] as const;
     const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
