@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { useState } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useRef, useState } from 'react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DatePopup, PriorityPopup, ProgressPopup } from './KanbanPopups';
 
@@ -320,16 +320,19 @@ describe.each(['priority', 'progress'] as const)('%s popup keyboard access', (ki
     expect(onChange).toHaveBeenCalledExactlyOnceWith(kind === 'priority' ? '2' : 20);
   });
 
-  it('waits for a temporarily disabled source before restoring focus', async () => {
+  it('waits for the async change and enabled source before restoring focus', async () => {
+    let finishChoice: (() => void) | undefined;
     function AsyncHarness() {
       const [open, setOpen] = useState(false);
       const [busy, setBusy] = useState(false);
       const [source, setSource] = useState<HTMLButtonElement | null>(null);
+      const resolveChange = useRef<(() => void) | undefined>(undefined);
       const change = () => {
         setBusy(true);
         setOpen(false);
-        window.setTimeout(() => setBusy(false), 80);
+        return new Promise<void>((resolve) => { resolveChange.current = () => { setBusy(false); resolve(); }; });
       };
+      finishChoice = () => resolveChange.current?.();
       return <>
         <button ref={setSource} type="button" disabled={busy} onClick={() => setOpen(true)}>Open async choices</button>
         {open && (kind === 'priority'
@@ -344,6 +347,9 @@ describe.each(['priority', 'progress'] as const)('%s popup keyboard access', (ki
     const option = screen.getByRole('button', { name: kind === 'priority' ? 'High' : '20%' });
     fireEvent.click(option);
     const source = screen.getByRole('button', { name: 'Open async choices' });
+    expect((source as HTMLButtonElement).disabled).toBe(true);
+    expect(document.activeElement).not.toBe(source);
+    act(() => finishChoice?.());
     await waitFor(() => expect(document.activeElement).toBe(source));
   });
 

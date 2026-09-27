@@ -15,7 +15,7 @@ function useChoicePopup(onClose: () => void, restoreFocusTo?: HTMLElement | null
   const menuRef = useRef<HTMLDivElement>(null);
   const focusTarget = useRef(restoreFocusTo ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null));
   const closed = useRef(false);
-  const restoreFocus = useCallback(() => {
+  const restoreFocus = useCallback((after?: PromiseLike<unknown>) => {
     cancelPendingFocusRestore?.();
     let observer: MutationObserver | undefined;
     let deadlineTimer = 0;
@@ -68,14 +68,35 @@ function useChoicePopup(onClose: () => void, restoreFocusTo?: HTMLElement | null
     cancelPendingFocusRestore = release;
     document.addEventListener('focusin', handleFocusIn);
     observer = new MutationObserver(() => tryRestore());
-    observer.observe(document.documentElement, {
+    // Only watch the invoking control and its containing board subtree. The
+    // completion signal below handles the mutation lifecycle; this observer
+    // only waits for React to re-enable or replace the control.
+    const boardRoot = target.closest<HTMLElement>('#redmine-kanban-root')
+      ?? target.closest<HTMLElement>('.rk-canvas-board')
+      ?? target.parentElement
+      ?? document.documentElement;
+    observer.observe(target.parentElement ?? boardRoot, {
       attributes: true,
       attributeFilter: ['disabled'],
       childList: true,
       subtree: true,
     });
+    observer.observe(boardRoot, { childList: true, subtree: true });
+    // A board scope change can detach the board root itself.
+    if (boardRoot.parentElement) observer.observe(boardRoot.parentElement, { childList: true });
     deadlineTimer = window.setTimeout(() => tryRestore(true), FOCUS_RESTORE_DEADLINE_MS);
-    tryRestore();
+    if (after) {
+      const restoreAfterCommit = () => {
+        if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(() => tryRestore());
+        else window.setTimeout(() => tryRestore(), 0);
+      };
+      void Promise.resolve(after).then(
+        restoreAfterCommit,
+        restoreAfterCommit,
+      );
+    } else {
+      tryRestore();
+    }
   }, []);
   const close = useCallback(() => {
     if (closed.current) return;
@@ -130,7 +151,7 @@ export function PriorityPopup({
   value: string;
   options: { id: string; name: string }[];
   onClose: () => void;
-  onChange: (val: string) => void;
+  onChange: (val: string) => void | PromiseLike<unknown>;
   restoreFocusTo?: HTMLElement | null;
   ariaLabel?: string;
 }) {
@@ -139,8 +160,8 @@ export function PriorityPopup({
   const choose = (id: string) => {
     if (selected.current) return;
     selected.current = true;
-    onChange(id);
-    restoreFocus();
+    const completion = onChange(id);
+    restoreFocus(completion || undefined);
   };
 
   return (
@@ -402,7 +423,7 @@ export function ProgressPopup({
   y: number;
   value: number;
   onClose: () => void;
-  onChange: (val: number) => void;
+  onChange: (val: number) => void | PromiseLike<unknown>;
   restoreFocusTo?: HTMLElement | null;
   ariaLabel?: string;
 }) {
@@ -418,8 +439,8 @@ export function ProgressPopup({
   const choose = (next: number) => {
     if (selected.current) return;
     selected.current = true;
-    onChange(next);
-    restoreFocus();
+    const completion = onChange(next);
+    restoreFocus(completion || undefined);
   };
 
   return (
