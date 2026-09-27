@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { format as formatMonthName } from 'date-fns';
@@ -11,93 +11,170 @@ function isDetached(element: HTMLElement | null): boolean {
   return !element?.isConnected;
 }
 
+function focusRootFor(target: HTMLElement): HTMLElement {
+  return target.closest<HTMLElement>('#redmine-kanban-root')
+    ?? target.closest<HTMLElement>('.rk-canvas-board')
+    ?? target.parentElement
+    ?? document.documentElement;
+}
+
 function useChoicePopup(onClose: () => void, restoreFocusTo?: HTMLElement | null) {
   const menuRef = useRef<HTMLDivElement>(null);
   const focusTarget = useRef(restoreFocusTo ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null));
+  const focusRoot = useRef<HTMLElement | null>(null);
+  if (!focusRoot.current && focusTarget.current) focusRoot.current = focusRootFor(focusTarget.current);
   const closed = useRef(false);
+
+  useLayoutEffect(() => {
+    // A newly opened choice popup owns focus and supersedes any older request.
+    cancelPendingFocusRestore?.();
+  }, []);
+
   const restoreFocus = useCallback((after?: PromiseLike<unknown>) => {
     cancelPendingFocusRestore?.();
     let observer: MutationObserver | undefined;
-    let deadlineTimer = 0;
+    let animationFrame: number | undefined;
+    let scheduledTimer: number | undefined;
     let finished = false;
+    let semanticSettled = !after;
     const target = focusTarget.current;
-    const canvas = document.querySelector<HTMLElement>('.rk-canvas');
+    const boardRoot = focusRoot.current;
+
+    if (!target || !boardRoot) return;
+
+    const isPassiveFocus = (active: Element | null) => (
+      !active || active === document.body || active === document.documentElement || active === target
+    );
+    const canFocus = (element: HTMLElement | null): element is HTMLElement => Boolean(
+      element?.isConnected
+      && !element.matches(':disabled')
+      && element !== document.body
+      && element !== document.documentElement,
+    );
+    const focusFallback = () => {
+      const active = document.activeElement;
+      if (!isPassiveFocus(active) || menuRef.current?.contains(active)) return;
+      if (!boardRoot.isConnected) return;
+      const fallback = boardRoot.matches('.rk-canvas')
+        ? boardRoot
+        : boardRoot.querySelector<HTMLElement>('.rk-canvas');
+      if (!canFocus(fallback)) return;
+      fallback.focus({ preventScroll: true });
+    };
+
     const release = () => {
       if (finished) return;
       finished = true;
       observer?.disconnect();
       observer = undefined;
       window.clearTimeout(deadlineTimer);
+      if (scheduledTimer !== undefined) window.clearTimeout(scheduledTimer);
+      if (animationFrame !== undefined && typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(animationFrame);
+      }
+      animationFrame = undefined;
+      scheduledTimer = undefined;
       document.removeEventListener('focusin', handleFocusIn);
       if (cancelPendingFocusRestore === release) cancelPendingFocusRestore = undefined;
     };
+
     const handleFocusIn = () => {
       const active = document.activeElement;
       if (active && active !== document.body && active !== document.documentElement
         && active !== target && !menuRef.current?.contains(active)) release();
     };
-    const canFocus = (element: HTMLElement | null): element is HTMLElement => Boolean(
-      element?.isConnected && !element.matches(':disabled') && element !== document.body && element !== document.documentElement,
-    );
+
     const tryRestore = (expired = false) => {
       if (finished) return;
-      const destination = focusTarget.current;
       const active = document.activeElement;
       if (active && active !== document.body && active !== document.documentElement
         && active !== target && !menuRef.current?.contains(active)) {
         release();
         return;
       }
-      if (canFocus(destination)) {
-        destination.focus({ preventScroll: true });
+
+      // A detached/replaced board ends this request. A removed source can use a
+      // fallback only inside its still-connected board, and only when focus is idle.
+      if (!boardRoot.isConnected) {
         release();
         return;
       }
-      if (expired || isDetached(destination)) {
-        if (menuRef.current?.contains(active)) {
-          if (expired) release();
-          return;
-        }
-        if (active === document.body || active === document.documentElement || !active) {
-          if (canFocus(canvas)) canvas.focus({ preventScroll: true });
-        }
+
+      if (isDetached(target)) {
+        focusFallback();
         release();
+        return;
+      }
+      if (!boardRoot.contains(target)) {
+        release();
+        return;
+      }
+
+      // Expiry abandons the semantic wait. It never focuses the invoking control
+      // while its mutation promise is still pending.
+      if (expired) {
+        focusFallback();
+        release();
+        return;
+      }
+      if (!semanticSettled) return;
+      if (menuRef.current?.isConnected) return;
+
+      if (active === target) {
+        release();
+        return;
+      }
+      if (!canFocus(target)) return;
+
+      target.focus({ preventScroll: true });
+      if (document.activeElement === target) release();
+    };
+
+    const scheduleRestoreCheck = () => {
+      if (finished || animationFrame !== undefined || scheduledTimer !== undefined) return;
+      if (typeof window.requestAnimationFrame === 'function') {
+        animationFrame = window.requestAnimationFrame(() => {
+          animationFrame = undefined;
+          tryRestore();
+        });
+      } else {
+        scheduledTimer = window.setTimeout(() => {
+          scheduledTimer = undefined;
+          tryRestore();
+        }, 0);
       }
     };
-    if (!target) return;
+
     cancelPendingFocusRestore = release;
     document.addEventListener('focusin', handleFocusIn);
-    observer = new MutationObserver(() => tryRestore());
-    // Only watch the invoking control and its containing board subtree. The
-    // completion signal below handles the mutation lifecycle; this observer
-    // only waits for React to re-enable or replace the control.
-    const boardRoot = target.closest<HTMLElement>('#redmine-kanban-root')
-      ?? target.closest<HTMLElement>('.rk-canvas-board')
-      ?? target.parentElement
-      ?? document.documentElement;
-    observer.observe(target.parentElement ?? boardRoot, {
+    observer = new MutationObserver(scheduleRestoreCheck);
+    // One subtree observation covers source disabled/removal and board child
+    // changes. The parent observation detects the board root being detached.
+    observer.observe(boardRoot, {
       attributes: true,
       attributeFilter: ['disabled'],
       childList: true,
       subtree: true,
     });
-    observer.observe(boardRoot, { childList: true, subtree: true });
-    // A board scope change can detach the board root itself.
-    if (boardRoot.parentElement) observer.observe(boardRoot.parentElement, { childList: true });
-    deadlineTimer = window.setTimeout(() => tryRestore(true), FOCUS_RESTORE_DEADLINE_MS);
+    const rootParent = boardRoot.parentElement;
+    if (rootParent && rootParent !== boardRoot) observer.observe(rootParent, { childList: true });
+    const deadlineTimer = window.setTimeout(() => tryRestore(true), FOCUS_RESTORE_DEADLINE_MS);
+
     if (after) {
-      const restoreAfterCommit = () => {
-        if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(() => tryRestore());
-        else window.setTimeout(() => tryRestore(), 0);
-      };
-      void Promise.resolve(after).then(
-        restoreAfterCommit,
-        restoreAfterCommit,
-      );
+      void Promise.resolve(after).then(() => {
+        if (finished) return;
+        semanticSettled = true;
+        scheduleRestoreCheck();
+      }, () => {
+        if (finished) return;
+        semanticSettled = true;
+        scheduleRestoreCheck();
+      });
     } else {
-      tryRestore();
+      scheduleRestoreCheck();
     }
   }, []);
+
   const close = useCallback(() => {
     if (closed.current) return;
     closed.current = true;
@@ -133,7 +210,7 @@ function useChoicePopup(onClose: () => void, restoreFocusTo?: HTMLElement | null
     };
   }, [close]);
 
-  return { menuRef, restoreFocus };
+  return { menuRef, restoreFocus, close };
 }
 
 export function PriorityPopup({
@@ -155,11 +232,15 @@ export function PriorityPopup({
   restoreFocusTo?: HTMLElement | null;
   ariaLabel?: string;
 }) {
-  const { menuRef, restoreFocus } = useChoicePopup(onClose, restoreFocusTo);
+  const { menuRef, restoreFocus, close } = useChoicePopup(onClose, restoreFocusTo);
   const selected = useRef(false);
   const choose = (id: string) => {
     if (selected.current) return;
     selected.current = true;
+    if (id === value) {
+      close();
+      return;
+    }
     const completion = onChange(id);
     restoreFocus(completion || undefined);
   };
@@ -427,7 +508,7 @@ export function ProgressPopup({
   restoreFocusTo?: HTMLElement | null;
   ariaLabel?: string;
 }) {
-  const { menuRef, restoreFocus } = useChoicePopup(onClose, restoreFocusTo);
+  const { menuRef, restoreFocus, close } = useChoicePopup(onClose, restoreFocusTo);
   const selected = useRef(false);
   const options = Array.from({ length: 11 }, (_, i) => i * 10);
   const showUpward = y > window.innerHeight / 2;
@@ -439,6 +520,10 @@ export function ProgressPopup({
   const choose = (next: number) => {
     if (selected.current) return;
     selected.current = true;
+    if (next === value) {
+      close();
+      return;
+    }
     const completion = onChange(next);
     restoreFocus(completion || undefined);
   };

@@ -320,6 +320,18 @@ describe.each(['priority', 'progress'] as const)('%s popup keyboard access', (ki
     expect(onChange).toHaveBeenCalledExactlyOnceWith(kind === 'priority' ? '2' : 20);
   });
 
+  it('closes a same-value choice without starting a mutation', async () => {
+    const onChange = vi.fn();
+    render(<Harness onChange={onChange} />);
+    const source = screen.getByRole('button', { name: 'Open choices' });
+    fireEvent.click(source);
+    fireEvent.click(screen.getByRole('button', { name: kind === 'priority' ? 'Low' : '10%' }));
+
+    await waitFor(() => expect(document.activeElement).toBe(source));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole('group', { name: kind === 'priority' ? 'Priority' : 'Progress' })).toBeNull();
+  });
+
   it('waits for the async change and enabled source before restoring focus', async () => {
     let finishChoice: (() => void) | undefined;
     function AsyncHarness() {
@@ -351,6 +363,165 @@ describe.each(['priority', 'progress'] as const)('%s popup keyboard access', (ki
     expect(document.activeElement).not.toBe(source);
     act(() => finishChoice?.());
     await waitFor(() => expect(document.activeElement).toBe(source));
+  });
+
+  it('does not restore focus from DOM notifications before the async change settles', async () => {
+    let resolveChange: (() => void) | undefined;
+    const pendingChange = new Promise<void>((resolve) => { resolveChange = resolve; });
+
+    function PendingHarness() {
+      const [open, setOpen] = useState(false);
+      const [source, setSource] = useState<HTMLButtonElement | null>(null);
+      return <>
+        <button ref={setSource} type="button" onClick={() => setOpen(true)}>Open pending choices</button>
+        {open && (kind === 'priority'
+          ? <PriorityPopup x={0} y={0} value="1" options={[{ id: '1', name: 'Low' }, { id: '2', name: 'High' }]}
+              restoreFocusTo={source} onClose={() => setOpen(false)} onChange={() => { setOpen(false); return pendingChange; }} />
+          : <ProgressPopup x={0} y={0} value={10} restoreFocusTo={source}
+              onClose={() => setOpen(false)} onChange={() => { setOpen(false); return pendingChange; }} />)}
+      </>;
+    }
+
+    render(<PendingHarness />);
+    const source = screen.getByRole('button', { name: 'Open pending choices' }) as HTMLButtonElement;
+    const sourceFocus = vi.spyOn(source, 'focus');
+    fireEvent.click(source);
+    fireEvent.click(screen.getByRole('button', { name: kind === 'priority' ? 'High' : '20%' }));
+
+    // React Query's busy update can arrive after selection. Include a transient
+    // disable/enable and unrelated DOM update while the semantic change is pending.
+    source.disabled = true;
+    source.disabled = false;
+    const unrelated = document.createElement('span');
+    unrelated.textContent = 'unrelated update';
+    document.body.append(unrelated);
+    await act(async () => { await Promise.resolve(); });
+
+    expect(sourceFocus).not.toHaveBeenCalled();
+    await act(async () => { resolveChange?.(); await pendingChange; });
+    await waitFor(() => expect(sourceFocus).toHaveBeenCalledTimes(1));
+    unrelated.remove();
+  });
+
+  it('restores focus after a rejected async change settles', async () => {
+    let rejectChange: ((reason?: unknown) => void) | undefined;
+    const pendingChange = new Promise<void>((_resolve, reject) => { rejectChange = reject; });
+
+    function FailedHarness() {
+      const [open, setOpen] = useState(false);
+      const [source, setSource] = useState<HTMLButtonElement | null>(null);
+      return <>
+        <button ref={setSource} type="button" onClick={() => setOpen(true)}>Open failed choices</button>
+        {open && (kind === 'priority'
+          ? <PriorityPopup x={0} y={0} value="1" options={[{ id: '1', name: 'Low' }, { id: '2', name: 'High' }]}
+              restoreFocusTo={source} onClose={() => setOpen(false)} onChange={() => { setOpen(false); return pendingChange; }} />
+          : <ProgressPopup x={0} y={0} value={10} restoreFocusTo={source}
+              onClose={() => setOpen(false)} onChange={() => { setOpen(false); return pendingChange; }} />)}
+      </>;
+    }
+
+    render(<FailedHarness />);
+    const source = screen.getByRole('button', { name: 'Open failed choices' });
+    const sourceFocus = vi.spyOn(source, 'focus');
+    fireEvent.click(source);
+    fireEvent.click(screen.getByRole('button', { name: kind === 'priority' ? 'High' : '20%' }));
+    await act(async () => {
+      rejectChange?.(new Error('expected mutation failure'));
+      await pendingChange.catch(() => undefined);
+    });
+
+    await waitFor(() => expect(sourceFocus).toHaveBeenCalledTimes(1));
+    expect(document.activeElement).toBe(source);
+  });
+
+  it('keeps a newer user focus when the pending change settles', async () => {
+    let resolveChange: (() => void) | undefined;
+    const pendingChange = new Promise<void>((resolve) => { resolveChange = resolve; });
+
+    function PendingHarness() {
+      const [open, setOpen] = useState(false);
+      const [source, setSource] = useState<HTMLButtonElement | null>(null);
+      return <>
+        <button ref={setSource} type="button" onClick={() => setOpen(true)}>Open focus choices</button>
+        <button type="button">Other action</button>
+        {open && (kind === 'priority'
+          ? <PriorityPopup x={0} y={0} value="1" options={[{ id: '1', name: 'Low' }, { id: '2', name: 'High' }]}
+              restoreFocusTo={source} onClose={() => setOpen(false)} onChange={() => { setOpen(false); return pendingChange; }} />
+          : <ProgressPopup x={0} y={0} value={10} restoreFocusTo={source}
+              onClose={() => setOpen(false)} onChange={() => { setOpen(false); return pendingChange; }} />)}
+      </>;
+    }
+
+    render(<PendingHarness />);
+    const source = screen.getByRole('button', { name: 'Open focus choices' });
+    const sourceFocus = vi.spyOn(source, 'focus');
+    fireEvent.click(source);
+    fireEvent.click(screen.getByRole('button', { name: kind === 'priority' ? 'High' : '20%' }));
+    const other = screen.getByRole('button', { name: 'Other action' });
+    other.focus();
+    await act(async () => { resolveChange?.(); await pendingChange; });
+
+    expect(document.activeElement).toBe(other);
+    expect(sourceFocus).not.toHaveBeenCalled();
+  });
+
+  it('makes callbacks from an expired async restore inert', async () => {
+    vi.useFakeTimers();
+    let resolveChange: (() => void) | undefined;
+    const pendingChange = new Promise<void>((resolve) => { resolveChange = resolve; });
+
+    function PendingHarness() {
+      const [open, setOpen] = useState(false);
+      const [source, setSource] = useState<HTMLButtonElement | null>(null);
+      return <>
+        <button ref={setSource} type="button" onClick={() => setOpen(true)}>Open expiring choices</button>
+        {open && (kind === 'priority'
+          ? <PriorityPopup x={0} y={0} value="1" options={[{ id: '1', name: 'Low' }, { id: '2', name: 'High' }]}
+              restoreFocusTo={source} onClose={() => setOpen(false)} onChange={() => { setOpen(false); return pendingChange; }} />
+          : <ProgressPopup x={0} y={0} value={10} restoreFocusTo={source}
+              onClose={() => setOpen(false)} onChange={() => { setOpen(false); return pendingChange; }} />)}
+      </>;
+    }
+
+    render(<PendingHarness />);
+    const source = screen.getByRole('button', { name: 'Open expiring choices' });
+    const sourceFocus = vi.spyOn(source, 'focus');
+    const disconnect = vi.spyOn(MutationObserver.prototype, 'disconnect');
+    fireEvent.click(source);
+    fireEvent.click(screen.getByRole('button', { name: kind === 'priority' ? 'High' : '20%' }));
+    await vi.advanceTimersByTimeAsync(5_000);
+    await act(async () => { resolveChange?.(); await pendingChange; });
+
+    expect(sourceFocus).not.toHaveBeenCalled();
+    expect(disconnect).toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('observes a board root only once when it is also the source parent', async () => {
+    const boardRoot = document.createElement('div');
+    boardRoot.className = 'rk-canvas-board';
+    const source = document.createElement('button');
+    boardRoot.append(source);
+    document.body.append(boardRoot);
+    const observe = vi.spyOn(MutationObserver.prototype, 'observe');
+    const { unmount } = render(kind === 'priority'
+      ? <PriorityPopup x={0} y={0} value="1" options={[{ id: '1', name: 'Low' }]}
+          restoreFocusTo={source} onClose={vi.fn()} onChange={vi.fn()} />
+      : <ProgressPopup x={0} y={0} value={10} restoreFocusTo={source} onClose={vi.fn()} onChange={vi.fn()} />);
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(observe).toHaveBeenCalled());
+    const observedTargets = observe.mock.calls.map(([target]) => target);
+    expect(new Set(observedTargets).size).toBe(observedTargets.length);
+    expect(observe).toHaveBeenCalledWith(boardRoot, expect.objectContaining({
+      attributes: true,
+      attributeFilter: ['disabled'],
+      childList: true,
+      subtree: true,
+    }));
+
+    unmount();
+    boardRoot.remove();
   });
 
   it('stops watching a permanently disabled source after the focus deadline', async () => {
@@ -438,15 +609,45 @@ describe.each(['priority', 'progress'] as const)('%s popup keyboard access', (ki
     sourceA.remove();
   });
 
+  it('does not let an older mutation refocus after a new popup opens', async () => {
+    let resolveChange: (() => void) | undefined;
+    const pendingChange = new Promise<void>((resolve) => { resolveChange = resolve; });
+    const sourceB = document.createElement('button');
+    sourceB.textContent = 'Open popup B';
+    document.body.append(sourceB);
+    function Harness() {
+      const [open, setOpen] = useState<'A' | 'B'>('A');
+      return open === 'A'
+        ? <PriorityPopup x={0} y={0} value="1" options={[{ id: '1', name: 'A low' }, { id: '2', name: 'A high' }]}
+            restoreFocusTo={sourceB}
+            onClose={() => setOpen('B')} onChange={() => { setOpen('B'); return pendingChange; }} />
+        : <ProgressPopup x={0} y={0} value={10} onClose={vi.fn()} onChange={vi.fn()} />;
+    }
+    const { unmount } = render(<Harness />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'A high' }));
+    const popupB = screen.getByRole('group', { name: 'Progress' });
+    const selectedB = popupB.querySelector<HTMLElement>('[aria-pressed="true"]');
+    await waitFor(() => expect(document.activeElement).toBe(selectedB));
+    await act(async () => { resolveChange?.(); await pendingChange; });
+
+    expect(document.activeElement).toBe(selectedB);
+    unmount();
+    sourceB.remove();
+  });
+
   it('releases the pending restore when its source is removed', async () => {
     vi.useFakeTimers();
+    const boardRoot = document.createElement('div');
+    boardRoot.id = 'redmine-kanban-root';
     const source = document.createElement('button');
     source.disabled = true;
-    document.body.append(source);
+    boardRoot.append(source);
     const canvas = document.createElement('div');
     canvas.className = 'rk-canvas';
     canvas.tabIndex = -1;
-    document.body.append(canvas);
+    boardRoot.append(canvas);
+    document.body.append(boardRoot);
     function Harness() {
       const [open, setOpen] = useState(true);
       return open ? <PriorityPopup x={0} y={0} value="1" options={[{ id: '1', name: 'Low' }]}
@@ -456,11 +657,38 @@ describe.each(['priority', 'progress'] as const)('%s popup keyboard access', (ki
     render(<Harness />);
     fireEvent.keyDown(window, { key: 'Escape' });
     await Promise.resolve();
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(20);
 
     expect(document.activeElement).toBe(canvas);
     expect(disconnect).toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
+    boardRoot.remove();
     canvas.remove();
+  });
+
+  it('abandons a pending restore when its board root is detached', async () => {
+    let resolveChange: (() => void) | undefined;
+    const pendingChange = new Promise<void>((resolve) => { resolveChange = resolve; });
+    const boardRoot = document.createElement('div');
+    boardRoot.id = 'redmine-kanban-root';
+    const source = document.createElement('button');
+    boardRoot.append(source);
+    document.body.append(boardRoot);
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return open ? <PriorityPopup x={0} y={0} value="1" options={[{ id: '1', name: 'Low' }, { id: '2', name: 'High' }]}
+        restoreFocusTo={source} onClose={() => setOpen(false)}
+        onChange={() => { setOpen(false); boardRoot.remove(); return pendingChange; }} /> : null;
+    }
+    const sourceFocus = vi.spyOn(source, 'focus');
+    const { unmount } = render(<Harness />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'High' }));
+    await act(async () => { resolveChange?.(); await pendingChange; });
+    await waitFor(() => expect(vi.getTimerCount()).toBe(0));
+
+    expect(sourceFocus).not.toHaveBeenCalled();
+    expect(document.activeElement).not.toBe(source);
+    unmount();
   });
 });
