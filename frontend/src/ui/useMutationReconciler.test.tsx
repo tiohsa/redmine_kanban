@@ -54,11 +54,11 @@ function board(issues = [issue(1)]): BoardData {
   };
 }
 
-function renderReconciler(data: BoardData | null = board()) {
+function renderReconciler(data: BoardData | null = board(), onReconciliationFailure?: () => void) {
   const queryClient = new QueryClient();
   if (data) queryClient.setQueryData(queryKey, data);
   const hook = renderHook(() => useMutationReconciler({
-    baseUrl: '/projects/demo/kanban', boardQueryKey: queryKey, data,
+    baseUrl: '/projects/demo/kanban', boardQueryKey: queryKey, data, onReconciliationFailure,
   }), {
     wrapper: ({ children }: PropsWithChildren) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
@@ -222,7 +222,7 @@ describe('mutation follow-up reconciliation', () => {
     const { result } = renderReconciler(null);
     expect(await result.current.reconcileIssues([])).toBe(true);
     expect(await result.current.reconcileIssues([1])).toBe(false);
-    expect(await result.current.reconcileIssueIds([1])).toBeUndefined();
+    expect(await result.current.reconcileIssueIds([1])).toEqual({ status: 'failed', reason: 'server' });
     result.current.reconcileMutationResult({ invalidations: { column_counts: true } });
     expect(getJsonMock).not.toHaveBeenCalled();
   });
@@ -280,7 +280,7 @@ describe('reconciliation freshness', () => {
     getJsonMock.mockReturnValueOnce(entities.promise).mockReturnValueOnce(counts.promise);
     const authority = getBoardFreshnessAuthority(queryClient, queryKey);
     act(() => result.current.reconcileMutationResult({ invalidations: { issue_ids: [1], column_counts: true } }));
-    expect(authority.activeRequestCount).toBe(2);
+    expect(authority.activeRequestCount).toBe(3);
     const replacement = board([issue(1, { subject: 'Authoritative', lock_version: 2 })]);
     if (change === 'scope change') replacement.scope_fingerprint = 'project:2';
     else act(() => result.current.invalidateSnapshot());
@@ -316,6 +316,57 @@ describe('reconciliation freshness', () => {
 });
 
 describe('entity reconciliation races', () => {
+  it('treats a reported missing issue as a successful read without retrying', async () => {
+    const { result, current } = renderReconciler();
+    getJsonMock.mockResolvedValue({ ok: true, entities: [], missing_issue_ids: [1] });
+    await act(async () => {
+      expect(await result.current.reconcileIssueIds([1])).toEqual({ status: 'applied', missingIds: [1] });
+    });
+    expect(getJsonMock).toHaveBeenCalledTimes(1);
+    expect(current().issues).toEqual([]);
+  });
+
+  it('falls back to a board reset after two failed latest reads', async () => {
+    const onFailure = vi.fn();
+    const { result, queryClient } = renderReconciler(board(), onFailure);
+    const reset = vi.spyOn(queryClient, 'resetQueries');
+    getJsonMock.mockRejectedValue(new Error('offline'));
+    await act(async () => {
+      expect(await result.current.reconcileIssueIds([1])).toEqual({ status: 'failed', reason: 'network' });
+    });
+    expect(getJsonMock).toHaveBeenCalledTimes(2);
+    expect(reset).toHaveBeenCalledOnce();
+    expect(onFailure).toHaveBeenCalledOnce();
+  });
+
+  it('retries a failed latest read and does not adopt an older response', async () => {
+    const { result, current } = renderReconciler();
+    const older = deferred<{ ok: boolean; entities: Issue[] }>();
+    getJsonMock.mockReturnValueOnce(older.promise).mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({ ok: true, entities: [issue(1, { subject: 'Recovered', lock_version: 3 })] });
+    const first = result.current.reconcileIssues([1]);
+    const second = result.current.reconcileIssueIds([1]);
+    await act(async () => {
+      expect(await second).toEqual({ status: 'applied', missingIds: [] });
+      older.resolve({ ok: true, entities: [issue(1, { subject: 'Old', lock_version: 2 })] });
+      expect(await first).toBe(false);
+    });
+    expect(current().issues[0]?.subject).toBe('Recovered');
+  });
+
+  it('does not adopt an older success when the newer read and its retry fail', async () => {
+    const { result, queryClient } = renderReconciler();
+    const older = deferred<{ ok: boolean; entities: Issue[] }>();
+    getJsonMock.mockReturnValueOnce(older.promise).mockRejectedValue(new Error('offline'));
+    const first = result.current.reconcileIssues([1]);
+    await act(async () => {
+      expect(await result.current.reconcileIssueIds([1])).toEqual({ status: 'failed', reason: 'network' });
+      older.resolve({ ok: true, entities: [issue(1, { subject: 'Old', lock_version: 2 })] });
+      expect(await first).toBe(false);
+    });
+    expect(queryClient.getQueryData(queryKey)).toBeUndefined();
+  });
+
   it('does not restore a deleted issue from a pending entity response', async () => {
     const { result, queryClient, current } = renderReconciler();
     const response = deferred<{ ok: boolean; entities: Issue[] }>();
@@ -356,6 +407,65 @@ describe('entity reconciliation races', () => {
 });
 
 describe('batched entity reconciliation', () => {
+  it('caps reads shared by separate reconciliation calls', async () => {
+    const { result } = renderReconciler(board([issue(1), issue(2), issue(3)]));
+    const responses = [deferred<{ ok: boolean; entities: Issue[] }>(), deferred<{ ok: boolean; entities: Issue[] }>(), deferred<{ ok: boolean; entities: Issue[] }>()];
+    getJsonMock.mockReturnValueOnce(responses[0]!.promise).mockReturnValueOnce(responses[1]!.promise).mockReturnValueOnce(responses[2]!.promise);
+    const first = result.current.reconcileIssues([1]);
+    const second = result.current.reconcileIssues([2]);
+    const third = result.current.reconcileIssues([3]);
+    expect(getJsonMock).toHaveBeenCalledTimes(2);
+    await act(async () => { responses[0]!.resolve({ ok: true, entities: [issue(1)] }); expect(await first).toBe(true); });
+    expect(getJsonMock).toHaveBeenCalledTimes(3);
+    await act(async () => {
+      responses[1]!.resolve({ ok: true, entities: [issue(2)] });
+      responses[2]!.resolve({ ok: true, entities: [issue(3)] });
+      expect(await second).toBe(true);
+      expect(await third).toBe(true);
+    });
+  });
+
+  it('never exceeds two concurrent entity reads across four batches', async () => {
+    const ids = Array.from({ length: 301 }, (_, index) => index + 1);
+    const { result } = renderReconciler(board(ids.map((id) => issue(id))));
+    const pendingResponses: Array<{ ids: number[]; resolve: (value: { ok: boolean; entities: Issue[] }) => void }> = [];
+    getJsonMock.mockImplementation((url: string) => new Promise((resolve) => {
+      pendingResponses.push({
+        ids: new URL(url, 'http://localhost').searchParams.getAll('ids[]').map(Number),
+        resolve,
+      });
+    }));
+    const pending = result.current.reconcileIssues(ids);
+    expect(pendingResponses).toHaveLength(2);
+    await act(async () => { pendingResponses[0]!.resolve({ ok: true, entities: pendingResponses[0]!.ids.map((id) => issue(id)) }); });
+    expect(pendingResponses).toHaveLength(3);
+    await act(async () => { pendingResponses[1]!.resolve({ ok: true, entities: pendingResponses[1]!.ids.map((id) => issue(id)) }); });
+    expect(pendingResponses).toHaveLength(4);
+    await act(async () => {
+      for (const response of pendingResponses.slice(2)) response.resolve({ ok: true, entities: response.ids.map((id) => issue(id)) });
+      expect(await pending).toBe(true);
+    });
+  });
+
+  it('starts at most two entity batches and stops queued batches after a scope change', async () => {
+    const ids = Array.from({ length: 301 }, (_, index) => index + 1);
+    const { result, queryClient, current } = renderReconciler(board(ids.map((id) => issue(id))));
+    const first = deferred<{ ok: boolean; entities: Issue[] }>();
+    const second = deferred<{ ok: boolean; entities: Issue[] }>();
+    getJsonMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const pending = result.current.reconcileIssues(ids);
+    expect(getJsonMock).toHaveBeenCalledTimes(2);
+    const replacement = { ...current(), scope_fingerprint: 'project:2' };
+    queryClient.setQueryData(queryKey, replacement);
+    await act(async () => {
+      first.resolve({ ok: true, entities: ids.slice(0, 100).map((id) => issue(id)) });
+      second.resolve({ ok: true, entities: ids.slice(100, 200).map((id) => issue(id)) });
+      expect(await pending).toBe(false);
+    });
+    expect(getJsonMock).toHaveBeenCalledTimes(2);
+    expect(current()).toEqual(replacement);
+  });
+
   it('deduplicates parent and issue invalidations into one read', async () => {
     const { result } = renderReconciler(board([issue(1), issue(2)]));
     getJsonMock.mockResolvedValue({ ok: true, entities: [issue(2)] });

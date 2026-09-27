@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { useRef } from 'react';
 import type { BoardData, Issue, Subtask } from '../../model/board/types';
+import { compareIssueFreshness } from '../../model/board/issueFreshness';
 import { findIssueInBoard } from '../../model/board/selectors';
 import { resolveClosedState } from '../../model/issue/issue';
 import type { AncestorIssueUpdate, IssueMutationResult } from '../../infrastructure/api/contracts';
@@ -27,11 +28,11 @@ export function isBoardSnapshotInvalidated(result: unknown): boolean {
   return Boolean(invalidations && typeof invalidations === 'object' && (invalidations as { board_snapshot?: unknown }).board_snapshot === true);
 }
 
-export function invalidateBoardSnapshot(queryClient: QueryClient, queryKey: QueryKey): void {
+export function invalidateBoardSnapshot(queryClient: QueryClient, queryKey: QueryKey): Promise<void> {
   const authority = getBoardFreshnessAuthority(queryClient, queryKey);
   authority.invalidate();
   releaseBoardFreshnessAuthority(queryClient, queryKey, authority);
-  void queryClient.resetQueries({ queryKey });
+  return queryClient.resetQueries({ queryKey });
 }
 
 export type MutationResponseApplyOptions = {
@@ -252,10 +253,12 @@ function applyFreshServerResult<TPayload extends IssuePayload, TResult>(
     options?: { applyTarget: boolean; applyNonTarget?: boolean; excludeNegativeIssueIds?: number[] },
   ) => BoardData,
 ): BoardData {
+  if (context?.prev && boardScopeFingerprint(context.prev) !== boardScopeFingerprint(data)) return data;
   const currentIssue = findIssueInBoard(data, payload.issueId);
   const incomingIssue = issueFromResult(result, payload.issueId);
   const hasNewerMutation = context ? (revisions.get(payload.issueId) ?? 0) > context.revision : false;
-  if (!hasNewerMutation && (!currentIssue || !incomingIssue || isIssueFresh(currentIssue, incomingIssue))) {
+  const removedAfterStart = Boolean(context?.prev && findIssueInBoard(context.prev, payload.issueId) && !currentIssue);
+  if (!hasNewerMutation && !removedAfterStart && (!currentIssue || !incomingIssue || isIssueFresh(currentIssue, incomingIssue))) {
     const negativeIds = result && typeof result === 'object'
       ? [...((result as { deleted_issue_ids?: number[] }).deleted_issue_ids ?? []), ...((result as { evicted_issue_ids?: number[] }).evicted_issue_ids ?? [])]
       : [];
@@ -270,6 +273,10 @@ function applyFreshServerResult<TPayload extends IssuePayload, TResult>(
   // path exclude the stale target effect itself.
   const preservedResult = { ...(result as object), issue: currentIssue } as TResult;
   return applyServer(data, preservedResult, payload, { applyTarget: false, applyNonTarget: true });
+}
+
+function boardScopeFingerprint(data: BoardData): string {
+  return data.scope_fingerprint ?? data.meta.scope_fingerprint ?? `project:${(data.meta.project_ids ?? [data.meta.project_id]).join(',')}`;
 }
 
 function issueFromResult<TResult>(result: TResult, issueId: number): Issue | null {
@@ -287,16 +294,7 @@ function issueFromResult<TResult>(result: TResult, issueId: number): Issue | nul
 }
 
 export function isIssueFresh(current: Issue, incoming: Issue): boolean {
-  if (typeof current.lock_version === 'number' && typeof incoming.lock_version === 'number') {
-    if (incoming.lock_version < current.lock_version) return false;
-    if (incoming.lock_version > current.lock_version) return true;
-  }
-
-  const currentUpdatedOn = parseDate(current.updated_on);
-  const incomingUpdatedOn = parseDate(incoming.updated_on);
-  if (currentUpdatedOn !== null && incomingUpdatedOn !== null) return incomingUpdatedOn >= currentUpdatedOn;
-  if (currentUpdatedOn !== null && incomingUpdatedOn === null) return false;
-  return true;
+  return compareIssueFreshness(current, incoming) !== 'older';
 }
 
 export function updateIssueInBoard(
@@ -366,12 +364,6 @@ export function applyAncestorIssueUpdates(
     changed = true;
   }
   return changed ? selectBoardData(state) : data;
-}
-
-function parseDate(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const timestamp = Date.parse(value);
-  return Number.isNaN(timestamp) ? null : timestamp;
 }
 
 export function replaceIssueInBoard(data: BoardData, nextIssue: Issue): BoardData {

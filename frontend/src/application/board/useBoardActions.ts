@@ -53,7 +53,10 @@ export function useBoardActions({
   const [busyIssueIds, setBusyIssueIds] = useState<Set<number>>(new Set());
   const [pendingDeleteIssue, setPendingDeleteIssue] = useState<Issue | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
-  const { applyIssueMutationResponse, invalidateSnapshot, reconcileIssues, reconcileIssueIds, reconcileMutationResult } = useMutationReconciler({ baseUrl, boardQueryKey, data });
+  const { applyIssueMutationResponse, invalidateSnapshot, reconcileIssues, reconcileIssueIds, reconcileMutationResult } = useMutationReconciler({
+    baseUrl, boardQueryKey, data,
+    onReconciliationFailure: () => setError(data?.labels.reconciliation_unverified ?? 'Board data could not be verified. Refresh the board.'),
+  });
   const busyIssueIdsRef = useRef<Set<number>>(new Set());
   const busyMutationCountsRef = useRef(new Map<number, number>());
   const deletingIssueIdsRef = useRef(new Set<number>());

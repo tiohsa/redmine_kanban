@@ -1,6 +1,7 @@
 import type { QueryClient, QueryKey } from '@tanstack/react-query';
-import type { BoardData } from '../../model/board/types';
+import type { BoardData, Issue } from '../../model/board/types';
 import { findIssueInBoard } from '../../model/board/selectors';
+import { normalizeTrackerId, resolveClosedState } from '../../model/issue/issue';
 
 export type FreshnessRequestKind = 'entity' | 'aggregate';
 
@@ -20,7 +21,16 @@ function scopeFingerprint(data: BoardData): string {
 
 function snapshotIssue(data: BoardData, issueId: number): string {
   const issue = findIssueInBoard(data, issueId);
-  return issue ? JSON.stringify(issue) : 'missing';
+  return issue ? JSON.stringify(canonicalIssue(issue, data.columns)) : 'missing';
+}
+
+function canonicalIssue(issue: Issue, columns: BoardData['columns']): Issue & { is_closed: boolean } {
+  return {
+    ...issue,
+    is_closed: resolveClosedState(issue, columns),
+    ...(issue.tracker_id === undefined ? {} : { tracker_id: normalizeTrackerId(issue.tracker_id) }),
+    subtasks: (issue.subtasks ?? []).map((child) => canonicalIssue(child as Issue, columns)),
+  };
 }
 
 export class BoardFreshnessAuthority {
@@ -93,6 +103,10 @@ export class BoardFreshnessAuthority {
 
   get activeRequestCount(): number {
     return this.activeRequests.size;
+  }
+
+  get currentGeneration(): number {
+    return this.generation;
   }
 
   private begin(

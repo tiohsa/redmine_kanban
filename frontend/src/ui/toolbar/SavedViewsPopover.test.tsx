@@ -5,7 +5,7 @@ import { SavedViewsPopover } from './SavedViewsPopover';
 import { parseSavedViews, type SavedViewSettings } from '../../model/view/savedViews';
 import { activeSavedViewKey } from '../../infrastructure/storage/savedViewsRepository';
 const current: SavedViewSettings = { filters: { assigneeIds: [], q: '', due: 'all', priority: [], priorityFilterEnabled: false, projectIds: [1], statusIds: [2], trackerIds: [] }, sortConfig: [{ field: 'updated', direction: 'desc' }], laneType: 'none', hiddenStatusIds: [], viewableProjectsEnabled: false };
-const labels = Object.fromEntries(['saved_views', 'saved_views_select', 'saved_views_none', 'saved_views_apply', 'saved_views_name', 'saved_views_new', 'saved_views_overwrite', 'saved_views_rename', 'saved_views_saved', 'saved_views_changed', 'saved_views_confirm_delete', 'saved_views_delete_confirm', 'saved_views_write_failed', 'saved_views_unreadable', 'saved_views_duplicate', 'saved_views_limit', 'saved_views_empty', 'saved_views_manage', 'saved_views_back', 'saved_views_create_title', 'saved_views_rename_title', 'saved_views_rename_submit', 'saved_views_pending', 'saved_views_clear', 'saved_views_clear_help', 'saved_views_switch', 'saved_views_switch_help', 'saved_views_manage_help', 'close', 'due', 'all', 'overdue', 'this_week', 'within_3_days', 'within_1_week', 'within_1_day', 'not_set', 'lane_type', 'none', 'assignee', 'issue_priority', 'category', 'save', 'delete', 'cancel'].map((k) => [k, k]));
+const labels = Object.fromEntries(['saved_views', 'saved_views_select', 'saved_views_none', 'saved_views_apply', 'saved_views_name', 'saved_views_new', 'saved_views_overwrite', 'saved_views_rename', 'saved_views_saved', 'saved_views_changed', 'saved_views_confirm_delete', 'saved_views_delete_confirm', 'saved_views_write_failed', 'saved_views_unreadable', 'saved_views_conflict', 'saved_views_reload', 'saved_views_continue', 'saved_views_retry_active', 'saved_views_retry_clear', 'saved_views_duplicate', 'saved_views_limit', 'saved_views_empty', 'saved_views_manage', 'saved_views_back', 'saved_views_create_title', 'saved_views_rename_title', 'saved_views_rename_submit', 'saved_views_pending', 'saved_views_clear', 'saved_views_clear_help', 'saved_views_switch', 'saved_views_switch_help', 'saved_views_manage_help', 'close', 'due', 'all', 'overdue', 'this_week', 'within_3_days', 'within_1_week', 'within_1_day', 'not_set', 'lane_type', 'none', 'assignee', 'issue_priority', 'category', 'save', 'delete', 'cancel'].map((k) => [k, k]));
 labels.saved_views_actions = 'Actions for %{name}';
 labels.saved_views_due_days = 'Within %{days} days';
 const key = 'test-views';
@@ -255,7 +255,7 @@ describe('saved view operations', () => {
     expect(screen.getByRole('alert').textContent).toBe('saved_views_write_failed');
     expect(localStorage.getItem(activeSavedViewKey(key))).toBe(read().views[0].id);
   });
-  it('overwrites only settings after another tab renames the selected view and reuses its old name', () => {
+  it('requires an explicit continue before overwriting a view renamed in another tab', () => {
     const view = setup();
     createView('A');
     const original = read().views[0];
@@ -266,6 +266,10 @@ describe('saved view operations', () => {
     view.rerender(<SavedViewsPopover {...view.props} current={{ ...current, laneType: 'priority' }} />);
     click('saved_views_overwrite');
     expect(read().views.map((saved: { name: string }) => saved.name)).toEqual(['B', 'A']);
+    expect(read().views[0].settings.laneType).toBe('none');
+    expect(screen.getByRole('alert').textContent).toBe('saved_views_conflict');
+    click('saved_views_continue');
+    click('saved_views_overwrite');
     expect(read().views[0].settings.laneType).toBe('priority');
     expect(parseSavedViews(localStorage.getItem(key)).views).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'B', pressed: true })).toBeTruthy();
@@ -317,6 +321,42 @@ describe('saved view operations', () => {
     view.unmount();
     setup();
     expect(screen.getByRole('button', { name: 'saved_views' })).toBeTruthy();
+  });
+  it('offers a cleanup retry after deleting an active view', () => {
+    setup(); createView('A');
+    const removeItem = Storage.prototype.removeItem;
+    const failure = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(function (this: Storage, storageKey) {
+      if (storageKey === activeSavedViewKey(key)) throw new Error('denied');
+      return removeItem.call(this, storageKey);
+    });
+    manage('A'); click('delete'); click('saved_views_confirm_delete');
+    expect(read().views).toEqual([]);
+    expect(screen.getByRole('button', { name: 'saved_views_retry_clear' })).toBeTruthy();
+    failure.mockRestore();
+    click('saved_views_retry_clear');
+    expect(localStorage.getItem(activeSavedViewKey(key))).toBeNull();
+    expect(screen.queryByRole('button', { name: 'saved_views_retry_clear' })).toBeNull();
+  });
+  it('reloads saved settings after an overwrite conflict', () => {
+    const view = setup(); createView('A');
+    const original = read().views[0];
+    const remote = { ...original, settings: { ...current, laneType: 'category' } };
+    localStorage.setItem(key, JSON.stringify({ version: 1, views: [remote] }));
+    view.rerender(<SavedViewsPopover {...view.props} current={{ ...current, laneType: 'priority' }} />);
+    click('saved_views_overwrite');
+    click('saved_views_reload');
+    expect(view.onApply).toHaveBeenCalledExactlyOnceWith(remote.settings);
+    expect(read().views[0].settings.laneType).toBe('category');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+  it('leaves a deleted rename form after conflict reload', () => {
+    setup(); createView('A'); manage('A'); click('saved_views_rename'); nameView('Local');
+    localStorage.setItem(key, JSON.stringify({ version: 1, views: [] }));
+    click('saved_views_rename_submit');
+    expect(screen.getByRole('dialog', { name: 'saved_views_rename_title' })).toBeTruthy();
+    click('saved_views_reload');
+    expect(screen.getByRole('dialog', { name: 'saved_views_manage' })).toBeTruthy();
+    expect(screen.queryByRole('textbox', { name: 'saved_views_name' })).toBeNull();
   });
   it('refuses to write a document that would fail validation on the next read', () => {
     const view = setup();

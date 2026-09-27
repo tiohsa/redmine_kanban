@@ -1,6 +1,7 @@
 import type { BoardData, Issue } from './types';
 import { normalizeTrackerId, resolveClosedState } from '../issue/issue';
 import { effectiveScopeStatusIds } from './scope';
+import { compareIssueFreshness } from './issueFreshness';
 
 export type IssueEntity = Omit<Issue, 'subtasks'>;
 export type IssueEntityPatch = Partial<IssueEntity> & { is_closed?: boolean };
@@ -49,27 +50,11 @@ function entityOf(issue: Issue, columns?: BoardData['columns']): IssueEntity {
 
 function isFresh(current: IssueEntity | undefined, incoming: IssueEntity): boolean {
   if (!current) return true;
-  if (typeof current.lock_version === 'number' && typeof incoming.lock_version === 'number') {
-    return incoming.lock_version >= current.lock_version;
-  }
-  if (current.updated_on && incoming.updated_on) {
-    const currentTime = Date.parse(current.updated_on);
-    const incomingTime = Date.parse(incoming.updated_on);
-    if (!Number.isNaN(currentTime) && !Number.isNaN(incomingTime)) return incomingTime >= currentTime;
-  }
-  return true;
+  return compareIssueFreshness(current, incoming) !== 'older';
 }
 
 function sameRevision(current: IssueEntity, incoming: IssueEntity): boolean {
-  if (typeof current.lock_version === 'number' && typeof incoming.lock_version === 'number') {
-    return current.lock_version === incoming.lock_version;
-  }
-  if (current.updated_on && incoming.updated_on) {
-    const currentTime = Date.parse(current.updated_on);
-    const incomingTime = Date.parse(incoming.updated_on);
-    return !Number.isNaN(currentTime) && currentTime === incomingTime;
-  }
-  return false;
+  return compareIssueFreshness(current, incoming) === 'same';
 }
 
 function wouldCreateCycle(state: NormalizedBoardState, parentId: number, childId: number): boolean {
