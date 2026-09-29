@@ -156,7 +156,7 @@ export function KanbanToolbar({
           options={projectOptions}
           value={projectFilterValue}
           onChange={(value) => updateFilters({ projectIds: value.map(Number) })}
-          width="280px"
+          width="440px"
           labels={labels}
           includeAllOption
           allLabel={labels.all}
