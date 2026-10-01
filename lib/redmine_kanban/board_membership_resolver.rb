@@ -88,7 +88,16 @@ module RedmineKanban
     private
 
     def primary_scope
-      visible_scope.where(status_id: @context.scope_status_ids)
+      base = visible_scope.where(status_id: @context.scope_status_ids)
+      filter = @context.issue_filter
+      return base unless filter.active?
+
+      own_match_ids = filter.apply(base).select(:id)
+      descendant_match_anchors = filter.apply(dependency_scope)
+        .joins(primary_ancestor_join(base))
+        .select('board_primary_ancestors.id')
+        .distinct
+      base.where("issues.id IN (#{own_match_ids.to_sql}) OR issues.id IN (#{descendant_match_anchors.to_sql})")
     end
 
     def dependency_scope

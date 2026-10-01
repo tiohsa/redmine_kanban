@@ -76,6 +76,7 @@ export function useBoardActions({
       boardEntityLimit: data?.meta.requested_entity_limit ?? data?.meta.effective_entity_limit ?? 1500,
       scopeStatusIds: data ? effectiveScopeStatusIds(data) : [],
       dependencyStatusIds: data ? effectiveDependencyStatusIds(data) : [],
+      filterScope: data?.meta.filter_scope,
     });
   }, [baseUrl, data]);
 
@@ -150,8 +151,6 @@ export function useBoardActions({
     },
     onSuccess: (result) => {
       if (result.warning) setNotice(result.warning);
-      if (isBoardSnapshotInvalidated(result)) return;
-
       reconcileMutationResult(result, { responseHandled: true });
       const issue = result.issue;
       if (timeEntryOnClose && !isWorkTimerIssue(issue?.id ?? 0) && issue && data?.columns.find((column) => column.id === issue.status_id)?.is_closed) {

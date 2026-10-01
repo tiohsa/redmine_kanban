@@ -514,7 +514,7 @@ jobs:
           REDMINE_BASE_URL: http://127.0.0.1:3002
           REDMINE_KANBAN_RECOVERY_TEST: '1'
           CI: true
-        run: bash script/ci/e2e-full.sh e2e/tests/kanban-recovery-views.spec.js --grep 'first visit recovers|a narrow saved view recovers'
+        run: bash script/ci/e2e-full.sh e2e/tests/kanban-recovery-views.spec.js --grep 'first visit recovers|a narrow saved view recovers|subject filter recovers'
 
       - name: Upload Playwright report
         if: always()

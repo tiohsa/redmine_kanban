@@ -41,6 +41,9 @@ module RedmineKanban
       end
 
       @issue.init_journal(@user)
+      filter_membership_before = {
+        assigned_to_id: @issue.assigned_to_id, priority_id: @issue.priority_id, status_id: @issue.status_id
+      }
       attrs = { 'status_id' => status_id }
       if assigned_to_id != :no_change
         # 明示的にnilを設定して未割当にする（空文字列を使用）
@@ -50,7 +53,8 @@ module RedmineKanban
 
       error_result = nil
       membership_resolver = BoardMembershipResolver.new(board_context: @board_context)
-      before_primary_member = membership_resolver.primary_member?(@issue.id)
+      before_primary_member = membership_resolver.primary_member?(@issue.id) unless @board_context.issue_filter.active?
+      changed_filter_fields = []
       preserve_parent_priority = priority_id == :no_change && @issue.parent_id.present?
       parent = nil
       parent_priority_before = nil
@@ -72,6 +76,10 @@ module RedmineKanban
           raise ActiveRecord::Rollback
         end
 
+        filter_membership_before.each_key do |field|
+          changed_filter_fields << field if filter_membership_before[field] != @issue.public_send(field)
+        end
+        changed_filter_fields << :priority_id if priority_id != :no_change
         mutation_outcome = mutation_outcome_for(@issue)
         priority_error = apply_priority_updates!(@issue, priority_id)
         if priority_error
@@ -91,7 +99,8 @@ module RedmineKanban
 
       return error_result if error_result
 
-      after_primary_member = membership_resolver.primary_member?(@issue.id)
+      filter_snapshot_invalidation = @board_context.filter_membership_changed?(changed_filter_fields)
+      after_primary_member = membership_resolver.primary_member?(@issue.id) unless filter_snapshot_invalidation || @board_context.issue_filter.active?
 
       ancestor_updates_required = mutation_outcome[:status_changed] || mutation_outcome[:done_ratio_changed]
 
@@ -104,7 +113,7 @@ module RedmineKanban
       ancestor_issues = ancestor_issues_for(@issue) if ancestor_updates_required
       propagated_issues = priority_id.is_a?(Integer) ? @issue.children.to_a : []
       issue_updates = [@issue, *(ancestor_issues || []), *propagated_issues].uniq { |item| item.id }
-      membership_recheck_ids = if before_primary_member != after_primary_member
+      membership_recheck_ids = if !filter_snapshot_invalidation && before_primary_member != after_primary_member
         membership_resolver.membership_candidate_ids([@issue.id])
       else
         []
@@ -114,7 +123,7 @@ module RedmineKanban
         issue_updates: issue_updates,
         membership_recheck_ids: membership_recheck_ids,
         ancestor_updates: ancestor_updates,
-        invalidations: { column_counts: true }
+        invalidations: { column_counts: true, board_snapshot: filter_snapshot_invalidation }
       )
     rescue ActiveRecord::StaleObjectError
       error_response(I18n.t('redmine_kanban.error_conflict'), status: :conflict)

@@ -136,7 +136,7 @@ export function useMutationReconciler({ baseUrl, boardQueryKey, data, onReconcil
       ids.splice(0, ids.length, ...applicableIds);
       if (!ids.length) return { status: 'superseded' } as ReconcileResult;
       const response = await getJson<{ ok: boolean } & Parameters<typeof applyEntityReconciliation>[1]>(
-        buildBoardEntitiesUrl(baseUrl, requestData.meta.project_ids ?? [], ids, effectiveScopeStatusIds(requestData), effectiveDependencyStatusIds(requestData)),
+        buildBoardEntitiesUrl(baseUrl, requestData.meta.project_ids ?? [], ids, effectiveScopeStatusIds(requestData), effectiveDependencyStatusIds(requestData), requestData.meta.filter_scope),
         { signal: controller.signal },
       );
       if (!response.ok) return { status: 'failed', reason: 'server' } as ReconcileResult;
@@ -240,7 +240,7 @@ export function useMutationReconciler({ baseUrl, boardQueryKey, data, onReconcil
     const request = freshnessAuthority.beginAggregateReconciliation(requestData);
     try {
       const response = await getJson<{ ok: boolean; columns?: BoardData['columns'] }>(
-        buildBoardCountsUrl(baseUrl, requestData.meta.project_ids ?? []),
+        buildBoardCountsUrl(baseUrl, requestData.meta.project_ids ?? [], requestData.meta.filter_scope, effectiveScopeStatusIds(requestData), effectiveDependencyStatusIds(requestData)),
       );
       queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
         current && response.columns && freshnessAuthority.canApplyAggregateReconciliation(request, current)

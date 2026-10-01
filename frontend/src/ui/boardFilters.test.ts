@@ -520,6 +520,20 @@ describe('buildVisibleIssues', () => {
     }
   });
 
+  it('uses the server date anchor for exact due-date filtering', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Anchor day', { due_date: '2026-10-01' }),
+      makeIssue(2, 1, 'Next day', { due_date: '2026-10-02' }),
+    ]);
+    data.meta.filter_scope = {
+      q: '', assignee_ids: [], include_unassigned: false, tracker_ids: [],
+      priority_filter_enabled: false, priority_ids: [], include_no_priority: false,
+      due: '1day', date_anchor: '2026-10-01',
+    };
+
+    expect(buildVisibleIssues(data, makeFilters({ due: '1day' }), new Set(), null).map((issue) => issue.id)).toEqual([1]);
+  });
+
   it('hides a parent when neither it nor any descendant matches', () => {
     const data = makeBoardData([makeIssue(1, 1, 'Parent', {
       subtasks: [{ id: 2, subject: 'Child', status_id: 1, tracker_id: 1, assigned_to_id: 3, is_closed: false }],

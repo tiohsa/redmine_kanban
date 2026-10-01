@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App, canCreateInBoard, normalizeAssigneeIds, normalizeProjectIds, normalizeTrackerIds, resolveDefaultCreateProjectId } from './App';
-import { getJson } from '../infrastructure/api/http';
+import { getJson, postJson } from '../infrastructure/api/http';
 import { parseBoardSnapshotV3 } from '../infrastructure/api/boardSnapshot';
 import { makeBoardSnapshot } from '../test/fixtures/boardSnapshot';
 
@@ -19,20 +19,23 @@ const mockPreferenceFilters = vi.hoisted(() => ({
   q: '',
   priority: [],
   priorityFilterEnabled: false,
-  due: 'all' as const,
+  due: 'all' as 'all' | 'overdue' | 'none',
   dueDays: 7,
 }));
 const mockHiddenStatuses = vi.hoisted(() => ({ ids: [] as number[] }));
+const mockCreatePayload = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
+const mockDialogControl = vi.hoisted(() => ({ showCreateModal: false }));
 
 vi.mock('./board/CanvasBoard', async () => {
   const ReactModule = await import('react');
   return {
-    CanvasBoard: ReactModule.forwardRef(({ onEdit, state }: { onEdit: (issueId: number) => void; state?: { cardsById?: Map<number, unknown> } }, _ref) => {
+    CanvasBoard: ReactModule.forwardRef(({ onEdit, onCreate, state }: { onEdit: (issueId: number) => void; onCreate?: (ctx: { statusId: number }) => void; state?: { cardsById?: Map<number, unknown> } }, _ref) => {
       canvasRenderSpy();
       return ReactModule.createElement(
       ReactModule.Fragment,
       null,
       ReactModule.createElement('button', { type: 'button', onClick: () => onEdit(9) }, 'Open issue 9'),
+      ReactModule.createElement('button', { type: 'button', onClick: () => onCreate?.({ statusId: 2 }) }, 'Create test issue'),
       ReactModule.createElement('div', { 'data-testid': 'canvas-issue-ids' }, [...(state?.cardsById?.keys() ?? [])].join(',')),
       );
     }),
@@ -42,11 +45,38 @@ vi.mock('./board/CanvasBoard', async () => {
 vi.mock('./IframeEditDialog', async () => {
   const ReactModule = await import('react');
   return {
-    IframeEditDialog: ({ onNativeWriteComplete }: { onNativeWriteComplete?: () => void }) => {
+    IframeEditDialog: ({ onNativeWriteComplete, url, issueId }: { onNativeWriteComplete?: () => void; url?: string; issueId?: number }) => {
       ReactModule.useEffect(() => () => { iframeUnmountSpy(); }, []);
       return ReactModule.createElement(
-        'button', { type: 'button', 'data-testid': 'iframe-dialog', onClick: onNativeWriteComplete }, 'Complete native write',
+        ReactModule.Fragment,
+        null,
+        ReactModule.createElement('button', { type: 'button', 'data-testid': 'iframe-dialog', onClick: onNativeWriteComplete }, 'Complete native write'),
+        ReactModule.createElement('div', { 'data-testid': 'iframe-context' }, `${issueId ?? ''}:${url ?? ''}`),
       );
+    },
+  };
+});
+
+vi.mock('./KanbanIssueModal', async () => {
+  const ReactModule = await import('react');
+  return {
+    KanbanIssueModal: ({ onSaved }: { onSaved: (payload: Record<string, unknown>, isEdit: boolean) => Promise<void> }) => ReactModule.createElement(
+      'button', { type: 'button', onClick: () => { void onSaved(mockCreatePayload.current, false); } }, 'Submit test creation',
+    ),
+  };
+});
+
+vi.mock('./useKanbanDialogs', async () => {
+  const actual = await vi.importActual<typeof import('./useKanbanDialogs')>('./useKanbanDialogs');
+  return {
+    useKanbanDialogs: (...args: Parameters<typeof actual.useKanbanDialogs>) => {
+      const dialogs = actual.useKanbanDialogs(...args);
+      if (!mockDialogControl.showCreateModal) return dialogs;
+      return {
+        ...dialogs,
+        modal: dialogs.modal ?? { statusId: 2, projectId: 4 },
+        openCreate: (context: Parameters<typeof dialogs.openCreate>[0]) => dialogs.setModal(context),
+      };
     },
   };
 });
@@ -115,14 +145,78 @@ describe('App board scope helpers', () => {
     expect(canCreateInBoard(null, 2)).toBe(false);
   });
 
+  it.each(['single', 'bulk'] as const)('opens the created issue after %s creation invalidates the board snapshot', async (kind) => {
+    mockDialogControl.showCreateModal = true;
+    const snapshot = makeBoardSnapshot();
+    snapshot.meta.filter_scope = { q: 'active', assignee_ids: [], include_unassigned: false, tracker_ids: [], priority_filter_enabled: false, priority_ids: [], include_no_priority: false, due: 'all' };
+    snapshot.labels = { ...snapshot.labels, created: 'Created', created_with_subtasks: 'Created %{id} with %{count} subtasks' };
+    const createdIssue = {
+      id: 42, subject: 'Created issue', status_id: 2, tracker_id: 1, project: { id: 4, name: 'Demo' },
+      urls: { issue: '/issues/42', issue_edit: '/issues/42/edit' },
+    };
+    let snapshotRequests = 0;
+    let finishSnapshotRefresh: ((value: typeof snapshot) => void) | undefined;
+    vi.mocked(getJson).mockImplementation((url) => {
+      if (url.endsWith('/metadata')) return Promise.resolve(metadata);
+      if (url.includes('/data?') && ++snapshotRequests > 1) return new Promise((resolve) => { finishSnapshotRefresh = resolve; });
+      return Promise.resolve(snapshot);
+    });
+    vi.mocked(postJson).mockResolvedValue({
+      ok: true, issue: createdIssue, created_issues: [],
+      ...(kind === 'bulk' ? { subtasks: [{ id: 43 }, { id: 44 }] } : {}),
+      invalidations: { board_snapshot: true },
+    } as never);
+    mockCreatePayload.current = kind === 'single'
+      ? { subject: 'Created issue', project_id: 4, tracker_id: 1, status_id: 2 }
+      : { subject: 'Created issue', project_id: 4, tracker_id: 1, status_id: 2, subtasks: [{ subject: 'Child one', trackerId: 1 }, { subject: 'Child two', trackerId: 1 }] };
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const resetQueries = vi.spyOn(queryClient, 'resetQueries');
+    mockPreferenceFilters.q = 'active';
+    render(React.createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      React.createElement(App, { dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7 }),
+    ));
+
+    await screen.findByTestId('canvas-issue-ids');
+    fireEvent.click(screen.getByRole('button', { name: 'Create test issue' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Submit test creation' }));
+
+    await waitFor(() => expect(resetQueries).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(finishSnapshotRefresh).toBeDefined());
+    expect(postJson).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(postJson).mock.calls[0][0]).toContain(kind === 'bulk' ? '/issues/bulk' : '/issues?');
+    expect(vi.mocked(postJson).mock.calls[0][0]).toContain('filter_q=active');
+    expect(screen.getByTestId('iframe-context').textContent).toBe('42:/issues/42');
+    if (kind === 'bulk') expect(await screen.findByText('Created 42 with 2 subtasks')).toBeTruthy();
+    const authoritativeSnapshot = makeBoardSnapshot();
+    authoritativeSnapshot.meta.filter_scope = snapshot.meta.filter_scope;
+    authoritativeSnapshot.entities = [];
+    authoritativeSnapshot.tree = { root_ids: [], children_by_parent_id: {} };
+    authoritativeSnapshot.meta.entity_count = 0;
+    await act(async () => { finishSnapshotRefresh?.(authoritativeSnapshot); });
+    await waitFor(() => expect(queryClient.getQueriesData<{ meta: { complete?: boolean }; issues: Array<{ id: number }> }>({ queryKey: ['kanban', 'board'] })
+      .some(([, board]) => board?.meta.complete === true && board.issues.length === 0)).toBe(true));
+    expect(screen.getByTestId('iframe-context').textContent).toBe('42:/issues/42');
+    const boardData = queryClient.getQueriesData<{ issues: Array<{ id: number }> }>({ queryKey: ['kanban', 'board'] });
+    expect(boardData.flatMap(([, board]) => board?.issues ?? []).some((issue) => issue.id === 42)).toBe(false);
+    queryClient.clear();
+  });
+
   beforeEach(() => {
+    mockDialogControl.showCreateModal = false;
     vi.mocked(getJson).mockClear();
+    vi.mocked(getJson).mockImplementation((url) => Promise.resolve(url.endsWith('/metadata') ? metadata : makeBoardSnapshot()));
+    vi.mocked(postJson).mockReset();
     canvasRenderSpy.mockClear();
     mockPreferenceFilters.projectIds = [4];
     mockPreferenceFilters.statusIds = [2];
+    mockPreferenceFilters.due = 'all';
+    mockPreferenceFilters.q = '';
     mockHiddenStatuses.ids = [];
   });
-  afterEach(() => cleanup());
+  afterEach(() => { cleanup(); vi.useRealTimers(); });
 
   it.each(['missing lists', 'missing issue URLs', 'numeric tracker name'])('rejects %s before board rendering', async (scenario) => {
     const valid = makeBoardSnapshot();
@@ -153,8 +247,100 @@ describe('App board scope helpers', () => {
       React.createElement(App, { dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7 }),
     ));
 
-    await waitFor(() => expect(getJson).toHaveBeenCalledWith('/projects/demo/kanban/data?project_ids%5B%5D=4&issue_status_ids%5B%5D=2&board_entity_limit=3000'));
-    expect(vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/data?'))[0][0]).toBe('/projects/demo/kanban/data?project_ids%5B%5D=4&issue_status_ids%5B%5D=2&board_entity_limit=3000');
+    await waitFor(() => expect(getJson).toHaveBeenCalledWith('/projects/demo/kanban/data?project_ids%5B%5D=4&issue_status_ids%5B%5D=2&board_entity_limit=3000&filter_q=&filter_include_unassigned=0&filter_priority_enabled=0&filter_include_no_priority=0&filter_due=all'));
+    expect(vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/data?'))[0][0]).toBe('/projects/demo/kanban/data?project_ids%5B%5D=4&issue_status_ids%5B%5D=2&board_entity_limit=3000&filter_q=&filter_include_unassigned=0&filter_priority_enabled=0&filter_include_no_priority=0&filter_due=all');
+  });
+
+  it('retries a relative-date snapshot with the current local day without fetching the old anchor', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 8, 30, 12));
+    mockPreferenceFilters.due = 'overdue';
+    vi.mocked(getJson).mockResolvedValueOnce(metadata)
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockRejectedValueOnce(new Error('still offline'));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(React.createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      React.createElement(App, {
+        dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7,
+        initialLabels: { retry: 'Retry', board_recovery: 'Board recovery', board_recovery_help: 'Could not load board' },
+      }),
+    ));
+
+    await screen.findByRole('button', { name: 'Retry' });
+    const urls = () => vi.mocked(getJson).mock.calls.map(([url]) => url).filter((url) => url.includes('/data?'));
+    expect(urls()).toHaveLength(1);
+    expect(urls()[0]).toContain('filter_date_anchor=2026-09-30');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(urls()).toHaveLength(2), { timeout: 1500 });
+    expect(urls()[1]).toContain('filter_date_anchor=2026-09-30');
+
+    vi.setSystemTime(new Date(2026, 9, 1, 12));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(urls()).toHaveLength(3), { timeout: 1500 });
+
+    expect(urls()[2]).toContain('filter_date_anchor=2026-10-01');
+    expect(urls()[2]).not.toContain('filter_date_anchor=2026-09-30');
+    queryClient.clear();
+  });
+
+  it.each(['all', 'none'] as const)('keeps the %s due query identity unchanged when the local day changes', async (due) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 8, 30, 12));
+    mockPreferenceFilters.due = due;
+    vi.mocked(getJson).mockResolvedValueOnce(metadata).mockRejectedValueOnce(new Error('offline'));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(React.createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      React.createElement(App, {
+        dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7,
+        initialLabels: { retry: 'Retry', board_recovery: 'Board recovery', board_recovery_help: 'Could not load board' },
+      }),
+    ));
+
+    await screen.findByRole('button', { name: 'Retry' });
+    const urls = () => vi.mocked(getJson).mock.calls.map(([url]) => url).filter((url) => url.includes('/data?'));
+    vi.setSystemTime(new Date(2026, 9, 1, 12));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(urls()).toHaveLength(2), { timeout: 1500 });
+
+    expect(urls()[0]).toBe(urls()[1]);
+    expect(urls()[1]).not.toContain('filter_date_anchor=');
+    queryClient.clear();
+  });
+
+  it('picks up a new relative-date anchor on an ordinary App render', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 8, 30, 12));
+    mockPreferenceFilters.due = 'overdue';
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const tree = React.createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      React.createElement(App, { dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7 }),
+    );
+    const view = render(tree);
+
+    await screen.findByTestId('canvas-issue-ids');
+    const urls = () => vi.mocked(getJson).mock.calls.map(([url]) => url).filter((url) => url.includes('/data?'));
+    expect(urls()).toHaveLength(1);
+    expect(urls()[0]).toContain('filter_date_anchor=2026-09-30');
+
+    vi.setSystemTime(new Date(2026, 9, 1, 12));
+    view.rerender(React.createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      React.createElement(App, { dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7 }),
+    ));
+    await waitFor(() => expect(urls()).toHaveLength(2), { timeout: 1500 });
+
+    expect(urls()[1]).toContain('filter_date_anchor=2026-10-01');
+    expect(queryClient.getQueryCache().findAll({ queryKey: ['kanban', 'board'] })
+      .some((query) => JSON.stringify(query.queryKey).includes('2026-10-01'))).toBe(true);
+    queryClient.clear();
   });
 
   it('requires explicit confirmation to remove an unavailable hidden status before loading a complete snapshot', async () => {

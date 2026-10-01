@@ -93,7 +93,7 @@ describe('useBulkSubtaskMutation', () => {
     });
 
     expect(postJsonMock).toHaveBeenCalledWith(
-      '/projects/demo/kanban/issues/bulk?board_entity_limit=1500&scope_status_ids_present=1&dependency_status_ids_present=1',
+      '/projects/demo/kanban/issues/bulk?board_entity_limit=1500&scope_status_ids_present=1&dependency_status_ids_present=1&filter_q=&filter_include_unassigned=0&filter_priority_enabled=0&filter_include_no_priority=0&filter_due=all',
       expect.objectContaining({ parent: { parent_issue_id: 1, project_id: undefined }, subtasks: payloads, operation_id: expect.any(String) }),
       'POST',
       expect.objectContaining({ 'Idempotency-Key': expect.any(String) }),
@@ -115,7 +115,7 @@ describe('useBulkSubtaskMutation', () => {
     });
 
     expect(postJsonMock).toHaveBeenCalledWith(
-      '/projects/demo/kanban/issues/bulk?project_ids%5B%5D=3&project_ids%5B%5D=7&board_entity_limit=1500&scope_status_ids_present=1&dependency_status_ids_present=1',
+      '/projects/demo/kanban/issues/bulk?project_ids%5B%5D=3&project_ids%5B%5D=7&board_entity_limit=1500&scope_status_ids_present=1&dependency_status_ids_present=1&filter_q=&filter_include_unassigned=0&filter_priority_enabled=0&filter_include_no_priority=0&filter_due=all',
       expect.any(Object),
       'POST',
       expect.any(Object),
@@ -136,7 +136,7 @@ describe('useBulkSubtaskMutation', () => {
     });
 
     expect(postJsonMock).toHaveBeenCalledWith(
-      '/projects/demo/kanban/issues/bulk?project_ids%5B%5D=7&board_entity_limit=3000&scope_status_ids_present=1&scope_status_ids%5B%5D=2&dependency_status_ids_present=1&dependency_status_ids%5B%5D=2&dependency_status_ids%5B%5D=3',
+      '/projects/demo/kanban/issues/bulk?project_ids%5B%5D=7&board_entity_limit=3000&scope_status_ids_present=1&scope_status_ids%5B%5D=2&dependency_status_ids_present=1&dependency_status_ids%5B%5D=2&dependency_status_ids%5B%5D=3&filter_q=&filter_include_unassigned=0&filter_priority_enabled=0&filter_include_no_priority=0&filter_due=all',
       expect.any(Object),
       'POST',
       expect.any(Object),

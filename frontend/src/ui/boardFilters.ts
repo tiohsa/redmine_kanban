@@ -1,6 +1,7 @@
 import type { BoardData, Column, Issue, ToolbarViewModel } from './types';
 import { flattenIssueTree, nestedIssueIds } from './boardTree';
 import type { Filters } from '../model/view/types';
+import { localDateAnchor } from '../model/board/filterScope';
 export type { Filters } from '../model/view/types';
 
 export type BoardPresentationProjection = {
@@ -202,26 +203,24 @@ function endOfWeek(date: Date): Date {
 
 function filterIssues(issues: Issue[], data: BoardData | null, filters: Filters): Issue[] {
   const q = filters.q.trim().toLowerCase();
-  const now = new Date();
-  const now0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const start = startOfWeek(now);
-  const end = endOfWeek(now);
+  const anchor = data?.meta.filter_scope?.date_anchor ?? localDateAnchor();
+  const now0 = parseISODate(anchor) ?? parseISODate(localDateAnchor())!;
+  const start = startOfWeek(now0);
+  const end = endOfWeek(now0);
 
   return issues.flatMap((issue) => {
-    const filteredSubtasks = filterSubtasks(issue.subtasks, filters);
+    const filteredSubtasks = filterSubtasks(issue.subtasks, filters, now0, start, end);
     const matchesSelf = matchesIssue(issue, data, filters, q, now0, start, end);
     if (!matchesSelf && filteredSubtasks.length === 0) return [];
     return [{ ...issue, subtasks: filteredSubtasks }];
   });
 }
 
-function filterSubtasks(subtasks: Issue['subtasks'], filters: Filters): NonNullable<Issue['subtasks']> {
+function filterSubtasks(subtasks: Issue['subtasks'], filters: Filters, now0: Date, start: Date, end: Date): NonNullable<Issue['subtasks']> {
   return (subtasks ?? []).flatMap((subtask) => {
     const child = subtask as unknown as Issue;
-    const nested = filterSubtasks(child.subtasks, filters);
-    const now = new Date();
-    const now0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const matchesSelf = matchesIssue(child, null, filters, filters.q.trim().toLowerCase(), now0, startOfWeek(now), endOfWeek(now));
+    const nested = filterSubtasks(child.subtasks, filters, now0, start, end);
+    const matchesSelf = matchesIssue(child, null, filters, filters.q.trim().toLowerCase(), now0, start, end);
     if (!matchesSelf && nested.length === 0) return [];
     return [{ ...subtask, subtasks: nested }];
   });

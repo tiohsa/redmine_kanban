@@ -30,7 +30,7 @@ class RedmineKanbanSnapshotLimitsTest < ActiveSupport::TestCase
     previous_bytes = ENV['REDMINE_KANBAN_MAX_RESPONSE_BYTES']
     previous_queries = ENV['REDMINE_KANBAN_MAX_BOARD_QUERIES']
     previous_total_queries = ENV['REDMINE_KANBAN_MAX_TOTAL_BOARD_QUERIES']
-    ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = '0'
+    ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = '-1'
     ENV['REDMINE_KANBAN_MAX_RESPONSE_BYTES'] = '1e6'
     ENV['REDMINE_KANBAN_MAX_BOARD_QUERIES'] = '-1'
     ENV['REDMINE_KANBAN_MAX_TOTAL_BOARD_QUERIES'] = '0'
@@ -44,5 +44,35 @@ class RedmineKanbanSnapshotLimitsTest < ActiveSupport::TestCase
     ENV['REDMINE_KANBAN_MAX_RESPONSE_BYTES'] = previous_bytes
     ENV['REDMINE_KANBAN_MAX_BOARD_QUERIES'] = previous_queries
     ENV['REDMINE_KANBAN_MAX_TOTAL_BOARD_QUERIES'] = previous_total_queries
+  end
+
+  def test_only_explicit_zero_disables_the_server_count_limit
+    previous = ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES']
+    { nil => 5_000, '' => 5_000, '  ' => 5_000, '5000' => 5_000, '250' => 250,
+      '0' => nil, ' 0 ' => nil, '-1' => 5_000, '00' => 5_000,
+      '1e5' => 5_000, 'Infinity' => 5_000, '2147483648' => 5_000 }.each do |value, expected|
+      ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = value
+      actual = RedmineKanban::SnapshotLimits.server_entity_limit
+      if expected.nil?
+        assert_nil actual, value.inspect
+      else
+        assert_equal expected, actual, value.inspect
+      end
+    end
+  ensure
+    ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = previous
+  end
+
+  def test_disabled_server_count_limit_keeps_the_requested_limit_and_reconciliation_batch_limit
+    previous = ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES']
+    ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = '0'
+
+    assert_nil RedmineKanban::SnapshotLimits.server_entity_limit
+    assert_equal 10_000, RedmineKanban::SnapshotLimits.effective(10_000)
+    assert_equal 1_500, RedmineKanban::SnapshotLimits.effective(RedmineKanban::SnapshotLimits.requested(nil))
+    assert_equal 100, RedmineKanban::SnapshotLimits.entity_reconciliation_limit
+    assert_raises(RedmineKanban::SnapshotLimits::InvalidLimit) { RedmineKanban::SnapshotLimits.requested('0') }
+  ensure
+    ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = previous
   end
 end

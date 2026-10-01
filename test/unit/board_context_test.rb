@@ -86,4 +86,40 @@ class RedmineKanbanBoardContextTest < ActiveSupport::TestCase
     refute_equal first.scope_fingerprint, different_primary_scope.scope_fingerprint
     refute_equal first.scope_fingerprint, different_dependency_scope.scope_fingerprint
   end
+
+  def test_filter_scope_is_canonical_and_part_of_scope_fingerprint
+    statuses = IssueStatus.sorted.limit(2).pluck(:id)
+    first = RedmineKanban::BoardContext.new(
+      project: @project, user: @user, scope_status_ids: statuses,
+      issue_filter: RedmineKanban::BoardIssueFilter.new(q: '  Calendar ', assignee_ids: [4, 2, 4])
+    )
+    reordered = RedmineKanban::BoardContext.new(
+      project: @project, user: @user, scope_status_ids: statuses.reverse,
+      issue_filter: RedmineKanban::BoardIssueFilter.new(q: 'calendar', assignee_ids: [2, 4])
+    )
+    changed = RedmineKanban::BoardContext.new(
+      project: @project, user: @user, scope_status_ids: statuses,
+      issue_filter: RedmineKanban::BoardIssueFilter.new(q: 'calendar meeting', assignee_ids: [2, 4])
+    )
+
+    assert_equal first.filter_scope, reordered.filter_scope
+    assert_equal first.scope_fingerprint, reordered.scope_fingerprint
+    refute_equal first.scope_fingerprint, changed.scope_fingerprint
+    assert_equal 'calendar', first.filter_scope[:q]
+  end
+
+  def test_each_effective_filter_dimension_changes_scope_fingerprint
+    scopes = [
+      { q: 'calendar' },
+      { assignee_ids: [1] },
+      { include_unassigned: true },
+      { tracker_ids: [1] },
+      { priority_filter_enabled: true, priority_ids: [1] },
+      { priority_filter_enabled: true, include_no_priority: true },
+      { due: 'overdue', date_anchor: '2026-10-01' },
+      { due: 'overdue', date_anchor: '2026-10-02' }
+    ].map { |values| RedmineKanban::BoardContext.new(project: @project, user: @user, issue_filter: RedmineKanban::BoardIssueFilter.new(values)) }
+
+    assert_equal scopes.length, scopes.map(&:scope_fingerprint).uniq.length
+  end
 end

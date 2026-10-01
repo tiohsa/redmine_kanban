@@ -1,3 +1,5 @@
+import type { BoardFilterScope } from './filterScope';
+
 export type Column = {
   id: number;
   name: string;
@@ -108,6 +110,7 @@ export type Meta = {
   project_ids?: number[];
   scope_status_ids?: number[];
   dependency_status_ids?: number[];
+  filter_scope?: BoardFilterScope;
   scope_fingerprint?: string;
   current_user_id: number;
   can_move: boolean;
@@ -121,7 +124,7 @@ export type Meta = {
   entity_count?: number;
   requested_entity_limit?: number;
   effective_entity_limit?: number;
-  server_entity_limit?: number;
+  server_entity_limit?: number | null;
   response_byte_limit?: number;
   response_bytes?: number;
   id_probe_count?: number;
@@ -185,7 +188,7 @@ export type ResolvedBoardIssue = {
 export type BoardMetadata = {
   ok: true;
   board: { id: number; identifier: string; name: string };
-  server_entity_limit: number;
+  server_entity_limit: number | null;
   projects: ProjectListItem[];
   viewable_projects: ProjectListItem[];
   statuses: Column[];
@@ -199,7 +202,7 @@ export type BoardErrorResponse = {
     code: string;
     requested_entity_limit?: number;
     effective_entity_limit?: number;
-    server_entity_limit?: number;
+    server_entity_limit?: number | null;
     count_at_least?: number;
     maximum_response_bytes?: number;
     message?: string;

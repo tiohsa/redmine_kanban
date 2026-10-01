@@ -52,11 +52,14 @@ function renderActions(options: {
   data?: BoardData;
   refresh?: () => Promise<void>;
   setError?: (value: string | null) => void;
+  setNotice?: (value: string | null) => void;
+  isWorkTimerIssue?: (issueId: number) => boolean;
   timeEntryOnClose?: boolean;
   setIframeTimeEntryOperation?: (value: import('./iframe/timeEntryOperation').TimeEntryOperation | null) => void;
 } = {}) {
   const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   const setError = options.setError ?? vi.fn();
+  const setNotice = options.setNotice ?? vi.fn();
   const refresh = options.refresh ?? vi.fn(async () => undefined);
   const setIframeTimeEntryOperation = options.setIframeTimeEntryOperation ?? vi.fn();
   const data = options.data ?? makeBoardData();
@@ -68,13 +71,14 @@ function renderActions(options: {
       data,
       refresh,
       timeEntryOnClose: options.timeEntryOnClose ?? false,
-      setNotice: vi.fn(),
+      isWorkTimerIssue: options.isWorkTimerIssue,
+      setNotice,
       setError,
       setIframeTimeEntryOperation,
     }),
     { wrapper: createWrapper(queryClient) },
   );
-  return { ...hook, setError, refresh, queryClient, setIframeTimeEntryOperation };
+  return { ...hook, setError, setNotice, refresh, queryClient, setIframeTimeEntryOperation };
 }
 
 afterEach(() => {
@@ -126,7 +130,7 @@ describe('useKanbanActions delete flow', () => {
       expect.objectContaining({ id: 2, lock_version: 4 }),
     ]);
     expect(globalThis.fetch).toHaveBeenLastCalledWith(
-      '/projects/demo/kanban/issues/entities?project_ids%5B%5D=1&ids%5B%5D=2&scope_status_ids_present=1&scope_status_ids%5B%5D=1&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1',
+      '/projects/demo/kanban/issues/entities?project_ids%5B%5D=1&ids%5B%5D=2&scope_status_ids_present=1&scope_status_ids%5B%5D=1&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1&filter_q=&filter_include_unassigned=0&filter_priority_enabled=0&filter_include_no_priority=0&filter_due=all',
       expect.objectContaining({ cache: 'no-store', credentials: 'same-origin' }),
     );
   });
@@ -158,7 +162,7 @@ describe('useKanbanActions delete flow', () => {
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      '/projects/demo/kanban/issues/1?board_entity_limit=1500&scope_status_ids_present=1&scope_status_ids%5B%5D=1&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1',
+      '/projects/demo/kanban/issues/1?board_entity_limit=1500&scope_status_ids_present=1&scope_status_ids%5B%5D=1&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1&filter_q=&filter_include_unassigned=0&filter_priority_enabled=0&filter_include_no_priority=0&filter_due=all',
       expect.objectContaining({ method: 'DELETE' }),
     );
     expect(result.current.pendingDeleteIssue).toBeNull();
@@ -195,7 +199,7 @@ describe('useKanbanActions delete flow', () => {
     await act(async () => { result.current.requestDelete(2); });
     await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
 
-    expect(globalThis.fetch).toHaveBeenCalledWith('/projects/demo/kanban/issues/2?board_entity_limit=1500&scope_status_ids_present=1&scope_status_ids%5B%5D=1&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1', expect.objectContaining({ method: 'DELETE' }));
+    expect(globalThis.fetch).toHaveBeenCalledWith('/projects/demo/kanban/issues/2?board_entity_limit=1500&scope_status_ids_present=1&scope_status_ids%5B%5D=1&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1&filter_q=&filter_include_unassigned=0&filter_priority_enabled=0&filter_include_no_priority=0&filter_due=all', expect.objectContaining({ method: 'DELETE' }));
     expect(result.current.pendingDeleteIssue).toBeNull();
   });
 
@@ -222,7 +226,7 @@ describe('useKanbanActions delete flow', () => {
     await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      '/projects/demo/kanban/issues/1?project_ids%5B%5D=3&project_ids%5B%5D=7&board_entity_limit=1500&scope_status_ids_present=1&scope_status_ids%5B%5D=1&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1',
+      '/projects/demo/kanban/issues/1?project_ids%5B%5D=3&project_ids%5B%5D=7&board_entity_limit=1500&scope_status_ids_present=1&scope_status_ids%5B%5D=1&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1&filter_q=&filter_include_unassigned=0&filter_priority_enabled=0&filter_include_no_priority=0&filter_due=all',
       expect.objectContaining({ method: 'DELETE' }),
     );
   });
@@ -240,7 +244,7 @@ describe('useKanbanActions delete flow', () => {
     await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      '/projects/demo/kanban/issues/1?board_entity_limit=1500&scope_status_ids_present=1&scope_status_ids%5B%5D=1&scope_status_ids%5B%5D=2&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1&dependency_status_ids%5B%5D=2',
+      '/projects/demo/kanban/issues/1?board_entity_limit=1500&scope_status_ids_present=1&scope_status_ids%5B%5D=1&scope_status_ids%5B%5D=2&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1&dependency_status_ids%5B%5D=2&filter_q=&filter_include_unassigned=0&filter_priority_enabled=0&filter_include_no_priority=0&filter_due=all',
       expect.objectContaining({ method: 'DELETE' }),
     );
   });
@@ -440,8 +444,12 @@ describe('useKanbanActions snapshot-invalidated success', () => {
     expect(fetchMock.mock.calls[0][0]).toContain('/issues/1/move');
   });
 
-  it('keeps the normal close time entry flow when the issue DTO is present', async () => {
+  it.each([false, true])('opens close time entry with an issue DTO when board_snapshot is %s', async (invalidated) => {
     const board = makeBoardData(makeIssue(1));
+    board.meta.filter_scope = {
+      q: 'needle', assignee_ids: [], include_unassigned: false, tracker_ids: [],
+      priority_filter_enabled: false, priority_ids: [], include_no_priority: false, due: 'all',
+    };
     board.columns = [
       { id: 1, name: 'Open', is_closed: false, count: 1 },
       { id: 2, name: 'Closed', is_closed: true, count: 0 },
@@ -451,11 +459,50 @@ describe('useKanbanActions snapshot-invalidated success', () => {
       ok: true,
       contract_version: 3,
       issue: { ...makeIssue(1), status_id: 2, can_log_time: true, lock_version: 4 },
-      invalidations: { board_snapshot: false },
+      invalidations: { board_snapshot: invalidated },
     }), { status: 200 }));
-    const { result } = renderActions({ data: board, timeEntryOnClose: true, setIframeTimeEntryOperation });
+    const { result, queryClient } = renderActions({ data: board, timeEntryOnClose: true, setIframeTimeEntryOperation });
+    const resetQueries = vi.spyOn(queryClient, 'resetQueries');
 
     await act(async () => { result.current.moveIssue(1, 2); });
     await waitFor(() => expect(setIframeTimeEntryOperation).toHaveBeenCalledWith(expect.objectContaining({ origin: 'time_entry_on_close', issueId: 1 })));
+    expect(resetQueries).toHaveBeenCalledTimes(invalidated ? 1 : 0);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(globalThis.fetch).mock.calls[0][0]).toContain('filter_q=needle');
+  });
+
+  it.each([
+    ['time entry on close is disabled', { timeEntryOnClose: false }],
+    ['the issue belongs to the running timer', { timeEntryOnClose: true, isWorkTimerIssue: () => true }],
+    ['the user cannot log time', { timeEntryOnClose: true, canLogTime: false }],
+  ] as Array<[string, { timeEntryOnClose: boolean; isWorkTimerIssue?: (issueId: number) => boolean; canLogTime?: boolean }]>)('respects close time entry eligibility when %s', async (_scenario, options) => {
+    const board = makeBoardData(makeIssue(1));
+    board.labels.time_entry_permission_required = 'Time logging is unavailable';
+    board.columns = [
+      { id: 1, name: 'Open', is_closed: false, count: 1 },
+      { id: 2, name: 'Closed', is_closed: true, count: 0 },
+    ];
+    const setIframeTimeEntryOperation = vi.fn();
+    const setNotice = vi.fn();
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      ok: true,
+      issue: { ...makeIssue(1), status_id: 2, can_log_time: options.canLogTime ?? true },
+      invalidations: { board_snapshot: true },
+    }), { status: 200 }));
+    const { result } = renderActions({
+      data: board,
+      timeEntryOnClose: options.timeEntryOnClose,
+      isWorkTimerIssue: options.isWorkTimerIssue,
+      setNotice,
+      setIframeTimeEntryOperation,
+    });
+
+    await act(async () => { result.current.moveIssue(1, 2); });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(result.current.busyIssueIds.has(1)).toBe(false));
+
+    expect(setIframeTimeEntryOperation).not.toHaveBeenCalled();
+    if (options.canLogTime === false) expect(setNotice).toHaveBeenCalledWith('Time logging is unavailable');
+    else expect(setNotice).toHaveBeenCalledTimes(1); // moveIssue clears any prior notice.
   });
 });

@@ -36,11 +36,13 @@ it.each(['success', 'failure'])('keeps B when saved view A completes late with %
   await waitFor(() => expect(result.current.snapshot.data).not.toBeNull());
   act(() => result.current.preferences.applyViewSettings(view(1)));
   expect(result.current.preferences.filters.assigneeIds).toEqual(['1']);
+  await waitFor(() => expect(vi.mocked(getJson).mock.calls.some(([url]) => new URL(url, 'http://localhost').searchParams.getAll('project_ids[]')[0] === '1')).toBe(true));
   act(() => result.current.preferences.applyViewSettings(view(2)));
   expect(result.current.snapshot.data).toBeNull();
   expect(result.current.validation.pending).toBe(true);
   expect(result.current.preferences.filters.assigneeIds).toEqual(['2']);
   expect(result.current.preferences.filters.trackerIds).toEqual([2]);
+  await waitFor(() => expect(vi.mocked(getJson).mock.calls.some(([url]) => new URL(url, 'http://localhost').searchParams.getAll('project_ids[]')[0] === '2')).toBe(true));
   await act(async () => finishB());
   await waitFor(() => expect(result.current.snapshot.data?.scope_fingerprint).toBe('2'));
   await act(async () => finishA());

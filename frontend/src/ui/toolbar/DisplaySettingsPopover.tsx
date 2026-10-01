@@ -72,7 +72,7 @@ export function DisplaySettingsPopover({
   onChangeFontSize: (size: number) => void;
   maximumBoardEntityCount?: number;
   onChangeMaximumBoardEntityCount?: (value: number) => void;
-  serverEntityLimit?: number;
+  serverEntityLimit?: number | null;
 }) {
   const [open, setOpen] = useState(false);
   const [maximumEntityCountDraft, setMaximumEntityCountDraft] = useState(String(maximumBoardEntityCount));

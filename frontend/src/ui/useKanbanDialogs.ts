@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import type { TimeEntryOperation } from './iframe/timeEntryOperation';
 import type { BoardData } from './types';
+import type { BoardFilterScope } from '../model/board/filterScope';
 import { buildDefaultIssueCreateUrl, type ModalContext } from './issueDialog';
 import { buildIssueTitle, resolveBoardIssue } from '../model/board/selectors';
 
@@ -12,6 +13,7 @@ type DialogRuntimeContext = {
   scopeStatusIds: number[];
   dependencyStatusIds: number[];
   boardEntityLimit?: number;
+  filterScope: BoardFilterScope;
 };
 type IframeEditContext = DialogRuntimeContext & { url: string; issueId: number; issueTitle?: string; projectId?: number };
 type IframeCreateContext = DialogRuntimeContext & { url: string };
@@ -52,6 +54,10 @@ export function useKanbanDialogs(
       scopeStatusIds: data.meta.scope_status_ids ?? [],
       dependencyStatusIds: data.meta.dependency_status_ids ?? data.meta.scope_status_ids ?? [],
       boardEntityLimit: data.meta.requested_entity_limit ?? data.meta.effective_entity_limit,
+      filterScope: data.meta.filter_scope ?? {
+        q: '', assignee_ids: [], include_unassigned: false, tracker_ids: [],
+        priority_filter_enabled: false, priority_ids: [], include_no_priority: false, due: 'all',
+      },
     };
   }, [baseUrl, boardQueryKey, data]);
 

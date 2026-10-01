@@ -7,14 +7,16 @@ import { getJson, HttpError } from '../infrastructure/api/http';
 import { parseBoardSnapshotV3 } from '../infrastructure/api/boardSnapshot';
 import { useBoardSnapshot } from './useBoardSnapshot';
 import { makeBoardSnapshot } from '../test/fixtures/boardSnapshot';
+import type { BoardFilterScope } from '../model/board/filterScope';
 vi.mock('../infrastructure/api/http', async (original) => ({ ...await original<typeof import('../infrastructure/api/http')>(), getJson: vi.fn() }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 const metadata = { ok: true, board: { id: 1, name: 'Board', identifier: 'demo' }, server_entity_limit: 2, projects: [{ id: 1, name: 'Board', level: 0 }], viewable_projects: [], statuses: [{ id: 1, name: 'New', is_closed: false }] };
 const snapshot = { ok: true, contract_version: 3, scope_fingerprint: 'narrow', meta: { complete: true, entity_count: 0, project_id: 1, current_user_id: 7, can_move: false, can_create: false, can_delete: false, lane_type: 'assignee' }, entities: [], tree: { root_ids: [], children_by_parent_id: {} }, columns: [], lanes: [], lists: { projects: [], viewable_projects: [], assignees: [], trackers: [], priorities: [], creatable_projects: [] }, labels: {} };
+const emptyFilterScope: BoardFilterScope = { q: '', assignee_ids: [], include_unassigned: false, tracker_ids: [], priority_filter_enabled: false, priority_ids: [], include_no_priority: false, due: 'all' };
 function setup() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
-  return renderHook(({ statusIds }) => useBoardSnapshot({ baseUrl: '/projects/demo/kanban', currentUserId: 7, projectIds: [], statusIds, hiddenStatusIds: [], maximumBoardEntityCount: 1500, preferencesReady: true, initialLabels: { board_scope_too_large: 'Limit %{limit}', board_response_too_large: 'Bytes %{bytes}', board_query_limit_exceeded: 'Issue query limit', board_total_query_limit_exceeded: 'Total query limit', load_failed: 'Failed' } }), { initialProps: { statusIds: [] as number[] }, wrapper });
+  return renderHook(({ statusIds, filterScope = emptyFilterScope, projectIds = [] }) => useBoardSnapshot({ baseUrl: '/projects/demo/kanban', currentUserId: 7, projectIds, statusIds, hiddenStatusIds: [], maximumBoardEntityCount: 1500, preferencesReady: true, initialLabels: { board_scope_too_large: 'Limit %{limit}', board_response_too_large: 'Bytes %{bytes}', board_query_limit_exceeded: 'Issue query limit', board_total_query_limit_exceeded: 'Total query limit', load_failed: 'Failed' }, filterScope }), { initialProps: { statusIds: [] as number[], filterScope: emptyFilterScope, projectIds: [] as number[] }, wrapper });
 }
 describe('snapshot recovery without a successful cache', () => {
   it('rejects a declared complete snapshot with an unrepresented Entity', () => {
@@ -41,9 +43,54 @@ describe('snapshot recovery without a successful cache', () => {
     expect(result.current.toolbarData.columns).toEqual(metadata.statuses);
     expect(result.current.toolbarData.meta.complete).toBe(false);
     expect(result.current.toolbarData.meta.can_create).toBe(false);
-    rerender({ statusIds: [1] });
+    rerender({ statusIds: [1], filterScope: emptyFilterScope, projectIds: [] });
     await waitFor(() => expect(result.current.data?.meta.complete).toBe(true));
     expect(result.current.loadError).toBeNull();
+  });
+  it('accepts a null server limit and omits the server-limit suffix from overflow errors', async () => {
+    const unlimitedMetadata = { ...metadata, server_entity_limit: null };
+    const unlimitedSnapshot = { ...snapshot, meta: { ...snapshot.meta, server_entity_limit: null } };
+    const overflowLabels = { board_scope_too_large: 'Limit %{limit}', board_server_limit_suffix: '(server %{limit})', board_response_too_large: 'Bytes %{bytes}', board_query_limit_exceeded: 'Issue query limit', board_total_query_limit_exceeded: 'Total query limit', load_failed: 'Failed' };
+    vi.mocked(getJson).mockImplementation(async (url) => {
+      if (url.endsWith('/metadata')) return unlimitedMetadata;
+      if (url.includes('issue_status_ids')) return unlimitedSnapshot;
+      throw new HttpError(422, { error: { code: 'BOARD_SCOPE_TOO_LARGE', requested_entity_limit: 1500, effective_entity_limit: 1500, server_entity_limit: null } });
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const { result } = renderHook(() => useBoardSnapshot({ baseUrl: '/projects/demo/kanban', currentUserId: 7, projectIds: [], statusIds: [], hiddenStatusIds: [], maximumBoardEntityCount: 1500, preferencesReady: true, initialLabels: overflowLabels, filterScope: emptyFilterScope }), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.metadata?.server_entity_limit).toBeNull());
+    expect(result.current.toolbarData.meta.server_entity_limit).toBeNull();
+    await waitFor(() => expect(result.current.loadError).toBe('Limit 1,500'));
+  });
+  it('loads a complete selected scope when metadata and snapshot server limits are null', async () => {
+    vi.mocked(getJson).mockImplementation(async (url) => url.endsWith('/metadata')
+      ? { ...metadata, server_entity_limit: null }
+      : { ...snapshot, meta: { ...snapshot.meta, server_entity_limit: null } });
+    // Pick a project and status so the snapshot waits for valid metadata choices.
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const selected = renderHook(() => useBoardSnapshot({ baseUrl: '/projects/demo/kanban', currentUserId: 7, projectIds: [1], statusIds: [1], hiddenStatusIds: [], maximumBoardEntityCount: 1500, preferencesReady: true, initialLabels: {}, filterScope: emptyFilterScope }), { wrapper });
+    await waitFor(() => expect(selected.result.current.data?.meta.complete).toBe(true));
+    expect(selected.result.current.metadata?.server_entity_limit).toBeNull();
+    expect(selected.result.current.data?.meta.server_entity_limit).toBeNull();
+    selected.unmount();
+  });
+  it.each([undefined, 0, -1, 1.5, '5000', Number.MAX_SAFE_INTEGER + 1])('rejects invalid metadata server entity limit %s before loading a selected board', async (serverEntityLimit) => {
+    const invalidMetadata = { ...metadata, server_entity_limit: serverEntityLimit };
+    vi.mocked(getJson).mockImplementation(async (url) => url.endsWith('/metadata') ? invalidMetadata : snapshot);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const { result } = renderHook(() => useBoardSnapshot({ baseUrl: '/projects/demo/kanban', currentUserId: 7, projectIds: [1], statusIds: [1], hiddenStatusIds: [], maximumBoardEntityCount: 1500, preferencesReady: true, initialLabels: {}, filterScope: emptyFilterScope }), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.metadataQuery.isError).toBe(true));
+    expect(result.current.metadataQuery.error).toBeInstanceOf(Error);
+    expect((result.current.metadataQuery.error as Error).message).toBe('Invalid board metadata');
+    expect(vi.mocked(getJson).mock.calls.map(([url]) => url)).toHaveLength(1);
+    expect(vi.mocked(getJson).mock.calls[0][0]).toMatch(/\/metadata$/);
   });
   it('keeps response size errors distinct and exposes a retryable metadata failure', async () => {
     vi.mocked(getJson).mockImplementation(async (url) => {
@@ -76,7 +123,7 @@ describe('snapshot recovery without a successful cache', () => {
       return new Promise((_resolve, reject) => { rejectOld = reject; });
     });
     const { result, rerender } = setup();
-    rerender({ statusIds: [1] });
+    rerender({ statusIds: [1], filterScope: emptyFilterScope, projectIds: [] });
     await waitFor(() => expect(result.current.data?.scope_fingerprint).toBe('narrow'));
     await act(async () => { rejectOld(new Error('old')); });
     expect(result.current.loadError).toBeNull();
@@ -87,9 +134,31 @@ describe('snapshot recovery without a successful cache', () => {
     const { result, rerender } = setup();
     await waitFor(() => expect(result.current.metadata).not.toBeNull());
     vi.mocked(getJson).mockClear();
-    rerender({ statusIds: [999] });
-    expect(result.current.data).toBeNull();
+    rerender({ statusIds: [999], filterScope: emptyFilterScope, projectIds: [] });
+    await waitFor(() => expect(result.current.data).toBeNull());
     expect(getJson).not.toHaveBeenCalled();
+  });
+
+  it('debounces the complete filter scope so a new project never pairs with a stale subject query', async () => {
+    vi.mocked(getJson).mockImplementation(async (url) => url.endsWith('/metadata') ? metadata : snapshot);
+    const { result, rerender } = setup();
+    await waitFor(() => expect(result.current.data?.meta.complete).toBe(true));
+    const previousSnapshot = result.current.data;
+    const previousQueryKey = result.current.boardQueryKey;
+    vi.mocked(getJson).mockClear();
+    const nextScope = { ...emptyFilterScope, q: 'needle', due: 'overdue' as const, date_anchor: '2026-10-01' };
+    rerender({ statusIds: [], filterScope: nextScope, projectIds: [1] });
+    expect(result.current.data).toBe(previousSnapshot);
+    expect(result.current.boardQueryKey).toEqual(previousQueryKey);
+    expect(getJson).not.toHaveBeenCalled();
+    await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 100)); });
+    expect(getJson).not.toHaveBeenCalled();
+    rerender({ statusIds: [], filterScope: { ...nextScope, q: 'Final query' }, projectIds: [1] });
+    await waitFor(() => expect(getJson).toHaveBeenCalledTimes(1));
+    const requestUrl = vi.mocked(getJson).mock.calls.find(([url]) => url.includes('/data?'))?.[0] ?? '';
+    expect(requestUrl).toContain('project_ids%5B%5D=1');
+    expect(requestUrl).toContain('filter_q=final+query');
+    expect(requestUrl).toContain('filter_date_anchor=2026-10-01');
   });
 
   it('removes choices and mutations after permission loss', async () => {
@@ -100,5 +169,28 @@ describe('snapshot recovery without a successful cache', () => {
     await act(async () => { await result.current.metadataQuery.refetch(); });
     await waitFor(() => expect(result.current.data).toBeNull());
     expect(result.current.toolbarData.lists.projects).toEqual([]);
+  });
+
+  it('refreshes only the settled new anchor when a day change overlaps subject input', async () => {
+    vi.mocked(getJson).mockImplementation(async (url) => url.endsWith('/metadata') ? metadata : snapshot);
+    const { result, rerender } = setup();
+    const relativeScope = { ...emptyFilterScope, due: 'overdue' as const, date_anchor: '2026-10-01' };
+    rerender({ statusIds: [], filterScope: relativeScope, projectIds: [] });
+    await waitFor(() => expect(result.current.boardQueryKey[7]).toContain('2026-10-01'));
+    await waitFor(() => expect(result.current.boardQuery.isSuccess).toBe(true));
+    vi.mocked(getJson).mockClear();
+
+    rerender({ statusIds: [], filterScope: { ...relativeScope, date_anchor: '2026-10-02' }, projectIds: [] });
+    await act(async () => { await result.current.refresh(); });
+    expect(getJson).not.toHaveBeenCalled();
+    rerender({ statusIds: [], filterScope: { ...relativeScope, date_anchor: '2026-10-02', q: 'new query' }, projectIds: [] });
+    await act(async () => { await result.current.refresh(); });
+    expect(getJson).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(getJson).toHaveBeenCalledTimes(1));
+    const url = vi.mocked(getJson).mock.calls[0][0];
+    expect(url).toContain('filter_date_anchor=2026-10-02');
+    expect(url).toContain('filter_q=new+query');
+    expect(result.current.boardQueryKey[7]).toContain('2026-10-02');
   });
 });

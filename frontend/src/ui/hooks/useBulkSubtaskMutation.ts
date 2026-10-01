@@ -6,6 +6,7 @@ import type { BoardData, Issue } from '../types';
 import { discardBulkIdempotencyKey, getOrCreateBulkIdempotencyKey, stableSerialize } from '../bulkIdempotency';
 import { applyEntityReconciliation, applyMutationResponse, invalidateBoardSnapshot, isBoardSnapshotInvalidated, unresolvedInvalidationIds } from '../useIssueMutation';
 import { buildBoardCountsUrl, buildBoardEntitiesUrl, buildBoardMutationUrl } from '../boardQuery';
+import type { BoardFilterScope } from '../../model/board/filterScope';
 import { getBoardFreshnessAuthority, releaseBoardFreshnessAuthority } from '../asyncFreshness';
 
 export type SubtaskPayload = {
@@ -79,6 +80,7 @@ export function useBulkSubtaskMutation(
   dependencyStatusIds = scopeStatusIds,
   boardEntityLimit = 1500,
   deferBoardRefresh = false,
+  filterScope?: BoardFilterScope,
 ) {
   const queryClient = useQueryClient();
   const inFlight = useRef(new Map<string, Promise<BulkMutationResponse>>());
@@ -102,7 +104,7 @@ export function useBulkSubtaskMutation(
         const { key: idempotencyKey } = getOrCreateBulkIdempotencyKey(signature);
         try {
           const res = await postJson<BulkMutationResponse>(
-            scopedPath(baseUrl, '/issues/bulk', projectIds, scopeStatusIds, dependencyStatusIds, boardEntityLimit), { ...normalized, operation_id: clientOperationId() }, 'POST', { 'Idempotency-Key': idempotencyKey },
+            scopedPath(baseUrl, '/issues/bulk', projectIds, scopeStatusIds, dependencyStatusIds, boardEntityLimit, filterScope), { ...normalized, operation_id: clientOperationId() }, 'POST', { 'Idempotency-Key': idempotencyKey },
           );
           return res;
         } catch (error) {
@@ -156,7 +158,7 @@ export function useBulkSubtaskMutation(
           const freshnessAuthority = getBoardFreshnessAuthority(queryClient, queryKey);
           const request = freshnessAuthority.beginEntityReconciliation(requestData, reconciliationIds);
           void getJson<Parameters<typeof applyEntityReconciliation>[1]>(
-            buildBoardEntitiesUrl(baseUrl, projectIds, reconciliationIds, scopeStatusIds, dependencyStatusIds),
+            buildBoardEntitiesUrl(baseUrl, projectIds, reconciliationIds, scopeStatusIds, dependencyStatusIds, filterScope),
           ).then((response) => {
             queryClient.setQueryData(queryKey, (current: unknown) => {
               if (!current || !('issues' in (current as object))) return current;
@@ -177,7 +179,7 @@ export function useBulkSubtaskMutation(
         if (requestData) {
           const freshnessAuthority = getBoardFreshnessAuthority(queryClient, queryKey);
           const request = freshnessAuthority.beginAggregateReconciliation(requestData);
-          void getJson<{ columns?: BoardData['columns'] }>(buildBoardCountsUrl(baseUrl, projectIds))
+          void getJson<{ columns?: BoardData['columns'] }>(buildBoardCountsUrl(baseUrl, projectIds, filterScope, scopeStatusIds, dependencyStatusIds))
             .then((response) => {
               if (!response.columns) return;
               queryClient.setQueryData(queryKey, (current: unknown) => {
@@ -206,12 +208,14 @@ function scopedPath(
   scopeStatusIds: number[] = [],
   dependencyStatusIds = scopeStatusIds,
   boardEntityLimit = 1500,
+  filterScope?: BoardFilterScope,
 ): string {
   return buildBoardMutationUrl(baseUrl, path, {
     projectIds,
     scopeStatusIds,
     dependencyStatusIds,
     boardEntityLimit,
+    filterScope,
   });
 }
 

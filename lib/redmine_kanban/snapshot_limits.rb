@@ -37,11 +37,13 @@ module RedmineKanban
     end
 
     def self.server_entity_limit
+      return nil if ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'].to_s.strip == '0'
+
       env_positive_integer('REDMINE_KANBAN_MAX_BOARD_ENTITIES', DEFAULT_SERVER_ENTITY_LIMIT)
     end
 
     def self.entity_reconciliation_limit
-      [MAX_ENTITY_RECONCILIATION_IDS, server_entity_limit].min
+      [MAX_ENTITY_RECONCILIATION_IDS, server_entity_limit].compact.min
     end
     def self.response_bytes
       env_positive_integer('REDMINE_KANBAN_MAX_RESPONSE_BYTES', DEFAULT_RESPONSE_BYTES)
@@ -56,7 +58,7 @@ module RedmineKanban
     end
 
     def self.effective(requested)
-      [requested, server_entity_limit].min
+      [requested, server_entity_limit].compact.min
     end
 
     private_class_method :env_positive_integer

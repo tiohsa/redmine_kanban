@@ -42,7 +42,7 @@ type ToolbarProps = {
   onToggleAgingExcludeClosed?: () => void;
   maximumBoardEntityCount?: number;
   onChangeMaximumBoardEntityCount?: (value: number) => void;
-  serverEntityLimit?: number;
+  serverEntityLimit?: number | null;
   viewableProjectsEnabled: boolean;
   onToggleViewableProjects: () => void;
   onOpenHelp: () => void;

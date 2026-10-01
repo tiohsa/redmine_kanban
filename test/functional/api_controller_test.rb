@@ -68,6 +68,123 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_equal({ 'ok' => false }, JSON.parse(@response.body))
   end
 
+  def test_invalid_board_filter_returns_400_before_board_or_mutation_work
+    issue = build_issue(subject: 'Invalid filter must not update')
+    RedmineKanban::BoardData.expects(:new).never
+
+    get :index, params: { project_id: @project.identifier, filter_due: 'tomorrow' }
+
+    assert_response :bad_request
+    assert_equal 'INVALID_BOARD_FILTER', JSON.parse(@response.body).dig('error', 'code')
+
+    get :index, params: { project_id: @project.identifier, filter_assignee_ids: { invalid: '1' } }
+    assert_response :bad_request
+    assert_equal 'INVALID_BOARD_FILTER', JSON.parse(@response.body).dig('error', 'code')
+
+    patch :update, params: {
+      project_id: @project.identifier, id: issue.id, filter_assignee_ids: ['nope'],
+      issue: { subject: 'must remain unchanged', lock_version: issue.lock_version }
+    }
+
+    assert_response :bad_request
+    assert_equal 'Invalid filter must not update', Issue.find(issue.id).subject
+
+    post :create, params: {
+      project_id: @project.identifier, filter_priority_enabled: 'maybe',
+      issue: { subject: 'invalid filter create', tracker_id: @project.trackers.first.id,
+               status_id: IssueStatus.first.id, priority_id: IssuePriority.active.first.id }
+    }
+
+    assert_response :bad_request
+    assert_nil Issue.find_by(subject: 'invalid filter create')
+  end
+
+  def test_snapshot_and_entity_reconciliation_share_canonical_filter_scope
+    issue = build_issue(subject: 'Calendar Filter Scope')
+    params = { project_id: @project.identifier, project_ids: [@project.id], filter_q: '  CALENDAR filter scope ', issue_status_ids: [issue.status_id] }
+
+    get :index, params: params
+    assert_response :success
+    snapshot = JSON.parse(@response.body)
+    assert_equal 'calendar filter scope', snapshot.dig('meta', 'filter_scope', 'q')
+    assert_equal [], snapshot.dig('meta', 'filter_scope', 'assignee_ids')
+
+    reconciliation_params = params.merge(
+      scope_status_ids_present: '1', scope_status_ids: snapshot.dig('meta', 'scope_status_ids'),
+      dependency_status_ids_present: '1', dependency_status_ids: snapshot.dig('meta', 'dependency_status_ids')
+    )
+    get :entities, params: reconciliation_params.merge(ids: [issue.id])
+    assert_response :success
+    entities = JSON.parse(@response.body)
+    assert_equal snapshot['scope_fingerprint'], entities['scope_fingerprint']
+
+    get :counts, params: reconciliation_params
+    assert_response :success
+    assert_equal snapshot['scope_fingerprint'], JSON.parse(@response.body)['scope_fingerprint']
+
+    patch :update, params: reconciliation_params.merge(id: issue.id, issue: { description: 'unrelated field', lock_version: issue.lock_version })
+    assert_response :success
+    mutation = JSON.parse(@response.body)
+    assert_equal snapshot['scope_fingerprint'], mutation['scope_fingerprint']
+    assert_equal false, mutation.dig('invalidations', 'board_snapshot')
+  end
+
+  def test_active_filter_membership_change_invalidates_without_partial_delta
+    issue = build_issue(subject: 'Calendar Before Update')
+
+    patch :update, params: {
+      project_id: @project.identifier, project_ids: [@project.id], filter_q: 'calendar before update', id: issue.id,
+      issue: { subject: 'No longer matches calendar filter', lock_version: issue.lock_version }
+    }
+
+    assert_response :success
+    mutation = JSON.parse(@response.body)
+    assert_equal true, mutation.dig('invalidations', 'board_snapshot')
+    assert_empty mutation.fetch('issue_updates')
+    assert_empty mutation.fetch('evicted_issue_ids')
+  end
+
+  def test_priority_propagation_invalidates_filtered_snapshot_when_parent_priority_is_unchanged
+    primary_status, dependency_status = create_boundary_statuses
+    parent_priority = IssuePriority.active.first
+    child_priority = IssuePriority.active.where.not(id: parent_priority.id).first
+    skip 'requires two active priorities' unless child_priority
+    parent = build_issue(subject: 'Priority context parent', status: primary_status, priority: parent_priority)
+    build_issue(subject: 'Priority matching child', parent_issue_id: parent.id, status: dependency_status, priority: child_priority)
+    child = Issue.find(parent.id).children.first
+    parent.reload
+
+    patch :update, params: {
+      project_id: @project.identifier, project_ids: [@project.id], id: parent.id,
+      scope_status_ids_present: '1', scope_status_ids: [primary_status.id],
+      dependency_status_ids_present: '1', dependency_status_ids: [primary_status.id, dependency_status.id],
+      filter_priority_enabled: '1', filter_priority_ids: [child_priority.id],
+      issue: { priority_id: parent_priority.id, lock_version: parent.lock_version }
+    }
+
+    assert_response :success
+    payload = JSON.parse(@response.body)
+    assert_equal parent_priority.id, Issue.find(parent.id).priority_id
+    assert_equal parent_priority.id, Issue.find(child.id).priority_id
+    assert_equal true, payload.dig('invalidations', 'board_snapshot')
+    assert_empty payload.fetch('issue_updates')
+    assert_empty payload.fetch('evicted_issue_ids')
+  end
+
+  def test_filtered_snapshot_preserves_unfiltered_column_count_semantics
+    status = IssueStatus.first
+    matching = build_issue(subject: 'Counted filter match', status: status)
+    build_issue(subject: 'Counted filter hidden', status: status)
+
+    get :index, params: { project_id: @project.identifier, filter_q: 'Counted filter match' }
+
+    assert_response :success
+    payload = JSON.parse(@response.body)
+    assert_equal [matching.id], payload.fetch('entities').map { |entity| entity['id'] }
+    expected_count = Issue.visible(@user).where(project_id: @project.id, status_id: status.id).count
+    assert_equal expected_count, payload.fetch('columns').find { |column| column['id'] == status.id }.fetch('count')
+  end
+
   def test_metadata_route_uses_redmine_view_permission_mapping
     assert_recognizes(
       { controller: 'redmine_kanban/api', action: 'metadata', project_id: @project.identifier },
@@ -308,6 +425,26 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     refute json.key?('entities')
   end
 
+  def test_filter_match_keeps_complete_dependency_subtree_when_anchor_overflows_limit
+    primary_status, dependency_status = create_boundary_statuses
+    parent = build_issue(subject: 'Context only parent', status: primary_status)
+    build_issue(subject: 'calendar issue matching child', parent_issue_id: parent.id, status: dependency_status)
+    build_issue(subject: 'nonmatching sibling context', parent_issue_id: parent.id, status: dependency_status)
+
+    get :index, params: {
+      project_id: @project.identifier,
+      board_entity_limit: 2,
+      issue_status_ids: [primary_status.id, dependency_status.id],
+      exclude_status_ids: [dependency_status.id],
+      filter_q: 'calendar issue matching child'
+    }
+
+    assert_response :unprocessable_entity
+    payload = JSON.parse(@response.body)
+    assert_equal 'BOARD_SCOPE_TOO_LARGE', payload.dig('error', 'code')
+    refute payload.key?('entities')
+  end
+
   def test_dependency_admission_uses_remaining_plus_one_probe
     primary_status, dependency_status = create_boundary_statuses
     parent = build_issue(subject: 'Remaining boundary parent', status: primary_status)
@@ -373,6 +510,60 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     refute json.key?('entities')
   ensure
     ENV['REDMINE_KANBAN_MAX_RESPONSE_BYTES'] = previous
+  end
+
+  def test_disabled_server_count_limit_keeps_the_user_limit_and_reports_null_metadata
+    previous = ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES']
+    ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = '0'
+    first = build_issue(subject: 'Disabled server count probe one')
+    second = build_issue(subject: 'Disabled server count probe two')
+
+    get :metadata, params: { project_id: @project.identifier }
+    assert_response :success
+    assert_nil JSON.parse(@response.body).fetch('server_entity_limit')
+
+    params = { project_id: @project.identifier, filter_q: 'disabled server count probe', board_entity_limit: 10_000 }
+    get :index, params: params
+    assert_response :success
+    result = JSON.parse(@response.body)
+    assert_equal true, result.dig('meta', 'complete')
+    assert_equal 10_000, result.dig('meta', 'requested_entity_limit')
+    assert_equal 10_000, result.dig('meta', 'effective_entity_limit')
+    assert_nil result.fetch('meta').fetch('server_entity_limit')
+    assert_equal [first.id, second.id].sort, result.fetch('entities').map { |issue| issue['id'] }.sort
+
+    get :index, params: params.merge(board_entity_limit: 1)
+    assert_response :unprocessable_entity
+    result = JSON.parse(@response.body)
+    assert_equal 'BOARD_SCOPE_TOO_LARGE', result.dig('error', 'code')
+    assert_equal 1, result.dig('error', 'effective_entity_limit')
+    assert_nil result.fetch('error').fetch('server_entity_limit')
+    refute result.key?('entities')
+  ensure
+    ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = previous
+  end
+
+  def test_disabled_server_count_limit_preserves_other_snapshot_resource_limits
+    names = %w[REDMINE_KANBAN_MAX_BOARD_ENTITIES REDMINE_KANBAN_MAX_RESPONSE_BYTES REDMINE_KANBAN_MAX_BOARD_QUERIES REDMINE_KANBAN_MAX_TOTAL_BOARD_QUERIES]
+    previous = names.to_h { |name| [name, ENV[name]] }
+    ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = '0'
+    build_issue(subject: 'Disabled count other limits')
+    limits = {
+      'REDMINE_KANBAN_MAX_RESPONSE_BYTES' => 'BOARD_RESPONSE_TOO_LARGE',
+      'REDMINE_KANBAN_MAX_BOARD_QUERIES' => 'BOARD_QUERY_LIMIT_EXCEEDED',
+      'REDMINE_KANBAN_MAX_TOTAL_BOARD_QUERIES' => 'BOARD_TOTAL_QUERY_LIMIT_EXCEEDED'
+    }
+    limits.each do |name, error_code|
+      limits.each_key { |key| ENV.delete(key) }
+      ENV[name] = '1'
+      get :index, params: { project_id: @project.identifier, filter_q: 'disabled count other limits', board_entity_limit: 10_000 }
+      assert_response :unprocessable_entity
+      result = JSON.parse(@response.body)
+      assert_equal error_code, result.dig('error', 'code')
+      refute result.key?('entities')
+    end
+  ensure
+    previous&.each { |name, value| ENV[name] = value }
   end
 
   def test_query_limit_returns_a_structured_error_without_entities
@@ -831,6 +1022,20 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_equal limit, json.dig('error', 'maximum_ids')
   end
 
+  def test_disabled_server_count_limit_preserves_the_entity_reconciliation_batch_limit
+    previous = ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES']
+    ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = '0'
+    RedmineKanban::BoardEntityReader.expects(:new).never
+    get :entities, params: { project_id: @project.identifier, ids: (1..101).to_a }
+
+    assert_response :bad_request
+    result = JSON.parse(@response.body)
+    assert_equal 'ENTITY_IDS_LIMIT_EXCEEDED', result.dig('error', 'code')
+    assert_equal 100, result.dig('error', 'maximum_ids')
+  ensure
+    ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = previous
+  end
+
   def test_entity_reconciliation_hides_invisible_issues
     @role.update!(issues_visibility: 'own')
     @role.remove_permission!(:view_private_issues) if @role.permissions.include?(:view_private_issues)
@@ -1166,6 +1371,96 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_kind_of Array, json['columns']
   ensure
     ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = previous
+  end
+
+  def test_filter_sensitive_field_updates_invalidate_the_authoritative_snapshot
+    tracker = @project.trackers.first
+    other_tracker = Tracker.create!(name: 'Filter mutation tracker', default_status: IssueStatus.first)
+    @project.trackers << other_tracker
+    priority = IssuePriority.active.first
+    other_priority = IssuePriority.active.where.not(id: priority.id).first!
+    next_status = IssueStatus.where.not(id: IssueStatus.first.id).first!
+    WorkflowTransition.create!(tracker: tracker, role: @role, old_status_id: IssueStatus.first.id, new_status: next_status)
+    cases = [
+      [{ filter_include_unassigned: '1' }, :assigned_to_id, @user.id],
+      [{ filter_tracker_ids: [tracker.id] }, :tracker_id, other_tracker.id],
+      [{ filter_priority_enabled: '1', filter_priority_ids: [priority.id] }, :priority_id, other_priority.id],
+      [{ filter_due: 'none' }, :due_date, '2026-10-02'],
+      [{ filter_q: 'filter mutation' }, :status_id, next_status.id]
+    ]
+
+    cases.each do |filter_params, field, value|
+      issue = build_issue(subject: "Filter mutation #{field}", assigned_to: (field == :assigned_to_id ? nil : @user), tracker: tracker, priority: priority)
+      patch :update, params: {
+        project_id: @project.identifier, id: issue.id,
+        issue: { field => value, lock_version: issue.lock_version }
+      }.merge(filter_params)
+
+      assert_response :success
+      result = JSON.parse(@response.body)
+      assert_equal true, result.dig('invalidations', 'board_snapshot'), field.to_s
+      assert_empty result.fetch('issue_updates')
+      assert_empty result.fetch('evicted_issue_ids')
+      expected = field == :due_date ? Date.iso8601(value) : value
+      assert_equal expected, issue.reload.public_send(field), field.to_s
+    end
+  end
+
+  def test_active_filter_create_bulk_create_and_delete_invalidate_without_partial_deltas
+    attributes = {
+      tracker_id: @project.trackers.first.id, status_id: IssueStatus.first.id,
+      priority_id: IssuePriority.active.first.id
+    }
+    filter_params = { project_id: @project.identifier, filter_q: 'filter lifecycle' }
+    post :create, params: filter_params.merge(issue: attributes.merge(subject: 'Filter lifecycle create'))
+    assert_response :success
+    created = Issue.find_by!(subject: 'Filter lifecycle create')
+    result = JSON.parse(@response.body)
+    assert_equal true, result.dig('invalidations', 'board_snapshot')
+    assert_empty result.fetch('created_issues')
+    assert_equal created.id, result.dig('issue', 'id')
+
+    @request.headers['Idempotency-Key'] = 'active-filter-lifecycle-bulk'
+    post :bulk_create, params: filter_params.merge(bulk: {
+      parent: attributes.merge(subject: 'Filter lifecycle bulk parent'),
+      subtasks: [attributes.merge(subject: 'Filter lifecycle bulk child')]
+    })
+    assert_response :success
+    result = JSON.parse(@response.body)
+    assert_equal true, result.dig('invalidations', 'board_snapshot')
+    assert_empty result.fetch('created_issues')
+    assert_equal Issue.find_by!(subject: 'Filter lifecycle bulk parent').id, result.dig('issue', 'id')
+    assert_equal [Issue.find_by!(subject: 'Filter lifecycle bulk child').id], result.fetch('subtasks').map { |issue| issue['id'] }
+
+    delete :destroy, params: filter_params.merge(id: created.id, issue: { lock_version: created.reload.lock_version })
+    assert_response :success
+    result = JSON.parse(@response.body)
+    assert_equal true, result.dig('invalidations', 'board_snapshot')
+    assert_empty result.fetch('deleted_issue_ids')
+    assert_empty result.fetch('evicted_issue_ids')
+    assert_nil Issue.find_by(id: created.id)
+  end
+
+  def test_active_filter_close_move_keeps_the_success_issue_dto
+    issue = build_issue(subject: 'Filtered close move', status: IssueStatus.where(is_closed: false).first)
+    closed_status = issue.new_statuses_allowed_to(@user).find(&:is_closed?)
+    assert closed_status, 'fixture must allow a closed status for this issue'
+
+    patch :move, params: {
+      project_id: @project.identifier, id: issue.id, filter_q: 'filtered close',
+      issue: { status_id: closed_status.id, lock_version: issue.lock_version }
+    }
+
+    assert_response :success
+    result = JSON.parse(@response.body)
+    assert_equal true, result.dig('invalidations', 'board_snapshot')
+    assert_equal issue.id, result.dig('issue', 'id')
+    assert_equal closed_status.id, result.dig('issue', 'status_id')
+    assert_equal true, result.dig('issue', 'status_is_closed')
+    assert result.fetch('issue').key?('can_log_time')
+    assert_empty result.fetch('issue_updates')
+    assert_empty result.fetch('tree_changes')
+    assert_equal closed_status.id, issue.reload.status_id
   end
 
   private

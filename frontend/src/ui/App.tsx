@@ -25,6 +25,7 @@ import { savedViewsKey } from '../infrastructure/storage/savedViewsRepository';
 import { validateViewReferences } from '../model/view/validation';
 import { SavedViewsPopover } from './toolbar/SavedViewsPopover';
 import { useBoardSnapshot } from './useBoardSnapshot';
+import { boardFilterScopeFromFilters, localDateAnchor } from '../model/board/filterScope';
 
 type Props = { dataUrl: string; initialCurrentUserId: number; initialLabels?: Record<string, string> };
 
@@ -86,6 +87,11 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
   } = useKanbanPreferences(dataUrl, initialCurrentUserId);
 
   const baseUrl = useMemo(() => projectScope, [projectScope]);
+  const today = localDateAnchor();
+  const [dateAnchor, setDateAnchor] = useState(today);
+  // Synchronize before committing a render so filter edits and a new day share one scope.
+  if (dateAnchor !== today) setDateAnchor(today);
+  const filterScope = useMemo(() => boardFilterScopeFromFilters(filters, dateAnchor), [filters, dateAnchor]);
   const snapshot = useBoardSnapshot({
     baseUrl,
     projectIds: filters.projectIds,
@@ -96,8 +102,18 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     initialLabels,
     currentUserId: initialCurrentUserId,
     viewableProjectsEnabled,
+    filterScope,
   });
-  const { boardQueryKey, data, loading, refresh, toolbarData } = snapshot;
+  const { boardQueryKey, data, loading, refresh: refreshSnapshot, toolbarData } = snapshot;
+  const refresh = useCallback(async (options: { suppressError?: boolean } = {}) => {
+    const nextDateAnchor = localDateAnchor();
+    if (nextDateAnchor !== dateAnchor) {
+      setDateAnchor(nextDateAnchor);
+      // A relative date change is fetched through the debounced snapshot scope.
+      if (filterScope.date_anchor) return;
+    }
+    await refreshSnapshot(options);
+  }, [dateAnchor, filterScope.date_anchor, refreshSnapshot]);
   const timerInstanceKey = useMemo(() => {
     const pathname = new URL(dataUrl, window.location.origin).pathname;
     const projectIndex = pathname.indexOf('/projects/');
@@ -423,6 +439,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
           scopeStatusIds={dialogs.iframeEditContext.scopeStatusIds}
           dependencyStatusIds={dialogs.iframeEditContext.dependencyStatusIds}
           boardEntityLimit={dialogs.iframeEditContext.boardEntityLimit}
+          filterScope={dialogs.iframeEditContext.filterScope}
           onClose={() => {
             dialogs.setIframeEditContext(null);
           }}
@@ -447,6 +464,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
           scopeStatusIds={dialogs.iframeCreateContext.scopeStatusIds}
           dependencyStatusIds={dialogs.iframeCreateContext.dependencyStatusIds}
           boardEntityLimit={dialogs.iframeCreateContext.boardEntityLimit}
+          filterScope={dialogs.iframeCreateContext.filterScope}
           onClose={() => {
             dialogs.setIframeCreateContext(null);
           }}
@@ -469,6 +487,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
           projectIds={data.meta.project_ids ?? []}
           scopeStatusIds={effectiveScopeStatusIds(data)}
           dependencyStatusIds={effectiveDependencyStatusIds(data)}
+          filterScope={data.meta.filter_scope}
           onClose={() => dialogs.setIframeTimeEntryOperation(null)}
           onSuccess={(message) => {
             setNotice(message);
@@ -484,6 +503,11 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
           labels={data.labels}
           baseUrl={baseUrl}
           queryKey={boardQueryKey}
+          projectIds={data.meta.project_ids ?? []}
+          scopeStatusIds={effectiveScopeStatusIds(data)}
+          dependencyStatusIds={effectiveDependencyStatusIds(data)}
+          boardEntityLimit={data.meta.requested_entity_limit ?? data.meta.effective_entity_limit ?? 1500}
+          filterScope={data.meta.filter_scope}
           onClose={(options) => { if (!options?.timeEntryConfirmed) void workTimer.lifecycle.close(workTimeEntry.recording); setWorkTimeEntry(null); }}
           onSuccess={(message) => { setNotice(message); setWorkTimeEntry(null); }}
           onTimeEntrySubmitting={() => workTimer.lifecycle.submitting(workTimeEntry.recording)}

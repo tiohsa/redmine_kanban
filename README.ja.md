@@ -84,7 +84,15 @@ pnpm run build
 
 プラグイン全体の設定画面はありません。各ユーザーはボード上でスイムレーン、非表示ステータス、停滞閾値、並び替え、表示幅、文字サイズ、子チケット表示、最大表示件数を設定できます。最大表示件数のデフォルトは1,500件です。カード移動では、ユーザーが明示したレーン属性とステータスだけを変更し、Redmine の Workflow と権限を正とします。
 
-APIは対象scopeを完全な単一snapshotとして返します。membershipはprimary Issueと、そのprimaryを表示するために必要なdependency-only descendantのunique unionです。primaryがちょうど上限に達した場合もdescendantの存在をprobeし、対象が上限を超える場合は一部Issueを返さず、構造化422エラーを返します。最大表示件数はページサイズではなくAdmission Controlです。サーバーは `REDMINE_KANBAN_MAX_BOARD_ENTITIES`（デフォルト5,000）、`REDMINE_KANBAN_MAX_RESPONSE_BYTES`（デフォルト8 MiB）、`REDMINE_KANBAN_MAX_BOARD_QUERIES`（デフォルト20）で資源を制限します。cursor、offset、子ツリーの追加取得、Load more操作はありません。運用時に性能ログが必要な場合だけ `REDMINE_KANBAN_PERF_LOG=1` を指定してください。
+APIは対象Project/StatusおよびIssue filter scopeの完全な単一snapshotを返します。Subject、担当者、Tracker、Priority、期限filterはAdmission前にserver側のprimary membershipを絞ります。dependency descendantがfilterに一致する場合、そのprimary ancestorもmembershipに残し、各primaryの完全なdependency subtreeをsnapshotに含めます。Frontendも最終表示のため同じfilterを適用します。membershipはprimary Issueと、そのprimaryを表示するために必要なdependency-only descendantのunique unionです。primaryがちょうど上限に達した場合もdescendantの存在をprobeし、対象が上限を超える場合は一部Issueを返さず、構造化422エラーを返します。最大表示件数はページサイズではなくAdmission Controlです。サーバーは `REDMINE_KANBAN_MAX_BOARD_ENTITIES`（デフォルト5,000）、`REDMINE_KANBAN_MAX_RESPONSE_BYTES`（デフォルト8 MiB）、`REDMINE_KANBAN_MAX_BOARD_QUERIES`（デフォルト20）で資源を制限します。cursor、offset、子ツリーの追加取得、Load more操作はありません。運用時に性能ログが必要な場合だけ `REDMINE_KANBAN_PERF_LOG=1` を指定してください。
+
+サーバー側の件数上限だけを無効にする場合は、Redmineプロセスの環境変数を次のように設定して再起動します。
+
+```sh
+REDMINE_KANBAN_MAX_BOARD_ENTITIES=0
+```
+
+ユーザー側の最大表示件数（デフォルト1,500件）は引き続き有効です。応答サイズとSQL回数の制限も維持されます。正の整数はサーバー上限の指定件数として扱い、未設定・空・不正値は5,000件になります。無効化時はmetadata、snapshotのmeta、件数超過エラーの `server_entity_limit` が `null` になります。
 
 ## 技術スタック
 

@@ -83,7 +83,15 @@ pnpm run build
 
 There is no plugin-wide configuration screen. Each user can set swimlanes, hidden statuses, aging thresholds, sorting, fit mode, font size, subtask display, and the maximum board entity count from the board. The default maximum is 1,500 unique Issue entities; blank or invalid values return to 1,500. Card moves only apply the status and any lane attribute explicitly selected by the user; Redmine workflow and permissions remain authoritative.
 
-Board data is one complete snapshot for the requested project/status scope. Membership is the unique union of primary Issues and dependency-only descendants needed to represent those primaries; even an exact primary-limit boundary probes for descendants. The configured count is an admission limit, not a page size: if the complete scope exceeds it, the API returns a structured 422 error and no Issue entities. The server applies the lower of the requested limit and `REDMINE_KANBAN_MAX_BOARD_ENTITIES` (default 5,000), enforces the snapshot SQL limit `REDMINE_KANBAN_MAX_BOARD_QUERIES` (default 20), the total SQL limit `REDMINE_KANBAN_MAX_TOTAL_BOARD_QUERIES` (default 100), and `REDMINE_KANBAN_MAX_RESPONSE_BYTES` (default 8 MiB). Set `REDMINE_KANBAN_PERF_LOG=1` to log snapshot resource measurements. There is no Load more, cursor, offset, or subtree recovery operation.
+Board data is one complete snapshot for the requested project/status and Issue-filter scope. Subject, assignee, tracker, priority, and due filters narrow server-side primary membership before admission. A matching dependency descendant also retains its primary ancestor, and the complete dependency subtree needed to represent each selected primary remains in the snapshot. The frontend retains the same filters for final display. Even an exact primary-limit boundary probes for descendants. The configured count is an admission limit, not a page size: if the complete scope exceeds it, the API returns a structured 422 error and no Issue entities. The server applies the lower of the requested limit and `REDMINE_KANBAN_MAX_BOARD_ENTITIES` (default 5,000), enforces the snapshot SQL limit `REDMINE_KANBAN_MAX_BOARD_QUERIES` (default 20), the total SQL limit `REDMINE_KANBAN_MAX_TOTAL_BOARD_QUERIES` (default 100), and `REDMINE_KANBAN_MAX_RESPONSE_BYTES` (default 8 MiB). Set `REDMINE_KANBAN_PERF_LOG=1` to log snapshot resource measurements. There is no Load more, cursor, offset, or subtree recovery operation.
+
+To disable only the server entity-count cap, set the following environment variable on the Redmine process and restart it:
+
+```sh
+REDMINE_KANBAN_MAX_BOARD_ENTITIES=0
+```
+
+The user's maximum board entity count still applies (default 1,500), and response-size and SQL limits remain enabled. A positive integer sets the server cap; an unset, blank, or invalid value uses 5,000. When the server cap is disabled, metadata, snapshot metadata, and entity-count errors report `server_entity_limit: null`.
 
 ## Technology Stack
 
@@ -224,7 +232,7 @@ This project is licensed under the GNU General Public License v2.0 (GPLv2).
 
 ### Recovery and saved views
 
-If the initial snapshot exceeds a resource limit, the toolbar still loads project and status choices from `GET /projects/:project_id/kanban/metadata`. This permission-checked endpoint returns `board` identity, `projects` (the board subtree), `viewable_projects`, `statuses`, and `server_entity_limit`; it does not return Issues, counts, assignees, or a snapshot. The existing `bootstrap` response remains unchanged. Narrow projects or statuses to request a complete snapshot. Subject, assignee and due-date filters operate on the client and do not reduce the fetched entity count. Metadata failures have a Retry action; entity, response-size and query-limit errors remain distinct.
+If the initial snapshot exceeds a resource limit, the toolbar still loads project and status choices from `GET /projects/:project_id/kanban/metadata`. This permission-checked endpoint returns `board` identity, `projects` (the board subtree), `viewable_projects`, `statuses`, and `server_entity_limit`; it does not return Issues, counts, assignees, or a snapshot. The existing `bootstrap` response remains unchanged. Narrow projects, statuses, or Issue filters to request a complete snapshot. Subject, assignee, tracker, priority, and due filters reduce server-side primary membership before the entity limit; the frontend reapplies them for final display. Metadata failures have a Retry action; entity, response-size and query-limit errors remain distinct.
 
 The **Saved views** toolbar control supports Save new, Apply, Overwrite, Rename and confirmed Delete. A view stores all filters (including due days and priority selection semantics), ordered sorting, lane type, hidden status IDs and the viewable-projects switch. Font size, full screen, fit mode, card mode, subtasks, aging, entity limits and timers are excluded. Manual changes show **Modified** and are saved only with an explicit operation. Deleting a view retains the current conditions.
 
