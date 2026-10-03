@@ -113,7 +113,7 @@ describe('board snapshot refresh lifecycle', () => {
     expect(result.current.presentationData?.issues[0]?.subject).toBe('Recovered issue');
   });
 
-  it('hides the prior scope presentation as soon as a debounced scope change is requested', async () => {
+  it('shows only the prior grid while a debounced scope change is requested', async () => {
     const refreshed = deferred<ReturnType<typeof makeBoardSnapshot>>();
     let boardRequests = 0;
     vi.mocked(getJson).mockImplementation((url) => {
@@ -130,7 +130,9 @@ describe('board snapshot refresh lifecycle', () => {
 
     rerender({ statusIds: [2] });
     expect(result.current.data).toBeNull();
-    expect(result.current.presentationData).toBeNull();
+    expect(result.current.presentationData?.issues).toEqual([]);
+    expect(result.current.presentationData?.columns).toEqual([{ id: 2, name: 'Open', is_closed: false }]);
+    expect(result.current.presentationData?.lanes).toEqual(makeBoardSnapshot().lanes);
     expect(result.current.refreshing).toBe(true);
   });
 

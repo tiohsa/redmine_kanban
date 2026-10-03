@@ -36,8 +36,8 @@ export function useBoardPresentation({
   }, [agingDangerDays, agingExcludeClosed, agingWarnDays, data, laneType]);
 
   const primaryFilteredData = useMemo(
-    () => applyBoardDataFilters(displayData, showSubtasks, filters.statusIds, filters.trackerIds),
-    [displayData, filters.statusIds, filters.trackerIds, showSubtasks],
+    () => applyBoardDataFilters(displayData, showSubtasks, filters.statusIds),
+    [displayData, filters.statusIds, showSubtasks],
   );
   const issues = useMemo(
     () => buildVisibleIssues(primaryFilteredData, filters, hiddenStatusIds, pendingDeleteIssue),

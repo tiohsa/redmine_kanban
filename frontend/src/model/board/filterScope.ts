@@ -13,6 +13,11 @@ export type BoardFilterScope = {
   date_anchor?: string | null;
 };
 
+export function hasActiveBoardFilterScope(scope: BoardFilterScope | undefined): boolean {
+  return Boolean(scope && (scope.q || scope.assignee_ids.length || scope.include_unassigned
+    || scope.tracker_ids.length || scope.priority_filter_enabled || scope.due !== 'all'));
+}
+
 const TIME_RELATIVE_DUE = new Set<Filters['due']>(['overdue', 'thisweek', '1day', '3days', '7days', 'custom']);
 
 function positiveIds(values: Iterable<number>): number[] {

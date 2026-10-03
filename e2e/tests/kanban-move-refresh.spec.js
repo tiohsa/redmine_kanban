@@ -35,7 +35,7 @@ async function openIssueAndReturnPosition(page, issueId, columnIndex) {
   throw new Error(`Could not locate issue ${issueId} on the canvas`);
 }
 
-test('move keeps the filtered canvas mounted and read-only until its authoritative snapshot arrives', async ({ page, baseURL }) => {
+test('filtered moves apply bounded deltas without replacing the board snapshot', async ({ page, baseURL }) => {
   const root = baseURL || process.env.REDMINE_BASE_URL || 'http://127.0.0.1:3002';
   const project = projectPath(root);
   await login(page, root);
@@ -69,7 +69,6 @@ test('move keeps the filtered canvas mounted and read-only until its authoritati
   const issueId = createdIssue.id;
   let cleanupLockVersion = createdIssue.lock_version;
   let moveCompleted = false;
-  let releaseSnapshot;
   const filterText = subject.toLowerCase();
   let issue;
 
@@ -103,23 +102,12 @@ test('move keeps the filtered canvas mounted and read-only until its authoritati
       localStorage.setItem(`rk_card_display_mode:user:${userId}`, 'single_line');
     }, { userId, filterText });
 
-    let notifySnapshotPaused;
-    let snapshotPaused;
-    const armSnapshotGate = () => {
-      snapshotPaused = new Promise((resolve) => { notifySnapshotPaused = resolve; });
-      waitForSnapshot = true;
-    };
-    let snapshotGate = null;
-    let waitForSnapshot = false;
-    await page.route('**/kanban/data?*', async (route) => {
-      const url = new URL(route.request().url());
-      if (waitForSnapshot && url.searchParams.get('filter_q') === filterText) {
-        waitForSnapshot = false;
-        snapshotGate = new Promise((resolve) => { releaseSnapshot = resolve; });
-        notifySnapshotPaused();
-        await snapshotGate;
-      }
-      await route.continue();
+    let pageSnapshotRequests = 0;
+    let pageMetadataRequests = 0;
+    page.on('request', (request) => {
+      const url = new URL(request.url());
+      if (request.method() === 'GET' && url.pathname.endsWith('/kanban/data')) pageSnapshotRequests += 1;
+      if (request.method() === 'GET' && url.pathname.endsWith('/kanban/metadata')) pageMetadataRequests += 1;
     });
 
     const firstFilteredSnapshot = page.waitForResponse((response) => (
@@ -143,11 +131,11 @@ test('move keeps the filtered canvas mounted and read-only until its authoritati
     const filterButton = page.locator('.rk-toolbar button[aria-haspopup="dialog"]').first();
     const filterButtonHandle = await filterButton.elementHandle();
     const filterButtonBox = await filterButton.boundingBox();
-    const metadataRequests = [];
-    page.on('request', (request) => {
-      if (request.url().includes('/kanban/metadata')) metadataRequests.push(request.url());
-    });
-    armSnapshotGate();
+    const createButtonHandle = await createButton.elementHandle();
+    const createButtonBox = await createButton.boundingBox();
+    expect(pageSnapshotRequests).toBe(1);
+    expect(pageMetadataRequests).toBe(1);
+    await expect(createButton).toBeEnabled();
     const moveResponsePromise = page.waitForResponse((response) => (
       response.url().includes(`/kanban/issues/${issueId}/move`) && response.request().method() === 'PATCH'
     ));
@@ -169,22 +157,23 @@ test('move keeps the filtered canvas mounted and read-only until its authoritati
     expect(moveResponse.ok()).toBeTruthy();
     moveCompleted = true;
     const moveResult = await moveResponse.json();
-    expect(moveResult.invalidations?.board_snapshot).toBe(true);
+    expect(moveResult.invalidations?.board_snapshot).toBe(false);
     cleanupLockVersion = moveResult.issue?.lock_version
       ?? moveResult.issue_updates?.find((entry) => entry.id === issueId)?.lock_version
       ?? cleanupLockVersion;
-    await snapshotPaused;
-    expect(snapshotGate).toBeTruthy();
 
-    await expect(page.locator('.rk-board')).toHaveAttribute('aria-busy', 'true');
+    await expect(page.locator('.rk-board')).toHaveAttribute('aria-busy', 'false');
     await expect(page.locator('.rk-canvas-board')).toBeVisible();
     expect(await canvas.evaluate((element, original) => element === original, canvasHandle)).toBe(true);
-    await expect(createButton).toBeDisabled();
+    await expect(createButton).toBeEnabled();
+    expect(await createButton.evaluate((element, original) => element === original, createButtonHandle)).toBe(true);
+    expect(await createButton.boundingBox()).toEqual(createButtonBox);
     expect(await toolbar.evaluate((element, original) => element === original, toolbarHandle)).toBe(true);
     expect(await toolbar.boundingBox()).toEqual(toolbarBox);
     expect(await filterButton.evaluate((element, original) => element === original, filterButtonHandle)).toBe(true);
     expect(await filterButton.boundingBox()).toEqual(filterButtonBox);
-    expect(metadataRequests).toEqual([]);
+    expect(pageSnapshotRequests).toBe(1);
+    expect(pageMetadataRequests).toBe(1);
     await expect(page.locator('.rk-popup-info[role="dialog"]')).toHaveCount(0);
     await filterButton.click();
     const filterInput = page.locator('.rk-search-box input');
@@ -199,19 +188,19 @@ test('move keeps the filtered canvas mounted and read-only until its authoritati
     });
     expect(wheelPrevented).toBe(true);
 
-    const filteredRefresh = page.waitForResponse((response) => (
-      response.url().includes('/kanban/data?') && response.request().method() === 'GET' &&
-      new URL(response.url()).searchParams.get('filter_q') === filterText
-    ));
-    releaseSnapshot();
-    const refreshedResponse = await filteredRefresh;
-    expect(refreshedResponse.ok()).toBeTruthy();
-    const refreshed = await refreshedResponse.json();
-    const refreshedIssue = refreshed.entities.find((entry) => entry.id === issueId);
-    expect(refreshedIssue).toMatchObject({ id: issueId, status_id: targetStatusId, assigned_to_id: targetAssignee.id });
-    expect(refreshed.meta.complete).toBe(true);
-    await expect(page.locator('.rk-board')).toHaveAttribute('aria-busy', 'false');
-    await expect(createButton).toBeEnabled();
+    const afterAssigneeMoveResponse = await page.request.get(
+      `${project}/kanban/data?board_entity_limit=5000&filter_q=${encodeURIComponent(filterText)}`,
+    );
+    expect(afterAssigneeMoveResponse.ok()).toBeTruthy();
+    const afterAssigneeMove = await afterAssigneeMoveResponse.json();
+    const afterAssigneeMoveIssue = afterAssigneeMove.entities.find((entry) => entry.id === issueId);
+    expect(afterAssigneeMoveIssue).toMatchObject({
+      id: issueId,
+      status_id: targetStatusId,
+      assigned_to_id: targetAssignee.id,
+      priority_id: sourcePriority.id,
+    });
+    expect(afterAssigneeMove.meta.complete).toBe(true);
     expect(await canvas.evaluate((element, original) => element === original, canvasHandle)).toBe(true);
 
     await page.locator('.rk-toolbar button').filter({
@@ -225,18 +214,17 @@ test('move keeps the filtered canvas mounted and read-only until its authoritati
     await laneTypeSelect.selectOption('priority');
     await settingsButton.click();
     const priorityLanes = [...initialFiltered.lists.priorities].reverse();
-    const sourcePriorityLaneIndex = priorityLanes.findIndex((lane) => String(lane.id) === String(refreshedIssue.priority_id));
+    const sourcePriorityLaneIndex = priorityLanes.findIndex((lane) => String(lane.id) === String(afterAssigneeMoveIssue.priority_id));
     const targetPriorityLaneIndex = priorityLanes.findIndex((lane) => String(lane.id) === String(targetPriority.id));
     expect(sourcePriorityLaneIndex).toBeGreaterThanOrEqual(0);
     expect(targetPriorityLaneIndex).toBeGreaterThanOrEqual(0);
-    const prioritySourceColumnIndex = refreshed.columns.findIndex((column) => column.id === refreshedIssue.status_id);
-    const priorityTargetStatusId = refreshedIssue.allowed_status_ids
-      .find((id) => id !== refreshedIssue.status_id && refreshed.columns.some((column) => column.id === id));
+    const prioritySourceColumnIndex = afterAssigneeMove.columns.findIndex((column) => column.id === afterAssigneeMoveIssue.status_id);
+    const priorityTargetStatusId = afterAssigneeMoveIssue.allowed_status_ids
+      .find((id) => id !== afterAssigneeMoveIssue.status_id && afterAssigneeMove.columns.some((column) => column.id === id));
     expect(priorityTargetStatusId).toBeTruthy();
-    const priorityTargetColumnIndex = refreshed.columns.findIndex((column) => column.id === priorityTargetStatusId);
+    const priorityTargetColumnIndex = afterAssigneeMove.columns.findIndex((column) => column.id === priorityTargetStatusId);
     const priorityCanvasBox = await canvas.boundingBox();
     if (!priorityCanvasBox) throw new Error('Kanban canvas has no layout box');
-    armSnapshotGate();
     const priorityMoveResponsePromise = page.waitForResponse((response) => (
       response.url().includes(`/kanban/issues/${issueId}/move`) && response.request().method() === 'PATCH'
     ));
@@ -252,49 +240,41 @@ test('move keeps the filtered canvas mounted and read-only until its authoritati
     const priorityMoveResponse = await priorityMoveResponsePromise;
     expect(priorityMoveResponse.ok()).toBeTruthy();
     const priorityMoveResult = await priorityMoveResponse.json();
-    expect(priorityMoveResult.invalidations?.board_snapshot).toBe(true);
+    expect(priorityMoveResult.invalidations?.board_snapshot).toBe(false);
     cleanupLockVersion = priorityMoveResult.issue?.lock_version
       ?? priorityMoveResult.issue_updates?.find((entry) => entry.id === issueId)?.lock_version
       ?? cleanupLockVersion;
-    await snapshotPaused;
-    await expect(page.locator('.rk-board')).toHaveAttribute('aria-busy', 'true');
-    await expect(createButton).toBeDisabled();
+    await expect(page.locator('.rk-board')).toHaveAttribute('aria-busy', 'false');
+    await expect(createButton).toBeEnabled();
     expect(await canvas.evaluate((element, original) => element === original, canvasHandle)).toBe(true);
+    expect(await createButton.evaluate((element, original) => element === original, createButtonHandle)).toBe(true);
+    expect(await createButton.boundingBox()).toEqual(createButtonBox);
     expect(await toolbar.evaluate((element, original) => element === original, toolbarHandle)).toBe(true);
     expect(await toolbar.boundingBox()).toEqual(toolbarBox);
     expect(await filterButton.evaluate((element, original) => element === original, filterButtonHandle)).toBe(true);
     expect(await filterButton.boundingBox()).toEqual(filterButtonBox);
-    expect(metadataRequests).toEqual([]);
+    expect(pageSnapshotRequests).toBe(1);
+    expect(pageMetadataRequests).toBe(1);
     await expect(page.locator('.rk-popup-info[role="dialog"]')).toHaveCount(0);
-    const priorityRefresh = page.waitForResponse((response) => (
-      response.url().includes('/kanban/data?') && response.request().method() === 'GET' &&
-      new URL(response.url()).searchParams.get('filter_q') === filterText
-    ));
-    releaseSnapshot();
-    const priorityRefreshResponse = await priorityRefresh;
-    expect(priorityRefreshResponse.ok()).toBeTruthy();
-    const priorityRefreshed = await priorityRefreshResponse.json();
-    const priorityRefreshedIssue = priorityRefreshed.entities.find((entry) => entry.id === issueId);
-    expect(priorityRefreshedIssue).toMatchObject({
+
+    const afterPriorityMoveResponse = await page.request.get(
+      `${project}/kanban/data?board_entity_limit=5000&filter_q=${encodeURIComponent(filterText)}`,
+    );
+    expect(afterPriorityMoveResponse.ok()).toBeTruthy();
+    const afterPriorityMove = await afterPriorityMoveResponse.json();
+    const afterPriorityMoveIssue = afterPriorityMove.entities.find((entry) => entry.id === issueId);
+    expect(afterPriorityMoveIssue).toMatchObject({
       id: issueId,
       status_id: priorityTargetStatusId,
       assigned_to_id: targetAssignee.id,
       priority_id: targetPriority.id,
     });
-    await expect(page.locator('.rk-board')).toHaveAttribute('aria-busy', 'false');
-    await expect(createButton).toBeEnabled();
+    expect(afterPriorityMove.meta.complete).toBe(true);
     expect(await canvas.evaluate((element, original) => element === original, canvasHandle)).toBe(true);
 
-    const authoritativeResponse = await page.request.get(`${project}/kanban/data?board_entity_limit=5000`);
-    expect(authoritativeResponse.ok()).toBeTruthy();
-    const authoritative = await authoritativeResponse.json();
-    expect(authoritative.entities.find((entry) => entry.id === issueId)).toMatchObject({
-      status_id: priorityTargetStatusId,
-      assigned_to_id: targetAssignee.id,
-      priority_id: targetPriority.id,
-    });
+    expect(pageSnapshotRequests).toBe(1);
+    expect(pageMetadataRequests).toBe(1);
     } finally {
-      releaseSnapshot?.();
       if (cleanupLockVersion === undefined || cleanupLockVersion === null
         || (moveCompleted && cleanupLockVersion === createdIssue.lock_version)) {
         const latestResponse = await page.request.get(

@@ -8,6 +8,7 @@ import type { BoardData, Issue } from '../types';
 import { useBulkSubtaskMutation } from './useBulkSubtaskMutation';
 import { HttpError } from '../http';
 import { invalidateBoardSnapshot } from '../useIssueMutation';
+import { useIssueMutation, updateIssueInBoard } from '../../application/board/useIssueMutation';
 
 const postJsonMock = vi.hoisted(() => vi.fn());
 const getJsonMock = vi.hoisted(() => vi.fn());
@@ -99,6 +100,100 @@ describe('useBulkSubtaskMutation', () => {
       expect.objectContaining({ 'Idempotency-Key': expect.any(String) }),
     );
     expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+
+  it('defers bulk created membership and reconciliation until an overlapping filtered move settles', async () => {
+    const queryKey = ['kanban', 'board'] as const;
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const board = makeBoard() as BoardData;
+    board.meta.filter_scope = {
+      q: 'needle', assignee_ids: [], include_unassigned: false, tracker_ids: [],
+      priority_filter_enabled: false, priority_ids: [], include_no_priority: false, due: 'all',
+    };
+    board.columns = [
+      { id: 1, name: 'Open', is_closed: false, count: 10 },
+      { id: 2, name: 'Closed', is_closed: true, count: 1 },
+    ];
+    queryClient.setQueryData(queryKey, board);
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    let finishMove!: (result: { issue: Issue; warning: string }) => void;
+    let finishBulk!: (result: {
+      subtasks: Issue[];
+      invalidations: { issue_ids: number[]; column_counts: boolean };
+    }) => void;
+    const moveResponse = new Promise<{ issue: Issue; warning: string }>((resolve) => { finishMove = resolve; });
+    const bulkResponse = new Promise<{
+      subtasks: Issue[];
+      invalidations: { issue_ids: number[]; column_counts: boolean };
+    }>((resolve) => { finishBulk = resolve; });
+    const onMoveSuccess = vi.fn();
+    let moveStarted = false;
+    postJsonMock.mockReturnValueOnce(bulkResponse);
+
+    const { result } = renderHook(() => {
+      const move = useIssueMutation<{ issueId: number; statusId: number }, { issue: Issue; warning: string }>({
+        queryKey,
+        filteredMove: true,
+        mutationFn: () => { moveStarted = true; return moveResponse; },
+        applyOptimistic: (data, payload) => updateIssueInBoard(data, payload.issueId, (issue) => ({ ...issue, status_id: payload.statusId })),
+        applyServer: (data, response) => updateIssueInBoard(data, response.issue.id, () => response.issue),
+        onSuccess: onMoveSuccess,
+      });
+      const bulk = useBulkSubtaskMutation(
+        '/projects/demo/kanban',
+        queryKey,
+        [1],
+        [1, 2],
+        [1, 2],
+        false,
+        board.meta.filter_scope,
+      );
+      return { move, bulk };
+    }, { wrapper: createWrapper(queryClient) });
+
+    let move!: Promise<unknown>;
+    let bulk!: Promise<unknown>;
+    await act(async () => {
+      move = result.current.move.mutateAsync({ issueId: 1, statusId: 2 });
+      await waitFor(() => expect(moveStarted).toBe(true));
+    });
+    await act(async () => {
+      bulk = result.current.bulk.mutateAsync([
+        { parent_issue_id: 1, subject: 'New child', tracker_id: 2, project_id: 1 },
+      ]);
+      await waitFor(() => expect(postJsonMock).toHaveBeenCalledTimes(1));
+    });
+
+    await act(async () => {
+      finishBulk({
+        subtasks: [makeIssue(101)],
+        invalidations: { issue_ids: [2], column_counts: true },
+      });
+      await bulk;
+    });
+
+    let current = queryClient.getQueryData<BoardData>(queryKey);
+    expect(current?.issues[0]?.subtasks?.map((subtask) => subtask.id)).toEqual([2]);
+    expect(current?.columns.map((column) => column.count)).toEqual([9, 2]);
+    expect(getJsonMock).not.toHaveBeenCalled();
+    expect(invalidateSpy).not.toHaveBeenCalled();
+    expect(onMoveSuccess).not.toHaveBeenCalled();
+
+    await act(async () => {
+      finishMove({ issue: { ...makeIssue(1), status_id: 2, lock_version: 4 }, warning: 'move saved' });
+      await move;
+    });
+
+    current = queryClient.getQueryData<BoardData>(queryKey);
+    expect(current?.issues[0]?.subtasks?.map((subtask) => subtask.id)).toEqual([2]);
+    expect(current?.issues[0]?.status_id).toBe(2);
+    expect(current?.columns.map((column) => column.count)).toEqual([9, 2]);
+    expect(getJsonMock).not.toHaveBeenCalled();
+    expect(onMoveSuccess).toHaveBeenCalledWith(expect.objectContaining({ warning: 'move saved' }));
+    expect(invalidateSpy).toHaveBeenCalledTimes(1);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey, exact: true });
   });
 
   it('preserves the current project scope on bulk mutation requests', async () => {

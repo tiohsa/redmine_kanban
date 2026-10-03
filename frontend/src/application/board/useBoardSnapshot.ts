@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ToolbarViewModel } from '../../model/board/types';
+import type { BoardData, ToolbarViewModel } from '../../model/board/types';
 import { canonicalBoardFilterScope, type BoardFilterScope } from '../../model/board/filterScope';
 import { getJson, isHttpError } from '../../infrastructure/api/http';
 import { parseBoardMetadata } from '../../infrastructure/api/boardMetadata';
@@ -24,6 +24,24 @@ const EMPTY_FILTER_SCOPE: BoardFilterScope = {
   q: '', assignee_ids: [], include_unassigned: false, tracker_ids: [],
   priority_filter_enabled: false, priority_ids: [], include_no_priority: false, due: 'all',
 };
+
+function emptyPresentationBoard(previous: BoardData): BoardData {
+  return {
+    ...previous,
+    ok: false,
+    contract_version: undefined,
+    scope_fingerprint: undefined,
+    meta: {
+      ...previous.meta,
+      can_move: false, can_create: false, can_delete: false,
+      complete: false, entity_count: 0, scope_fingerprint: undefined,
+    },
+    columns: previous.columns.map(({ count: _count, ...column }) => column),
+    issues: [],
+    entities: [],
+    tree: { root_ids: [], children_by_parent_id: {} },
+  };
+}
 
 export function useBoardSnapshot({
   baseUrl,
@@ -95,8 +113,9 @@ export function useBoardSnapshot({
       releaseBoardFreshnessAuthority(queryClient, boardQueryKey, authority);
     };
   }, [authority, boardQueryKey, queryClient]);
-  const boardQuery = useQuery({
+  const boardQuery = useQuery<BoardData>({
     queryKey: boardQueryKey,
+    placeholderData: (previousData) => previousData,
     queryFn: async ({ signal }) => {
       const generation = authority.currentGeneration;
       const result = normalizeBoardData(parseBoardSnapshotV3(await getJson<unknown>(
@@ -113,9 +132,10 @@ export function useBoardSnapshot({
   const accessDenied = permissionLost || (isHttpError(boardQuery.error) && [401, 403, 404].includes(boardQuery.error.status));
   const displayBlocked = accessDenied || invalidScope || !scopeChoicesReady;
   const refreshing = snapshotRefreshState === 'refreshing';
-  const data = displayBlocked || snapshotRefreshState !== 'ready' ? null : boardQuery.data ?? null;
+  const transitioning = requestedScopeKey !== settledScopeKey || boardQuery.isPlaceholderData;
+  const data = displayBlocked || snapshotRefreshState !== 'ready' || transitioning ? null : boardQuery.data ?? null;
   const presentationData = displayBlocked || snapshotRefreshState === 'failed'
-    || (refreshing && requestedScopeKey !== settledScopeKey) ? null : boardQuery.data ?? null;
+    ? null : transitioning && boardQuery.data ? emptyPresentationBoard(boardQuery.data) : boardQuery.data ?? null;
   const metadata = accessDenied || metadataQuery.error ? null : metadataQuery.data;
   const toolbarData = useMemo<ToolbarViewModel>(() => presentationData ?? ({
     meta: {
@@ -184,8 +204,8 @@ export function useBoardSnapshot({
     boardQueryKey,
     data,
     presentationData,
-    refreshing,
-    loading: boardQuery.isLoading,
+    refreshing: refreshing || transitioning,
+    loading: boardQuery.isLoading || transitioning,
     refresh,
     toolbarData,
   };

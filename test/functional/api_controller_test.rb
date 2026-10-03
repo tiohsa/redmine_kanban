@@ -1469,14 +1469,184 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
 
     assert_response :success
     result = JSON.parse(@response.body)
-    assert_equal true, result.dig('invalidations', 'board_snapshot')
+    assert_equal false, result.dig('invalidations', 'board_snapshot')
     assert_equal issue.id, result.dig('issue', 'id')
     assert_equal closed_status.id, result.dig('issue', 'status_id')
     assert_equal true, result.dig('issue', 'status_is_closed')
     assert result.fetch('issue').key?('can_log_time')
-    assert_empty result.fetch('issue_updates')
+    assert_includes result.fetch('issue_updates').map { |entity| entity['id'] }, issue.id
     assert_empty result.fetch('tree_changes')
     assert_equal closed_status.id, issue.reload.status_id
+  end
+
+  def test_active_assignee_filter_move_returns_eviction_without_snapshot_invalidation
+    issue = build_issue(subject: 'Assignee filter move eviction', assigned_to: @user)
+    other_user = users(:users_003)
+    ensure_member!(other_user)
+    filter_params = { filter_assignee_ids: [@user.id] }
+    before_ids = index_response(filter_params).fetch('entities').map { |entity| entity['id'] }
+
+    patch :move, params: {
+      project_id: @project.identifier, id: issue.id,
+      filter_assignee_ids: [@user.id],
+      issue: { status_id: issue.status_id, assigned_to_id: other_user.id, lock_version: issue.lock_version }
+    }
+
+    assert_response :success
+    result = JSON.parse(@response.body)
+    assert_equal false, result.dig('invalidations', 'board_snapshot')
+    assert_includes result.fetch('evicted_issue_ids'), issue.id
+    refute_includes result.fetch('issue_updates').map { |entity| entity['id'] }, issue.id
+    assert_equal other_user.id, issue.reload.assigned_to_id
+    assert_move_delta_matches_snapshot(before_ids, result, filter_params)
+  end
+
+  def test_active_assignee_filter_move_returns_entering_issue
+    issue = build_issue(subject: 'Assignee filter move entry', assigned_to: users(:users_003))
+    ensure_member!(users(:users_003))
+    filter_params = { filter_assignee_ids: [@user.id] }
+    before_ids = index_response(filter_params).fetch('entities').map { |entity| entity['id'] }
+
+    patch :move, params: {
+      project_id: @project.identifier, id: issue.id,
+      filter_assignee_ids: [@user.id],
+      issue: { status_id: issue.status_id, assigned_to_id: @user.id, lock_version: issue.lock_version }
+    }
+
+    assert_response :success
+    result = JSON.parse(@response.body)
+    assert_equal false, result.dig('invalidations', 'board_snapshot')
+    assert_includes result.fetch('issue_updates').map { |entity| entity['id'] }, issue.id
+    refute_includes result.fetch('evicted_issue_ids'), issue.id
+    assert_equal @user.id, issue.reload.assigned_to_id
+    assert_move_delta_matches_snapshot(before_ids, result, filter_params)
+  end
+
+  def test_active_assignee_filter_move_evicts_ancestor_and_dependency_siblings
+    open_status = IssueStatus.where(is_closed: false).first
+    closed_status = IssueStatus.where(is_closed: true).first
+    assert open_status, 'fixture must provide an open status'
+    assert closed_status, 'fixture must provide a closed status'
+    other_user = users(:users_003)
+    ensure_member!(other_user)
+    parent = build_issue(subject: 'Assignee closure parent', status: open_status, assigned_to: other_user)
+    matching_child = build_issue(subject: 'Assignee closure match', parent_issue_id: parent.id, status: closed_status, assigned_to: @user)
+    sibling = build_issue(subject: 'Assignee closure sibling', parent_issue_id: parent.id, status: closed_status, assigned_to: other_user)
+    filter_params = {
+      filter_q: 'Assignee closure match',
+      filter_assignee_ids: [@user.id],
+      scope_status_ids_present: '1', scope_status_ids: [open_status.id],
+      dependency_status_ids_present: '1', dependency_status_ids: [open_status.id, closed_status.id]
+    }
+    before_ids = index_response(filter_params).fetch('entities').map { |entity| entity['id'] }
+    assert_equal [parent.id, matching_child.id, sibling.id].sort, before_ids.sort
+
+    patch :move, params: {
+      project_id: @project.identifier, id: matching_child.id,
+      **filter_params,
+      issue: { status_id: matching_child.status_id, assigned_to_id: other_user.id, lock_version: matching_child.lock_version }
+    }
+
+    assert_response :success
+    result = JSON.parse(@response.body)
+    assert_equal false, result.dig('invalidations', 'board_snapshot')
+    assert_includes result.fetch('evicted_issue_ids'), parent.id
+    assert_includes result.fetch('evicted_issue_ids'), matching_child.id
+    assert_includes result.fetch('evicted_issue_ids'), sibling.id
+    assert_move_delta_matches_snapshot(before_ids, result, filter_params)
+  end
+
+  def test_active_priority_filter_move_includes_propagated_child_delta
+    selected_priority = IssuePriority.active.sorted.first
+    other_priority = IssuePriority.active.where.not(id: selected_priority.id).first
+    assert_operator IssuePriority.active.count, :>=, 2, 'fixture must provide two active priorities'
+    parent = build_issue(subject: 'Priority move filtered parent', priority: other_priority)
+    child = build_issue(subject: 'Priority move filtered child', parent_issue_id: parent.id, priority: other_priority)
+
+    patch :move, params: {
+      project_id: @project.identifier, id: parent.id,
+      filter_priority_enabled: '1', filter_priority_ids: [selected_priority.id],
+      issue: { status_id: parent.status_id, priority_id: selected_priority.id, lock_version: parent.lock_version }
+    }
+
+    assert_response :success
+    result = JSON.parse(@response.body)
+    assert_equal false, result.dig('invalidations', 'board_snapshot')
+    update_ids = result.fetch('issue_updates').map { |entity| entity['id'] }
+    assert_includes update_ids, parent.id
+    assert_includes update_ids, child.id
+    assert_equal selected_priority.id, parent.reload.priority_id
+    assert_equal selected_priority.id, child.reload.priority_id
+  end
+
+  def test_active_search_move_returns_full_entering_hierarchy_closure
+    selected_status = IssueStatus.where(is_closed: false).first
+    outside_status = IssueStatus.create!(name: 'Move outside primary scope', is_closed: false)
+    assert selected_status, 'fixture must provide an open status'
+    tracker = @project.trackers.first || Tracker.first
+    parent = build_issue(subject: 'Search closure parent', status: outside_status)
+    child = build_issue(subject: 'Search closure match', parent_issue_id: parent.id, status: selected_status)
+    sibling = build_issue(subject: 'Search closure sibling', parent_issue_id: parent.id, status: outside_status)
+    WorkflowTransition.create!(tracker: tracker, role: @role, old_status_id: outside_status.id, new_status: selected_status)
+    filter_params = {
+      filter_q: 'Search closure match',
+      issue_status_ids: [selected_status.id, outside_status.id], exclude_status_ids: [outside_status.id],
+      scope_status_ids_present: '1', scope_status_ids: [selected_status.id],
+      dependency_status_ids_present: '1', dependency_status_ids: [selected_status.id, outside_status.id]
+    }
+    before_ids = index_response(filter_params).fetch('entities').map { |entity| entity['id'] }
+    assert_equal [child.id].sort, before_ids.sort
+
+    patch :move, params: {
+      project_id: @project.identifier, id: parent.id,
+      **filter_params,
+      issue: { status_id: selected_status.id, lock_version: parent.reload.lock_version }
+    }
+
+    assert_response :success
+    result = JSON.parse(@response.body)
+    assert_equal false, result.dig('invalidations', 'board_snapshot')
+    update_ids = result.fetch('issue_updates').map { |entity| entity['id'] }
+    assert_includes update_ids, parent.id
+    assert_includes update_ids, sibling.id
+    assert_includes result.fetch('tree_changes'), { 'type' => 'attach', 'parent_id' => parent.id, 'child_id' => child.id }
+    assert_includes result.fetch('tree_changes'), { 'type' => 'attach', 'parent_id' => parent.id, 'child_id' => sibling.id }
+    assert_move_delta_matches_snapshot(before_ids, result, filter_params)
+  end
+
+  def test_active_search_move_family_overflow_commits_and_invalidates_snapshot
+    primary_status = IssueStatus.where(is_closed: false).first
+    dependency_status = IssueStatus.create!(name: 'Filtered move dependency scope', is_closed: false)
+    assert primary_status, 'fixture must provide an open status'
+    other_user = users(:users_003)
+    ensure_member!(other_user)
+    parent = build_issue(subject: 'Overflow closure parent', status: dependency_status, assigned_to: other_user)
+    child = build_issue(subject: 'Overflow closure match', parent_issue_id: parent.id, status: primary_status, assigned_to: @user)
+    sibling = build_issue(subject: 'Overflow closure sibling', parent_issue_id: parent.id, status: dependency_status, assigned_to: other_user)
+    filter_params = {
+      filter_q: 'Overflow closure match',
+      filter_assignee_ids: [@user.id],
+      issue_status_ids: [primary_status.id, dependency_status.id], exclude_status_ids: [dependency_status.id],
+      scope_status_ids_present: '1', scope_status_ids: [primary_status.id],
+      dependency_status_ids_present: '1', dependency_status_ids: [primary_status.id, dependency_status.id]
+    }
+    before_ids = index_response(filter_params.merge(board_entity_limit: 2)).fetch('entities').map { |entity| entity['id'] }
+    assert_equal [child.id], before_ids
+
+    patch :move, params: {
+      project_id: @project.identifier, id: child.id, board_entity_limit: 2,
+      **filter_params,
+      issue: { status_id: child.status_id, assigned_to_id: other_user.id, lock_version: child.lock_version }
+    }
+
+    assert_response :success
+    result = JSON.parse(@response.body)
+    assert_equal true, result.dig('invalidations', 'board_snapshot')
+    assert_empty result.fetch('issue_updates')
+    assert_empty result.fetch('tree_changes')
+    assert_equal other_user.id, child.reload.assigned_to_id
+    assert parent.persisted?
+    assert sibling.persisted?
   end
 
   private
@@ -1546,6 +1716,15 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     get :index, params: { project_id: @project.identifier, board_entity_limit: 1500 }.merge(extra_params)
     assert_response :success
     JSON.parse(@response.body)
+  end
+
+  def assert_move_delta_matches_snapshot(before_ids, result, snapshot_params)
+    get :index, params: { project_id: @project.identifier, board_entity_limit: 1500 }.merge(snapshot_params)
+    assert_response :success
+    after_ids = JSON.parse(@response.body).fetch('entities').map { |entity| entity['id'] }
+    delta_ids = result.fetch('issue_updates').map { |entity| entity['id'] }
+    calculated_ids = ((before_ids + delta_ids) - result.fetch('evicted_issue_ids')).uniq.sort
+    assert_equal after_ids.sort, calculated_ids
   end
 
   def measured_board_snapshot(issue_status_ids: nil)

@@ -13,7 +13,6 @@ export function applyBoardDataFilters(
   displayData: BoardData | null,
   showSubtasks: boolean,
   statusIds: number[],
-  trackerIds: number[] = [],
 ): BoardData | null {
   if (!displayData) return null;
 
@@ -32,41 +31,13 @@ export function applyBoardDataFilters(
       issues: flattenIssueTree(result.issues),
     };
   }
-  result = { ...result, columns: buildPrimaryColumns(result, trackerIds, statusIds) };
+  result = { ...result, columns: buildPrimaryColumns(result, statusIds) };
   return result;
 }
 
-export function buildPrimaryColumns(data: BoardData, selectedTrackerIds: number[], statusIds: number[]): Column[] {
+export function buildPrimaryColumns(data: BoardData, statusIds: number[]): Column[] {
   const statusFilter = new Set(statusIds);
-  const catalog = new Map(data.lists.trackers.map((tracker) => [tracker.id, tracker]));
-  let trackerStatusIds: Set<number> | null = null;
-
-  if (selectedTrackerIds.length > 0) {
-    const selectedTrackers = selectedTrackerIds.map((trackerId) => catalog.get(trackerId));
-    const metadataComplete = selectedTrackers.every((tracker) => (
-      tracker !== undefined && Array.isArray(tracker.workflow_status_ids)
-    ));
-
-    if (metadataComplete) {
-      const validStatusIds = new Set(data.columns.map((column) => column.id));
-      const selectedStatusIds = new Set<number>();
-      for (const tracker of selectedTrackers) {
-        for (const statusId of tracker!.workflow_status_ids ?? []) {
-          if (validStatusIds.has(statusId)) selectedStatusIds.add(statusId);
-        }
-        const defaultStatusId = tracker!.default_status_id;
-        if (defaultStatusId !== null && defaultStatusId !== undefined && validStatusIds.has(defaultStatusId)) {
-          selectedStatusIds.add(defaultStatusId);
-        }
-      }
-      if (selectedStatusIds.size > 0) trackerStatusIds = selectedStatusIds;
-    }
-  }
-
-  return data.columns.filter((column) => (
-    (!trackerStatusIds || trackerStatusIds.has(column.id))
-    && (statusFilter.size === 0 || statusFilter.has(column.id))
-  ));
+  return data.columns.filter((column) => statusFilter.size === 0 || statusFilter.has(column.id));
 }
 
 export function withContextColumns(
@@ -93,8 +64,7 @@ export function buildPresentationProjection(
   hiddenStatusIds: ReadonlySet<number> = new Set(),
 ): BoardPresentationProjection {
   // Select roots from every status the user can actually see, then close the
-  // rendered columns over those roots. Tracker metadata determines primary
-  // columns, but must not hide a filtered historical status after promotion.
+  // rendered columns over those roots.
   const candidateColumnIds = new Set(data.columns
     .filter((column) => !hiddenStatusIds.has(column.id) && (statusIds.length === 0 || statusIds.includes(column.id)))
     .map((column) => column.id));

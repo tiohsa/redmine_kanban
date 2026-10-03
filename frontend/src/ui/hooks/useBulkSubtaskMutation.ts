@@ -85,6 +85,12 @@ export function useBulkSubtaskMutation(
   const inFlight = useRef(new Map<string, Promise<BulkMutationResponse>>());
 
   return useMutation({
+    onMutate: () => {
+      const authority = getBoardFreshnessAuthority(queryClient, queryKey);
+      const current = queryClient.getQueryData<BoardData>(queryKey);
+      if (authority.snapshotRefreshState !== 'ready') throw new Error(current?.labels.loading ?? 'Loading');
+      return { authority, token: current ? authority.beginMutation(current) : undefined };
+    },
     mutationFn: async (payload: BulkCreatePayload | SubtaskPayload[]) => {
       const normalized = Array.isArray(payload)
         ? {
@@ -121,12 +127,15 @@ export function useBulkSubtaskMutation(
         if (inFlight.current.get(signature) === request) inFlight.current.delete(signature);
       }
     },
-    onSuccess: (result, payload) => {
+    onSuccess: (result, payload, context) => {
       const normalized = Array.isArray(payload)
         ? { parent: { parent_issue_id: payload[0]?.parent_issue_id, project_id: payload[0]?.project_id }, subtasks: payload }
         : payload;
       const storageKey = getOrCreateBulkIdempotencyKey(stableSerialize(normalized)).storageKey;
       discardBulkIdempotencyKey(storageKey);
+      const current = queryClient.getQueryData<BoardData>(queryKey);
+      if (current) context?.authority.observe(current);
+      if (context?.token && context.authority.isMutationDeferred(context.token)) return;
       if (deferBoardRefresh) return;
       if (isBoardSnapshotInvalidated(result)) {
         invalidateBoardSnapshot(queryClient, queryKey);
@@ -196,6 +205,13 @@ export function useBulkSubtaskMutation(
             });
         }
       }
+    },
+    onSettled: (_result, _error, _payload, context) => {
+      if (!context) return;
+      if (context.token && context.authority.finishMutation(context.token)) {
+        void invalidateBoardSnapshot(queryClient, queryKey, { preserveDisplay: true });
+      }
+      releaseBoardFreshnessAuthority(queryClient, queryKey, context.authority);
     },
   });
 }

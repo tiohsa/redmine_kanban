@@ -13,6 +13,19 @@ export type FreshnessRequest = {
   readonly entitySnapshots: ReadonlyMap<number, string>;
 };
 
+type MutationGroup = {
+  scopeFingerprint: string;
+  activeIds: Set<number>;
+  filteredMove: boolean;
+  needsSnapshot: boolean;
+  obsolete: boolean;
+};
+
+export type BoardMutationToken = {
+  readonly id: number;
+  readonly group: MutationGroup;
+};
+
 function scopeFingerprint(data: BoardData): string {
   return data.scope_fingerprint
     ?? data.meta.scope_fingerprint
@@ -45,6 +58,44 @@ export class BoardFreshnessAuthority {
   private activeRequests = new Set<number>();
   private entityAbortControllers = new Map<number, AbortController>();
   private invalidationListeners = new Set<() => void>();
+  private mutations = new Map<number, BoardMutationToken>();
+  private mutationGroup: MutationGroup | undefined;
+
+  beginMutation(data: BoardData, filteredMove = false): BoardMutationToken {
+    this.syncScope(data);
+    const group = this.mutationGroup ?? {
+      scopeFingerprint: scopeFingerprint(data), activeIds: new Set<number>(),
+      filteredMove: false, needsSnapshot: false, obsolete: false,
+    };
+    this.mutationGroup = group;
+    const token = { id: ++this.nextRequestId, group };
+    group.activeIds.add(token.id);
+    group.filteredMove ||= filteredMove;
+    this.mutations.set(token.id, token);
+    if (group.activeIds.size > 1 && group.filteredMove && !group.needsSnapshot) {
+      // Membership can change without changing the Issue DTO. Do not use DTO
+      // equality to order overlapping family deltas or their follow-up reads.
+      group.needsSnapshot = true;
+      this.invalidate();
+    }
+    return token;
+  }
+
+  isMutationDeferred(token: BoardMutationToken): boolean {
+    return token.group.needsSnapshot || token.group.obsolete;
+  }
+
+  get mutationReconciliationDeferred(): boolean {
+    return Boolean(this.mutationGroup?.needsSnapshot);
+  }
+
+  finishMutation(token: BoardMutationToken): boolean {
+    if (!this.mutations.delete(token.id)) return false;
+    token.group.activeIds.delete(token.id);
+    if (token.group.activeIds.size || this.mutationGroup !== token.group) return false;
+    this.mutationGroup = undefined;
+    return token.group.needsSnapshot && !token.group.obsolete;
+  }
 
   beginEntityReconciliation(data: BoardData, issueIds: Iterable<number>): FreshnessRequest {
     this.syncScope(data);
@@ -127,7 +178,7 @@ export class BoardFreshnessAuthority {
   }
 
   get activeRequestCount(): number {
-    return this.activeRequests.size;
+    return this.activeRequests.size + this.mutations.size;
   }
 
   get subscriberCount(): number {
@@ -206,13 +257,18 @@ export class BoardFreshnessAuthority {
 
   private syncScope(data: BoardData): void {
     const nextScopeFingerprint = scopeFingerprint(data);
-    if (this.currentScopeFingerprint && this.currentScopeFingerprint !== nextScopeFingerprint) this.invalidate();
+    if (this.currentScopeFingerprint && this.currentScopeFingerprint !== nextScopeFingerprint) {
+      if (this.mutationGroup) this.mutationGroup.obsolete = true;
+      this.mutationGroup = undefined;
+      this.invalidate();
+    }
     this.currentScopeFingerprint = nextScopeFingerprint;
   }
 
   private isCurrent(request: FreshnessRequest, current: BoardData): boolean {
     this.syncScope(current);
     return request.generation === this.generation
+      && !this.mutationReconciliationDeferred
       && request.scopeFingerprint === scopeFingerprint(current)
       && this.activeRequests.has(request.id);
   }

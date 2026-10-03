@@ -20,6 +20,34 @@ function setup() {
   return renderHook(({ statusIds, filterScope = emptyFilterScope, projectIds = [] }) => useBoardSnapshot({ baseUrl: '/projects/demo/kanban', currentUserId: 7, projectIds, statusIds, hiddenStatusIds: [], preferencesReady: true, initialLabels: { board_scope_too_large: 'Limit %{limit}', board_response_too_large: 'Bytes %{bytes}', board_query_limit_exceeded: 'Issue query limit', board_total_query_limit_exceeded: 'Total query limit', load_failed: 'Failed' }, filterScope }), { initialProps: { statusIds: [] as number[], filterScope: emptyFilterScope, projectIds: [] as number[] }, wrapper });
 }
 describe('snapshot recovery without a successful cache', () => {
+  it('keeps an empty, non-authoritative board visible while a changed scope loads', async () => {
+    const first = makeBoardSnapshot();
+    let resolveNext!: (value: typeof first) => void;
+    const next = new Promise<typeof first>((resolve) => { resolveNext = resolve; });
+    vi.mocked(getJson).mockImplementation(async (url) => {
+      if (url.endsWith('/metadata')) return metadata;
+      return url.includes('filter_q=next') ? next : first;
+    });
+    const { result, rerender } = setup();
+    await waitFor(() => expect(result.current.data?.issues).toHaveLength(1));
+
+    rerender({ statusIds: [], filterScope: { ...emptyFilterScope, q: 'next' }, projectIds: [] });
+    expect(result.current.data).toBeNull();
+    expect(result.current.refreshing).toBe(true);
+    expect(result.current.presentationData?.issues).toEqual([]);
+    expect(result.current.presentationData?.entities).toEqual([]);
+    expect(result.current.presentationData?.tree?.root_ids).toEqual([]);
+    expect(result.current.presentationData?.columns).toEqual([{ id: 2, name: 'Open', is_closed: false }]);
+    expect(result.current.presentationData?.lanes).toEqual(first.lanes);
+    expect(result.current.presentationData?.meta.complete).toBe(false);
+
+    await waitFor(() => expect(vi.mocked(getJson).mock.calls.some(([url]) => url.includes('filter_q=next'))).toBe(true));
+    expect(result.current.presentationData?.issues).toEqual([]);
+    act(() => resolveNext(first));
+    await waitFor(() => expect(result.current.data?.issues).toHaveLength(1));
+    expect(result.current.refreshing).toBe(false);
+  });
+
   it('rejects a declared complete snapshot with an unrepresented Entity', () => {
     expect(() => parseBoardSnapshotV3({ ...snapshot, meta: { ...snapshot.meta, entity_count: 1 }, entities: makeBoardSnapshot().entities })).toThrow('Invalid board snapshot');
   });
@@ -171,12 +199,12 @@ describe('snapshot recovery without a successful cache', () => {
     vi.mocked(getJson).mockImplementation(async (url) => url.endsWith('/metadata') ? metadata : snapshot);
     const { result, rerender } = setup();
     await waitFor(() => expect(result.current.data?.meta.complete).toBe(true));
-    const previousSnapshot = result.current.data;
     const previousQueryKey = result.current.boardQueryKey;
     vi.mocked(getJson).mockClear();
     const nextScope = { ...emptyFilterScope, q: 'needle', due: 'overdue' as const, date_anchor: '2026-10-01' };
     rerender({ statusIds: [], filterScope: nextScope, projectIds: [1] });
-    expect(result.current.data).toBe(previousSnapshot);
+    expect(result.current.data).toBeNull();
+    expect(result.current.presentationData?.issues).toEqual([]);
     expect(result.current.boardQueryKey).toEqual(previousQueryKey);
     expect(getJson).not.toHaveBeenCalled();
     await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 100)); });

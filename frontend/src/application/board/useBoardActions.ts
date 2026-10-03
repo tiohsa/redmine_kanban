@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { QueryKey } from '@tanstack/react-query';
 import type { BoardData, Issue } from '../../model/board/types';
 import { isHttpError, postJson } from '../../infrastructure/api/http';
-import { isBoardSnapshotInvalidated, useIssueMutation } from './useIssueMutation';
+import { invalidateBoardSnapshot, isBoardSnapshotInvalidated, useIssueMutation } from './useIssueMutation';
 import { useMutationReconciler } from './useMutationReconciler';
 import { findIssueInBoard } from '../../model/board/selectors';
 import { applyLocalIssuePatch } from '../../model/board/state';
@@ -13,7 +13,8 @@ import type { IssueMutationResult, MovePayload, UpdatePayload } from '../../infr
 import { discardBulkIdempotencyKey, getOrCreateBulkIdempotencyKey, stableSerialize, storageKeyForBulkSignature } from '../../infrastructure/storage/bulkIdempotency';
 import { buildBulkCreateRequest, buildRestoreIssuePayload, isBulkCreateInput } from './kanbanActionPayloads';
 import { buildBoardMutationUrl, effectiveDependencyStatusIds, effectiveScopeStatusIds } from '../../infrastructure/api/boardQuery';
-import { getBoardFreshnessAuthority } from './asyncFreshness';
+import { getBoardFreshnessAuthority, releaseBoardFreshnessAuthority, type BoardFreshnessAuthority, type BoardMutationToken } from './asyncFreshness';
+import { hasActiveBoardFilterScope } from '../../model/board/filterScope';
 
 export type BoardActionArgs = {
   baseUrl: string;
@@ -53,6 +54,17 @@ export function useBoardActions({
 }: BoardActionArgs) {
   const queryClient = useQueryClient();
   const snapshotReady = useCallback(() => getBoardFreshnessAuthority(queryClient, boardQueryKey).snapshotRefreshState === 'ready', [queryClient, boardQueryKey]);
+  const beginBoardMutation = useCallback(() => {
+    const current = queryClient.getQueryData<BoardData>(boardQueryKey) ?? data;
+    const authority = getBoardFreshnessAuthority(queryClient, boardQueryKey);
+    return { authority, token: current ? authority.beginMutation(current) : undefined };
+  }, [queryClient, boardQueryKey, data]);
+  const endBoardMutation = useCallback((context: { authority: BoardFreshnessAuthority; token?: BoardMutationToken }) => {
+    if (context.token && context.authority.finishMutation(context.token)) {
+      void invalidateBoardSnapshot(queryClient, boardQueryKey, { preserveDisplay: true });
+    }
+    releaseBoardFreshnessAuthority(queryClient, boardQueryKey, context.authority);
+  }, [queryClient, boardQueryKey]);
   const [busyIssueIds, setBusyIssueIds] = useState<Set<number>>(new Set());
   const [pendingDeleteIssue, setPendingDeleteIssue] = useState<Issue | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
@@ -116,6 +128,7 @@ export function useBoardActions({
   const moveIssueMutation = useIssueMutation<MovePayload, IssueMutationResult>({
     queryKey: boardQueryKey,
     preserveDisplayOnSnapshotInvalidation: true,
+    filteredMove: hasActiveBoardFilterScope(data?.meta.filter_scope),
     mutationFn: async (payload) => {
       const issuePayload: Record<string, unknown> = {
         status_id: payload.statusId,
@@ -197,6 +210,10 @@ export function useBoardActions({
   });
 
   const createIssueMutation = useMutation({
+    onMutate: () => {
+      if (!snapshotReady()) throw new Error(data?.labels.loading ?? 'Loading');
+      return beginBoardMutation();
+    },
     mutationFn: async (payload: Record<string, unknown>) => {
       if (!snapshotReady()) throw new Error(data?.labels.loading ?? 'Loading');
       if (isBulkCreateInput(payload)) {
@@ -229,14 +246,16 @@ export function useBoardActions({
         invalidations?: DeleteResponse['invalidations'];
       }>(scopedUrl('/issues'), { issue: { ...payload, operation_id: clientOperationId() } }, 'POST');
     },
-    onSuccess: (result, payload) => {
-      reconcileMutationResult(result);
+    onSuccess: (result, payload, context) => {
+      if (!context?.token || !context.authority.isMutationDeferred(context.token)) reconcileMutationResult(result);
       if (isBulkCreateInput(payload)) {
         const requestPayload = buildBulkCreateRequest(payload);
         discardBulkIdempotencyKey(storageKeyForBulkSignature(stableSerialize(requestPayload)));
       }
     },
-    onSettled: () => undefined,
+    onSettled: (_result, _error, _payload, context) => {
+      if (context) endBoardMutation(context);
+    },
   });
 
   const deleteIssue = useCallback(async (issueId: number, undoIssue: Issue | null = null) => {
@@ -246,6 +265,7 @@ export function useBoardActions({
     beginIssueMutation(issueId);
     setPendingDeleteIssue(null);
     let deleted = false;
+    const mutationContext = beginBoardMutation();
     try {
       const resolved = data ? resolveBoardIssue(data, issueId) : null;
       if (resolved?.lockVersion === null || resolved?.lockVersion === undefined) throw new Error('lock_version is required');
@@ -259,7 +279,7 @@ export function useBoardActions({
         return;
       }
       deleted = true;
-      reconcileMutationResult(response);
+      if (!mutationContext.token || !mutationContext.authority.isMutationDeferred(mutationContext.token)) reconcileMutationResult(response);
       setPendingDeleteIssue(undoIssue);
       // Deletion succeeded. A failed refetch is a board-loading problem, not a deletion failure;
       // keep the deleted issue available so the user can still use Undo.
@@ -272,8 +292,9 @@ export function useBoardActions({
     } finally {
       deletingIssueIdsRef.current.delete(issueId);
       endIssueMutation(issueId);
+      endBoardMutation(mutationContext);
     }
-  }, [beginIssueMutation, data, endIssueMutation, reconcileMutationResult, scopedUrl, setError, snapshotReady]);
+  }, [beginBoardMutation, beginIssueMutation, data, endBoardMutation, endIssueMutation, reconcileMutationResult, scopedUrl, setError, snapshotReady]);
 
   const moveIssue = useCallback((issueId: number, statusId: number, assignedToId?: number | null, priorityId?: number | null) => {
     if (!data || !snapshotReady() || isIssueBusy(issueId)) return false;
@@ -325,6 +346,7 @@ export function useBoardActions({
   const handleUndo = useCallback(async () => {
     if (!pendingDeleteIssue || isRestoring || !snapshotReady()) return;
     setIsRestoring(true);
+    const mutationContext = beginBoardMutation();
 
     try {
       const response = await postJson<{
@@ -340,16 +362,18 @@ export function useBoardActions({
       );
 
       if (response.ok) {
-        const snapshotInvalidated = isBoardSnapshotInvalidated(response);
-        if (snapshotInvalidated) {
-          invalidateSnapshot();
-        } else {
-          const restoredIssueIds = [...new Set(response.created_issues?.map((issue) => issue.id) ?? [])];
-          const restoredIssuesReconciled = restoredIssueIds.length > 0
-            && await reconcileIssues(restoredIssueIds, { treatAsCreated: true });
-          if (!restoredIssuesReconciled) invalidateSnapshot();
+        if (!mutationContext.token || !mutationContext.authority.isMutationDeferred(mutationContext.token)) {
+          const snapshotInvalidated = isBoardSnapshotInvalidated(response);
+          if (snapshotInvalidated) {
+            invalidateSnapshot();
+          } else {
+            const restoredIssueIds = [...new Set(response.created_issues?.map((issue) => issue.id) ?? [])];
+            const restoredIssuesReconciled = restoredIssueIds.length > 0
+              && await reconcileIssues(restoredIssueIds, { treatAsCreated: true });
+            if (!restoredIssuesReconciled) invalidateSnapshot();
+          }
+          reconcileMutationResult(response, { responseHandled: true });
         }
-        reconcileMutationResult(response, { responseHandled: true });
         setNotice(null);
         setPendingDeleteIssue(null);
       } else {
@@ -359,8 +383,9 @@ export function useBoardActions({
       setError(data?.labels.restore_error ?? null);
     } finally {
       setIsRestoring(false);
+      endBoardMutation(mutationContext);
     }
-  }, [data, invalidateSnapshot, isRestoring, pendingDeleteIssue, reconcileMutationResult, reconcileIssues, scopedUrl, setError, setNotice, snapshotReady]);
+  }, [beginBoardMutation, data, endBoardMutation, invalidateSnapshot, isRestoring, pendingDeleteIssue, reconcileMutationResult, reconcileIssues, scopedUrl, setError, setNotice, snapshotReady]);
 
   return {
     busyIssueIds,
