@@ -7,7 +7,7 @@ import { resolveClosedState } from '../../model/issue/issue';
 import type { AncestorIssueUpdate, IssueMutationResult } from '../../infrastructure/api/contracts';
 import { updateSubtasksTree } from '../../model/board/subtasksTree';
 import { applyBoardResponse, createNormalizedBoardState, rollbackLocalIssuePatch, selectBoardData } from '../../model/board/state';
-import { getBoardFreshnessAuthority, releaseBoardFreshnessAuthority } from './asyncFreshness';
+import { getBoardFreshnessAuthority, releaseBoardFreshnessAuthority, type BoardFreshnessAuthority, type BoardMutationToken } from './asyncFreshness';
 
 export type EntityReconciliationResponse = {
   scope_fingerprint?: string;
@@ -28,9 +28,15 @@ export function isBoardSnapshotInvalidated(result: unknown): boolean {
   return Boolean(invalidations && typeof invalidations === 'object' && (invalidations as { board_snapshot?: unknown }).board_snapshot === true);
 }
 
-export function invalidateBoardSnapshot(queryClient: QueryClient, queryKey: QueryKey): Promise<void> {
+export function invalidateBoardSnapshot(queryClient: QueryClient, queryKey: QueryKey, options: { preserveDisplay?: boolean } = {}): Promise<void> {
   const authority = getBoardFreshnessAuthority(queryClient, queryKey);
+  if (authority.mutationReconciliationDeferred) return Promise.resolve();
+  if (options.preserveDisplay && queryClient.getQueryData(queryKey)) {
+    authority.beginSnapshotRefresh();
+    return queryClient.invalidateQueries({ queryKey, exact: true });
+  }
   authority.invalidate();
+  authority.resetSnapshotRefresh();
   releaseBoardFreshnessAuthority(queryClient, queryKey, authority);
   return queryClient.resetQueries({ queryKey });
 }
@@ -118,10 +124,14 @@ export function unresolvedInvalidationIds(result: {
 
 type MutationContext = {
   prev?: BoardData;
+  optimisticBoard?: BoardData;
   issueId: number;
   optimisticIssue?: Issue | null;
   revision: number;
   overlapped: boolean;
+  authorityGeneration: number;
+  authority: BoardFreshnessAuthority;
+  mutationToken?: BoardMutationToken;
 };
 
 type IssuePayload = { issueId: number };
@@ -142,6 +152,8 @@ type UseIssueMutationOptions<TPayload extends IssuePayload, TResult> = {
   onSettledIssue?: (issueId: number) => void;
   onSettledMutation?: (issueId: number) => void;
   refetchOnSettled?: boolean;
+  preserveDisplayOnSnapshotInvalidation?: boolean;
+  filteredMove?: boolean;
 };
 
 type IssueUpdater = (issue: Issue) => Issue;
@@ -157,6 +169,8 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
   onSettledIssue,
   onSettledMutation,
   refetchOnSettled = false,
+  preserveDisplayOnSnapshotInvalidation = false,
+  filteredMove = false,
 }: UseIssueMutationOptions<TPayload, TResult>) {
   const queryClient = useQueryClient();
   const mutationRevisions = useRef(new Map<number, number>());
@@ -166,7 +180,14 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
   return useMutation<TResult, unknown, TPayload, MutationContext>({
     mutationFn,
     onMutate: async (payload) => {
+      if (getBoardFreshnessAuthority(queryClient, queryKey).snapshotRefreshState !== 'ready') {
+        throw new Error(queryClient.getQueryData<BoardData>(queryKey)?.labels.loading ?? 'Loading');
+      }
       await queryClient.cancelQueries({ queryKey });
+
+      if (getBoardFreshnessAuthority(queryClient, queryKey).snapshotRefreshState !== 'ready') {
+        throw new Error(queryClient.getQueryData<BoardData>(queryKey)?.labels.loading ?? 'Loading');
+      }
 
       const prev = queryClient.getQueryData<BoardData>(queryKey);
       const optimistic = prev ? applyOptimistic(prev, payload) : undefined;
@@ -180,15 +201,33 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
       mutationRevisions.current.set(payload.issueId, revision);
       pendingMutationCounts.current.set(payload.issueId, pendingCount + 1);
       onMutateIssue?.(payload.issueId);
+      const authority = getBoardFreshnessAuthority(queryClient, queryKey);
+      const mutationToken = prev ? authority.beginMutation(prev, filteredMove) : undefined;
       return {
         prev,
+        optimisticBoard: optimistic,
         issueId: payload.issueId,
         revision,
         overlapped: pendingCount > 0,
         optimisticIssue: optimistic ? findIssueInBoard(optimistic, payload.issueId) : null,
+        authorityGeneration: authority.currentGeneration,
+        authority,
+        mutationToken,
       };
     },
     onError: (_err, _payload, ctx) => {
+      const authority = getBoardFreshnessAuthority(queryClient, queryKey);
+      const cached = queryClient.getQueryData<BoardData>(queryKey);
+      if (cached) authority.observe(cached);
+      if (ctx?.mutationToken && ctx.authority.isMutationDeferred(ctx.mutationToken)) {
+        onError?.(_err, _payload);
+        return;
+      }
+      if (ctx && (authority.currentGeneration !== ctx.authorityGeneration || ctx.authority.currentGeneration !== ctx.authorityGeneration)) {
+        void invalidateBoardSnapshot(queryClient, queryKey, { preserveDisplay: preserveDisplayOnSnapshotInvalidation });
+        onError?.(_err, _payload);
+        return;
+      }
       const current = queryClient.getQueryData<BoardData>(queryKey);
       const currentIssue = current && ctx ? findIssueInBoard(current, ctx.issueId) : null;
       if (ctx?.prev && !ctx.overlapped && currentIssue && ctx.optimisticIssue) {
@@ -208,8 +247,15 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
       onError?.(_err, _payload);
     },
     onSuccess: (result, payload, context) => {
-      if (isBoardSnapshotInvalidated(result)) {
-        invalidateBoardSnapshot(queryClient, queryKey);
+      const authority = getBoardFreshnessAuthority(queryClient, queryKey);
+      const cached = queryClient.getQueryData<BoardData>(queryKey);
+      if (cached) authority.observe(cached);
+      if (context?.mutationToken && context.authority.isMutationDeferred(context.mutationToken)) {
+        onSuccess?.(result);
+        return;
+      }
+      if (isBoardSnapshotInvalidated(result) || (context && (authority.currentGeneration !== context.authorityGeneration || context.authority.currentGeneration !== context.authorityGeneration))) {
+        void invalidateBoardSnapshot(queryClient, queryKey, { preserveDisplay: preserveDisplayOnSnapshotInvalidation });
       } else {
         queryClient.setQueryData<BoardData>(queryKey, (current) =>
           current ? applyFreshServerResult(current, result, payload, context, mutationRevisions.current, applyServer) : current
@@ -231,7 +277,14 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
         }
       }
       if (payload) onSettledMutation?.(payload.issueId);
+      if (context?.mutationToken) {
+        if (context.authority.finishMutation(context.mutationToken)) {
+          void invalidateBoardSnapshot(queryClient, queryKey, { preserveDisplay: true });
+        }
+        releaseBoardFreshnessAuthority(queryClient, queryKey, context.authority);
+      }
       if (refetchOnSettled) {
+        if (context?.mutationToken && context.authority.isMutationDeferred(context.mutationToken)) return;
         window.setTimeout(() => {
           queryClient.invalidateQueries({ queryKey });
         }, 400);
@@ -263,7 +316,11 @@ function applyFreshServerResult<TPayload extends IssuePayload, TResult>(
       ? [...((result as { deleted_issue_ids?: number[] }).deleted_issue_ids ?? []), ...((result as { evicted_issue_ids?: number[] }).evicted_issue_ids ?? [])]
       : [];
     const excludeNegativeIssueIds = context?.prev ? negativeIds.filter((id) => {
-      const expected = id === payload.issueId ? context.optimisticIssue : findIssueInBoard(context.prev!, id);
+      // A child's own optimistic patch also changes its ancestors' nested DTOs.
+      // Only changes after that patch should protect them from this response.
+      const expected = id === payload.issueId
+        ? context.optimisticIssue
+        : findIssueInBoard(context.optimisticBoard ?? context.prev!, id);
       return JSON.stringify(expected) !== JSON.stringify(findIssueInBoard(data, id));
     }) : [];
     return applyServer(data, result, payload, { applyTarget: true, applyNonTarget: true, excludeNegativeIssueIds });

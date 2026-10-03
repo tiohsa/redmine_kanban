@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 
 import React, { PropsWithChildren } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { BoardData, Issue } from './types';
 import { applyAncestorIssueUpdates, applyMutationResponse, isBoardSnapshotInvalidated, isIssueFresh, replaceIssueInBoard, updateIssueInBoard, updateSubtaskInBoard, useIssueMutation } from './useIssueMutation';
+import { getBoardFreshnessAuthority } from '../application/board/asyncFreshness';
+import { invalidateBoardSnapshot } from '../application/board/useIssueMutation';
+import { applyIssueMutationResponse } from '../application/board/useMutationReconciler';
+import { applyLocalIssuePatch, createNormalizedBoardState, selectBoardData } from '../model/board/state';
 
 function makeIssue(id: number, attrs: Partial<Issue> = {}): Issue {
   return {
@@ -181,6 +185,401 @@ describe('updateSubtaskInBoard', () => {
 
     expect(next.columns.find((column) => column.id === 1)?.count).toBe(100);
     expect(next.columns.find((column) => column.id === 2)?.count).toBe(20);
+  });
+});
+
+describe('overlapping filtered moves', () => {
+  function makeNormalizedFamilyBoard(): BoardData {
+    const board = makeBoardData([
+      makeIssue(10, { subject: 'Parent' }),
+      makeIssue(11, { subject: 'A', parent_id: 10 }),
+      makeIssue(12, { subject: 'B', parent_id: 10 }),
+      makeIssue(13, { subject: 'C', parent_id: 10 }),
+    ]);
+    board.contract_version = 3;
+    board.scope_fingerprint = 'family-filter';
+    board.entities = board.issues.map(({ subtasks: _subtasks, ...issue }) => issue);
+    board.tree = {
+      root_ids: [10],
+      children_by_parent_id: { '10': [11, 12, 13] },
+    };
+    return board;
+  }
+
+  function applyMoveResult(data: BoardData, result: { issue: Issue; issue_updates?: Issue[]; created_issues?: Issue[]; evicted_issue_ids?: number[] }): BoardData {
+    let next = replaceIssueInBoard(data, result.issue);
+    for (const issue of result.issue_updates ?? []) next = replaceIssueInBoard(next, issue);
+    for (const issue of result.created_issues ?? []) {
+      if (next.issues.some((current) => current.id === issue.id)) continue;
+      const { subtasks: _subtasks, ...entity } = issue;
+      next = {
+        ...next,
+        issues: [...next.issues, issue],
+        entities: next.entities ? [...next.entities, entity] : next.entities,
+        tree: next.tree && {
+          ...next.tree,
+          root_ids: issue.parent_id ? next.tree.root_ids : [...next.tree.root_ids, issue.id],
+          children_by_parent_id: issue.parent_id
+            ? { ...next.tree.children_by_parent_id, [String(issue.parent_id)]: [...(next.tree.children_by_parent_id[String(issue.parent_id)] ?? []), issue.id] }
+            : next.tree.children_by_parent_id,
+        },
+      };
+    }
+    for (const issueId of result.evicted_issue_ids ?? []) {
+      next = {
+        ...next,
+        issues: next.issues.filter((issue) => issue.id !== issueId),
+        entities: next.entities?.filter((issue) => issue.id !== issueId),
+        tree: next.tree && {
+          ...next.tree,
+          root_ids: next.tree.root_ids.filter((id) => id !== issueId),
+          children_by_parent_id: Object.fromEntries(
+            Object.entries(next.tree.children_by_parent_id).map(([parentId, ids]) => [parentId, ids.filter((id) => id !== issueId)]),
+          ),
+        },
+      };
+    }
+    return next;
+  }
+
+  it.each(['A then B', 'B then A'] as const)(
+    'defers stale family deltas and refreshes once after both responses settle (%s)',
+    async (responseOrder) => {
+      const queryKey = ['kanban', 'board', `filtered-overlap-${responseOrder}`] as const;
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+      queryClient.setQueryData(queryKey, makeNormalizedFamilyBoard());
+      const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+      let resolveA!: (value: { issue: Issue; evicted_issue_ids: number[] }) => void;
+      let resolveB!: (value: { issue: Issue; issue_updates: Issue[]; created_issues: Issue[] }) => void;
+      let callCount = 0;
+      const requestA = new Promise<{ issue: Issue; evicted_issue_ids: number[] }>((resolve) => { resolveA = resolve; });
+      const requestB = new Promise<{ issue: Issue; issue_updates: Issue[]; created_issues: Issue[] }>((resolve) => { resolveB = resolve; });
+
+      const { result } = renderHook(() => {
+        const moveA = useIssueMutation<{ issueId: number }, { issue: Issue; evicted_issue_ids: number[] }>({
+          queryKey,
+          filteredMove: true,
+          mutationFn: () => { callCount += 1; return requestA; },
+          applyOptimistic: (data) => data,
+          applyServer: applyMoveResult,
+        });
+        const moveB = useIssueMutation<{ issueId: number }, { issue: Issue; issue_updates: Issue[]; created_issues: Issue[] }>({
+          queryKey,
+          // A regular issue update sharing the query key participates in the
+          // filtered move's authority group even though it is not a move.
+          filteredMove: false,
+          mutationFn: () => { callCount += 1; return requestB; },
+          applyOptimistic: (data) => data,
+          applyServer: applyMoveResult,
+        });
+        return { moveA, moveB };
+      }, { wrapper: createWrapper(queryClient) });
+
+      let a!: Promise<unknown>;
+      let b!: Promise<unknown>;
+      await act(async () => {
+        a = result.current.moveA.mutateAsync({ issueId: 11 });
+        b = result.current.moveB.mutateAsync({ issueId: 12 });
+        await waitFor(() => expect(callCount).toBe(2));
+      });
+
+      const finishA = async () => {
+        resolveA({ issue: makeIssue(11, { subject: 'A moved', parent_id: null, lock_version: 2 }), evicted_issue_ids: [13] });
+        await a;
+      };
+      const finishB = async () => {
+        resolveB({
+          issue: makeIssue(12, { subject: 'B moved', parent_id: null, lock_version: 2 }),
+          issue_updates: [makeIssue(13, { subject: 'Stale positive C', parent_id: null, lock_version: 2 })],
+          created_issues: [makeIssue(14, { subject: 'Stale positive entrant', parent_id: 10 })],
+        });
+        await b;
+      };
+
+      await act(async () => {
+        if (responseOrder === 'A then B') await finishA();
+        else await finishB();
+      });
+      expect(queryClient.getQueryData<BoardData>(queryKey)?.issues.map((issue) => issue.id)).toEqual([10, 11, 12, 13]);
+      expect(queryClient.getQueryData<BoardData>(queryKey)?.tree?.children_by_parent_id['10']).toEqual([11, 12, 13]);
+      expect(queryClient.getQueryData<BoardData>(queryKey)?.issues.find((issue) => issue.id === 13)?.subject).toBe('C');
+      expect(invalidateQueries).not.toHaveBeenCalled();
+
+      await act(async () => {
+        if (responseOrder === 'A then B') await finishB();
+        else await finishA();
+      });
+
+      const current = queryClient.getQueryData<BoardData>(queryKey);
+      expect(current?.issues.map((issue) => issue.id)).toEqual([10, 11, 12, 13]);
+      expect(current?.tree?.children_by_parent_id['10']).toEqual([11, 12, 13]);
+      expect(current?.issues.find((issue) => issue.id === 13)?.subject).toBe('C');
+      expect(invalidateQueries).toHaveBeenCalledTimes(1);
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey, exact: true });
+    },
+  );
+
+  it('keeps successful sequential filtered moves on the bounded delta path', async () => {
+    const queryKey = ['kanban', 'board', 'filtered-sequential'] as const;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    queryClient.setQueryData(queryKey, makeNormalizedFamilyBoard());
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+    const { result } = renderHook(() => useIssueMutation<{ issueId: number }, { issue: Issue; issue_updates?: Issue[]; created_issues?: Issue[]; evicted_issue_ids?: number[] }>({
+      queryKey,
+      filteredMove: true,
+      mutationFn: async ({ issueId }) => ({ issue: makeIssue(issueId, { subject: `Moved ${issueId}`, parent_id: null, lock_version: 2 }) }),
+      applyOptimistic: (data) => data,
+      applyServer: applyMoveResult,
+    }), { wrapper: createWrapper(queryClient) });
+
+    await act(async () => { await result.current.mutateAsync({ issueId: 11 }); });
+    await act(async () => { await result.current.mutateAsync({ issueId: 12 }); });
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues.find((issue) => issue.id === 12)?.subject).toBe('Moved 12');
+    expect(invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it('defers three overlapping operations through a failure and reconciles once', async () => {
+    const queryKey = ['kanban', 'board', 'filtered-three-way'] as const;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    queryClient.setQueryData(queryKey, makeNormalizedFamilyBoard());
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+    let resolveA!: (value: { issue: Issue; evicted_issue_ids: number[] }) => void;
+    let resolveB!: (value: { issue: Issue; created_issues: Issue[] }) => void;
+    let rejectC!: (error: Error) => void;
+    const requestA = new Promise<{ issue: Issue; evicted_issue_ids: number[] }>((resolve) => { resolveA = resolve; });
+    const requestB = new Promise<{ issue: Issue; created_issues: Issue[] }>((resolve) => { resolveB = resolve; });
+    const requestC = new Promise<{ issue: Issue }>((_resolve, reject) => { rejectC = reject; });
+    let started = 0;
+    const { result } = renderHook(() => ({
+      moveA: useIssueMutation<{ issueId: number }, { issue: Issue; evicted_issue_ids: number[] }>({
+        queryKey,
+        filteredMove: true,
+        mutationFn: () => { started += 1; return requestA; },
+        applyOptimistic: (data) => data,
+        applyServer: applyMoveResult,
+      }),
+      updateB: useIssueMutation<{ issueId: number }, { issue: Issue; created_issues: Issue[] }>({
+        queryKey,
+        mutationFn: () => { started += 1; return requestB; },
+        applyOptimistic: (data) => data,
+        applyServer: applyMoveResult,
+      }),
+      updateC: useIssueMutation<{ issueId: number }, { issue: Issue }>({
+        queryKey,
+        mutationFn: () => { started += 1; return requestC; },
+        applyOptimistic: (data) => data,
+        applyServer: (data) => data,
+      }),
+    }), { wrapper: createWrapper(queryClient) });
+
+    let a!: Promise<unknown>;
+    let b!: Promise<unknown>;
+    let c!: Promise<unknown>;
+    await act(async () => {
+      a = result.current.moveA.mutateAsync({ issueId: 11 });
+      b = result.current.updateB.mutateAsync({ issueId: 12 });
+      c = result.current.updateC.mutateAsync({ issueId: 13 });
+      await waitFor(() => expect(started).toBe(3));
+    });
+
+    await act(async () => {
+      resolveB({ issue: makeIssue(12, { subject: 'Updated B', parent_id: null, lock_version: 2 }), created_issues: [makeIssue(14, { parent_id: 10 })] });
+      await b;
+    });
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues.map((issue) => issue.id)).toEqual([10, 11, 12, 13]);
+    expect(invalidateQueries).not.toHaveBeenCalled();
+
+    await act(async () => {
+      rejectC(new Error('update failed'));
+      await expect(c).rejects.toThrow('update failed');
+    });
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues.map((issue) => issue.id)).toEqual([10, 11, 12, 13]);
+    expect(invalidateQueries).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveA({ issue: makeIssue(11, { subject: 'Moved A', parent_id: null, lock_version: 2 }), evicted_issue_ids: [13] });
+      await a;
+    });
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues.map((issue) => issue.id)).toEqual([10, 11, 12, 13]);
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.tree?.children_by_parent_id['10']).toEqual([11, 12, 13]);
+    expect(invalidateQueries).toHaveBeenCalledTimes(1);
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey, exact: true });
+  });
+});
+
+describe('filtered move eviction against the optimistic board', () => {
+  function makeCanonicalBoard(issues: Issue[], roots: number[], children: Record<string, number[]>): BoardData {
+    const board = makeBoardData([]);
+    board.contract_version = 3;
+    board.scope_fingerprint = 'assignee-filter';
+    board.meta.filter_scope = {
+      q: '', assignee_ids: [7], include_unassigned: false, tracker_ids: [],
+      priority_filter_enabled: false, priority_ids: [], include_no_priority: false, due: 'all',
+    };
+    const byId = new Map(issues.map((issue) => [issue.id, issue]));
+    const build = (id: number): Issue => ({
+      ...byId.get(id)!,
+      subtasks: (children[String(id)] ?? []).map((childId) => build(childId) as unknown as NonNullable<Issue['subtasks']>[number]),
+    });
+    board.issues = roots.map(build);
+    board.entities = issues.map(({ subtasks: _subtasks, ...issue }) => issue);
+    board.tree = { root_ids: roots, children_by_parent_id: children };
+    return selectBoardData(createNormalizedBoardState(board));
+  }
+
+  it.each([
+    { name: 'direct parent', parentIds: [10], roots: [10], children: { '10': [11, 12, 13] } },
+    { name: 'multi-level ancestors', parentIds: [10, 20], roots: [10], children: { '10': [20], '20': [11, 12, 13] } },
+  ] as Array<{ name: string; parentIds: number[]; roots: number[]; children: Record<string, number[]> }>)('applies complete negative eviction when the optimistic child patch changes its $name DTO', async ({ parentIds, roots, children }) => {
+    const queryKey = ['kanban', 'board', `filtered-eviction-${parentIds.length}`] as const;
+    const issues = [
+      makeIssue(10, { subject: 'Root', assigned_to_id: 8 }),
+      ...(parentIds.length > 1 ? [makeIssue(20, { subject: 'Parent', parent_id: 10, assigned_to_id: 8 })] : []),
+      makeIssue(11, { subject: 'Moving child', parent_id: parentIds[parentIds.length - 1], assigned_to_id: 7 }),
+      makeIssue(12, { subject: 'Sibling one', parent_id: parentIds[parentIds.length - 1], assigned_to_id: 8 }),
+      makeIssue(13, { subject: 'Sibling two', parent_id: parentIds[parentIds.length - 1], assigned_to_id: 8 }),
+    ];
+    const initial = makeCanonicalBoard(issues, roots, children);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    queryClient.setQueryData(queryKey, initial);
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+    let resolveMove!: (value: { issue: Issue; evicted_issue_ids: number[] }) => void;
+    const response = new Promise<{ issue: Issue; evicted_issue_ids: number[] }>((resolve) => { resolveMove = resolve; });
+    const { result } = renderHook(() => useIssueMutation({
+      queryKey,
+      filteredMove: true,
+      mutationFn: () => response,
+      applyOptimistic: (data, payload) => applyLocalIssuePatch(data, payload.issueId, { assigned_to_id: null }),
+      applyServer: (data, responseValue, payload, options) => applyIssueMutationResponse(data, responseValue, payload, options),
+    }), { wrapper: createWrapper(queryClient) });
+
+    let pending!: Promise<unknown>;
+    await act(async () => {
+      pending = result.current.mutateAsync({ issueId: 11 });
+      await waitFor(() => expect(queryClient.getQueryData<BoardData>(queryKey)?.entities?.find((issue) => issue.id === 11)?.assigned_to_id).toBeNull());
+    });
+    await act(async () => {
+      resolveMove({
+        issue: makeIssue(11, { subject: 'Moving child', parent_id: parentIds[parentIds.length - 1], assigned_to_id: null, lock_version: 2 }),
+        evicted_issue_ids: [...parentIds, 11, 12, 13],
+      });
+      await pending;
+    });
+
+    const current = queryClient.getQueryData<BoardData>(queryKey);
+    expect(current?.entities).toEqual([]);
+    expect(current?.issues).toEqual([]);
+    expect(current?.tree).toEqual({ root_ids: [], children_by_parent_id: {} });
+    expect(invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it('preserves a parent whose fields changed independently before the eviction response', async () => {
+    const queryKey = ['kanban', 'board', 'filtered-eviction-newer-ancestor'] as const;
+    const initial = makeCanonicalBoard([
+      makeIssue(10, { subject: 'Parent', assigned_to_id: 8 }),
+      makeIssue(11, { subject: 'Moving child', parent_id: 10, assigned_to_id: 7 }),
+      makeIssue(12, { subject: 'Sibling', parent_id: 10, assigned_to_id: 8 }),
+    ], [10], { '10': [11, 12] });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    queryClient.setQueryData(queryKey, initial);
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+    let resolveMove!: (value: { issue: Issue; evicted_issue_ids: number[] }) => void;
+    const response = new Promise<{ issue: Issue; evicted_issue_ids: number[] }>((resolve) => { resolveMove = resolve; });
+    const { result } = renderHook(() => useIssueMutation({
+      queryKey,
+      filteredMove: true,
+      mutationFn: () => response,
+      applyOptimistic: (data, payload) => applyLocalIssuePatch(data, payload.issueId, { assigned_to_id: null }),
+      applyServer: (data, responseValue, payload, options) => applyIssueMutationResponse(data, responseValue, payload, options),
+    }), { wrapper: createWrapper(queryClient) });
+
+    let pending!: Promise<unknown>;
+    await act(async () => {
+      pending = result.current.mutateAsync({ issueId: 11 });
+      await waitFor(() => expect(queryClient.getQueryData<BoardData>(queryKey)?.entities?.find((issue) => issue.id === 11)?.assigned_to_id).toBeNull());
+    });
+    const independentUpdate = applyLocalIssuePatch(queryClient.getQueryData<BoardData>(queryKey)!, 10, { subject: 'Newer parent title', lock_version: 4, assigned_to_id: 7 });
+    queryClient.setQueryData(queryKey, independentUpdate);
+    await act(async () => {
+      resolveMove({ issue: makeIssue(11, { parent_id: 10, assigned_to_id: null, lock_version: 2 }), evicted_issue_ids: [10, 11, 12] });
+      await pending;
+    });
+
+    const current = queryClient.getQueryData<BoardData>(queryKey);
+    expect(current?.entities?.map((issue) => issue.id)).toEqual([10]);
+    expect(current?.entities?.find((issue) => issue.id === 10)?.subject).toBe('Newer parent title');
+    expect(current?.tree?.root_ids).toEqual([10]);
+    expect(current?.tree?.children_by_parent_id).toEqual({ '10': [] });
+    expect(invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it('preserves a sibling whose fields changed independently before the eviction response', async () => {
+    const queryKey = ['kanban', 'board', 'filtered-eviction-newer-sibling'] as const;
+    const initial = makeCanonicalBoard([
+      makeIssue(10, { subject: 'Parent', assigned_to_id: 8 }),
+      makeIssue(11, { subject: 'Moving child', parent_id: 10, assigned_to_id: 7 }),
+      makeIssue(12, { subject: 'Sibling', parent_id: 10, assigned_to_id: 8 }),
+    ], [10], { '10': [11, 12] });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    queryClient.setQueryData(queryKey, initial);
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+    let resolveMove!: (value: { issue: Issue; evicted_issue_ids: number[] }) => void;
+    const response = new Promise<{ issue: Issue; evicted_issue_ids: number[] }>((resolve) => { resolveMove = resolve; });
+    const { result } = renderHook(() => useIssueMutation({
+      queryKey, filteredMove: true, mutationFn: () => response,
+      applyOptimistic: (data, payload) => applyLocalIssuePatch(data, payload.issueId, { assigned_to_id: null }),
+      applyServer: (data, responseValue, payload, options) => applyIssueMutationResponse(data, responseValue, payload, options),
+    }), { wrapper: createWrapper(queryClient) });
+    let pending!: Promise<unknown>;
+    await act(async () => {
+      pending = result.current.mutateAsync({ issueId: 11 });
+      await waitFor(() => expect(queryClient.getQueryData<BoardData>(queryKey)?.entities?.find((issue) => issue.id === 11)?.assigned_to_id).toBeNull());
+    });
+    queryClient.setQueryData(queryKey, applyLocalIssuePatch(queryClient.getQueryData<BoardData>(queryKey)!, 12, { subject: 'Newer sibling title', lock_version: 4, assigned_to_id: 7 }));
+    await act(async () => {
+      resolveMove({ issue: makeIssue(11, { parent_id: 10, assigned_to_id: null, lock_version: 2 }), evicted_issue_ids: [10, 11, 12] });
+      await pending;
+    });
+    const current = queryClient.getQueryData<BoardData>(queryKey);
+    expect(current?.entities?.map((issue) => issue.id)).toEqual([10, 12]);
+    expect(current?.entities?.find((issue) => issue.id === 12)?.subject).toBe('Newer sibling title');
+    expect(current?.tree?.children_by_parent_id['10']).toEqual([12]);
+    expect(invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it('preserves a parent when a newer matching child was attached before the eviction response', async () => {
+    const queryKey = ['kanban', 'board', 'filtered-eviction-newer-tree'] as const;
+    const initial = makeCanonicalBoard([
+      makeIssue(10, { subject: 'Parent', assigned_to_id: 8 }),
+      makeIssue(11, { subject: 'Moving child', parent_id: 10, assigned_to_id: 7 }),
+      makeIssue(12, { subject: 'Sibling', parent_id: 10, assigned_to_id: 8 }),
+    ], [10], { '10': [11, 12] });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    queryClient.setQueryData(queryKey, initial);
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+    let resolveMove!: (value: { issue: Issue; evicted_issue_ids: number[] }) => void;
+    const response = new Promise<{ issue: Issue; evicted_issue_ids: number[] }>((resolve) => { resolveMove = resolve; });
+    const { result } = renderHook(() => useIssueMutation({
+      queryKey, filteredMove: true, mutationFn: () => response,
+      applyOptimistic: (data, payload) => applyLocalIssuePatch(data, payload.issueId, { assigned_to_id: null }),
+      applyServer: (data, responseValue, payload, options) => applyIssueMutationResponse(data, responseValue, payload, options),
+    }), { wrapper: createWrapper(queryClient) });
+    let pending!: Promise<unknown>;
+    await act(async () => {
+      pending = result.current.mutateAsync({ issueId: 11 });
+      await waitFor(() => expect(queryClient.getQueryData<BoardData>(queryKey)?.entities?.find((issue) => issue.id === 11)?.assigned_to_id).toBeNull());
+    });
+    queryClient.setQueryData(queryKey, applyIssueMutationResponse(queryClient.getQueryData<BoardData>(queryKey)!, {
+      created_issues: [makeIssue(14, { subject: 'New matching child', parent_id: 10, assigned_to_id: 7 })],
+    }, { issueId: 14 }));
+    await act(async () => {
+      resolveMove({ issue: makeIssue(11, { parent_id: 10, assigned_to_id: null, lock_version: 2 }), evicted_issue_ids: [10, 11, 12] });
+      await pending;
+    });
+    const current = queryClient.getQueryData<BoardData>(queryKey);
+    expect(current?.entities?.map((issue) => issue.id)).toEqual([10, 14]);
+    expect(current?.tree?.children_by_parent_id['10']).toEqual([14]);
+    expect(invalidateQueries).not.toHaveBeenCalled();
   });
 });
 
@@ -534,6 +933,120 @@ describe('useIssueMutation', () => {
     expect(queryClient.getQueryData<BoardData>(queryKey)).toBeUndefined();
     expect(resetQueries).toHaveBeenCalledWith({ queryKey });
     expect(onSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves optimistic display during opted-in invalidation, blocks new mutations, and skips stale rollback', async () => {
+    const queryKey = ['kanban', 'board', 'preserved-refresh'] as const;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    queryClient.setQueryData(queryKey, makeBoardData([makeIssue(1, { subject: 'Before' })]));
+    const authority = getBoardFreshnessAuthority(queryClient, queryKey);
+    let rejectMutation!: (error: Error) => void;
+    let mutationCalls = 0;
+    const pendingMutation = new Promise<{ issue: Issue }>((_resolve, reject) => { rejectMutation = reject; });
+
+    const { result } = renderHook(() => useIssueMutation<{ issueId: number }, { issue: Issue }>({
+      queryKey,
+      mutationFn: () => {
+        mutationCalls += 1;
+        return pendingMutation;
+      },
+      applyOptimistic: (data) => updateIssueInBoard(data, 1, (issue) => ({ ...issue, subject: 'Optimistic' })),
+      applyServer: (data, response) => replaceIssueInBoard(data, response.issue),
+      preserveDisplayOnSnapshotInvalidation: true,
+    }), { wrapper: createWrapper(queryClient) });
+
+    let firstMutation!: Promise<unknown>;
+    await act(async () => {
+      firstMutation = result.current.mutateAsync({ issueId: 1 });
+      await waitFor(() => expect(mutationCalls).toBe(1));
+    });
+    const optimisticBoard = queryClient.getQueryData<BoardData>(queryKey);
+    expect(optimisticBoard?.issues[0]?.subject).toBe('Optimistic');
+
+    await act(async () => {
+      await invalidateBoardSnapshot(queryClient, queryKey, { preserveDisplay: true });
+    });
+    expect(authority.snapshotRefreshState).toBe('refreshing');
+    expect(queryClient.getQueryData(queryKey)).toBe(optimisticBoard);
+
+    await act(async () => {
+      await expect(result.current.mutateAsync({ issueId: 1 })).rejects.toThrow('Loading');
+    });
+    expect(mutationCalls).toBe(1);
+
+    await act(async () => {
+      rejectMutation(new Error('late failure'));
+      await expect(firstMutation).rejects.toThrow('late failure');
+    });
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0]?.subject).toBe('Optimistic');
+    expect(authority.snapshotRefreshState).toBe('refreshing');
+  });
+
+  it('starts another authoritative refresh when a bounded mutation response arrives after refresh committed', async () => {
+    const queryKey = ['kanban', 'board', 'late-bounded-result'] as const;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    queryClient.setQueryData(queryKey, makeBoardData([makeIssue(1, { subject: 'Before', lock_version: 1 })]));
+    const authority = getBoardFreshnessAuthority(queryClient, queryKey);
+    let finishMutation!: (value: { issue: Issue }) => void;
+    const pendingMutation = new Promise<{ issue: Issue }>((resolve) => { finishMutation = resolve; });
+    let resolveRefreshOne!: (value: BoardData) => void;
+    let resolveRefreshTwo!: (value: BoardData) => void;
+    const refreshOne = new Promise<BoardData>((resolve) => { resolveRefreshOne = resolve; });
+    const refreshTwo = new Promise<BoardData>((resolve) => { resolveRefreshTwo = resolve; });
+    let refreshCalls = 0;
+
+    const { result } = renderHook(() => {
+      useQuery({
+        queryKey,
+        queryFn: () => {
+          refreshCalls += 1;
+          return refreshCalls === 1 ? refreshOne : refreshTwo;
+        },
+        staleTime: Infinity,
+        retry: false,
+      });
+      return useIssueMutation<{ issueId: number }, { issue: Issue }>({
+        queryKey,
+        mutationFn: () => pendingMutation,
+        applyOptimistic: (data) => updateIssueInBoard(data, 1, (issue) => ({ ...issue, subject: 'Optimistic' })),
+        applyServer: (data, response) => replaceIssueInBoard(data, response.issue),
+        preserveDisplayOnSnapshotInvalidation: true,
+      });
+    }, { wrapper: createWrapper(queryClient) });
+
+    let mutation!: Promise<unknown>;
+    await act(async () => {
+      mutation = result.current.mutateAsync({ issueId: 1 });
+    });
+    await waitFor(() => expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0]?.subject).toBe('Optimistic'));
+
+    let firstRefresh!: Promise<void>;
+    act(() => { firstRefresh = invalidateBoardSnapshot(queryClient, queryKey, { preserveDisplay: true }); });
+    await waitFor(() => expect(refreshCalls).toBe(1));
+    const authoritative = makeBoardData([makeIssue(1, { subject: 'Authoritative', lock_version: 5 })]);
+    await act(async () => {
+      resolveRefreshOne(authoritative);
+      await firstRefresh;
+    });
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0]?.subject).toBe('Authoritative');
+
+    // Model the successful query cache commit observed by useBoardSnapshot.
+    const completedGeneration = authority.currentGeneration;
+    authority.recordSnapshotResult(completedGeneration);
+    authority.commitSnapshotResult();
+    expect(authority.snapshotRefreshState).toBe('ready');
+
+    await act(async () => {
+      finishMutation({ issue: makeIssue(1, { subject: 'Late bounded response', lock_version: 6 }) });
+      await mutation;
+    });
+    await waitFor(() => expect(refreshCalls).toBe(2));
+    expect(authority.snapshotRefreshState).toBe('refreshing');
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0]?.subject).toBe('Authoritative');
+
+    const finalSnapshot = makeBoardData([makeIssue(1, { subject: 'Latest authoritative', lock_version: 7 })]);
+    await act(async () => { resolveRefreshTwo(finalSnapshot); });
+    await waitFor(() => expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0]?.subject).toBe('Latest authoritative'));
   });
 
   it('does not replace a newer cached issue with a late normal success response', async () => {

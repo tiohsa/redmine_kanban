@@ -514,7 +514,14 @@ jobs:
           REDMINE_BASE_URL: http://127.0.0.1:3002
           REDMINE_KANBAN_RECOVERY_TEST: '1'
           CI: true
-        run: bash script/ci/e2e-full.sh e2e/tests/kanban-recovery-views.spec.js --grep 'first visit recovers|a narrow saved view recovers'
+        run: bash script/ci/e2e-full.sh e2e/tests/kanban-recovery-views.spec.js --grep 'first visit recovers|a narrow saved view recovers|subject filter recovers|tracker filter recovers'
+
+      - name: Run native create at the server ceiling
+        env:
+          REDMINE_BASE_URL: http://127.0.0.1:3002
+          REDMINE_KANBAN_RECOVERY_TEST: '1'
+          CI: true
+        run: bash script/ci/native-mutation-e2e.sh --grep 'native create at the admission limit'
 
       - name: Upload Playwright report
         if: always()

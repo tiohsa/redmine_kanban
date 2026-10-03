@@ -36,10 +36,89 @@ test('first visit recovers from the server cap using project choices without rai
   const complete = await (await recovered).json();
   expect(complete.meta.complete).toBe(true);
   expect(complete.entities).toHaveLength(2);
-  expect(complete.meta.requested_entity_limit).toBe(1500);
+  expect(new URL((await recovered).url()).searchParams.has('board_entity_limit')).toBe(false);
   expect(complete.meta.server_entity_limit).toBe(2);
   await expect(page.getByRole('region', { name: l.board_recovery })).toHaveCount(0);
   await expect(page.getByText(l.board_scope_too_large.replace('%{limit}', '2'), { exact: false })).toHaveCount(0);
+});
+
+test('tracker filter recovers from the server cap using metadata candidates', async ({ page, baseURL }) => {
+  test.skip(process.env.REDMINE_KANBAN_RECOVERY_TEST !== '1', 'Requires the dedicated server with entity cap 2');
+  await login(page, baseURL);
+  const metadataRequests = [];
+  page.on('request', (request) => {
+    if (/\/kanban\/metadata(?:\?|$)/.test(request.url())) metadataRequests.push(request.url());
+  });
+  const metadataResponse = page.waitForResponse((response) => /\/kanban\/metadata(?:\?|$)/.test(response.url()));
+  const failed = page.waitForResponse(isSnapshot);
+  await page.goto(`${baseURL}/projects/ecookbook/kanban`);
+  const initial = await failed;
+  expect(initial.status()).toBe(422);
+  expect((await initial.json()).error.server_entity_limit).toBe(2);
+  const metadataHttp = await metadataResponse;
+  expect(metadataHttp.ok()).toBe(true);
+  const metadata = await metadataHttp.json();
+  const tracker = metadata.filter_options.trackers.find((option) => option.name === 'Kanban Recovery Tracker');
+  expect(tracker).toBeTruthy();
+  expect(metadata.filter_options.priorities.length).toBeGreaterThan(0);
+  const l = await labels(page);
+  await expect(page.getByRole('region', { name: l.board_recovery })).toBeVisible();
+  await page.getByRole('button', { name: l.issue_tracker, exact: true }).click();
+  const recovered = page.waitForResponse((response) => isSnapshot(response) && response.ok() &&
+    new URL(response.url()).searchParams.getAll('filter_tracker_ids[]').includes(String(tracker.id)));
+  await page.getByRole('dialog', { name: l.issue_tracker }).getByRole('button', { name: tracker.name, exact: true }).click();
+  const completeHttp = await recovered;
+  const complete = await completeHttp.json();
+  expect(complete.meta.complete).toBe(true);
+  expect(complete.meta.server_entity_limit).toBe(2);
+  expect(complete.entities).toHaveLength(1);
+  expect(complete.entities[0].tracker_id).toBe(tracker.id);
+  expect(new URL(completeHttp.url()).searchParams.has('board_entity_limit')).toBe(false);
+  await expect(page.getByRole('region', { name: l.board_recovery })).toHaveCount(0);
+  expect(metadataRequests).toHaveLength(1);
+});
+
+test('subject filter recovers a large initial scope as a complete snapshot', async ({ page, baseURL }) => {
+  test.skip(process.env.REDMINE_KANBAN_RECOVERY_TEST !== '1', 'Requires the dedicated server with entity cap 2');
+  await login(page, baseURL);
+  const failed = page.waitForResponse(isSnapshot);
+  await page.goto(`${baseURL}/projects/ecookbook/kanban`);
+  const initial = await failed;
+  expect(initial.status()).toBe(422);
+  const error = await initial.json();
+  expect(error.error.code).toBe('BOARD_SCOPE_TOO_LARGE');
+  expect(error.error.server_entity_limit).toBe(2);
+  expect(error).not.toHaveProperty('entities');
+
+  const l = await labels(page);
+  await page.getByRole('button', { name: l.filter, exact: true }).click();
+  const search = page.getByRole('dialog', { name: l.filter }).getByPlaceholder(l.filter_subject);
+  const filteredStartedAt = process.hrtime.bigint();
+  const filteredResponse = page.waitForResponse((response) => {
+    if (!isSnapshot(response) || !response.ok()) return false;
+    return new URL(response.url()).searchParams.get('filter_q') === 'calendar issue';
+  });
+  await search.fill('calendar issue');
+  const filtered = await filteredResponse;
+  const filteredElapsedMs = Number(process.hrtime.bigint() - filteredStartedAt) / 1_000_000;
+  const filteredBody = await filtered.body();
+  const snapshot = JSON.parse(filteredBody.toString('utf8'));
+  expect(snapshot.meta.complete).toBe(true);
+  expect(snapshot.meta.server_entity_limit).toBe(2);
+  expect(snapshot.meta.entity_count).toBe(snapshot.entities.length);
+  expect(snapshot.entities).toHaveLength(1);
+  expect(snapshot.entities[0].subject).toBe('Kanban E2E calendar issue');
+  expect(snapshot.tree.root_ids).toEqual([snapshot.entities[0].id]);
+  expect(snapshot.tree.children_by_parent_id).toEqual({});
+  await expect(page.getByRole('region', { name: l.board_recovery })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Kanban Board' })).toBeVisible();
+  console.log(JSON.stringify({
+    recovery_filter: 'calendar issue',
+    entity_count: snapshot.meta.entity_count,
+    query_count: snapshot.meta.query_count ?? null,
+    response_bytes: filteredBody.byteLength,
+    elapsed_ms: Number(filteredElapsedMs.toFixed(1)),
+  }));
 });
 
 test('a narrow saved view recovers a fresh failed snapshot and retains its saved source', async ({ page, baseURL }) => {

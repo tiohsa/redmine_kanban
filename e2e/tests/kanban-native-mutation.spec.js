@@ -18,9 +18,10 @@ async function adminLogin(page, baseURL) {
   await page.waitForURL(url => !url.pathname.endsWith('/login'));
 }
 
-async function boardSnapshot(page, baseURL, limit = 5000) {
+async function boardSnapshot(page, baseURL, limit = 5000, subjectQuery) {
+  const query = subjectQuery === undefined ? '' : `&filter_q=${encodeURIComponent(subjectQuery)}`;
   const response = await page.request.get(
-    `${nativeProjectPath(baseURL)}/kanban/data?board_entity_limit=${limit}`,
+    `${nativeProjectPath(baseURL)}/kanban/data?board_entity_limit=${limit}${query}`,
   );
   return { response, payload: await response.json() };
 }
@@ -62,7 +63,7 @@ async function openIssueView(page, issueId) {
 }
 
 async function removeIssuesWithSubjectPrefix(page, baseURL, prefix) {
-  const { payload } = await boardSnapshot(page, baseURL);
+  const { payload } = await boardSnapshot(page, baseURL, 5000, prefix);
   const issueIds = (payload.entities || [])
     .filter((issue) => issue.subject.startsWith(prefix))
     .map((issue) => ({ id: issue.id, lockVersion: issue.lock_version }));
@@ -136,6 +137,7 @@ test('native iframe edit converges to one authoritative complete snapshot', asyn
 });
 
 test('native create at the admission limit leaves the board without a stale complete snapshot', async ({ page, baseURL }) => {
+  test.skip(process.env.REDMINE_KANBAN_RECOVERY_TEST !== '1', 'Requires the dedicated server with entity cap 2');
   const redmineBase = baseURL || 'http://127.0.0.1:3002';
   const projectPath = nativeProjectPath(redmineBase);
   const subjectPrefix = 'Kanban E2E native create ';
@@ -147,19 +149,7 @@ test('native create at the admission limit leaves the board without a stale comp
 
   const { payload: initial } = await boardSnapshot(page, redmineBase);
   expect(initial.entities.length).toBe(2);
-
-  const settingsTrigger = page.getByRole('button', { name: 'Display settings', exact: true });
-  await settingsTrigger.click();
-  const settings = page.getByRole('dialog', { name: /display settings/i });
-  await settings.locator('input[type="text"]').fill('2');
-  const settingsReload = page.waitForResponse((response) => (
-    response.url().includes(`${projectPath}/kanban/data`) && response.request().method() === 'GET'
-  ));
-  await settings.getByRole('button', { name: /^save$/i }).click();
-  expect((await settingsReload).status()).toBe(200);
-  await expect(page.locator('.rk-canvas-board')).toBeVisible();
-  await settingsTrigger.click();
-  await expect(settings).toHaveCount(0);
+  expect(initial.meta.server_entity_limit).toBe(2);
 
   await page.locator('.rk-toolbar').getByRole('button', { name: 'Create', exact: true }).click();
   await expect(page.locator('iframe.rk-iframe-dialog-frame')).toBeVisible();
@@ -176,10 +166,15 @@ test('native create at the admission limit leaves the board without a stale comp
   expect(overflowResponse.status()).toBe(422);
   const overflowPayload = await overflowResponse.json();
   expect(overflowPayload.error.code).toBe('BOARD_SCOPE_TOO_LARGE');
+  expect(overflowPayload.error.server_entity_limit).toBe(2);
+  expect(new URL(overflowResponse.url()).searchParams.has('board_entity_limit')).toBe(false);
+  expect(overflowPayload).not.toHaveProperty('entities');
   await expect(page.locator('.rk-canvas-board')).toHaveCount(0);
-  await expect(page.getByText(/maximum display count|最大表示件数/i)).toBeVisible();
+  await expect(page.getByText(/server limit of 2|サーバー上限の2件/i)).toBeVisible();
 
-  const { payload: persisted } = await boardSnapshot(page, redmineBase);
+  const { response: persistedResponse, payload: persisted } = await boardSnapshot(page, redmineBase, 5000, subject);
+  expect(persistedResponse.ok()).toBe(true);
+  expect(persisted.meta.complete).toBe(true);
   const created = persisted.entities.find((issue) => issue.subject === subject);
   expect(created).toBeTruthy();
   await removeIssuesWithSubjectPrefix(page, redmineBase, subjectPrefix);

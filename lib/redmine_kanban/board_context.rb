@@ -2,14 +2,16 @@ require_relative 'project_catalog'
 require_relative 'snapshot_limits'
 require 'digest'
 require 'json'
+require_relative 'board_issue_filter'
 
 module RedmineKanban
   class BoardContext
     attr_reader :project, :user, :project_ids, :scope_status_ids, :dependency_status_ids,
+                :issue_filter,
                 :requested_entity_limit, :effective_entity_limit, :server_entity_limit,
                 :response_byte_limit, :query_limit, :total_query_limit
 
-    def initialize(project:, user:, project_ids: nil, scope_status_ids: nil, issue_status_ids: nil, exclude_status_ids: nil, dependency_status_ids: nil, board_entity_limit: nil)
+    def initialize(project:, user:, project_ids: nil, scope_status_ids: nil, issue_status_ids: nil, exclude_status_ids: nil, dependency_status_ids: nil, board_entity_limit: nil, issue_filter: nil)
       @project = project
       @user = user
       @project_ids = sanitize_project_ids(project_ids).presence || [@project.id]
@@ -28,6 +30,7 @@ module RedmineKanban
         Array(scope_status_ids || @dependency_status_ids).map(&:to_i).select(&:positive?).uniq & all_status_ids
       end
       @dependency_status_ids |= @scope_status_ids
+      @issue_filter = issue_filter || BoardIssueFilter.new
       @requested_entity_limit = SnapshotLimits.requested(board_entity_limit)
       @effective_entity_limit = SnapshotLimits.effective(@requested_entity_limit)
       @server_entity_limit = SnapshotLimits.server_entity_limit
@@ -52,8 +55,26 @@ module RedmineKanban
         user_id: @user.id,
         project_ids: @project_ids.sort,
         scope_status_ids: @scope_status_ids.sort,
-        dependency_status_ids: @dependency_status_ids.sort
+        dependency_status_ids: @dependency_status_ids.sort,
+        filter_scope: @issue_filter.scope
       }.to_json)}"
+    end
+
+    def filter_scope
+      @issue_filter.scope
+    end
+
+    def filter_membership_changed?(changed_fields)
+      return false unless @issue_filter.active?
+      fields = Array(changed_fields).map(&:to_sym)
+      return true if fields.include?(:status_id)
+
+      scope = filter_scope
+      (scope[:q].present? && fields.include?(:subject)) ||
+        ((scope[:assignee_ids].any? || scope[:include_unassigned]) && fields.include?(:assigned_to_id)) ||
+        (scope[:tracker_ids].any? && fields.include?(:tracker_id)) ||
+        (scope[:priority_filter_enabled] && fields.include?(:priority_id)) ||
+        (scope[:due] != 'all' && fields.include?(:due_date))
     end
 
     private

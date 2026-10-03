@@ -13,6 +13,19 @@ export type FreshnessRequest = {
   readonly entitySnapshots: ReadonlyMap<number, string>;
 };
 
+type MutationGroup = {
+  scopeFingerprint: string;
+  activeIds: Set<number>;
+  filteredMove: boolean;
+  needsSnapshot: boolean;
+  obsolete: boolean;
+};
+
+export type BoardMutationToken = {
+  readonly id: number;
+  readonly group: MutationGroup;
+};
+
 function scopeFingerprint(data: BoardData): string {
   return data.scope_fingerprint
     ?? data.meta.scope_fingerprint
@@ -35,6 +48,9 @@ function canonicalIssue(issue: Issue, columns: BoardData['columns']): Issue & { 
 
 export class BoardFreshnessAuthority {
   private generation = 0;
+  private snapshotState: 'ready' | 'refreshing' | 'failed' = 'ready';
+  private snapshotListeners = new Set<() => void>();
+  private completedSnapshotGeneration: number | undefined;
   private nextRequestId = 0;
   private latestAggregateRequestId = 0;
   private latestEntityRequestIds = new Map<number, number>();
@@ -42,6 +58,44 @@ export class BoardFreshnessAuthority {
   private activeRequests = new Set<number>();
   private entityAbortControllers = new Map<number, AbortController>();
   private invalidationListeners = new Set<() => void>();
+  private mutations = new Map<number, BoardMutationToken>();
+  private mutationGroup: MutationGroup | undefined;
+
+  beginMutation(data: BoardData, filteredMove = false): BoardMutationToken {
+    this.syncScope(data);
+    const group = this.mutationGroup ?? {
+      scopeFingerprint: scopeFingerprint(data), activeIds: new Set<number>(),
+      filteredMove: false, needsSnapshot: false, obsolete: false,
+    };
+    this.mutationGroup = group;
+    const token = { id: ++this.nextRequestId, group };
+    group.activeIds.add(token.id);
+    group.filteredMove ||= filteredMove;
+    this.mutations.set(token.id, token);
+    if (group.activeIds.size > 1 && group.filteredMove && !group.needsSnapshot) {
+      // Membership can change without changing the Issue DTO. Do not use DTO
+      // equality to order overlapping family deltas or their follow-up reads.
+      group.needsSnapshot = true;
+      this.invalidate();
+    }
+    return token;
+  }
+
+  isMutationDeferred(token: BoardMutationToken): boolean {
+    return token.group.needsSnapshot || token.group.obsolete;
+  }
+
+  get mutationReconciliationDeferred(): boolean {
+    return Boolean(this.mutationGroup?.needsSnapshot);
+  }
+
+  finishMutation(token: BoardMutationToken): boolean {
+    if (!this.mutations.delete(token.id)) return false;
+    token.group.activeIds.delete(token.id);
+    if (token.group.activeIds.size || this.mutationGroup !== token.group) return false;
+    this.mutationGroup = undefined;
+    return token.group.needsSnapshot && !token.group.obsolete;
+  }
 
   beginEntityReconciliation(data: BoardData, issueIds: Iterable<number>): FreshnessRequest {
     this.syncScope(data);
@@ -113,6 +167,7 @@ export class BoardFreshnessAuthority {
 
   invalidate(): void {
     this.generation += 1;
+    this.completedSnapshotGeneration = undefined;
     this.entityAbortControllers.forEach((controller) => controller.abort());
     this.entityAbortControllers.clear();
     this.activeRequestEntityIds.clear();
@@ -123,15 +178,56 @@ export class BoardFreshnessAuthority {
   }
 
   get activeRequestCount(): number {
-    return this.activeRequests.size;
+    return this.activeRequests.size + this.mutations.size;
   }
 
   get subscriberCount(): number {
-    return this.invalidationListeners.size;
+    return this.invalidationListeners.size + this.snapshotListeners.size;
   }
 
   get currentGeneration(): number {
     return this.generation;
+  }
+
+  get snapshotRefreshState(): 'ready' | 'refreshing' | 'failed' {
+    return this.snapshotState;
+  }
+
+  onSnapshotRefreshChange(listener: () => void): () => void {
+    this.snapshotListeners.add(listener);
+    return () => this.snapshotListeners.delete(listener);
+  }
+
+  beginSnapshotRefresh(): void {
+    this.invalidate();
+    // A failed refresh stays hidden through retries, including another mutation.
+    if (this.snapshotState !== 'failed') this.setSnapshotState('refreshing');
+  }
+
+  recordSnapshotResult(generation: number): void {
+    if (generation === this.generation) this.completedSnapshotGeneration = generation;
+  }
+
+  commitSnapshotResult(): void {
+    // Only a fetch committed by React Query can restore authority. Optimistic
+    // cache writes and late, cancelled reads cannot complete a refresh.
+    if (this.completedSnapshotGeneration !== this.generation) return;
+    this.completedSnapshotGeneration = undefined;
+    this.setSnapshotState('ready');
+  }
+
+  failSnapshotRefresh(): void {
+    if (this.snapshotState !== 'ready') this.setSnapshotState('failed');
+  }
+
+  resetSnapshotRefresh(): void {
+    this.setSnapshotState('ready');
+  }
+
+  private setSnapshotState(state: 'ready' | 'refreshing' | 'failed'): void {
+    if (this.snapshotState === state) return;
+    this.snapshotState = state;
+    this.snapshotListeners.forEach((listener) => listener());
   }
 
   onInvalidate(listener: () => void): () => void {
@@ -161,13 +257,18 @@ export class BoardFreshnessAuthority {
 
   private syncScope(data: BoardData): void {
     const nextScopeFingerprint = scopeFingerprint(data);
-    if (this.currentScopeFingerprint && this.currentScopeFingerprint !== nextScopeFingerprint) this.invalidate();
+    if (this.currentScopeFingerprint && this.currentScopeFingerprint !== nextScopeFingerprint) {
+      if (this.mutationGroup) this.mutationGroup.obsolete = true;
+      this.mutationGroup = undefined;
+      this.invalidate();
+    }
     this.currentScopeFingerprint = nextScopeFingerprint;
   }
 
   private isCurrent(request: FreshnessRequest, current: BoardData): boolean {
     this.syncScope(current);
     return request.generation === this.generation
+      && !this.mutationReconciliationDeferred
       && request.scopeFingerprint === scopeFingerprint(current)
       && this.activeRequests.has(request.id);
   }
@@ -184,6 +285,13 @@ export function getBoardFreshnessAuthority(queryClient: QueryClient, queryKey: Q
   if (!authorities) {
     authorities = new Map();
     authoritiesByClient.set(queryClient, authorities);
+    const clientAuthorities = authorities;
+    queryClient.getQueryCache().subscribe((event) => {
+      if (event.type !== 'removed') return;
+      const key = authorityKey(event.query.queryKey);
+      const current = clientAuthorities.get(key);
+      if (current && current.activeRequestCount === 0 && current.subscriberCount === 0) clientAuthorities.delete(key);
+    });
   }
   const key = authorityKey(queryKey);
   let authority = authorities.get(key);
@@ -200,6 +308,9 @@ export function releaseBoardFreshnessAuthority(
   authority: BoardFreshnessAuthority,
 ): void {
   if (authority.activeRequestCount > 0 || authority.subscriberCount > 0) return;
+  // The retained cache must stay non-authoritative when its scope is revisited.
+  // Cache removal releases dormant authorities through the client's subscription.
+  if (authority.snapshotRefreshState !== 'ready' && queryClient.getQueryData(queryKey) !== undefined) return;
   const authorities = authoritiesByClient.get(queryClient);
   if (authorities?.get(authorityKey(queryKey)) === authority) authorities.delete(authorityKey(queryKey));
 }

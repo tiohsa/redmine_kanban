@@ -49,10 +49,40 @@ describe('saved view documents', () => {
   });
   it('keeps unknown references pending and reports known invalid IDs without deleting them', () => {
     const before = copyViewSettings(settings);
-    expect(validateViewReferences(settings, null, null, {}).pending).toBe(true);
-    const validation = validateViewReferences(settings, { ok: true, board: { id: 1, name: 'B', identifier: 'b' }, projects: [], viewable_projects: [], statuses: [], server_entity_limit: 5000 }, null, { project: 'Project', status: 'Status', hidden_statuses: 'Hidden' });
+    expect(validateViewReferences(settings, null, {}).pending).toBe(true);
+    const validation = validateViewReferences(settings, { ok: true, board: { id: 1, name: 'B', identifier: 'b' }, projects: [], viewable_projects: [], statuses: [], server_entity_limit: 10000, filter_options: { assignees: [{ id: 2, name: 'A', available_project_ids: [1] }], trackers: [{ id: 3, name: 'T', available_project_ids: [1] }], priorities: [] } }, { project: 'Project', status: 'Status', hidden_statuses: 'Hidden', assignee: 'Assignee', issue_tracker: 'Tracker', issue_priority: 'Priority' });
     expect(validation.unavailable).toEqual(['Project: 1', 'Status: 2', 'Hidden: 4']);
-    expect(validation.pending).toBe(true);
+    expect(validation.pending).toBe(false);
     expect(settings).toEqual(before);
+  });
+
+  it('validates dynamic saved-view filter IDs from metadata before a snapshot is available', () => {
+    const saved = copyViewSettings(settings);
+    saved.filters.assigneeIds = ['2', 'unassigned'];
+    saved.filters.trackerIds = [3];
+    saved.filters.priority = ['4', 'no_priority'];
+    const metadata = {
+      ok: true as const,
+      board: { id: 1, name: 'B', identifier: 'b' },
+      projects: [{ id: 1, name: 'Project', level: 0 }],
+      viewable_projects: [{ id: 1, name: 'Project', level: 0 }],
+      statuses: [{ id: 2, name: 'Open', is_closed: false }, { id: 4, name: 'Done', is_closed: true }],
+      server_entity_limit: 10000,
+      filter_options: {
+        assignees: [{ id: 2, name: 'A', available_project_ids: [1] }],
+        trackers: [{ id: 3, name: 'T', available_project_ids: [1] }],
+        priorities: [{ id: 4, name: 'High' }],
+      },
+    };
+    expect(validateViewReferences(saved, metadata, { project: 'Project', status: 'Status', hidden_statuses: 'Hidden', assignee: 'Assignee', issue_tracker: 'Tracker', issue_priority: 'Priority' })).toEqual({ pending: false, unavailable: [] });
+
+    const unavailableSaved = copyViewSettings(saved);
+    unavailableSaved.filters.assigneeIds = ['99'];
+    unavailableSaved.filters.trackerIds = [99];
+    unavailableSaved.filters.priority = ['99'];
+    expect(validateViewReferences(unavailableSaved, metadata, { project: 'Project', status: 'Status', hidden_statuses: 'Hidden', assignee: 'Assignee', issue_tracker: 'Tracker', issue_priority: 'Priority' }).unavailable).toEqual(['Assignee: 99', 'Tracker: 99', 'Priority: 99']);
+    expect(unavailableSaved.filters.assigneeIds).toEqual(['99']);
+    expect(unavailableSaved.filters.trackerIds).toEqual([99]);
+    expect(unavailableSaved.filters.priority).toEqual(['99']);
   });
 });

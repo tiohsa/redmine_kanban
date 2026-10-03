@@ -4,16 +4,7 @@ import { act, renderHook } from '@testing-library/react';
 import { StrictMode, useEffect } from 'react';
 import { describe, expect, it, beforeEach } from 'vitest';
 import type { SavedViewSettings } from '../model/view/savedViews';
-import { MAXIMUM_BOARD_ENTITY_COUNT, parseMaximumBoardEntityCount, useKanbanPreferences } from './useKanbanPreferences';
-
-describe('parseMaximumBoardEntityCount', () => {
-  it('accepts the documented bounds and rejects values outside them', () => {
-    expect(parseMaximumBoardEntityCount('1')).toBe(1);
-    expect(parseMaximumBoardEntityCount(String(MAXIMUM_BOARD_ENTITY_COUNT))).toBe(MAXIMUM_BOARD_ENTITY_COUNT);
-    expect(parseMaximumBoardEntityCount('0')).toBeNull();
-    expect(parseMaximumBoardEntityCount(String(MAXIMUM_BOARD_ENTITY_COUNT + 1))).toBeNull();
-  });
-});
+import { useKanbanPreferences } from './useKanbanPreferences';
 
 describe('useKanbanPreferences', () => {
   beforeEach(() => {
@@ -27,7 +18,7 @@ describe('useKanbanPreferences', () => {
       useEffect(() => { if (preferences.preferencesReady) observed.push(preferences.viewSettings); }, [preferences.preferencesReady, preferences.viewSettings]);
       return preferences;
     });
-    act(() => { result.current.setFontSize(18); result.current.setAgingWarnDays(0); result.current.setCardDisplayMode('single_line'); result.current.setMaximumBoardEntityCount(400); });
+    act(() => { result.current.setFontSize(18); result.current.setAgingWarnDays(0); result.current.setCardDisplayMode('single_line'); });
     observed.length = 0;
     const saved: SavedViewSettings = { filters: { assigneeIds: ['12'], q: 'saved', due: 'custom', dueDays: 5, priority: [], priorityFilterEnabled: true, projectIds: [4], statusIds: [2], trackerIds: [3] }, sortConfig: [{ field: 'due', direction: 'asc' }], laneType: 'category', hiddenStatusIds: [6], viewableProjectsEnabled: true };
     act(() => result.current.applyViewSettings(saved));
@@ -35,7 +26,6 @@ describe('useKanbanPreferences', () => {
     expect(result.current.fontSize).toBe(18);
     expect(result.current.agingWarnDays).toBe(0);
     expect(result.current.cardDisplayMode).toBe('single_line');
-    expect(result.current.maximumBoardEntityCount).toBe(400);
     expect(JSON.parse(localStorage.getItem('rk_filters:/projects/demo/kanban:user:7') ?? '{}')).toEqual(saved.filters);
   });
 
@@ -310,39 +300,14 @@ describe('useKanbanPreferences', () => {
     expect(beta.result.current.laneType).toBe('none');
   });
 
-  it('defaults, persists, and isolates the maximum board entity count', () => {
-    const alpha = renderHook(() => useKanbanPreferences('/projects/alpha/kanban/data'));
-    expect(alpha.result.current.maximumBoardEntityCount).toBe(1500);
-
-    act(() => { alpha.result.current.setCurrentUserId(7); });
-    act(() => { alpha.result.current.setMaximumBoardEntityCount(1); });
-    expect(localStorage.getItem('rk_maximum_board_entity_count:/projects/alpha/kanban:user:7')).toBe('1');
-    act(() => { alpha.result.current.setMaximumBoardEntityCount(5000); });
-    expect(localStorage.getItem('rk_maximum_board_entity_count:/projects/alpha/kanban:user:7')).toBe('5000');
-
-    act(() => { alpha.result.current.setCurrentUserId(8); });
-    expect(alpha.result.current.maximumBoardEntityCount).toBe(1500);
-  });
-
-  it('repairs corrupt maximum count values without creating an unbounded setting', () => {
-    localStorage.setItem('rk_maximum_board_entity_count:/projects/demo/kanban:user:7', '1e5');
-    const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data'));
-    act(() => { result.current.setCurrentUserId(7); });
-    expect(result.current.maximumBoardEntityCount).toBe(1500);
-    expect(localStorage.getItem('rk_maximum_board_entity_count:/projects/demo/kanban:user:7')).toBe('1500');
-  });
-
   it('hydrates the saved user preference before reporting readiness', () => {
-    localStorage.setItem('rk_maximum_board_entity_count:/projects/demo/kanban:user:7', '3000');
     localStorage.setItem('rk_filters:/projects/demo/kanban:user:7', JSON.stringify({ statusIds: [2], projectIds: [4] }));
 
     const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data', 7));
 
     expect(result.current.preferencesReady).toBe(true);
-    expect(result.current.maximumBoardEntityCount).toBe(3000);
     expect(result.current.filters.statusIds).toEqual([2]);
     expect(result.current.filters.projectIds).toEqual([4]);
-    expect(localStorage.getItem('rk_maximum_board_entity_count:/projects/demo/kanban:user:7')).toBe('3000');
   });
 
   it.each([

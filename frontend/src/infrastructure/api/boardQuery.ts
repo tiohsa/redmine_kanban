@@ -1,4 +1,5 @@
 export { effectiveScopeStatusIds, effectiveDependencyStatusIds } from '../../model/board/scope';
+import { canonicalBoardFilterScope, type BoardFilterScope } from '../../model/board/filterScope';
 
 export const ENTITY_RECONCILIATION_BATCH_SIZE = 100;
 
@@ -11,7 +12,7 @@ export function buildBoardQueryKey(
   projectIds: number[],
   issueStatusIds: number[],
   excludeStatusIds: Iterable<number>,
-  maximumBoardEntityCount = 1500,
+  filterScope?: BoardFilterScope,
 ) {
   return [
     'kanban',
@@ -20,7 +21,7 @@ export function buildBoardQueryKey(
     serializeNumberSelection(projectIds),
     serializeNumberSelection(issueStatusIds),
     serializeNumberSelection(excludeStatusIds),
-    maximumBoardEntityCount,
+    JSON.stringify(canonicalBoardFilterScope(filterScope ?? EMPTY_FILTER_SCOPE)),
   ] as const;
 }
 
@@ -29,13 +30,13 @@ export function buildBoardDataUrl(
   projectIds: number[],
   issueStatusIds: number[],
   excludeStatusIds: Iterable<number>,
-  maximumBoardEntityCount = 1500,
+  filterScope?: BoardFilterScope,
 ): string {
   const params = new URLSearchParams();
   appendNumberParams(params, 'project_ids[]', projectIds);
   appendNumberParams(params, 'issue_status_ids[]', issueStatusIds);
   appendNumberParams(params, 'exclude_status_ids[]', excludeStatusIds);
-  params.append('board_entity_limit', String(maximumBoardEntityCount));
+  appendBoardFilterScopeParams(params, filterScope ?? EMPTY_FILTER_SCOPE);
   return `${baseUrl}/data?${params.toString()}`;
 }
 
@@ -43,7 +44,7 @@ export type BoardMutationScope = {
   projectIds: Iterable<number>;
   scopeStatusIds?: Iterable<number>;
   dependencyStatusIds?: Iterable<number>;
-  boardEntityLimit?: number;
+  filterScope?: BoardFilterScope;
 };
 
 export function buildBoardMutationUrl(baseUrl: string, path: string, scope: BoardMutationScope): string {
@@ -54,24 +55,53 @@ export function buildBoardMutationUrl(baseUrl: string, path: string, scope: Boar
 
 export function appendBoardMutationScopeParams(params: URLSearchParams, scope: BoardMutationScope): void {
   appendNumberParams(params, 'project_ids[]', scope.projectIds);
-  params.append('board_entity_limit', String(scope.boardEntityLimit ?? 1500));
   appendScopeStatusParams(params, scope.scopeStatusIds ?? []);
   appendDependencyStatusParams(params, scope.dependencyStatusIds ?? scope.scopeStatusIds ?? []);
+  appendBoardFilterScopeParams(params, scope.filterScope ?? EMPTY_FILTER_SCOPE);
 }
 
-export function buildBoardCountsUrl(baseUrl: string, projectIds: number[]): string {
+export function buildBoardCountsUrl(
+  baseUrl: string,
+  projectIds: number[],
+  filterScope?: BoardFilterScope,
+  scopeStatusIds?: Iterable<number>,
+  dependencyStatusIds?: Iterable<number>,
+): string {
   const params = new URLSearchParams();
   appendNumberParams(params, 'project_ids[]', projectIds);
+  if (scopeStatusIds !== undefined) appendScopeStatusParams(params, scopeStatusIds);
+  if (dependencyStatusIds !== undefined) appendDependencyStatusParams(params, dependencyStatusIds);
+  appendBoardFilterScopeParams(params, filterScope ?? EMPTY_FILTER_SCOPE);
   return `${baseUrl}/counts?${params.toString()}`;
 }
 
-export function buildBoardEntitiesUrl(baseUrl: string, projectIds: number[], issueIds: number[], scopeStatusIds: number[] = [], dependencyStatusIds = scopeStatusIds): string {
+export function buildBoardEntitiesUrl(baseUrl: string, projectIds: number[], issueIds: number[], scopeStatusIds: number[] = [], dependencyStatusIds = scopeStatusIds, filterScope?: BoardFilterScope): string {
   const params = new URLSearchParams();
   appendNumberParams(params, 'project_ids[]', projectIds);
   appendNumberParams(params, 'ids[]', issueIds);
   appendScopeStatusParams(params, scopeStatusIds);
   appendDependencyStatusParams(params, dependencyStatusIds);
+  appendBoardFilterScopeParams(params, filterScope ?? EMPTY_FILTER_SCOPE);
   return `${baseUrl}/issues/entities?${params.toString()}`;
+}
+
+const EMPTY_FILTER_SCOPE: BoardFilterScope = {
+  q: '', assignee_ids: [], include_unassigned: false, tracker_ids: [],
+  priority_filter_enabled: false, priority_ids: [], include_no_priority: false, due: 'all',
+};
+
+export function appendBoardFilterScopeParams(params: URLSearchParams, rawScope: BoardFilterScope): void {
+  const scope = canonicalBoardFilterScope(rawScope);
+  params.set('filter_q', scope.q);
+  appendNumberParams(params, 'filter_assignee_ids[]', scope.assignee_ids);
+  params.set('filter_include_unassigned', scope.include_unassigned ? '1' : '0');
+  appendNumberParams(params, 'filter_tracker_ids[]', scope.tracker_ids);
+  params.set('filter_priority_enabled', scope.priority_filter_enabled ? '1' : '0');
+  appendNumberParams(params, 'filter_priority_ids[]', scope.priority_ids);
+  params.set('filter_include_no_priority', scope.include_no_priority ? '1' : '0');
+  params.set('filter_due', scope.due);
+  if (scope.due_days !== undefined) params.set('filter_due_days', String(scope.due_days));
+  if (scope.date_anchor) params.set('filter_date_anchor', scope.date_anchor);
 }
 
 export function appendScopeStatusParams(params: URLSearchParams, scopeStatusIds: Iterable<number>): void {

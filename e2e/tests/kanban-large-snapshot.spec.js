@@ -14,6 +14,13 @@ async function getSnapshot(page, baseURL, limit) {
   return { response, payload: await response.json() };
 }
 
+async function getFilteredSnapshot(page, baseURL, limit, query) {
+  const response = await page.request.get(
+    `${baseURL}/projects/ecookbook/kanban/data?board_entity_limit=${limit}&filter_q=${encodeURIComponent(query)}`,
+  );
+  return { response, payload: await response.json() };
+}
+
 test('actual DB high-fan-out fixture enforces admission and resource bounds', async ({ page, baseURL }) => {
   const redmineBase = baseURL || 'http://127.0.0.1:3002';
   await adminLogin(page, redmineBase);
@@ -41,4 +48,32 @@ test('actual DB high-fan-out fixture enforces admission and resource bounds', as
   expect(overLimit.response.status()).toBe(422);
   expect(overLimit.payload.error.code).toBe('BOARD_SCOPE_TOO_LARGE');
   expect(overLimit.payload).not.toHaveProperty('entities');
+
+  const childFilter = 'Kanban E2E truncation child 1505';
+  const filteredFanOut = await getFilteredSnapshot(page, redmineBase, 1500, childFilter);
+  expect(filteredFanOut.response.status()).toBe(422);
+  expect(filteredFanOut.payload.error.code).toBe('BOARD_SCOPE_TOO_LARGE');
+  expect(filteredFanOut.payload).not.toHaveProperty('entities');
+
+  const filteredStartedAt = process.hrtime.bigint();
+  const filteredComplete = await getFilteredSnapshot(page, redmineBase, 2000, childFilter);
+  const filteredElapsedMs = Number(process.hrtime.bigint() - filteredStartedAt) / 1_000_000;
+  expect(filteredComplete.response.ok()).toBeTruthy();
+  expect(filteredComplete.payload.meta.complete).toBe(true);
+  expect(filteredComplete.payload.meta.requested_entity_limit).toBe(2000);
+  expect(filteredComplete.payload.meta.server_entity_limit).toBe(10000);
+  expect(filteredComplete.payload.meta.entity_count).toBe(1506);
+  expect(filteredComplete.payload.entities).toHaveLength(1506);
+  const filteredParent = filteredComplete.payload.entities.find((issue) => issue.subject === 'Kanban E2E truncation parent');
+  const matchingChild = filteredComplete.payload.entities.find((issue) => issue.subject === childFilter);
+  expect(filteredParent).toBeTruthy();
+  expect(matchingChild).toBeTruthy();
+  expect(filteredComplete.payload.tree.children_by_parent_id[String(filteredParent.id)]).toHaveLength(1505);
+  console.log(JSON.stringify({
+    high_fan_out_filter: childFilter,
+    entity_count: filteredComplete.payload.meta.entity_count,
+    query_count: filteredComplete.payload.meta.query_count ?? null,
+    response_bytes: (await filteredComplete.response.body()).byteLength,
+    elapsed_ms: Number(filteredElapsedMs.toFixed(1)),
+  }));
 });

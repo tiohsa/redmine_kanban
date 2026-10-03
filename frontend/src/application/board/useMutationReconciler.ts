@@ -113,6 +113,9 @@ export function useMutationReconciler({ baseUrl, boardQueryKey, data, onReconcil
   }, [boardQueryKey, queryClient]);
 
   const reconcileIssueBatch = useCallback(async (issueIds: number[], options: EntityReconciliationOptions = {}, request?: FreshnessRequest) => {
+    if (getBoardFreshnessAuthority(queryClient, boardQueryKey).mutationReconciliationDeferred) {
+      return { status: 'superseded' } as ReconcileResult;
+    }
     const ids = [...new Set(issueIds)];
     if (ids.length === 0) return { status: 'applied', missingIds: [] } as ReconcileResult;
     const requestedIds = [...ids];
@@ -136,7 +139,7 @@ export function useMutationReconciler({ baseUrl, boardQueryKey, data, onReconcil
       ids.splice(0, ids.length, ...applicableIds);
       if (!ids.length) return { status: 'superseded' } as ReconcileResult;
       const response = await getJson<{ ok: boolean } & Parameters<typeof applyEntityReconciliation>[1]>(
-        buildBoardEntitiesUrl(baseUrl, requestData.meta.project_ids ?? [], ids, effectiveScopeStatusIds(requestData), effectiveDependencyStatusIds(requestData)),
+        buildBoardEntitiesUrl(baseUrl, requestData.meta.project_ids ?? [], ids, effectiveScopeStatusIds(requestData), effectiveDependencyStatusIds(requestData), requestData.meta.filter_scope),
         { signal: controller.signal },
       );
       if (!response.ok) return { status: 'failed', reason: 'server' } as ReconcileResult;
@@ -172,6 +175,7 @@ export function useMutationReconciler({ baseUrl, boardQueryKey, data, onReconcil
   }, [acquireEntitySlot, baseUrl, boardQueryKey, data, queryClient]);
 
   const reconcileIssuesResult = useCallback(async (issueIds: number[], options: EntityReconciliationOptions = {}) => {
+    if (getBoardFreshnessAuthority(queryClient, boardQueryKey).snapshotRefreshState !== 'ready') return { status: 'superseded' } as ReconcileResult;
     const ids = [...new Set(issueIds)];
     if (ids.length === 0) return { status: 'applied', missingIds: [] } as ReconcileResult;
     const requestData = queryClient.getQueryData<BoardData>(boardQueryKey) ?? data;
@@ -235,12 +239,14 @@ export function useMutationReconciler({ baseUrl, boardQueryKey, data, onReconcil
 
   const reconcileColumnCounts = useCallback(async (required: boolean) => {
     if (!required || !data) return;
+    if (getBoardFreshnessAuthority(queryClient, boardQueryKey).mutationReconciliationDeferred) return;
+    if (getBoardFreshnessAuthority(queryClient, boardQueryKey).snapshotRefreshState !== 'ready') return;
     const requestData = queryClient.getQueryData<BoardData>(boardQueryKey) ?? data;
     const freshnessAuthority = getBoardFreshnessAuthority(queryClient, boardQueryKey);
     const request = freshnessAuthority.beginAggregateReconciliation(requestData);
     try {
       const response = await getJson<{ ok: boolean; columns?: BoardData['columns'] }>(
-        buildBoardCountsUrl(baseUrl, requestData.meta.project_ids ?? []),
+        buildBoardCountsUrl(baseUrl, requestData.meta.project_ids ?? [], requestData.meta.filter_scope, effectiveScopeStatusIds(requestData), effectiveDependencyStatusIds(requestData)),
       );
       queryClient.setQueryData<BoardData>(boardQueryKey, (current) => (
         current && response.columns && freshnessAuthority.canApplyAggregateReconciliation(request, current)
@@ -261,6 +267,14 @@ export function useMutationReconciler({ baseUrl, boardQueryKey, data, onReconcil
     // restored entities before reaching this step. Do not replay those effects.
     { responseHandled = false }: { responseHandled?: boolean } = {},
   ) => {
+    const authority = getBoardFreshnessAuthority(queryClient, boardQueryKey);
+    if (authority.mutationReconciliationDeferred) return;
+    const current = queryClient.getQueryData<BoardData>(boardQueryKey);
+    if (result.scope_fingerprint && current && result.scope_fingerprint !== scopeOf(current)) return;
+    if (getBoardFreshnessAuthority(queryClient, boardQueryKey).snapshotRefreshState !== 'ready') {
+      if (!responseHandled) invalidateSnapshot();
+      return;
+    }
     if (isBoardSnapshotInvalidated(result)) {
       if (!responseHandled) invalidateSnapshot();
       return;

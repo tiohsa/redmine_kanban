@@ -17,9 +17,9 @@ vi.mock('./board/CanvasBoard', async () => {
 });
 
 vi.mock('../infrastructure/api/http', () => ({
-  getJson: vi.fn((url: string) => Promise.resolve(url.endsWith('/metadata') ? { ok: true, board: { id: 1 }, projects: [], viewable_projects: [], statuses: [], server_entity_limit: 5000 } : {
+  getJson: vi.fn((url: string) => Promise.resolve(url.endsWith('/metadata') ? { ok: true, board: { id: 1, name: 'B', identifier: 'b' }, projects: [], viewable_projects: [], statuses: [], server_entity_limit: 10000, filter_options: { assignees: [], trackers: [], priorities: [] } } : {
     ok: true, contract_version: 3, scope_fingerprint: 'sha256:test',
-    meta: { project_id: 1, project_ids: [1], scope_status_ids: [], current_user_id: 7, can_move: false, can_create: false, can_delete: false, lane_type: 'assignee', complete: true, entity_count: 0 },
+    meta: { project_id: 1, project_ids: [1], scope_status_ids: [], current_user_id: 7, can_move: false, can_create: false, can_delete: false, lane_type: 'assignee', complete: true, entity_count: 0, server_entity_limit: null },
     columns: [], lanes: [], entities: [], tree: { root_ids: [], children_by_parent_id: {} },
     lists: { assignees: [], trackers: [], priorities: [], projects: [], viewable_projects: [], creatable_projects: [] },
     labels: {
@@ -32,7 +32,6 @@ vi.mock('../infrastructure/api/http', () => ({
       fit_width: '幅に合わせる',
       font_size: 'フォントサイズ',
       show_subtasks_short: '子チケットを表示',
-      maximum_board_entity_count_help: '最大 %{max} 件',
     },
   })),
   isHttpError: vi.fn(() => false),
@@ -84,6 +83,12 @@ describe('App display settings', () => {
     expect(screen.queryByRole('dialog', { name: '表示設定' })).toBeNull();
     expect(document.activeElement).toBe(outside);
     outside.remove();
+  });
+
+  it('does not expose the server entity ceiling as a user setting', async () => {
+    await openDisplaySettings();
+    expect(document.querySelector('#rk-maximum-board-entity-count')).toBeNull();
+    expect(screen.queryByText('Maximum Board Entity Count')).toBeNull();
   });
 
   it.each([13, 18])('shows the same font size %i in settings and Canvas', async (size) => {

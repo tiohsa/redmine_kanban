@@ -6,7 +6,6 @@ import {
   type BoardResponse,
   type NormalizedBoardState,
 } from './boardState';
-import { normalizeMaximumBoardEntityCount, parseMaximumBoardEntityCount } from './useKanbanPreferences';
 import type { BoardData, Issue } from './types';
 
 type ModelEntity = {
@@ -350,23 +349,6 @@ function assertDifferentialState(
   assertProjectionInvariants(referenceProjection);
   assertProjectionInvariants(productionProjection);
 }
-
-describe('snapshot admission preference state machine', () => {
-  it.each(['0', '-1', '1.5', '1e5', 'NaN', 'Infinity'])('rejects non-positive, fractional, or non-finite input %s', (value) => {
-    expect(parseMaximumBoardEntityCount(value)).toBeNull();
-  });
-
-  it('normalizes missing and blank values to the product default', () => {
-    expect(normalizeMaximumBoardEntityCount(undefined)).toBe(1500);
-    expect(normalizeMaximumBoardEntityCount('')).toBe(1500);
-    expect(normalizeMaximumBoardEntityCount(' 1500 ')).toBe(1500);
-  });
-
-  it('accepts positive integer values only', () => {
-    expect(parseMaximumBoardEntityCount('1')).toBe(1);
-    expect(parseMaximumBoardEntityCount('5000')).toBe(5000);
-  });
-});
 
 describe('production differential normalized snapshot state machine', () => {
   it('keeps the reference model and production state equal after every lifecycle step', () => {

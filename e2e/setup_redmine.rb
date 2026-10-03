@@ -43,6 +43,13 @@ native_project.enabled_module_names = required_modules
 native_project.save!
 native_project.trackers << tracker unless native_project.trackers.exists?(tracker.id)
 
+# Swimlane moves need an assignable member as well as the unassigned lane.
+assignable_role = Role.where(builtin: 0, assignable: true).first
+raise 'assignable role not found' unless assignable_role
+native_membership = Member.find_or_initialize_by(project: native_project, user: admin)
+native_membership.roles = native_membership.roles | [assignable_role]
+native_membership.save!
+
 native_parent_issue = Issue.find_or_create_by!(
   project: native_project,
   subject: 'Kanban E2E parent issue'
@@ -102,6 +109,16 @@ calendar_issue = Issue.find_or_create_by!(
   issue.status = status
 end
 calendar_issue.update_column(:due_date, nil)
+
+# The recovery server needs a dynamic filter that narrows the initial scope
+# without depending on snapshot operational lists.
+if ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] == '2'
+  recovery_tracker = Tracker.find_or_create_by!(name: 'Kanban Recovery Tracker') do |candidate|
+    candidate.default_status = status
+  end
+  project.trackers << recovery_tracker unless project.trackers.exists?(recovery_tracker.id)
+  calendar_issue.update!(tracker: recovery_tracker)
+end
 
 if ENV['REDMINE_KANBAN_E2E_TREE_FIXTURE'] == '1'
   truncation_parent = Issue.find_or_initialize_by(
