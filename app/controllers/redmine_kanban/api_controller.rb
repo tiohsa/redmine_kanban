@@ -29,6 +29,11 @@ module RedmineKanban
 
     def metadata
       render json: BoardMetadata.new(project: @project, user: User.current).to_h
+    rescue BoardFilterOptionsBuilder::ResourceLimitExceeded => error
+      render json: {
+        ok: false,
+        error: { code: 'BOARD_FILTER_OPTIONS_TOO_LARGE', resource: error.resource, limit: error.limit },
+      }, status: :unprocessable_entity
     end
 
     def entities

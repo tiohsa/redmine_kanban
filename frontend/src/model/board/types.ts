@@ -185,13 +185,20 @@ export type ResolvedBoardIssue = {
   boardIssue?: Issue;
 };
 
+export type BoardFilterOptions = {
+  assignees: { id: number; name: string; available_project_ids: number[] }[];
+  trackers: { id: number; name: string; available_project_ids: number[] }[];
+  priorities: { id: number; name: string }[];
+};
+
 export type BoardMetadata = {
   ok: true;
   board: { id: number; identifier: string; name: string };
-  server_entity_limit: number | null;
+  server_entity_limit: number;
   projects: ProjectListItem[];
   viewable_projects: ProjectListItem[];
   statuses: Column[];
+  filter_options: BoardFilterOptions;
 };
 
 export type BoardErrorResponse = {

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { QueryKey } from '@tanstack/react-query';
 import type { BoardData, Issue } from '../../model/board/types';
 import { isHttpError, postJson } from '../../infrastructure/api/http';
@@ -13,6 +13,7 @@ import type { IssueMutationResult, MovePayload, UpdatePayload } from '../../infr
 import { discardBulkIdempotencyKey, getOrCreateBulkIdempotencyKey, stableSerialize, storageKeyForBulkSignature } from '../../infrastructure/storage/bulkIdempotency';
 import { buildBulkCreateRequest, buildRestoreIssuePayload, isBulkCreateInput } from './kanbanActionPayloads';
 import { buildBoardMutationUrl, effectiveDependencyStatusIds, effectiveScopeStatusIds } from '../../infrastructure/api/boardQuery';
+import { getBoardFreshnessAuthority } from './asyncFreshness';
 
 export type BoardActionArgs = {
   baseUrl: string;
@@ -50,6 +51,8 @@ export function useBoardActions({
   setError,
   onOpenTimeEntry,
 }: BoardActionArgs) {
+  const queryClient = useQueryClient();
+  const snapshotReady = useCallback(() => getBoardFreshnessAuthority(queryClient, boardQueryKey).snapshotRefreshState === 'ready', [queryClient, boardQueryKey]);
   const [busyIssueIds, setBusyIssueIds] = useState<Set<number>>(new Set());
   const [pendingDeleteIssue, setPendingDeleteIssue] = useState<Issue | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
@@ -73,7 +76,6 @@ export function useBoardActions({
     const projectIds = data?.meta.project_ids ?? [];
     return buildBoardMutationUrl(baseUrl, path, {
       projectIds,
-      boardEntityLimit: data?.meta.requested_entity_limit ?? data?.meta.effective_entity_limit ?? 1500,
       scopeStatusIds: data ? effectiveScopeStatusIds(data) : [],
       dependencyStatusIds: data ? effectiveDependencyStatusIds(data) : [],
       filterScope: data?.meta.filter_scope,
@@ -113,6 +115,7 @@ export function useBoardActions({
 
   const moveIssueMutation = useIssueMutation<MovePayload, IssueMutationResult>({
     queryKey: boardQueryKey,
+    preserveDisplayOnSnapshotInvalidation: true,
     mutationFn: async (payload) => {
       const issuePayload: Record<string, unknown> = {
         status_id: payload.statusId,
@@ -195,6 +198,7 @@ export function useBoardActions({
 
   const createIssueMutation = useMutation({
     mutationFn: async (payload: Record<string, unknown>) => {
+      if (!snapshotReady()) throw new Error(data?.labels.loading ?? 'Loading');
       if (isBulkCreateInput(payload)) {
         const requestPayload = buildBulkCreateRequest(payload);
         const signature = stableSerialize(requestPayload);
@@ -236,6 +240,7 @@ export function useBoardActions({
   });
 
   const deleteIssue = useCallback(async (issueId: number, undoIssue: Issue | null = null) => {
+    if (!snapshotReady()) return;
     if (deletingIssueIdsRef.current.has(issueId)) return;
     deletingIssueIdsRef.current.add(issueId);
     beginIssueMutation(issueId);
@@ -268,10 +273,10 @@ export function useBoardActions({
       deletingIssueIdsRef.current.delete(issueId);
       endIssueMutation(issueId);
     }
-  }, [beginIssueMutation, data, endIssueMutation, reconcileMutationResult, scopedUrl, setError]);
+  }, [beginIssueMutation, data, endIssueMutation, reconcileMutationResult, scopedUrl, setError, snapshotReady]);
 
   const moveIssue = useCallback((issueId: number, statusId: number, assignedToId?: number | null, priorityId?: number | null) => {
-    if (!data || isIssueBusy(issueId)) return false;
+    if (!data || !snapshotReady() || isIssueBusy(issueId)) return false;
     const resolved = resolveBoardIssue(data, issueId);
     if (!resolved) return false;
     if (resolved.lockVersion === null) {
@@ -283,10 +288,10 @@ export function useBoardActions({
     setIssueBusy(issueId, true);
     moveIssueMutation.mutate({ issueId, statusId, assignedToId, priorityId, lockVersion: resolved.lockVersion });
     return true;
-  }, [data, isIssueBusy, moveIssueMutation, setError, setIssueBusy, setNotice]);
+  }, [data, isIssueBusy, moveIssueMutation, setError, setIssueBusy, setNotice, snapshotReady]);
 
   const toggleSubtask = useCallback((subtaskId: number, currentClosed: boolean) => {
-    if (!data || isIssueBusy(subtaskId)) return;
+    if (!data || !snapshotReady() || isIssueBusy(subtaskId)) return;
     const subtaskInfo = findSubtask(data, subtaskId);
     if (!subtaskInfo) return;
     const targetStatusId = resolveSubtaskStatus(data, currentClosed, subtaskInfo.allowedStatusIds);
@@ -303,22 +308,22 @@ export function useBoardActions({
       assignedToId: subtaskInfo.assignedToId,
       lockVersion: subtaskInfo.lockVersion,
     });
-  }, [data, isIssueBusy, moveIssueMutation, setError, setIssueBusy, setNotice]);
+  }, [data, isIssueBusy, moveIssueMutation, setError, setIssueBusy, setNotice, snapshotReady]);
 
   const requestDelete = useCallback((issueId: number) => {
-    if (!data || isIssueBusy(issueId)) return;
+    if (!data || !snapshotReady() || isIssueBusy(issueId)) return;
     const resolved = resolveBoardIssue(data, issueId);
     if (!resolved) return;
     setNotice(null);
     void deleteIssue(issueId, resolved.parentIssueId ? null : resolved.boardIssue ?? null);
-  }, [data, deleteIssue, isIssueBusy, setNotice]);
+  }, [data, deleteIssue, isIssueBusy, setNotice, snapshotReady]);
 
   const dismissDeleteNotice = useCallback(() => {
     setPendingDeleteIssue(null);
   }, []);
 
   const handleUndo = useCallback(async () => {
-    if (!pendingDeleteIssue || isRestoring) return;
+    if (!pendingDeleteIssue || isRestoring || !snapshotReady()) return;
     setIsRestoring(true);
 
     try {
@@ -355,7 +360,7 @@ export function useBoardActions({
     } finally {
       setIsRestoring(false);
     }
-  }, [data, invalidateSnapshot, isRestoring, pendingDeleteIssue, reconcileMutationResult, reconcileIssues, scopedUrl, setError, setNotice]);
+  }, [data, invalidateSnapshot, isRestoring, pendingDeleteIssue, reconcileMutationResult, reconcileIssues, scopedUrl, setError, setNotice, snapshotReady]);
 
   return {
     busyIssueIds,

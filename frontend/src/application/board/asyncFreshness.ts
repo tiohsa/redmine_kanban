@@ -35,6 +35,9 @@ function canonicalIssue(issue: Issue, columns: BoardData['columns']): Issue & { 
 
 export class BoardFreshnessAuthority {
   private generation = 0;
+  private snapshotState: 'ready' | 'refreshing' | 'failed' = 'ready';
+  private snapshotListeners = new Set<() => void>();
+  private completedSnapshotGeneration: number | undefined;
   private nextRequestId = 0;
   private latestAggregateRequestId = 0;
   private latestEntityRequestIds = new Map<number, number>();
@@ -113,6 +116,7 @@ export class BoardFreshnessAuthority {
 
   invalidate(): void {
     this.generation += 1;
+    this.completedSnapshotGeneration = undefined;
     this.entityAbortControllers.forEach((controller) => controller.abort());
     this.entityAbortControllers.clear();
     this.activeRequestEntityIds.clear();
@@ -127,11 +131,52 @@ export class BoardFreshnessAuthority {
   }
 
   get subscriberCount(): number {
-    return this.invalidationListeners.size;
+    return this.invalidationListeners.size + this.snapshotListeners.size;
   }
 
   get currentGeneration(): number {
     return this.generation;
+  }
+
+  get snapshotRefreshState(): 'ready' | 'refreshing' | 'failed' {
+    return this.snapshotState;
+  }
+
+  onSnapshotRefreshChange(listener: () => void): () => void {
+    this.snapshotListeners.add(listener);
+    return () => this.snapshotListeners.delete(listener);
+  }
+
+  beginSnapshotRefresh(): void {
+    this.invalidate();
+    // A failed refresh stays hidden through retries, including another mutation.
+    if (this.snapshotState !== 'failed') this.setSnapshotState('refreshing');
+  }
+
+  recordSnapshotResult(generation: number): void {
+    if (generation === this.generation) this.completedSnapshotGeneration = generation;
+  }
+
+  commitSnapshotResult(): void {
+    // Only a fetch committed by React Query can restore authority. Optimistic
+    // cache writes and late, cancelled reads cannot complete a refresh.
+    if (this.completedSnapshotGeneration !== this.generation) return;
+    this.completedSnapshotGeneration = undefined;
+    this.setSnapshotState('ready');
+  }
+
+  failSnapshotRefresh(): void {
+    if (this.snapshotState !== 'ready') this.setSnapshotState('failed');
+  }
+
+  resetSnapshotRefresh(): void {
+    this.setSnapshotState('ready');
+  }
+
+  private setSnapshotState(state: 'ready' | 'refreshing' | 'failed'): void {
+    if (this.snapshotState === state) return;
+    this.snapshotState = state;
+    this.snapshotListeners.forEach((listener) => listener());
   }
 
   onInvalidate(listener: () => void): () => void {
@@ -184,6 +229,13 @@ export function getBoardFreshnessAuthority(queryClient: QueryClient, queryKey: Q
   if (!authorities) {
     authorities = new Map();
     authoritiesByClient.set(queryClient, authorities);
+    const clientAuthorities = authorities;
+    queryClient.getQueryCache().subscribe((event) => {
+      if (event.type !== 'removed') return;
+      const key = authorityKey(event.query.queryKey);
+      const current = clientAuthorities.get(key);
+      if (current && current.activeRequestCount === 0 && current.subscriberCount === 0) clientAuthorities.delete(key);
+    });
   }
   const key = authorityKey(queryKey);
   let authority = authorities.get(key);
@@ -200,6 +252,9 @@ export function releaseBoardFreshnessAuthority(
   authority: BoardFreshnessAuthority,
 ): void {
   if (authority.activeRequestCount > 0 || authority.subscriberCount > 0) return;
+  // The retained cache must stay non-authoritative when its scope is revisited.
+  // Cache removal releases dormant authorities through the client's subscription.
+  if (authority.snapshotRefreshState !== 'ready' && queryClient.getQueryData(queryKey) !== undefined) return;
   const authorities = authoritiesByClient.get(queryClient);
   if (authorities?.get(authorityKey(queryKey)) === authority) authorities.delete(authorityKey(queryKey));
 }

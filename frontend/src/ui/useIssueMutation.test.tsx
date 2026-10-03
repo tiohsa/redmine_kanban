@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 
 import React, { PropsWithChildren } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { BoardData, Issue } from './types';
 import { applyAncestorIssueUpdates, applyMutationResponse, isBoardSnapshotInvalidated, isIssueFresh, replaceIssueInBoard, updateIssueInBoard, updateSubtaskInBoard, useIssueMutation } from './useIssueMutation';
+import { getBoardFreshnessAuthority } from '../application/board/asyncFreshness';
+import { invalidateBoardSnapshot } from '../application/board/useIssueMutation';
 
 function makeIssue(id: number, attrs: Partial<Issue> = {}): Issue {
   return {
@@ -534,6 +536,120 @@ describe('useIssueMutation', () => {
     expect(queryClient.getQueryData<BoardData>(queryKey)).toBeUndefined();
     expect(resetQueries).toHaveBeenCalledWith({ queryKey });
     expect(onSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves optimistic display during opted-in invalidation, blocks new mutations, and skips stale rollback', async () => {
+    const queryKey = ['kanban', 'board', 'preserved-refresh'] as const;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    queryClient.setQueryData(queryKey, makeBoardData([makeIssue(1, { subject: 'Before' })]));
+    const authority = getBoardFreshnessAuthority(queryClient, queryKey);
+    let rejectMutation!: (error: Error) => void;
+    let mutationCalls = 0;
+    const pendingMutation = new Promise<{ issue: Issue }>((_resolve, reject) => { rejectMutation = reject; });
+
+    const { result } = renderHook(() => useIssueMutation<{ issueId: number }, { issue: Issue }>({
+      queryKey,
+      mutationFn: () => {
+        mutationCalls += 1;
+        return pendingMutation;
+      },
+      applyOptimistic: (data) => updateIssueInBoard(data, 1, (issue) => ({ ...issue, subject: 'Optimistic' })),
+      applyServer: (data, response) => replaceIssueInBoard(data, response.issue),
+      preserveDisplayOnSnapshotInvalidation: true,
+    }), { wrapper: createWrapper(queryClient) });
+
+    let firstMutation!: Promise<unknown>;
+    await act(async () => {
+      firstMutation = result.current.mutateAsync({ issueId: 1 });
+      await waitFor(() => expect(mutationCalls).toBe(1));
+    });
+    const optimisticBoard = queryClient.getQueryData<BoardData>(queryKey);
+    expect(optimisticBoard?.issues[0]?.subject).toBe('Optimistic');
+
+    await act(async () => {
+      await invalidateBoardSnapshot(queryClient, queryKey, { preserveDisplay: true });
+    });
+    expect(authority.snapshotRefreshState).toBe('refreshing');
+    expect(queryClient.getQueryData(queryKey)).toBe(optimisticBoard);
+
+    await act(async () => {
+      await expect(result.current.mutateAsync({ issueId: 1 })).rejects.toThrow('Loading');
+    });
+    expect(mutationCalls).toBe(1);
+
+    await act(async () => {
+      rejectMutation(new Error('late failure'));
+      await expect(firstMutation).rejects.toThrow('late failure');
+    });
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0]?.subject).toBe('Optimistic');
+    expect(authority.snapshotRefreshState).toBe('refreshing');
+  });
+
+  it('starts another authoritative refresh when a bounded mutation response arrives after refresh committed', async () => {
+    const queryKey = ['kanban', 'board', 'late-bounded-result'] as const;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    queryClient.setQueryData(queryKey, makeBoardData([makeIssue(1, { subject: 'Before', lock_version: 1 })]));
+    const authority = getBoardFreshnessAuthority(queryClient, queryKey);
+    let finishMutation!: (value: { issue: Issue }) => void;
+    const pendingMutation = new Promise<{ issue: Issue }>((resolve) => { finishMutation = resolve; });
+    let resolveRefreshOne!: (value: BoardData) => void;
+    let resolveRefreshTwo!: (value: BoardData) => void;
+    const refreshOne = new Promise<BoardData>((resolve) => { resolveRefreshOne = resolve; });
+    const refreshTwo = new Promise<BoardData>((resolve) => { resolveRefreshTwo = resolve; });
+    let refreshCalls = 0;
+
+    const { result } = renderHook(() => {
+      useQuery({
+        queryKey,
+        queryFn: () => {
+          refreshCalls += 1;
+          return refreshCalls === 1 ? refreshOne : refreshTwo;
+        },
+        staleTime: Infinity,
+        retry: false,
+      });
+      return useIssueMutation<{ issueId: number }, { issue: Issue }>({
+        queryKey,
+        mutationFn: () => pendingMutation,
+        applyOptimistic: (data) => updateIssueInBoard(data, 1, (issue) => ({ ...issue, subject: 'Optimistic' })),
+        applyServer: (data, response) => replaceIssueInBoard(data, response.issue),
+        preserveDisplayOnSnapshotInvalidation: true,
+      });
+    }, { wrapper: createWrapper(queryClient) });
+
+    let mutation!: Promise<unknown>;
+    await act(async () => {
+      mutation = result.current.mutateAsync({ issueId: 1 });
+    });
+    await waitFor(() => expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0]?.subject).toBe('Optimistic'));
+
+    let firstRefresh!: Promise<void>;
+    act(() => { firstRefresh = invalidateBoardSnapshot(queryClient, queryKey, { preserveDisplay: true }); });
+    await waitFor(() => expect(refreshCalls).toBe(1));
+    const authoritative = makeBoardData([makeIssue(1, { subject: 'Authoritative', lock_version: 5 })]);
+    await act(async () => {
+      resolveRefreshOne(authoritative);
+      await firstRefresh;
+    });
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0]?.subject).toBe('Authoritative');
+
+    // Model the successful query cache commit observed by useBoardSnapshot.
+    const completedGeneration = authority.currentGeneration;
+    authority.recordSnapshotResult(completedGeneration);
+    authority.commitSnapshotResult();
+    expect(authority.snapshotRefreshState).toBe('ready');
+
+    await act(async () => {
+      finishMutation({ issue: makeIssue(1, { subject: 'Late bounded response', lock_version: 6 }) });
+      await mutation;
+    });
+    await waitFor(() => expect(refreshCalls).toBe(2));
+    expect(authority.snapshotRefreshState).toBe('refreshing');
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0]?.subject).toBe('Authoritative');
+
+    const finalSnapshot = makeBoardData([makeIssue(1, { subject: 'Latest authoritative', lock_version: 7 })]);
+    await act(async () => { resolveRefreshTwo(finalSnapshot); });
+    await waitFor(() => expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0]?.subject).toBe('Latest authoritative'));
   });
 
   it('does not replace a newer cached issue with a late normal success response', async () => {

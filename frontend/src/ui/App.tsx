@@ -81,8 +81,6 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     setAgingExcludeClosed,
     viewableProjectsEnabled,
     setViewableProjectsEnabled,
-    maximumBoardEntityCount,
-    setMaximumBoardEntityCount,
     preferencesReady,
   } = useKanbanPreferences(dataUrl, initialCurrentUserId);
 
@@ -97,14 +95,13 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     projectIds: filters.projectIds,
     statusIds: filters.statusIds,
     hiddenStatusIds,
-    maximumBoardEntityCount,
     preferencesReady,
     initialLabels,
     currentUserId: initialCurrentUserId,
     viewableProjectsEnabled,
     filterScope,
   });
-  const { boardQueryKey, data, loading, refresh: refreshSnapshot, toolbarData } = snapshot;
+  const { boardQueryKey, data, presentationData, refreshing, loading, refresh: refreshSnapshot, toolbarData } = snapshot;
   const refresh = useCallback(async (options: { suppressError?: boolean } = {}) => {
     const nextDateAnchor = localDateAnchor();
     if (nextDateAnchor !== dateAnchor) {
@@ -124,7 +121,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
 
   const labels = data?.labels;
   const { creatableProjectIds } = useBoardFilterNormalization({
-    data,
+    data: presentationData,
     filters,
     viewableProjectsEnabled,
   });
@@ -164,7 +161,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
   });
 
   const { boardState, filteredData, presentation, primaryFilteredData } = useBoardPresentation({
-    data,
+    data: presentationData,
     laneType,
     agingWarnDays,
     agingDangerDays,
@@ -176,14 +173,14 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     sortConfig,
   });
 
-  const canMove = (presentation?.issues ?? []).some((issue) => issue.permissions?.can_move);
+  const canMove = Boolean(data) && (presentation?.issues ?? []).some((issue) => issue.permissions?.can_move);
   const selectedProjectIds = useMemo(
-    () => (filters.projectIds.length > 0 ? filters.projectIds : data?.meta.project_id ? [data.meta.project_id] : []),
-    [data?.meta.project_id, filters.projectIds],
+    () => (filters.projectIds.length > 0 ? filters.projectIds : presentationData?.meta.project_id ? [presentationData.meta.project_id] : []),
+    [presentationData?.meta.project_id, filters.projectIds],
   );
   const defaultCreateProjectId = useMemo(
-    () => resolveDefaultCreateProjectId(selectedProjectIds, creatableProjectIds, data?.meta.project_id),
-    [creatableProjectIds, data?.meta.project_id, selectedProjectIds],
+    () => resolveDefaultCreateProjectId(selectedProjectIds, creatableProjectIds, presentationData?.meta.project_id),
+    [creatableProjectIds, presentationData?.meta.project_id, selectedProjectIds],
   );
   const createStatusId = useMemo(
     () => resolveCreateStatusId(
@@ -194,14 +191,15 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     ),
     [defaultCreateProjectId, filters.trackerIds, primaryFilteredData?.columns, toolbarData],
   );
-  const viewValidation = validateViewReferences(viewSettings, snapshot.metadata, data, toolbarData.labels);
+  const viewValidation = validateViewReferences(viewSettings, snapshot.metadata, toolbarData.labels);
   const metadata = snapshot.metadata;
   const unavailableHiddenStatusIds = metadata
     ? [...hiddenStatusIds].filter((id) => !metadata.statuses.some((status) => status.id === id))
     : [];
   const [confirmHiddenStatusRemoval, setConfirmHiddenStatusRemoval] = useState<string | null>(null);
   const viewsStorageKey = savedViewsKey(dataUrl, initialCurrentUserId);
-  const canCreate = canCreateInBoard(defaultCreateProjectId, createStatusId);
+  const showCreate = Boolean(presentationData) && canCreateInBoard(defaultCreateProjectId, createStatusId);
+  const canCreate = Boolean(data) && showCreate;
 
   return (
     <div className={`rk-root${fullWindow ? ' rk-root-fullwindow' : ''}`}>
@@ -211,16 +209,17 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
         notice={notice}
         error={error ?? snapshot.loadError}
         pendingDeleteIssue={actions.pendingDeleteIssue}
-        isRestoring={actions.isRestoring}
+        isRestoring={actions.isRestoring || !data}
         onCloseNotice={dismissNotice}
         onCloseError={() => { dismissError(); snapshot.dismissLoadError(); }}
         onDismissDeleteNotice={actions.dismissDeleteNotice}
-        onUndoDelete={() => { void actions.handleUndo(); }}
+        onUndoDelete={() => { if (data) void actions.handleUndo(); }}
       />
 
       {toolbarData ? (
         <KanbanToolbar
           data={toolbarData}
+          filterOptions={snapshot.metadata?.filter_options ?? null}
           savedViews={preferencesReady ? <SavedViewsPopover key={viewsStorageKey} storageKey={viewsStorageKey} current={viewSettings} onApply={applyViewSettings} validation={viewValidation} labels={toolbarData.labels} /> : null}
           filters={filters}
           onChange={setFilters}
@@ -236,12 +235,10 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
           onToggleShowSubtasks={() => setShowSubtasks((value) => !value)}
           fontSize={fontSize}
           onChangeFontSize={setFontSize}
-          maximumBoardEntityCount={maximumBoardEntityCount}
-          onChangeMaximumBoardEntityCount={setMaximumBoardEntityCount}
-          serverEntityLimit={toolbarData.meta.server_entity_limit}
-          canCreate={canCreate}
+          canCreate={showCreate}
+          createDisabled={!canCreate}
           onCreate={() => {
-            if (defaultCreateProjectId === null || createStatusId === undefined) return;
+            if (!data || defaultCreateProjectId === null || createStatusId === undefined) return;
             dialogs.openCreate({
               statusId: createStatusId,
               projectId: defaultCreateProjectId,
@@ -291,7 +288,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
           <button type="button" className="rk-btn" onClick={() => { void snapshot.metadataQuery.refetch(); }}>{toolbarData.labels.retry}</button>
         </div>
       ) : null}
-      <div className="rk-board">
+      <div className="rk-board" aria-busy={refreshing}>
         {filteredData && boardState ? (
           <CanvasBoard
             ref={boardRef}
@@ -300,18 +297,21 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
             state={boardState}
             canMove={canMove}
             canCreate={canCreate}
+            refreshing={refreshing}
             labels={filteredData.labels}
             fitMode={fitMode}
             cardDisplayMode={cardDisplayMode}
             busyIssueIds={actions.busyIssueIds}
             fontSize={fontSize}
             onCommand={(command) => {
+              if (!data) return false;
               if (command.type === 'move_issue') {
                 return actions.moveIssue(command.issueId, command.statusId, command.assignedToId, command.priorityId);
               }
               return false;
             }}
             onCreate={(ctx) => {
+              if (!data) return;
               const projectId = ctx.projectId ?? defaultCreateProjectId ?? undefined;
               dialogs.openCreate({
                 ...ctx,
@@ -331,12 +331,15 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
               if (issue) workTimer.open(issue);
             }}
             onPriorityClick={(issueId, currentPriorityId, x, y, source) => {
+              if (!data) return;
               dialogs.setPriorityPopup({ issueId, currentId: currentPriorityId, x, y, restoreFocusTo: source ?? document.querySelector<HTMLElement>('.rk-canvas') });
             }}
             onDateClick={(issueId, currentDate, x, y, boardPoint) => {
+              if (!data) return;
               dialogs.setDatePopup({ issueId, currentDate, x, y, boardPoint, openingId: ++datePopupOpeningId.current });
             }}
             onProgressClick={(issueId, currentDoneRatio, x, y, source) => {
+              if (!data) return;
               dialogs.setProgressPopup({ issueId, currentDoneRatio, x, y, restoreFocusTo: source ?? document.querySelector<HTMLElement>('.rk-canvas') });
             }}
             onSubtaskToggle={actions.toggleSubtask}
@@ -438,7 +441,6 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
           projectIds={dialogs.iframeEditContext.projectIds}
           scopeStatusIds={dialogs.iframeEditContext.scopeStatusIds}
           dependencyStatusIds={dialogs.iframeEditContext.dependencyStatusIds}
-          boardEntityLimit={dialogs.iframeEditContext.boardEntityLimit}
           filterScope={dialogs.iframeEditContext.filterScope}
           onClose={() => {
             dialogs.setIframeEditContext(null);
@@ -463,7 +465,6 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
           projectIds={dialogs.iframeCreateContext.projectIds}
           scopeStatusIds={dialogs.iframeCreateContext.scopeStatusIds}
           dependencyStatusIds={dialogs.iframeCreateContext.dependencyStatusIds}
-          boardEntityLimit={dialogs.iframeCreateContext.boardEntityLimit}
           filterScope={dialogs.iframeCreateContext.filterScope}
           onClose={() => {
             dialogs.setIframeCreateContext(null);
@@ -506,7 +507,6 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
           projectIds={data.meta.project_ids ?? []}
           scopeStatusIds={effectiveScopeStatusIds(data)}
           dependencyStatusIds={effectiveDependencyStatusIds(data)}
-          boardEntityLimit={data.meta.requested_entity_limit ?? data.meta.effective_entity_limit ?? 1500}
           filterScope={data.meta.filter_scope}
           onClose={(options) => { if (!options?.timeEntryConfirmed) void workTimer.lifecycle.close(workTimeEntry.recording); setWorkTimeEntry(null); }}
           onSuccess={(message) => { setNotice(message); setWorkTimeEntry(null); }}

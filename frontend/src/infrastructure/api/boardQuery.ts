@@ -12,7 +12,6 @@ export function buildBoardQueryKey(
   projectIds: number[],
   issueStatusIds: number[],
   excludeStatusIds: Iterable<number>,
-  maximumBoardEntityCount = 1500,
   filterScope?: BoardFilterScope,
 ) {
   return [
@@ -22,7 +21,6 @@ export function buildBoardQueryKey(
     serializeNumberSelection(projectIds),
     serializeNumberSelection(issueStatusIds),
     serializeNumberSelection(excludeStatusIds),
-    maximumBoardEntityCount,
     JSON.stringify(canonicalBoardFilterScope(filterScope ?? EMPTY_FILTER_SCOPE)),
   ] as const;
 }
@@ -32,14 +30,12 @@ export function buildBoardDataUrl(
   projectIds: number[],
   issueStatusIds: number[],
   excludeStatusIds: Iterable<number>,
-  maximumBoardEntityCount = 1500,
   filterScope?: BoardFilterScope,
 ): string {
   const params = new URLSearchParams();
   appendNumberParams(params, 'project_ids[]', projectIds);
   appendNumberParams(params, 'issue_status_ids[]', issueStatusIds);
   appendNumberParams(params, 'exclude_status_ids[]', excludeStatusIds);
-  params.append('board_entity_limit', String(maximumBoardEntityCount));
   appendBoardFilterScopeParams(params, filterScope ?? EMPTY_FILTER_SCOPE);
   return `${baseUrl}/data?${params.toString()}`;
 }
@@ -48,7 +44,6 @@ export type BoardMutationScope = {
   projectIds: Iterable<number>;
   scopeStatusIds?: Iterable<number>;
   dependencyStatusIds?: Iterable<number>;
-  boardEntityLimit?: number;
   filterScope?: BoardFilterScope;
 };
 
@@ -60,7 +55,6 @@ export function buildBoardMutationUrl(baseUrl: string, path: string, scope: Boar
 
 export function appendBoardMutationScopeParams(params: URLSearchParams, scope: BoardMutationScope): void {
   appendNumberParams(params, 'project_ids[]', scope.projectIds);
-  params.append('board_entity_limit', String(scope.boardEntityLimit ?? 1500));
   appendScopeStatusParams(params, scope.scopeStatusIds ?? []);
   appendDependencyStatusParams(params, scope.dependencyStatusIds ?? scope.scopeStatusIds ?? []);
   appendBoardFilterScopeParams(params, scope.filterScope ?? EMPTY_FILTER_SCOPE);

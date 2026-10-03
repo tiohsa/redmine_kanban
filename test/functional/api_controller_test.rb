@@ -44,6 +44,9 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_equal 1, json['server_entity_limit']
     assert_includes json['projects'].map { |project| project['id'] }, @project.id
     assert_equal IssueStatus.sorted.pluck(:id), json['statuses'].map { |status| status['id'] }
+    assert_kind_of Array, json.dig('filter_options', 'assignees')
+    assert_kind_of Array, json.dig('filter_options', 'trackers')
+    assert_kind_of Array, json.dig('filter_options', 'priorities')
     refute json.key?('entities')
     refute json.key?('tree')
     refute json.key?('meta')
@@ -58,6 +61,19 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     json = JSON.parse(@response.body)
     refute_includes json['viewable_projects'].map { |project| project['id'] }, hidden.id
     refute_includes json['projects'].map { |project| project['id'] }, hidden.id
+  end
+
+  def test_metadata_filter_candidate_overflow_returns_a_structured_error
+    RedmineKanban::BoardFilterOptionsBuilder.any_instance.expects(:build)
+      .raises(RedmineKanban::BoardFilterOptionsBuilder::ResourceLimitExceeded.new(resource: 'assignees', limit: 10_000))
+
+    get :metadata, params: { project_id: @project.identifier }
+
+    assert_response :unprocessable_entity
+    json = JSON.parse(@response.body)
+    assert_equal 'BOARD_FILTER_OPTIONS_TOO_LARGE', json.dig('error', 'code')
+    assert_equal 'assignees', json.dig('error', 'resource')
+    refute json.key?('filter_options')
   end
 
   def test_metadata_does_not_disclose_an_invisible_board
@@ -512,7 +528,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     ENV['REDMINE_KANBAN_MAX_RESPONSE_BYTES'] = previous
   end
 
-  def test_disabled_server_count_limit_keeps_the_user_limit_and_reports_null_metadata
+  def test_zero_server_count_limit_uses_the_finite_hard_maximum
     previous = ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES']
     ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = '0'
     first = build_issue(subject: 'Disabled server count probe one')
@@ -520,7 +536,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
 
     get :metadata, params: { project_id: @project.identifier }
     assert_response :success
-    assert_nil JSON.parse(@response.body).fetch('server_entity_limit')
+    assert_equal RedmineKanban::SnapshotLimits::HARD_MAX_BOARD_ENTITIES, JSON.parse(@response.body).fetch('server_entity_limit')
 
     params = { project_id: @project.identifier, filter_q: 'disabled server count probe', board_entity_limit: 10_000 }
     get :index, params: params
@@ -529,7 +545,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_equal true, result.dig('meta', 'complete')
     assert_equal 10_000, result.dig('meta', 'requested_entity_limit')
     assert_equal 10_000, result.dig('meta', 'effective_entity_limit')
-    assert_nil result.fetch('meta').fetch('server_entity_limit')
+    assert_equal RedmineKanban::SnapshotLimits::HARD_MAX_BOARD_ENTITIES, result.fetch('meta').fetch('server_entity_limit')
     assert_equal [first.id, second.id].sort, result.fetch('entities').map { |issue| issue['id'] }.sort
 
     get :index, params: params.merge(board_entity_limit: 1)
@@ -537,7 +553,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     result = JSON.parse(@response.body)
     assert_equal 'BOARD_SCOPE_TOO_LARGE', result.dig('error', 'code')
     assert_equal 1, result.dig('error', 'effective_entity_limit')
-    assert_nil result.fetch('error').fetch('server_entity_limit')
+    assert_equal RedmineKanban::SnapshotLimits::HARD_MAX_BOARD_ENTITIES, result.fetch('error').fetch('server_entity_limit')
     refute result.key?('entities')
   ensure
     ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = previous

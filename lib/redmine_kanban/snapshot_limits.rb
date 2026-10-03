@@ -1,7 +1,8 @@
 module RedmineKanban
   class SnapshotLimits
-    DEFAULT_BOARD_ENTITY_LIMIT = 1_500
-    DEFAULT_SERVER_ENTITY_LIMIT = 5_000
+    HARD_MAX_BOARD_ENTITIES = 10_000
+    DEFAULT_BOARD_ENTITY_LIMIT = HARD_MAX_BOARD_ENTITIES
+    DEFAULT_SERVER_ENTITY_LIMIT = HARD_MAX_BOARD_ENTITIES
     DEFAULT_RESPONSE_BYTES = 8 * 1024 * 1024
     DEFAULT_QUERY_LIMIT = 20
     DEFAULT_TOTAL_QUERY_LIMIT = 100
@@ -37,9 +38,7 @@ module RedmineKanban
     end
 
     def self.server_entity_limit
-      return nil if ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'].to_s.strip == '0'
-
-      env_positive_integer('REDMINE_KANBAN_MAX_BOARD_ENTITIES', DEFAULT_SERVER_ENTITY_LIMIT)
+      [env_positive_integer('REDMINE_KANBAN_MAX_BOARD_ENTITIES', DEFAULT_SERVER_ENTITY_LIMIT), HARD_MAX_BOARD_ENTITIES].min
     end
 
     def self.entity_reconciliation_limit

@@ -139,6 +139,7 @@ describe('useKanbanActions delete flow', () => {
     const restored = makeIssue(2);
     const { result, queryClient } = renderActions();
     const resetQueries = vi.spyOn(queryClient, 'resetQueries');
+
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, deleted_issue_ids: [1] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, created_issues: [restored] }), { status: 200 }))
@@ -162,7 +163,7 @@ describe('useKanbanActions delete flow', () => {
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      '/projects/demo/kanban/issues/1?board_entity_limit=1500&scope_status_ids_present=1&scope_status_ids%5B%5D=1&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1&filter_q=&filter_include_unassigned=0&filter_priority_enabled=0&filter_include_no_priority=0&filter_due=all',
+      '/projects/demo/kanban/issues/1?scope_status_ids_present=1&scope_status_ids%5B%5D=1&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1&filter_q=&filter_include_unassigned=0&filter_priority_enabled=0&filter_include_no_priority=0&filter_due=all',
       expect.objectContaining({ method: 'DELETE' }),
     );
     expect(result.current.pendingDeleteIssue).toBeNull();
@@ -199,7 +200,7 @@ describe('useKanbanActions delete flow', () => {
     await act(async () => { result.current.requestDelete(2); });
     await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
 
-    expect(globalThis.fetch).toHaveBeenCalledWith('/projects/demo/kanban/issues/2?board_entity_limit=1500&scope_status_ids_present=1&scope_status_ids%5B%5D=1&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1&filter_q=&filter_include_unassigned=0&filter_priority_enabled=0&filter_include_no_priority=0&filter_due=all', expect.objectContaining({ method: 'DELETE' }));
+    expect(globalThis.fetch).toHaveBeenCalledWith('/projects/demo/kanban/issues/2?scope_status_ids_present=1&scope_status_ids%5B%5D=1&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1&filter_q=&filter_include_unassigned=0&filter_priority_enabled=0&filter_include_no_priority=0&filter_due=all', expect.objectContaining({ method: 'DELETE' }));
     expect(result.current.pendingDeleteIssue).toBeNull();
   });
 
@@ -226,7 +227,7 @@ describe('useKanbanActions delete flow', () => {
     await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      '/projects/demo/kanban/issues/1?project_ids%5B%5D=3&project_ids%5B%5D=7&board_entity_limit=1500&scope_status_ids_present=1&scope_status_ids%5B%5D=1&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1&filter_q=&filter_include_unassigned=0&filter_priority_enabled=0&filter_include_no_priority=0&filter_due=all',
+      '/projects/demo/kanban/issues/1?project_ids%5B%5D=3&project_ids%5B%5D=7&scope_status_ids_present=1&scope_status_ids%5B%5D=1&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1&filter_q=&filter_include_unassigned=0&filter_priority_enabled=0&filter_include_no_priority=0&filter_due=all',
       expect.objectContaining({ method: 'DELETE' }),
     );
   });
@@ -244,7 +245,7 @@ describe('useKanbanActions delete flow', () => {
     await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      '/projects/demo/kanban/issues/1?board_entity_limit=1500&scope_status_ids_present=1&scope_status_ids%5B%5D=1&scope_status_ids%5B%5D=2&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1&dependency_status_ids%5B%5D=2&filter_q=&filter_include_unassigned=0&filter_priority_enabled=0&filter_include_no_priority=0&filter_due=all',
+      '/projects/demo/kanban/issues/1?scope_status_ids_present=1&scope_status_ids%5B%5D=1&scope_status_ids%5B%5D=2&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1&dependency_status_ids%5B%5D=2&filter_q=&filter_include_unassigned=0&filter_priority_enabled=0&filter_include_no_priority=0&filter_due=all',
       expect.objectContaining({ method: 'DELETE' }),
     );
   });
@@ -435,11 +436,14 @@ describe('useKanbanActions snapshot-invalidated success', () => {
     }), { status: 200 }));
     const { result, queryClient } = renderActions({ data: board, timeEntryOnClose: true, setIframeTimeEntryOperation });
     const resetQueries = vi.spyOn(queryClient, 'resetQueries');
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
 
     await act(async () => { result.current.moveIssue(1, 2); });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
-    expect(resetQueries).toHaveBeenCalledWith({ queryKey: ['kanban', 'board'] });
+    expect(resetQueries).not.toHaveBeenCalled();
+    expect(queryClient.getQueryData<BoardData>(['kanban', 'board'])?.issues[0]?.status_id).toBe(2);
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['kanban', 'board'], exact: true });
     expect(setIframeTimeEntryOperation).not.toHaveBeenCalled();
     expect(fetchMock.mock.calls[0][0]).toContain('/issues/1/move');
   });
@@ -466,7 +470,8 @@ describe('useKanbanActions snapshot-invalidated success', () => {
 
     await act(async () => { result.current.moveIssue(1, 2); });
     await waitFor(() => expect(setIframeTimeEntryOperation).toHaveBeenCalledWith(expect.objectContaining({ origin: 'time_entry_on_close', issueId: 1 })));
-    expect(resetQueries).toHaveBeenCalledTimes(invalidated ? 1 : 0);
+    expect(resetQueries).not.toHaveBeenCalled();
+    expect(queryClient.getQueryData<BoardData>(['kanban', 'board'])).toBeDefined();
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     expect(vi.mocked(globalThis.fetch).mock.calls[0][0]).toContain('filter_q=needle');
   });

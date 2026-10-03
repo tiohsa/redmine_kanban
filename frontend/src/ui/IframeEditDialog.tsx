@@ -87,7 +87,6 @@ type Props = {
   projectIds?: number[];
   scopeStatusIds?: number[];
   dependencyStatusIds?: number[];
-  boardEntityLimit?: number;
   filterScope?: BoardFilterScope;
   onClose: (options?: DialogCloseOptions) => void;
   onSuccess: (message: string, issueId?: number) => void;
@@ -98,7 +97,7 @@ type Props = {
   onTimeEntrySuccess?: () => Promise<TimerMutationResult> | TimerMutationResult;
 } & ({ mode: 'time_entry'; timeEntryOperation: TimeEntryOperation; url?: never; issueId?: never } | { mode?: 'create' | 'edit'; url: string; issueId: number; timeEntryOperation?: never });
 
-export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, timeEntryOperation, issueTitle, projectId, mode = 'edit', labels, baseUrl, queryKey, projectIds = [], scopeStatusIds = [], dependencyStatusIds = scopeStatusIds, boardEntityLimit = 1500, filterScope, onClose, onSuccess, onNativeWriteComplete, onTimeEntrySubmitting, onTimeEntryValidationError, onTimeEntryUnknown, onTimeEntrySuccess }: Props) {
+export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, timeEntryOperation, issueTitle, projectId, mode = 'edit', labels, baseUrl, queryKey, projectIds = [], scopeStatusIds = [], dependencyStatusIds = scopeStatusIds, filterScope, onClose, onSuccess, onNativeWriteComplete, onTimeEntrySubmitting, onTimeEntryValidationError, onTimeEntryUnknown, onTimeEntrySuccess }: Props) {
   const url = timeEntryOperation?.url ?? navigationUrl!;
   const issueId = timeEntryOperation?.issueId ?? targetIssueId!;
   const [subtasks, setSubtasks] = useState<SubtaskCreateInput[]>([]);
@@ -143,7 +142,7 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
   const parentTrackerChangeCleanupRef = useRef<(() => void) | null>(null);
   const onTimeEntryUnknownRef = useRef(onTimeEntryUnknown);
 
-  const bulkMutation = useBulkSubtaskMutation(baseUrl, queryKey, projectIds, scopeStatusIds, dependencyStatusIds, boardEntityLimit, true, filterScope);
+  const bulkMutation = useBulkSubtaskMutation(baseUrl, queryKey, projectIds, scopeStatusIds, dependencyStatusIds, true, filterScope);
   const requestClose = useCallback(() => {
     dialogClosingRef.current = true;
     onClose(mode === 'time_entry' && timeEntryConfirmedRef.current ? { timeEntryConfirmed: true } : undefined);

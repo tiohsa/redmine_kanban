@@ -7,7 +7,7 @@ import { resolveClosedState } from '../../model/issue/issue';
 import type { AncestorIssueUpdate, IssueMutationResult } from '../../infrastructure/api/contracts';
 import { updateSubtasksTree } from '../../model/board/subtasksTree';
 import { applyBoardResponse, createNormalizedBoardState, rollbackLocalIssuePatch, selectBoardData } from '../../model/board/state';
-import { getBoardFreshnessAuthority, releaseBoardFreshnessAuthority } from './asyncFreshness';
+import { getBoardFreshnessAuthority, releaseBoardFreshnessAuthority, type BoardFreshnessAuthority } from './asyncFreshness';
 
 export type EntityReconciliationResponse = {
   scope_fingerprint?: string;
@@ -28,9 +28,14 @@ export function isBoardSnapshotInvalidated(result: unknown): boolean {
   return Boolean(invalidations && typeof invalidations === 'object' && (invalidations as { board_snapshot?: unknown }).board_snapshot === true);
 }
 
-export function invalidateBoardSnapshot(queryClient: QueryClient, queryKey: QueryKey): Promise<void> {
+export function invalidateBoardSnapshot(queryClient: QueryClient, queryKey: QueryKey, options: { preserveDisplay?: boolean } = {}): Promise<void> {
   const authority = getBoardFreshnessAuthority(queryClient, queryKey);
+  if (options.preserveDisplay && queryClient.getQueryData(queryKey)) {
+    authority.beginSnapshotRefresh();
+    return queryClient.invalidateQueries({ queryKey, exact: true });
+  }
   authority.invalidate();
+  authority.resetSnapshotRefresh();
   releaseBoardFreshnessAuthority(queryClient, queryKey, authority);
   return queryClient.resetQueries({ queryKey });
 }
@@ -122,6 +127,8 @@ type MutationContext = {
   optimisticIssue?: Issue | null;
   revision: number;
   overlapped: boolean;
+  authorityGeneration: number;
+  authority: BoardFreshnessAuthority;
 };
 
 type IssuePayload = { issueId: number };
@@ -142,6 +149,7 @@ type UseIssueMutationOptions<TPayload extends IssuePayload, TResult> = {
   onSettledIssue?: (issueId: number) => void;
   onSettledMutation?: (issueId: number) => void;
   refetchOnSettled?: boolean;
+  preserveDisplayOnSnapshotInvalidation?: boolean;
 };
 
 type IssueUpdater = (issue: Issue) => Issue;
@@ -157,6 +165,7 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
   onSettledIssue,
   onSettledMutation,
   refetchOnSettled = false,
+  preserveDisplayOnSnapshotInvalidation = false,
 }: UseIssueMutationOptions<TPayload, TResult>) {
   const queryClient = useQueryClient();
   const mutationRevisions = useRef(new Map<number, number>());
@@ -166,7 +175,14 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
   return useMutation<TResult, unknown, TPayload, MutationContext>({
     mutationFn,
     onMutate: async (payload) => {
+      if (getBoardFreshnessAuthority(queryClient, queryKey).snapshotRefreshState !== 'ready') {
+        throw new Error(queryClient.getQueryData<BoardData>(queryKey)?.labels.loading ?? 'Loading');
+      }
       await queryClient.cancelQueries({ queryKey });
+
+      if (getBoardFreshnessAuthority(queryClient, queryKey).snapshotRefreshState !== 'ready') {
+        throw new Error(queryClient.getQueryData<BoardData>(queryKey)?.labels.loading ?? 'Loading');
+      }
 
       const prev = queryClient.getQueryData<BoardData>(queryKey);
       const optimistic = prev ? applyOptimistic(prev, payload) : undefined;
@@ -180,15 +196,24 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
       mutationRevisions.current.set(payload.issueId, revision);
       pendingMutationCounts.current.set(payload.issueId, pendingCount + 1);
       onMutateIssue?.(payload.issueId);
+      const authority = getBoardFreshnessAuthority(queryClient, queryKey);
       return {
         prev,
         issueId: payload.issueId,
         revision,
         overlapped: pendingCount > 0,
         optimisticIssue: optimistic ? findIssueInBoard(optimistic, payload.issueId) : null,
+        authorityGeneration: authority.currentGeneration,
+        authority,
       };
     },
     onError: (_err, _payload, ctx) => {
+      const authority = getBoardFreshnessAuthority(queryClient, queryKey);
+      if (ctx && (authority.currentGeneration !== ctx.authorityGeneration || ctx.authority.currentGeneration !== ctx.authorityGeneration)) {
+        void invalidateBoardSnapshot(queryClient, queryKey, { preserveDisplay: preserveDisplayOnSnapshotInvalidation });
+        onError?.(_err, _payload);
+        return;
+      }
       const current = queryClient.getQueryData<BoardData>(queryKey);
       const currentIssue = current && ctx ? findIssueInBoard(current, ctx.issueId) : null;
       if (ctx?.prev && !ctx.overlapped && currentIssue && ctx.optimisticIssue) {
@@ -208,8 +233,9 @@ export function useIssueMutation<TPayload extends IssuePayload, TResult>({
       onError?.(_err, _payload);
     },
     onSuccess: (result, payload, context) => {
-      if (isBoardSnapshotInvalidated(result)) {
-        invalidateBoardSnapshot(queryClient, queryKey);
+      const authority = getBoardFreshnessAuthority(queryClient, queryKey);
+      if (isBoardSnapshotInvalidated(result) || (context && (authority.currentGeneration !== context.authorityGeneration || context.authority.currentGeneration !== context.authorityGeneration))) {
+        void invalidateBoardSnapshot(queryClient, queryKey, { preserveDisplay: preserveDisplayOnSnapshotInvalidation });
       } else {
         queryClient.setQueryData<BoardData>(queryKey, (current) =>
           current ? applyFreshServerResult(current, result, payload, context, mutationRevisions.current, applyServer) : current

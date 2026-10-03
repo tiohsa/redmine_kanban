@@ -1,17 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { BoardMetadata, ToolbarViewModel } from '../../model/board/types';
+import type { ToolbarViewModel } from '../../model/board/types';
 import { canonicalBoardFilterScope, type BoardFilterScope } from '../../model/board/filterScope';
 import { getJson, isHttpError } from '../../infrastructure/api/http';
+import { parseBoardMetadata } from '../../infrastructure/api/boardMetadata';
 import { buildBoardDataUrl, buildBoardQueryKey } from '../../infrastructure/api/boardQuery';
 import { normalizeBoardData, parseBoardSnapshotV3 } from '../../infrastructure/api/boardSnapshot';
+import { getBoardFreshnessAuthority, releaseBoardFreshnessAuthority } from './asyncFreshness';
 
 type Args = {
   baseUrl: string;
   projectIds: number[];
   statusIds: number[];
   hiddenStatusIds: Iterable<number>;
-  maximumBoardEntityCount: number;
   preferencesReady: boolean;
   initialLabels: Record<string, string>;
   currentUserId: number;
@@ -29,7 +30,6 @@ export function useBoardSnapshot({
   projectIds,
   statusIds,
   hiddenStatusIds,
-  maximumBoardEntityCount,
   preferencesReady,
   initialLabels,
   currentUserId,
@@ -41,9 +41,7 @@ export function useBoardSnapshot({
   const metadataQuery = useQuery({
     queryKey: ['kanban', 'metadata', baseUrl, currentUserId, document.documentElement.lang],
     queryFn: async () => {
-      const result = await getJson<BoardMetadata>(`${baseUrl}/metadata`);
-      if (!result?.ok || !result.board || !Array.isArray(result.projects) || !Array.isArray(result.viewable_projects) || !Array.isArray(result.statuses) || !(result.server_entity_limit === null || (Number.isSafeInteger(result.server_entity_limit) && result.server_entity_limit > 0))) throw new Error('Invalid board metadata');
-      return result;
+      return parseBoardMetadata(await getJson<unknown>(`${baseUrl}/metadata`));
     },
     enabled: preferencesReady,
     retry: false,
@@ -71,8 +69,8 @@ export function useBoardSnapshot({
   const queryHiddenStatusIds = settledScope.hiddenStatusIds;
   const queryFilterScope = settledScope.filterScope;
   const boardQueryKey = useMemo(
-    () => buildBoardQueryKey(baseUrl, queryProjectIds, queryStatusIds, queryHiddenStatusIds, maximumBoardEntityCount, queryFilterScope),
-    [baseUrl, maximumBoardEntityCount, queryFilterScope, queryHiddenStatusIds, queryProjectIds, queryStatusIds],
+    () => buildBoardQueryKey(baseUrl, queryProjectIds, queryStatusIds, queryHiddenStatusIds, queryFilterScope),
+    [baseUrl, queryFilterScope, queryHiddenStatusIds, queryProjectIds, queryStatusIds],
   );
   const choices = metadataQuery.error ? undefined : metadataQuery.data;
   const selectedHiddenStatuses = queryHiddenStatusIds;
@@ -82,19 +80,44 @@ export function useBoardSnapshot({
     queryProjectIds.some((id) => !(viewableProjectsEnabled ? choices.viewable_projects : choices.projects).some((p) => p.id === id)) ||
     [...queryStatusIds, ...queryHiddenStatusIds].some((id) => !choices.statuses.some((s) => s.id === id))
   ));
+  const authority = useMemo(() => getBoardFreshnessAuthority(queryClient, boardQueryKey), [queryClient, boardQueryKey]);
+  const subscribeRefresh = useCallback((listener: () => void) => authority.onSnapshotRefreshChange(listener), [authority]);
+  const getRefreshState = useCallback(() => authority.snapshotRefreshState, [authority]);
+  const snapshotRefreshState = useSyncExternalStore(subscribeRefresh, getRefreshState);
+  useEffect(() => {
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      if (event.type !== 'updated' || JSON.stringify(event.query.queryKey) !== JSON.stringify(boardQueryKey)) return;
+      if (event.action.type === 'success' && !event.action.manual) authority.commitSnapshotResult();
+      if (event.action.type === 'error') authority.failSnapshotRefresh();
+    });
+    return () => {
+      unsubscribe();
+      releaseBoardFreshnessAuthority(queryClient, boardQueryKey, authority);
+    };
+  }, [authority, boardQueryKey, queryClient]);
   const boardQuery = useQuery({
     queryKey: boardQueryKey,
-    queryFn: async () => normalizeBoardData(
-      parseBoardSnapshotV3(await getJson<unknown>(buildBoardDataUrl(baseUrl, queryProjectIds, queryStatusIds, queryHiddenStatusIds, maximumBoardEntityCount, queryFilterScope))),
-    ),
+    queryFn: async ({ signal }) => {
+      const generation = authority.currentGeneration;
+      const result = normalizeBoardData(parseBoardSnapshotV3(await getJson<unknown>(
+        buildBoardDataUrl(baseUrl, queryProjectIds, queryStatusIds, queryHiddenStatusIds, queryFilterScope), { signal },
+      )));
+      if (signal.aborted || generation !== authority.currentGeneration) throw new DOMException('Aborted', 'AbortError');
+      authority.recordSnapshotResult(generation);
+      return result;
+    },
     retry: false,
     enabled: preferencesReady && scopeChoicesReady && !invalidScope && !permissionLost && requestedScopeKey === settledScopeKey,
   });
 
   const accessDenied = permissionLost || (isHttpError(boardQuery.error) && [401, 403, 404].includes(boardQuery.error.status));
-  const data = accessDenied || invalidScope || !scopeChoicesReady ? null : boardQuery.data ?? null;
+  const displayBlocked = accessDenied || invalidScope || !scopeChoicesReady;
+  const refreshing = snapshotRefreshState === 'refreshing';
+  const data = displayBlocked || snapshotRefreshState !== 'ready' ? null : boardQuery.data ?? null;
+  const presentationData = displayBlocked || snapshotRefreshState === 'failed'
+    || (refreshing && requestedScopeKey !== settledScopeKey) ? null : boardQuery.data ?? null;
   const metadata = accessDenied || metadataQuery.error ? null : metadataQuery.data;
-  const toolbarData = useMemo<ToolbarViewModel>(() => data ?? ({
+  const toolbarData = useMemo<ToolbarViewModel>(() => presentationData ?? ({
     meta: {
       project_id: metadata?.board.id ?? 0,
       can_move: false,
@@ -109,7 +132,7 @@ export function useBoardSnapshot({
       projects: metadata?.projects ?? [], viewable_projects: metadata?.viewable_projects ?? [],
     },
     labels: initialLabels,
-  }), [data, initialLabels, metadata]);
+  }), [presentationData, initialLabels, metadata]);
   const errorScope = JSON.stringify(boardQueryKey);
   const suppressNextBoardErrorRef = useRef<string | null>(null);
 
@@ -129,7 +152,7 @@ export function useBoardSnapshot({
       : null;
     const boardError = payload?.error;
     if (boardError?.code === 'BOARD_SCOPE_TOO_LARGE') {
-      const limit = boardError.effective_entity_limit ?? boardError.requested_entity_limit ?? maximumBoardEntityCount;
+      const limit = boardError.effective_entity_limit ?? boardError.requested_entity_limit ?? toolbarData.meta.server_entity_limit ?? 10000;
       const serverSuffix = boardError.server_entity_limit != null && boardError.requested_entity_limit && boardError.requested_entity_limit > boardError.server_entity_limit
         ? ` ${toolbarData.labels.board_server_limit_suffix.replace('%{limit}', boardError.server_entity_limit.toLocaleString())}`
         : '';
@@ -143,7 +166,7 @@ export function useBoardSnapshot({
     } else {
       setLoadError(toolbarData.labels.load_failed);
     }
-  }, [boardQuery.data, boardQuery.error, errorScope, maximumBoardEntityCount, toolbarData.labels]);
+  }, [boardQuery.data, boardQuery.error, errorScope, toolbarData.labels, toolbarData.meta.server_entity_limit]);
 
   const refresh = useCallback(async (options: { suppressError?: boolean } = {}) => {
     // The pending scope will fetch after settling; never refresh its previous anchor.
@@ -160,6 +183,8 @@ export function useBoardSnapshot({
     dismissLoadError: () => setLoadFailure(null),
     boardQueryKey,
     data,
+    presentationData,
+    refreshing,
     loading: boardQuery.isLoading,
     refresh,
     toolbarData,

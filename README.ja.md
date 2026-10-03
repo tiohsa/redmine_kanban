@@ -82,17 +82,19 @@ pnpm run build
 
 ## 表示設定
 
-プラグイン全体の設定画面はありません。各ユーザーはボード上でスイムレーン、非表示ステータス、停滞閾値、並び替え、表示幅、文字サイズ、子チケット表示、最大表示件数を設定できます。最大表示件数のデフォルトは1,500件です。カード移動では、ユーザーが明示したレーン属性とステータスだけを変更し、Redmine の Workflow と権限を正とします。
+プラグイン全体の設定画面はありません。各ユーザーはボード上でスイムレーン、非表示ステータス、停滞閾値、並び替え、表示幅、文字サイズ、子チケット表示を設定できます。snapshotのAdmission Controlには、Issue entity 10,000件の有限なサーバー安全上限を使用します。カード移動では、ユーザーが明示したレーン属性とステータスだけを変更し、Redmine の Workflow と権限を正とします。
 
-APIは対象Project/StatusおよびIssue filter scopeの完全な単一snapshotを返します。Subject、担当者、Tracker、Priority、期限filterはAdmission前にserver側のprimary membershipを絞ります。dependency descendantがfilterに一致する場合、そのprimary ancestorもmembershipに残し、各primaryの完全なdependency subtreeをsnapshotに含めます。Frontendも最終表示のため同じfilterを適用します。membershipはprimary Issueと、そのprimaryを表示するために必要なdependency-only descendantのunique unionです。primaryがちょうど上限に達した場合もdescendantの存在をprobeし、対象が上限を超える場合は一部Issueを返さず、構造化422エラーを返します。最大表示件数はページサイズではなくAdmission Controlです。サーバーは `REDMINE_KANBAN_MAX_BOARD_ENTITIES`（デフォルト5,000）、`REDMINE_KANBAN_MAX_RESPONSE_BYTES`（デフォルト8 MiB）、`REDMINE_KANBAN_MAX_BOARD_QUERIES`（デフォルト20）で資源を制限します。cursor、offset、子ツリーの追加取得、Load more操作はありません。運用時に性能ログが必要な場合だけ `REDMINE_KANBAN_PERF_LOG=1` を指定してください。
+APIは対象Project/StatusおよびIssue filter scopeの完全な単一snapshotを返します。Subject、担当者、Tracker、Priority、期限filterはAdmission前にserver側のprimary membershipを絞ります。dependency descendantがfilterに一致する場合、そのprimary ancestorもmembershipに残し、各primaryの完全なdependency subtreeをsnapshotに含めます。Frontendも最終表示のため同じfilterを適用します。membershipはprimary Issueと、そのprimaryを表示するために必要なdependency-only descendantのunique unionです。primaryがちょうど上限に達した場合もdescendantの存在をprobeし、対象が上限を超える場合は一部Issueを返さず、構造化422エラーを返します。entity件数はページサイズではなくAdmission Controlです。サーバーの既定hard ceilingは10,000件で、`REDMINE_KANBAN_MAX_BOARD_ENTITIES`を使ってそれ以下へ引き下げられます。未設定・空・不正・0・負数は10,000件になり、10,000を超える値も10,000に制限されます。サーバーは `REDMINE_KANBAN_MAX_RESPONSE_BYTES`（デフォルト8 MiB）、`REDMINE_KANBAN_MAX_BOARD_QUERIES`（デフォルト20）、合計SQL回数（デフォルト100）でも資源を制限します。cursor、offset、子ツリーの追加取得、Load more操作はありません。運用時に性能ログが必要な場合だけ `REDMINE_KANBAN_PERF_LOG=1` を指定してください。
 
-サーバー側の件数上限だけを無効にする場合は、Redmineプロセスの環境変数を次のように設定して再起動します。
+サーバー側の件数上限を引き下げる場合は、10,000以下の正の整数をRedmineプロセスの環境変数に設定して再起動します。
 
 ```sh
-REDMINE_KANBAN_MAX_BOARD_ENTITIES=0
+REDMINE_KANBAN_MAX_BOARD_ENTITIES=5000
 ```
 
-ユーザー側の最大表示件数（デフォルト1,500件）は引き続き有効です。応答サイズとSQL回数の制限も維持されます。正の整数はサーバー上限の指定件数として扱い、未設定・空・不正値は5,000件になります。無効化時はmetadata、snapshotのmeta、件数超過エラーの `server_entity_limit` が `null` になります。
+entity上限は常に有限です。`0`では無効化されず、10,000を超える値は10,000件に制限されます。応答サイズとSQL回数の制限も独立して維持されます。旧クライアントが`board_entity_limit`を送信した場合は、サーバー上限より小さい値が適用されます。
+
+`GET /projects/:project_id/kanban/metadata`は、snapshotの成否から独立してProject／Status候補と、担当者・Tracker・Priorityの`filter_options`を返します。担当者とTrackerは`available_project_ids`を持ち、Project選択時はキャッシュ済み候補を絞るためmetadataの追加通信は発生しません。候補は可視かつ有効なProject、Membership、設定から取得し、Issueが存在しないTrackerも含みます。候補とProjectとの対応関係は各資源10,000件までとし、超過時は部分リストではなく構造化エラーを返します。保存ビューの動的IDもsnapshot取得前にmetadataで検証します。レーン・作成・編集・Workflow操作は引き続きsnapshotの`lists`を使い、Filter候補を変更権限の根拠にはしません。10,000件はサーバー安全上限であり、表示性能の保証値ではありません。
 
 ## 技術スタック
 

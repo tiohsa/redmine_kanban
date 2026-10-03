@@ -61,7 +61,7 @@ test('actual DB high-fan-out fixture enforces admission and resource bounds', as
   expect(filteredComplete.response.ok()).toBeTruthy();
   expect(filteredComplete.payload.meta.complete).toBe(true);
   expect(filteredComplete.payload.meta.requested_entity_limit).toBe(2000);
-  expect(filteredComplete.payload.meta.server_entity_limit).toBe(5000);
+  expect(filteredComplete.payload.meta.server_entity_limit).toBe(10000);
   expect(filteredComplete.payload.meta.entity_count).toBe(1506);
   expect(filteredComplete.payload.entities).toHaveLength(1506);
   const filteredParent = filteredComplete.payload.entities.find((issue) => issue.subject === 'Kanban E2E truncation parent');

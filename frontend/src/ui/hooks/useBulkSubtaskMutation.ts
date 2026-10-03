@@ -78,7 +78,6 @@ export function useBulkSubtaskMutation(
   projectIds: number[] = [],
   scopeStatusIds: number[] = [],
   dependencyStatusIds = scopeStatusIds,
-  boardEntityLimit = 1500,
   deferBoardRefresh = false,
   filterScope?: BoardFilterScope,
 ) {
@@ -104,7 +103,7 @@ export function useBulkSubtaskMutation(
         const { key: idempotencyKey } = getOrCreateBulkIdempotencyKey(signature);
         try {
           const res = await postJson<BulkMutationResponse>(
-            scopedPath(baseUrl, '/issues/bulk', projectIds, scopeStatusIds, dependencyStatusIds, boardEntityLimit, filterScope), { ...normalized, operation_id: clientOperationId() }, 'POST', { 'Idempotency-Key': idempotencyKey },
+            scopedPath(baseUrl, '/issues/bulk', projectIds, scopeStatusIds, dependencyStatusIds, filterScope), { ...normalized, operation_id: clientOperationId() }, 'POST', { 'Idempotency-Key': idempotencyKey },
           );
           return res;
         } catch (error) {
@@ -207,14 +206,12 @@ function scopedPath(
   projectIds: number[],
   scopeStatusIds: number[] = [],
   dependencyStatusIds = scopeStatusIds,
-  boardEntityLimit = 1500,
   filterScope?: BoardFilterScope,
 ): string {
   return buildBoardMutationUrl(baseUrl, path, {
     projectIds,
     scopeStatusIds,
     dependencyStatusIds,
-    boardEntityLimit,
     filterScope,
   });
 }

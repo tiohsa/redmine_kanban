@@ -12,7 +12,6 @@ type DialogRuntimeContext = {
   projectIds: number[];
   scopeStatusIds: number[];
   dependencyStatusIds: number[];
-  boardEntityLimit?: number;
   filterScope: BoardFilterScope;
 };
 type IframeEditContext = DialogRuntimeContext & { url: string; issueId: number; issueTitle?: string; projectId?: number };
@@ -53,7 +52,6 @@ export function useKanbanDialogs(
       projectIds: data.meta.project_ids ?? [],
       scopeStatusIds: data.meta.scope_status_ids ?? [],
       dependencyStatusIds: data.meta.dependency_status_ids ?? data.meta.scope_status_ids ?? [],
-      boardEntityLimit: data.meta.requested_entity_limit ?? data.meta.effective_entity_limit,
       filterScope: data.meta.filter_scope ?? {
         q: '', assignee_ids: [], include_unassigned: false, tracker_ids: [],
         priority_filter_enabled: false, priority_ids: [], include_no_priority: false, due: 'all',

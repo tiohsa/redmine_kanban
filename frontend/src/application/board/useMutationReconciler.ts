@@ -172,6 +172,7 @@ export function useMutationReconciler({ baseUrl, boardQueryKey, data, onReconcil
   }, [acquireEntitySlot, baseUrl, boardQueryKey, data, queryClient]);
 
   const reconcileIssuesResult = useCallback(async (issueIds: number[], options: EntityReconciliationOptions = {}) => {
+    if (getBoardFreshnessAuthority(queryClient, boardQueryKey).snapshotRefreshState !== 'ready') return { status: 'superseded' } as ReconcileResult;
     const ids = [...new Set(issueIds)];
     if (ids.length === 0) return { status: 'applied', missingIds: [] } as ReconcileResult;
     const requestData = queryClient.getQueryData<BoardData>(boardQueryKey) ?? data;
@@ -235,6 +236,7 @@ export function useMutationReconciler({ baseUrl, boardQueryKey, data, onReconcil
 
   const reconcileColumnCounts = useCallback(async (required: boolean) => {
     if (!required || !data) return;
+    if (getBoardFreshnessAuthority(queryClient, boardQueryKey).snapshotRefreshState !== 'ready') return;
     const requestData = queryClient.getQueryData<BoardData>(boardQueryKey) ?? data;
     const freshnessAuthority = getBoardFreshnessAuthority(queryClient, boardQueryKey);
     const request = freshnessAuthority.beginAggregateReconciliation(requestData);
@@ -261,6 +263,10 @@ export function useMutationReconciler({ baseUrl, boardQueryKey, data, onReconcil
     // restored entities before reaching this step. Do not replay those effects.
     { responseHandled = false }: { responseHandled?: boolean } = {},
   ) => {
+    if (getBoardFreshnessAuthority(queryClient, boardQueryKey).snapshotRefreshState !== 'ready') {
+      if (!responseHandled) invalidateSnapshot();
+      return;
+    }
     if (isBoardSnapshotInvalidated(result)) {
       if (!responseHandled) invalidateSnapshot();
       return;
