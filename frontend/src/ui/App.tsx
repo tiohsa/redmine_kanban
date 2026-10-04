@@ -186,7 +186,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     ),
     [defaultCreateProjectId, filters.trackerIds, primaryFilteredData?.columns, toolbarData],
   );
-  const viewValidation = validateViewReferences(viewSettings, snapshot.metadata, toolbarData.labels);
+  const viewValidation = validateViewReferences(viewSettings, snapshot.metadata, toolbarData.labels, snapshot.filterOptionsState);
   const metadata = snapshot.metadata;
   const unavailableHiddenStatusIds = metadata
     ? [...hiddenStatusIds].filter((id) => !metadata.statuses.some((status) => status.id === id))
@@ -214,7 +214,8 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
       {toolbarData ? (
         <KanbanToolbar
           data={toolbarData}
-          filterOptions={snapshot.metadata?.filter_options ?? null}
+          filterOptionsState={snapshot.filterOptionsState}
+          onRetryFilterOptions={() => { void snapshot.candidateQuery.refetch(); }}
           savedViews={preferencesReady ? <SavedViewsPopover key={viewsStorageKey} storageKey={viewsStorageKey} current={viewSettings} onApply={applyViewSettings} validation={viewValidation} labels={toolbarData.labels} /> : null}
           filters={filters}
           onChange={setFilters}
@@ -257,9 +258,17 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
         />
       ) : null}
 
-      {snapshot.metadata?.filter_options_error?.code === 'BOARD_FILTER_OPTIONS_TOO_LARGE' ? (
+      {snapshot.filterOptionsState.state === 'incomplete' ? (
         <div className="rk-recovery" role="status">
           {toolbarData.labels.board_filter_options_incomplete ?? initialLabels.board_filter_options_incomplete}
+        </div>
+      ) : null}
+      {snapshot.candidateAccessDenied ? (
+        <div className="rk-recovery" role="alert">
+          {toolbarData.labels.board_access_lost ?? initialLabels.board_access_lost}
+          <button type="button" className="rk-btn" disabled={snapshot.candidateQuery.isFetching} onClick={() => { void snapshot.retryCandidateQuery(); }}>
+            {toolbarData.labels.retry ?? initialLabels.retry}
+          </button>
         </div>
       ) : null}
       {viewValidation.unavailable.length ? <div className="rk-recovery" role="alert">

@@ -3,7 +3,7 @@ import type { ToolbarViewModel } from './types';
 import type { Filters } from './boardFilters';
 import type { SortConfig } from './board/sort';
 import type { FitMode } from '../model/view/types';
-import type { BoardFilterOptions } from '../model/board/types';
+import type { FilterOptionsState } from '../model/board/types';
 import type { CardDisplayMode, LaneType } from './useKanbanPreferences';
 import { buildToolbarOptions, togglePriorityFilter } from './toolbar/toolbarOptions';
 import { SearchPopover } from './toolbar/SearchPopover';
@@ -13,7 +13,8 @@ import { ToolbarDropdown, ToolbarMultiSelect } from './toolbar/ToolbarDropdown';
 
 type ToolbarProps = {
   data: ToolbarViewModel;
-  filterOptions: BoardFilterOptions | null;
+  filterOptionsState: FilterOptionsState;
+  onRetryFilterOptions: () => void;
   savedViews?: React.ReactNode;
   filters: Filters;
   onChange: (filters: Filters) => void;
@@ -50,7 +51,8 @@ type ToolbarProps = {
 
 export function KanbanToolbar({
   data,
-  filterOptions,
+  filterOptionsState,
+  onRetryFilterOptions,
   savedViews,
   filters,
   onChange,
@@ -85,6 +87,11 @@ export function KanbanToolbar({
   onOpenHelp,
 }: ToolbarProps) {
   const labels = data.labels;
+  const filterOptions = filterOptionsState.state === 'complete' ? filterOptionsState.options : null;
+  const candidatesUnavailable = filterOptionsState.state !== 'complete';
+  const candidateMessage = filterOptionsState.state === 'loading' ? (labels.candidate_loading ?? 'Loading filter choices…')
+    : filterOptionsState.state === 'incomplete' ? (labels.board_filter_options_incomplete ?? 'Select projects to narrow filter choices.')
+      : filterOptionsState.state === 'failed' ? (labels.candidate_unavailable ?? 'Filter choices are temporarily unavailable.') : undefined;
   const updateFilters = (patch: Partial<Filters>) => onChange({ ...filters, ...patch });
   const {
     assigneeOptions,
@@ -135,6 +142,9 @@ export function KanbanToolbar({
           label={labels.assignee}
           icon="person"
           options={assigneeOptions}
+          unavailable={candidatesUnavailable}
+          unavailableMessage={candidateMessage}
+          onRetryUnavailable={filterOptionsState.state === 'failed' ? onRetryFilterOptions : undefined}
           value={filters.assigneeIds}
           onChange={(value) => updateFilters({ assigneeIds: value })}
           onReset={() => updateFilters({ assigneeIds: [] })}
@@ -181,6 +191,9 @@ export function KanbanToolbar({
           label={labels.issue_tracker}
           icon="label"
           options={trackerOptions}
+          unavailable={candidatesUnavailable}
+          unavailableMessage={candidateMessage}
+          onRetryUnavailable={filterOptionsState.state === 'failed' ? onRetryFilterOptions : undefined}
           value={trackerFilterValue}
           onChange={(value) => updateFilters({ trackerIds: value.map(Number) })}
           onReset={() => updateFilters({ trackerIds: [] })}
@@ -218,6 +231,9 @@ export function KanbanToolbar({
           label={labels.issue_priority}
           icon="priority_high"
           options={priorityOptions}
+          unavailable={candidatesUnavailable}
+          unavailableMessage={candidateMessage}
+          onRetryUnavailable={filterOptionsState.state === 'failed' ? onRetryFilterOptions : undefined}
           value={priorityValue}
           onChange={(value) => {
             updateFilters(togglePriorityFilter(value, priorityOptions.length));

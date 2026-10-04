@@ -7,8 +7,8 @@ function canonicalIds(values: Iterable<number>): number[] {
   return Array.from(new Set(values)).filter((value) => Number.isSafeInteger(value) && value > 0).sort((a, b) => a - b);
 }
 
-export function buildBoardMetadataQueryKey(baseUrl: string, currentUserId: number, language: string, projectIds: Iterable<number>) {
-  return ['kanban', 'metadata', baseUrl, currentUserId, language, canonicalIds(projectIds).join(',')] as const;
+export function buildBoardMetadataQueryKey(baseUrl: string, currentUserId: number, language: string, projectIds?: Iterable<number>) {
+  return ['kanban', 'metadata', baseUrl, currentUserId, language, projectIds === undefined ? 'base' : canonicalIds(projectIds).join(',')] as const;
 }
 
 export function buildBoardMetadataUrl(baseUrl: string, projectIds: Iterable<number>): string {

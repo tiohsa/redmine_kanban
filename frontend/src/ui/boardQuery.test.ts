@@ -24,7 +24,8 @@ describe('snapshot board query', () => {
     expect(buildBoardMetadataUrl('/board', [4, 2, 4])).toBe('/board/metadata?project_ids%5B%5D=2&project_ids%5B%5D=4');
     expect(buildBoardMetadataUrl('/board', [])).toBe('/board/metadata');
     expect(buildBoardMetadataQueryKey('/board', 7, 'en', [4, 2, 4])).toEqual(buildBoardMetadataQueryKey('/board', 7, 'en', [2, 4]));
-    expect(buildBoardMetadataQueryKey('/board', 7, 'en', [])).not.toEqual(buildBoardMetadataQueryKey('/board', 7, 'en', [2]));
+    expect(buildBoardMetadataQueryKey('/board', 7, 'en')).toEqual(buildBoardMetadataQueryKey('/board', 7, 'en', undefined));
+    expect(buildBoardMetadataQueryKey('/board', 7, 'en')).not.toEqual(buildBoardMetadataQueryKey('/board', 7, 'en', []));
     expect(buildBoardMetadataQueryKey('/board', 7, 'en', [0, -1, 2.5])).toEqual(buildBoardMetadataQueryKey('/board', 7, 'en', []));
   });
   it('resolves explicit, empty, and legacy status scopes consistently', () => {

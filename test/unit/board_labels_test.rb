@@ -25,6 +25,12 @@ class RedmineKanbanBoardLabelsTest < ActiveSupport::TestCase
     refute_equal english[:all], japanese[:all]
     assert_equal 'Assignee, tracker, and priority filter choices exceed the limit and cannot be displayed. Select projects to narrow the choices.', english[:board_filter_options_incomplete]
     assert_equal '担当者・トラッカー・優先度の絞り込み候補が上限を超えたため表示できません。プロジェクトを選択して候補の範囲を絞り込んでください。', japanese[:board_filter_options_incomplete]
+    assert_equal 'Loading filter choices…', english[:candidate_loading]
+    assert_equal '絞り込み候補を読み込んでいます…', japanese[:candidate_loading]
+    assert_equal 'Filter choices are temporarily unavailable.', english[:candidate_unavailable]
+    assert_equal '絞り込み候補を一時的に取得できません。', japanese[:candidate_unavailable]
+    assert_equal 'Board access could not be confirmed. Check that you are signed in and have permission, then retry.', english[:board_access_lost]
+    assert_equal 'ボードへのアクセスを確認できません。ログイン状態や権限を確認して再試行してください。', japanese[:board_access_lost]
     assert_equal english, I18n.with_locale(:en) { build_labels }
   end
 

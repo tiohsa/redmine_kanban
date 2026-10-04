@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -417,39 +417,46 @@ describe('App board scope helpers', () => {
     queryClient.clear();
   });
 
-  it('shows incomplete filter metadata alongside a successfully loaded board and hides it for complete metadata', async () => {
-    const incompleteMetadata = { ...metadata, filter_options_complete: false, filter_options: { assignees: [], trackers: [], priorities: [] }, filter_options_error: { code: 'BOARD_FILTER_OPTIONS_TOO_LARGE', resource: 'assignees', limit: 10000 } };
-    let metadataCalls = 0;
-    vi.mocked(getJson).mockImplementation((url) => url.includes('/metadata')
-      ? Promise.resolve(++metadataCalls === 1 ? incompleteMetadata : metadata)
-      : Promise.resolve(makeBoardSnapshot()));
+  it('keeps the board usable with an incomplete broad catalog and clears the notice after scoped recovery', async () => {
+    const incompleteMetadata = {
+      ...metadata,
+      filter_options: { assignees: [], trackers: [], priorities: [] },
+      filter_options_complete: false,
+      filter_options_error: { code: 'BOARD_FILTER_OPTIONS_TOO_LARGE', resource: 'assignees', limit: 10000 },
+    };
+    mockPreferenceFilters.projectIds = [];
+    vi.mocked(getJson).mockImplementation((url) => {
+      if (!url.includes('/metadata')) return Promise.resolve(makeBoardSnapshot());
+      return Promise.resolve(url.includes('project_ids%5B%5D=4') ? metadata : incompleteMetadata);
+    });
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const view = render(React.createElement(
+    const app = () => React.createElement(
       QueryClientProvider,
       { client: queryClient },
-      React.createElement(App, { dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7, initialLabels: { board_filter_options_incomplete: 'Filter choices unavailable' } }),
-    ));
+      React.createElement(App, {
+        dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7,
+        initialLabels: { project: 'Project', board_filter_options_incomplete: 'Filter choices unavailable' },
+      }),
+    );
+    const view = render(app());
 
     await screen.findByTestId('canvas-issue-ids');
     expect(screen.getByRole('status').textContent).toContain('Filter choices unavailable');
-    expect(document.querySelector('.rk-toolbar')).not.toBeNull();
     expect(screen.getByRole('button', { name: 'Open issue 9' })).toBeTruthy();
-    fireEvent.click([...document.querySelectorAll('.rk-toolbar .rk-icon')].find((item) => item.textContent === 'filter_list')!.closest('button')!);
-    await waitFor(() => expect(document.querySelector('.rk-dropdown-menu[role="dialog"]')).not.toBeNull());
+    fireEvent.click([...document.querySelectorAll('.rk-toolbar .rk-icon')].find((item) => item.textContent === 'folder')!.closest('button')!);
+    fireEvent.click(await screen.findByRole('button', { name: 'Demo' }));
+    mockPreferenceFilters.projectIds = [4];
+    view.rerender(app());
 
-    mockPreferenceFilters.projectIds = [];
-    view.rerender(React.createElement(
-      QueryClientProvider,
-      { client: queryClient },
-      React.createElement(App, { dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7, initialLabels: { board_filter_options_incomplete: 'Filter choices unavailable' } }),
-    ));
-    await waitFor(() => expect(metadataCalls).toBe(2));
-    await screen.findByTestId('canvas-issue-ids');
+    await waitFor(() => expect(vi.mocked(getJson).mock.calls.some(([url]) => url.includes('/metadata?project_ids%5B%5D=4'))).toBe(true));
     await waitFor(() => expect(screen.queryByText('Filter choices unavailable')).toBeNull());
+    expect(screen.getByRole('button', { name: 'Open issue 9' })).toBeTruthy();
+    fireEvent.click([...document.querySelectorAll('.rk-toolbar .rk-icon')].find((item) => item.textContent === 'person')!.closest('button')!);
+    expect(screen.getByRole('button', { name: 'Recovery Assignee' })).toBeTruthy();
     queryClient.clear();
   });
 
-  it('keeps project and status choices available while scoped metadata is pending', async () => {
+  it('keeps project and status choices from base metadata without a project-scoped metadata request', async () => {
     const expandedMetadata = {
       ...metadata,
       projects: [...metadata.projects, { id: 5, name: 'Other project', level: 0 }],
@@ -458,13 +465,11 @@ describe('App board scope helpers', () => {
     const boardSnapshot = makeBoardSnapshot();
     boardSnapshot.lists.projects.push({ id: 5, name: 'Other project', level: 0 });
     boardSnapshot.lists.viewable_projects.push({ id: 5, name: 'Other project', level: 0 });
-    let releaseScopedMetadata: ((value: typeof expandedMetadata) => void) | undefined;
     let metadataCalls = 0;
     vi.mocked(getJson).mockImplementation((url) => {
       if (!url.includes('/metadata')) return Promise.resolve(boardSnapshot);
       metadataCalls += 1;
-      if (metadataCalls === 1) return Promise.resolve(expandedMetadata);
-      return new Promise((resolve) => { releaseScopedMetadata = resolve; });
+      return Promise.resolve(expandedMetadata);
     });
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const app = (labels: Record<string, string> = {}) => React.createElement(
@@ -492,20 +497,61 @@ describe('App board scope helpers', () => {
     mockPreferenceFilters.projectIds = [4, 5];
     view.rerender(app());
 
-    await waitFor(() => expect(releaseScopedMetadata).toBeTypeOf('function'));
+    await waitFor(() => expect(metadataCalls).toBe(1));
     expect(projectDialog.isConnected).toBe(true);
     expect(screen.getByRole('button', { name: 'Other project' })).toBeTruthy();
     await waitFor(() => expect(screen.getByTestId('canvas-issue-ids').textContent).toBe(''));
     expect(screen.getByTestId('canvas-issue-ids')).toBe(canvasShell);
     clickIcon('person');
-    expect(screen.queryByRole('button', { name: 'Recovery Assignee' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Recovery Assignee' })).toBeTruthy();
     expect(screen.queryByText('Filter choices unavailable')).toBeNull();
     clickIcon('fact_check');
     expect(screen.getByRole('button', { name: 'Open' })).toBeTruthy();
     expect(screen.getByTestId('canvas-issue-ids')).toBe(canvasShell);
 
-    await act(async () => { releaseScopedMetadata?.(expandedMetadata); });
-    await waitFor(() => expect(metadataCalls).toBe(2));
+    expect(metadataCalls).toBe(1);
+    queryClient.clear();
+  });
+
+  it('shows a top-level access alert and retains it through candidate retry until success', async () => {
+    vi.mocked(isHttpError).mockImplementation((error) => typeof error === 'object' && error !== null && 'status' in error);
+    const incompleteMetadata = {
+      ...metadata,
+      filter_options: { assignees: [], trackers: [], priorities: [] },
+      filter_options_complete: false,
+      filter_options_error: { code: 'BOARD_FILTER_OPTIONS_TOO_LARGE', resource: 'assignees', limit: 10000 },
+    };
+    let candidateAttempts = 0;
+    let resolveCandidate!: (value: typeof metadata) => void;
+    const retryCandidate = new Promise<typeof metadata>((resolve) => { resolveCandidate = resolve; });
+    vi.mocked(getJson).mockImplementation((url) => {
+      if (!url.includes('/metadata')) return Promise.resolve(makeBoardSnapshot());
+      if (!url.includes('project_ids%5B%5D=')) return Promise.resolve(incompleteMetadata);
+      candidateAttempts += 1;
+      if (candidateAttempts === 1) return Promise.reject(Object.assign(new Error('denied'), { status: 403 }));
+      return retryCandidate;
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(React.createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      React.createElement(App, {
+        dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7,
+        initialLabels: { board_access_lost: 'Board access lost', retry: 'Retry' },
+      }),
+    ));
+
+    const accessAlert = await screen.findByRole('alert');
+    expect(accessAlert.textContent).toContain('Board access lost');
+    expect(screen.queryByTestId('canvas-issue-ids')).toBeNull();
+    const retryButton = within(accessAlert).getByRole('button', { name: 'Retry' });
+    fireEvent.click(retryButton);
+    await waitFor(() => expect((retryButton as HTMLButtonElement).disabled).toBe(true));
+    expect(screen.getByRole('alert').textContent).toContain('Board access lost');
+    await act(async () => { resolveCandidate(metadata); await retryCandidate; });
+    await screen.findByTestId('canvas-issue-ids');
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(candidateAttempts).toBe(2);
     queryClient.clear();
   });
 

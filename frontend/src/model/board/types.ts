@@ -200,12 +200,20 @@ export type BoardMetadata = {
   statuses: Column[];
   filter_options: BoardFilterOptions;
   filter_options_complete: boolean;
-  filter_options_error?: {
-    code: 'BOARD_FILTER_OPTIONS_TOO_LARGE';
-    resource: string;
-    limit: number;
-  };
+  filter_options_error?: BoardFilterOptionsError;
 };
+
+export type BoardFilterOptionsError = {
+  code: 'BOARD_FILTER_OPTIONS_TOO_LARGE';
+  resource: string;
+  limit: number;
+};
+
+export type FilterOptionsState =
+  | { state: 'complete'; options: BoardFilterOptions }
+  | { state: 'loading' }
+  | { state: 'incomplete'; error: BoardFilterOptionsError }
+  | { state: 'failed'; error: unknown };
 
 export type BoardErrorResponse = {
   ok: false;

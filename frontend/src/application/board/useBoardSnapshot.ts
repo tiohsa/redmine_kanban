@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { BoardData, ToolbarViewModel } from '../../model/board/types';
+import type { BoardData, BoardMetadata, FilterOptionsState, ToolbarViewModel } from '../../model/board/types';
 import { canonicalBoardFilterScope, type BoardFilterScope } from '../../model/board/filterScope';
 import { getJson, isHttpError } from '../../infrastructure/api/http';
 import { parseBoardMetadata } from '../../infrastructure/api/boardMetadata';
@@ -43,6 +43,29 @@ function emptyPresentationBoard(previous: BoardData): BoardData {
   };
 }
 
+function resolveFilterOptionsState({
+  baseMetadata,
+  candidateMetadata,
+  candidateError,
+  candidateEnabled,
+  scopeSettled,
+}: {
+  baseMetadata: BoardMetadata | undefined;
+  candidateMetadata: BoardMetadata | undefined;
+  candidateError: unknown;
+  candidateEnabled: boolean;
+  scopeSettled: boolean;
+}): FilterOptionsState {
+  if (!baseMetadata) return { state: 'loading' };
+  if (baseMetadata.filter_options_complete) return { state: 'complete', options: baseMetadata.filter_options };
+  if (!scopeSettled) return { state: 'loading' };
+  if (!candidateEnabled) return { state: 'incomplete', error: baseMetadata.filter_options_error! };
+  if (candidateError) return { state: 'failed', error: candidateError };
+  if (!candidateMetadata) return { state: 'loading' };
+  if (candidateMetadata.filter_options_complete) return { state: 'complete', options: candidateMetadata.filter_options };
+  return { state: 'incomplete', error: candidateMetadata.filter_options_error! };
+}
+
 export function useBoardSnapshot({
   baseUrl,
   projectIds,
@@ -56,26 +79,16 @@ export function useBoardSnapshot({
 }: Args) {
   const queryClient = useQueryClient();
   const [loadFailure, setLoadFailure] = useState<{ error: unknown; scope: string; message: string } | null>(null);
-  const metadataQueryKey = buildBoardMetadataQueryKey(baseUrl, currentUserId, document.documentElement.lang, projectIds);
+  const metadataQueryKey = buildBoardMetadataQueryKey(baseUrl, currentUserId, document.documentElement.lang);
   const metadataQuery = useQuery({
     queryKey: metadataQueryKey,
-    queryFn: async () => {
-      return parseBoardMetadata(await getJson<unknown>(buildBoardMetadataUrl(baseUrl, projectIds)));
-    },
-    placeholderData: (previousData, previousQuery) => {
-      if (!previousData || !previousQuery || previousQuery.queryKey.slice(0, 5).some((part, index) => part !== metadataQueryKey[index])) return undefined;
-      const placeholder = {
-        ...previousData,
-        filter_options: { assignees: [], trackers: [], priorities: [] },
-        filter_options_complete: false,
-      };
-      delete placeholder.filter_options_error;
-      return placeholder;
+    queryFn: async ({ signal }) => {
+      return parseBoardMetadata(await getJson<unknown>(buildBoardMetadataUrl(baseUrl, []), { signal }));
     },
     enabled: preferencesReady,
     retry: false,
   });
-  const permissionLost = isHttpError(metadataQuery.error) && [401, 403, 404].includes(metadataQuery.error.status);
+  const basePermissionLost = isHttpError(metadataQuery.error) && [401, 403, 404].includes(metadataQuery.error.status);
   const requestedScope = useMemo(() => ({
     projectIds: [...new Set(projectIds)].sort((a, b) => a - b),
     statusIds: [...new Set(statusIds)].sort((a, b) => a - b),
@@ -97,6 +110,45 @@ export function useBoardSnapshot({
   const queryStatusIds = settledScope.statusIds;
   const queryHiddenStatusIds = settledScope.hiddenStatusIds;
   const queryFilterScope = settledScope.filterScope;
+  const candidateQueryKey = buildBoardMetadataQueryKey(baseUrl, currentUserId, document.documentElement.lang, queryProjectIds);
+  const scopeSettled = requestedScopeKey === settledScopeKey;
+  const candidateQueryEnabled = Boolean(metadataQuery.data && !metadataQuery.data.filter_options_complete && queryProjectIds.length > 0 && scopeSettled);
+  const candidateQuery = useQuery({
+    queryKey: candidateQueryKey,
+    queryFn: async ({ signal }) => parseBoardMetadata(await getJson<unknown>(buildBoardMetadataUrl(baseUrl, queryProjectIds), { signal })),
+    enabled: preferencesReady && candidateQueryEnabled,
+    retry: false,
+  });
+  const candidateIdentity = JSON.stringify(candidateQueryKey);
+  const [candidateAccessFailure, setCandidateAccessFailure] = useState<{ identity: string; error: unknown } | null>(null);
+  const candidatePermissionResponse = candidateQueryEnabled && isHttpError(candidateQuery.error) && [401, 403, 404].includes(candidateQuery.error.status);
+  useEffect(() => {
+    if (!candidateQueryEnabled) return;
+    if (candidatePermissionResponse) {
+      setCandidateAccessFailure((previous) => previous?.identity === candidateIdentity && previous.error === candidateQuery.error
+        ? previous : { identity: candidateIdentity, error: candidateQuery.error });
+    } else if (candidateQuery.isSuccess && !candidateQuery.isFetching) {
+      setCandidateAccessFailure((previous) => previous?.identity === candidateIdentity ? null : previous);
+    }
+  }, [candidateIdentity, candidatePermissionResponse, candidateQuery.error, candidateQuery.isFetching, candidateQuery.isSuccess, candidateQueryEnabled]);
+  useEffect(() => {
+    if (!scopeSettled) void queryClient.cancelQueries({ queryKey: candidateQueryKey, exact: true });
+  }, [candidateQueryKey, queryClient, scopeSettled]);
+  const candidateAccessDenied = candidateQueryEnabled && (
+    candidatePermissionResponse || candidateAccessFailure?.identity === candidateIdentity
+  );
+  const effectiveCandidateError = candidateAccessDenied
+    ? candidateAccessFailure?.identity === candidateIdentity ? candidateAccessFailure.error : candidateQuery.error
+    : candidateQuery.error;
+  const candidatePermissionLost = candidateAccessDenied;
+  const permissionLost = basePermissionLost || candidatePermissionLost;
+  const filterOptionsState = resolveFilterOptionsState({
+    baseMetadata: metadataQuery.data,
+    candidateMetadata: candidateQuery.data,
+    candidateError: effectiveCandidateError,
+    candidateEnabled: candidateQueryEnabled,
+    scopeSettled,
+  });
   const boardQueryKey = useMemo(
     () => buildBoardQueryKey(baseUrl, queryProjectIds, queryStatusIds, queryHiddenStatusIds, queryFilterScope),
     [baseUrl, queryFilterScope, queryHiddenStatusIds, queryProjectIds, queryStatusIds],
@@ -210,6 +262,10 @@ export function useBoardSnapshot({
     boardQuery,
     metadata: metadata ?? null,
     metadataQuery,
+    candidateQuery,
+    candidateAccessDenied,
+    retryCandidateQuery: candidateQuery.refetch,
+    filterOptionsState,
     loadError: loadFailure?.error === boardQuery.error && loadFailure?.scope === errorScope ? loadFailure.message : null,
     dismissLoadError: () => setLoadFailure(null),
     boardQueryKey,

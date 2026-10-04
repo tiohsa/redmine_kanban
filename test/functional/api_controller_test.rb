@@ -105,6 +105,23 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     refute_includes json['filter_options'].values.flatten, hidden.id
   end
 
+  def test_metadata_reuses_viewable_project_scope_for_candidate_intersection
+    requested = mock
+    requested.expects(:build).returns(assignees: [], trackers: [], priorities: [])
+    RedmineKanban::BoardFilterOptionsBuilder.expects(:new)
+      .with(project_ids: [@project.id], user: @user)
+      .returns(requested)
+    Project.expects(:visible).twice.returns(Project.where(id: @project.id))
+
+    metadata = RedmineKanban::BoardMetadata.new(
+      project: @project,
+      user: @user,
+      project_ids: [@project.id, -1]
+    ).to_h
+
+    assert_equal @project.id, metadata.dig(:board, :id)
+  end
+
   def test_metadata_does_not_disclose_an_invisible_board
     hidden = Project.create!(name: 'Hidden metadata board', identifier: 'hidden-metadata-board', is_public: false)
     RedmineKanban::BoardMetadata.expects(:new).never
@@ -1591,6 +1608,8 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_operator IssuePriority.active.count, :>=, 2, 'fixture must provide two active priorities'
     parent = build_issue(subject: 'Priority move filtered parent', priority: other_priority)
     child = build_issue(subject: 'Priority move filtered child', parent_issue_id: parent.id, priority: other_priority)
+    # Redmine's child callbacks can update the parent lock_version.
+    parent.reload
 
     patch :move, params: {
       project_id: @project.identifier, id: parent.id,

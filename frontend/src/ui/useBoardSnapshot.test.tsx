@@ -55,58 +55,85 @@ describe('snapshot recovery without a successful cache', () => {
     expect(result.current.refreshing).toBe(false);
   });
 
-  it('keeps common metadata core choices while an uncached project scope is pending, with candidates masked', async () => {
-    const scopedMetadata = { ...metadata, projects: [...metadata.projects, { id: 2, name: 'Second', level: 0 }] };
-    let resolveNext!: (value: typeof scopedMetadata) => void;
-    const next = new Promise<typeof scopedMetadata>((resolve) => { resolveNext = resolve; });
-    vi.mocked(getJson).mockImplementation((url) => {
-      if (!url.includes('/metadata')) return Promise.resolve(snapshot);
-      return url.includes('project_ids%5B%5D=2') ? next : Promise.resolve(scopedMetadata);
-    });
+  it('keeps core metadata stable and avoids scoped requests for a complete broad catalog', async () => {
+    vi.mocked(getJson).mockImplementation((url) => url.includes('/metadata') ? Promise.resolve(metadata) : Promise.resolve(snapshot));
     const { result, rerender } = setup();
     await waitFor(() => expect(result.current.metadata?.filter_options.assignees).toEqual(metadata.filter_options.assignees));
     rerender({ statusIds: [1], filterScope: emptyFilterScope, projectIds: [1] });
-    await waitFor(() => expect(result.current.metadataQuery.isPlaceholderData).toBe(false));
-
-    rerender({ statusIds: [1], filterScope: emptyFilterScope, projectIds: [2] });
-    expect(result.current.metadataQuery.isPlaceholderData).toBe(true);
-    expect(result.current.metadata?.projects).toEqual(scopedMetadata.projects);
-    expect(result.current.metadata?.statuses).toEqual(scopedMetadata.statuses);
-    expect(result.current.metadata?.filter_options).toEqual({ assignees: [], trackers: [], priorities: [] });
-    expect(result.current.metadata?.filter_options_error).toBeUndefined();
-
-    act(() => resolveNext(scopedMetadata));
-    await waitFor(() => expect(result.current.metadataQuery.isPlaceholderData).toBe(false));
-    expect(result.current.metadata?.filter_options.assignees).toEqual(metadata.filter_options.assignees);
+    await waitFor(() => expect(result.current.data?.meta.complete).toBe(true));
+    expect(result.current.metadata?.projects).toEqual(metadata.projects);
+    expect(result.current.filterOptionsState.state).toBe('complete');
+    expect(vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/metadata'))).toHaveLength(1);
   });
 
-  it('removes an old overflow error from placeholder metadata while retaining core choices', async () => {
+  it('keeps the board available after scoped candidate failure and supports explicit candidate retry', async () => {
     const overflowMetadata = {
       ...metadata,
       filter_options: { assignees: [], trackers: [], priorities: [] },
       filter_options_complete: false,
       filter_options_error: { code: 'BOARD_FILTER_OPTIONS_TOO_LARGE' as const, resource: 'assignees', limit: 10000 },
     };
-    let resolveNext!: (value: typeof metadata) => void;
-    const next = new Promise<typeof metadata>((resolve) => { resolveNext = resolve; });
-    vi.mocked(getJson).mockImplementation((url) => {
+    let candidateCalls = 0;
+    vi.mocked(getJson).mockImplementation(async (url) => {
+      if (url.includes('/metadata')) {
+        if (url.includes('project_ids%5B%5D=1')) {
+          candidateCalls += 1;
+          if (candidateCalls === 1) throw new Error('offline');
+          return metadata;
+        }
+        return overflowMetadata;
+      }
+      return snapshot;
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const { result } = renderHook(() => useBoardSnapshot({ baseUrl: '/projects/demo/kanban', currentUserId: 7, projectIds: [1], statusIds: [1], hiddenStatusIds: [], preferencesReady: true, initialLabels: {}, filterScope: emptyFilterScope }), { wrapper });
+    await waitFor(() => expect(result.current.filterOptionsState.state).toBe('failed'));
+    await waitFor(() => expect(result.current.data?.meta.complete).toBe(true));
+    expect(result.current.metadata?.statuses).toEqual(overflowMetadata.statuses);
+    await act(async () => { await result.current.candidateQuery.refetch(); });
+    await waitFor(() => expect(result.current.filterOptionsState.state).toBe('complete'));
+    expect(result.current.metadata?.filter_options_complete).toBe(false);
+  });
+  it('debounces candidate recovery and aborts an obsolete settled project request', async () => {
+    const incomplete = {
+      ...metadata,
+      projects: [...metadata.projects, { id: 2, name: 'Second', level: 0 }, { id: 3, name: 'Third', level: 0 }],
+      viewable_projects: [...metadata.projects, { id: 2, name: 'Second', level: 0 }, { id: 3, name: 'Third', level: 0 }],
+      filter_options: { assignees: [], trackers: [], priorities: [] },
+      filter_options_complete: false,
+      filter_options_error: { code: 'BOARD_FILTER_OPTIONS_TOO_LARGE' as const, resource: 'assignees', limit: 10000 },
+    };
+    const lateOptions = { ...metadata, filter_options: { ...metadata.filter_options, assignees: [{ id: 81, name: 'Late', available_project_ids: [1] }] } };
+    const finalOptions = { ...metadata, filter_options: { ...metadata.filter_options, assignees: [{ id: 80, name: 'Final', available_project_ids: [2, 3] }] } };
+    let resolveFirst!: (value: typeof lateOptions) => void;
+    let firstSignal: AbortSignal | undefined;
+    const firstCandidate = new Promise<typeof lateOptions>((resolve) => { resolveFirst = resolve; });
+    vi.mocked(getJson).mockImplementation((url, options) => {
       if (!url.includes('/metadata')) return Promise.resolve(snapshot);
-      return url.includes('project_ids%5B%5D=2') ? next : Promise.resolve(overflowMetadata);
+      if (!url.includes('project_ids%5B%5D=')) return Promise.resolve(incomplete);
+      if (url.includes('project_ids%5B%5D=1')) {
+        firstSignal = options?.signal as AbortSignal;
+        return firstCandidate;
+      }
+      if (url.includes('project_ids%5B%5D=2&project_ids%5B%5D=3')) return Promise.resolve(finalOptions);
+      throw new Error(`Unexpected candidate scope: ${url}`);
     });
     const { result, rerender } = setup();
-    await waitFor(() => expect(result.current.metadata?.filter_options_error?.code).toBe('BOARD_FILTER_OPTIONS_TOO_LARGE'));
-    rerender({ statusIds: [1], filterScope: emptyFilterScope, projectIds: [1] });
-    await waitFor(() => expect(result.current.metadataQuery.isPlaceholderData).toBe(false));
-    expect(result.current.metadata?.filter_options_error?.code).toBe('BOARD_FILTER_OPTIONS_TOO_LARGE');
+    await waitFor(() => expect(result.current.metadata?.filter_options_complete).toBe(false));
 
-    rerender({ statusIds: [1], filterScope: emptyFilterScope, projectIds: [2] });
-    expect(result.current.metadataQuery.isPlaceholderData).toBe(true);
-    expect(result.current.metadata?.projects).toEqual(overflowMetadata.projects);
-    expect(result.current.metadata?.statuses).toEqual(overflowMetadata.statuses);
-    expect(result.current.metadata?.filter_options).toEqual({ assignees: [], trackers: [], priorities: [] });
-    expect(result.current.metadata?.filter_options_error).toBeUndefined();
-    act(() => resolveNext(metadata));
-    await waitFor(() => expect(result.current.metadataQuery.isPlaceholderData).toBe(false));
+    rerender({ statusIds: [], filterScope: emptyFilterScope, projectIds: [1] });
+    await waitFor(() => expect(firstSignal).toBeDefined());
+    rerender({ statusIds: [], filterScope: emptyFilterScope, projectIds: [2] });
+    rerender({ statusIds: [], filterScope: emptyFilterScope, projectIds: [2, 3] });
+    await waitFor(() => expect(result.current.filterOptionsState).toEqual({ state: 'complete', options: finalOptions.filter_options }));
+    expect(firstSignal?.aborted).toBe(true);
+    const candidateUrls = vi.mocked(getJson).mock.calls.map(([url]) => url).filter((url) => url.includes('/metadata?project_ids'));
+    expect(candidateUrls).toHaveLength(2);
+    expect(candidateUrls.some((url) => url.includes('project_ids%5B%5D=2') && !url.includes('project_ids%5B%5D=3'))).toBe(false);
+
+    await act(async () => { resolveFirst(lateOptions); await firstCandidate; });
+    expect(result.current.filterOptionsState).toEqual({ state: 'complete', options: finalOptions.filter_options });
   });
 
   it('does not let late metadata for an intermediate project scope replace the latest scope', async () => {
@@ -185,6 +212,7 @@ describe('snapshot recovery without a successful cache', () => {
     expect(result.current.toolbarData.meta.complete).toBe(false);
     expect(result.current.toolbarData.meta.can_create).toBe(false);
     expect(result.current.metadata?.filter_options.assignees).toEqual(metadata.filter_options.assignees);
+    expect(result.current.filterOptionsState.state).toBe('complete');
     const options = buildToolbarOptions(result.current.toolbarData, { assigneeIds: [], q: '', due: 'all', priority: [], priorityFilterEnabled: false, projectIds: [], statusIds: [], trackerIds: [] }, false, result.current.metadata?.filter_options ?? null);
     expect(options.assigneeOptions).toContainEqual({ id: '8', name: 'User' });
     expect(options.trackerOptions).toContainEqual({ id: '3', name: 'Bug' });
@@ -215,10 +243,11 @@ describe('snapshot recovery without a successful cache', () => {
     expect(vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/metadata'))).toHaveLength(0);
 
     rerender({ statusIds: [1], filterScope: { ...emptyFilterScope, q: 'needle', due: 'overdue', date_anchor: '2026-10-01' }, projectIds: [1] });
-    await waitFor(() => expect(result.current.metadata?.filter_options_complete).toBe(true));
+    await waitFor(() => expect(result.current.filterOptionsState.state).toBe('complete'));
     const metadataUrl = vi.mocked(getJson).mock.calls.find(([url]) => url.includes('/metadata'))?.[0];
     expect(metadataUrl).toContain('project_ids%5B%5D=1');
-    expect(result.current.metadata?.filter_options.assignees).toEqual(metadata.filter_options.assignees);
+    expect(result.current.metadata?.filter_options.assignees).toEqual([]);
+    expect(result.current.filterOptionsState).toEqual({ state: 'complete', options: metadata.filter_options });
   });
   it('uses a metadata assignee candidate to request a filtered snapshot after overflow', async () => {
     vi.mocked(getJson).mockImplementation(async (url) => {
@@ -353,7 +382,7 @@ describe('snapshot recovery without a successful cache', () => {
     const dataRequests = vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/data?'));
     expect(dataRequests).toHaveLength(1);
     const requestUrl = dataRequests[0][0];
-    expect(vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/metadata'))).toHaveLength(1);
+    expect(vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/metadata'))).toHaveLength(0);
     expect(requestUrl).toContain('project_ids%5B%5D=1');
     expect(requestUrl).toContain('filter_q=final+query');
     expect(requestUrl).toContain('filter_date_anchor=2026-10-01');
@@ -369,6 +398,97 @@ describe('snapshot recovery without a successful cache', () => {
     expect(result.current.metadata).toBeNull();
     expect(result.current.toolbarData.columns).toEqual([]);
     expect(result.current.toolbarData.lists.projects).toEqual([]);
+  });
+  it.each([401, 403, 404])('blocks board access and reports failed candidates after scoped permission failure (%s)', async (status) => {
+    const incomplete = {
+      ...metadata,
+      filter_options: { assignees: [], trackers: [], priorities: [] },
+      filter_options_complete: false,
+      filter_options_error: { code: 'BOARD_FILTER_OPTIONS_TOO_LARGE' as const, resource: 'assignees', limit: 10000 },
+    };
+    vi.mocked(getJson).mockImplementation(async (url) => {
+      if (!url.includes('/metadata')) return snapshot;
+      if (url.includes('project_ids%5B%5D=')) throw new HttpError(status, null);
+      return incomplete;
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const { result } = renderHook(() => useBoardSnapshot({ baseUrl: '/projects/demo/kanban', currentUserId: 7, projectIds: [1], statusIds: [1], hiddenStatusIds: [], preferencesReady: true, initialLabels: {}, filterScope: emptyFilterScope }), { wrapper });
+    await waitFor(() => expect(result.current.candidateAccessDenied).toBe(true));
+    expect(result.current.candidateQuery.error).toMatchObject({ status });
+    expect(result.current.filterOptionsState).toEqual({ state: 'failed', error: result.current.candidateQuery.error });
+    expect(result.current.metadata).toBeNull();
+    expect(result.current.data).toBeNull();
+    expect(result.current.toolbarData.columns).toEqual([]);
+  });
+
+  it('retains scoped permission denial through retry network failure until a valid response succeeds', async () => {
+    const incomplete = {
+      ...metadata,
+      filter_options: { assignees: [], trackers: [], priorities: [] },
+      filter_options_complete: false,
+      filter_options_error: { code: 'BOARD_FILTER_OPTIONS_TOO_LARGE' as const, resource: 'assignees', limit: 10000 },
+    };
+    let candidateAttempts = 0;
+    let rejectRetry!: (error: Error) => void;
+    let retryStarted!: () => void;
+    const retryPending = new Promise<typeof metadata>((_resolve, reject) => { rejectRetry = reject; });
+    const started = new Promise<void>((resolve) => { retryStarted = resolve; });
+    vi.mocked(getJson).mockImplementation(async (url) => {
+      if (!url.includes('/metadata')) return snapshot;
+      if (!url.includes('project_ids%5B%5D=')) return incomplete;
+      candidateAttempts += 1;
+      if (candidateAttempts === 1) throw new HttpError(403, null);
+      if (candidateAttempts === 2) { retryStarted(); return retryPending; }
+      return metadata;
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const { result } = renderHook(() => useBoardSnapshot({ baseUrl: '/projects/demo/kanban', currentUserId: 7, projectIds: [1], statusIds: [1], hiddenStatusIds: [], preferencesReady: true, initialLabels: {}, filterScope: emptyFilterScope }), { wrapper });
+    await waitFor(() => expect(result.current.candidateAccessDenied).toBe(true));
+
+    let retryResult!: Promise<unknown>;
+    act(() => { retryResult = result.current.retryCandidateQuery(); });
+    await started;
+    await waitFor(() => expect(result.current.candidateQuery.isFetching).toBe(true));
+    expect(result.current.candidateAccessDenied).toBe(true);
+    expect(result.current.data).toBeNull();
+    await act(async () => { rejectRetry(new Error('offline')); await retryResult; });
+    await waitFor(() => expect(result.current.candidateQuery.isError).toBe(true));
+    expect(result.current.candidateAccessDenied).toBe(true);
+    expect(result.current.filterOptionsState.state).toBe('failed');
+    expect(result.current.data).toBeNull();
+
+    await act(async () => { await result.current.retryCandidateQuery(); });
+    await waitFor(() => expect(result.current.candidateAccessDenied).toBe(false));
+    await waitFor(() => expect(result.current.data?.meta.complete).toBe(true));
+    expect(candidateAttempts).toBe(3);
+  });
+
+  it('does not let an obsolete scoped permission failure block the next settled project identity', async () => {
+    const incomplete = {
+      ...metadata,
+      projects: [...metadata.projects, { id: 2, name: 'Second', level: 0 }],
+      viewable_projects: [...metadata.viewable_projects, { id: 2, name: 'Second', level: 0 }],
+      filter_options: { assignees: [], trackers: [], priorities: [] },
+      filter_options_complete: false,
+      filter_options_error: { code: 'BOARD_FILTER_OPTIONS_TOO_LARGE' as const, resource: 'assignees', limit: 10000 },
+    };
+    vi.mocked(getJson).mockImplementation(async (url) => {
+      if (!url.includes('/metadata')) return snapshot;
+      if (!url.includes('project_ids%5B%5D=')) return incomplete;
+      if (url.includes('project_ids%5B%5D=1')) throw new HttpError(403, null);
+      return metadata;
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const { result, rerender } = renderHook(({ projectIds }) => useBoardSnapshot({ baseUrl: '/projects/demo/kanban', currentUserId: 7, projectIds, statusIds: [1], hiddenStatusIds: [], preferencesReady: true, initialLabels: {}, filterScope: emptyFilterScope }), { initialProps: { projectIds: [1] as number[] }, wrapper });
+    await waitFor(() => expect(result.current.candidateAccessDenied).toBe(true));
+
+    rerender({ projectIds: [2] });
+    await waitFor(() => expect(result.current.data?.meta.complete).toBe(true));
+    expect(result.current.candidateAccessDenied).toBe(false);
+    expect(result.current.candidateQuery.error).toBeNull();
   });
 
   it('refreshes only the settled new anchor when a day change overlaps subject input', async () => {

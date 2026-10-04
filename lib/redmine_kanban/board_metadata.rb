@@ -27,10 +27,11 @@ module RedmineKanban
     private
 
     def filter_options_metadata(viewable_project_ids:)
+      requested_ids = Array(@project_ids).map(&:to_i).select(&:positive?).to_set
       project_ids = if @project_ids.nil?
         viewable_project_ids
       else
-        Project.visible(@user).where(id: @project_ids).pluck(:id)
+        viewable_project_ids.select { |id| requested_ids.include?(id) }
       end
       {
         filter_options: BoardFilterOptionsBuilder.new(project_ids: project_ids, user: @user).build,

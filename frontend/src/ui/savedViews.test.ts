@@ -103,5 +103,13 @@ describe('saved view documents', () => {
     const validation = validateViewReferences(pendingSettings, metadata, { project: 'Project', status: 'Status', hidden_statuses: 'Hidden', assignee: 'Assignee', issue_tracker: 'Tracker', issue_priority: 'Priority' });
     expect(validation.pending).toBe(true);
     expect(validation.unavailable).toEqual(['Project: 999', 'Status: 999', 'Hidden: 999']);
+    const failedRecovery = validateViewReferences(
+      pendingSettings,
+      metadata,
+      { project: 'Project', status: 'Status', hidden_statuses: 'Hidden', assignee: 'Assignee', issue_tracker: 'Tracker', issue_priority: 'Priority' },
+      { state: 'failed', error: new Error('offline') },
+    );
+    expect(failedRecovery.pending).toBe(true);
+    expect(failedRecovery.unavailable).toEqual(['Project: 999', 'Status: 999', 'Hidden: 999']);
   });
 });

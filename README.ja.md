@@ -94,7 +94,7 @@ REDMINE_KANBAN_MAX_BOARD_ENTITIES=5000
 
 entity上限は常に有限です。`0`では無効化されず、10,000を超える値は10,000件に制限されます。応答サイズとSQL回数の制限も独立して維持されます。旧クライアントが`board_entity_limit`を送信した場合は、サーバー上限より小さい値が適用されます。
 
-`GET /projects/:project_id/kanban/metadata`は、snapshotの成否から独立してProject／Status候補と、担当者・Tracker・Priorityの`filter_options`を返します。担当者とTrackerは`available_project_ids`を持ちます。Project filterを変更すると、選択した`project_ids[]`をscopeにしてmetadataを再取得するため、候補catalogがoverflowした後も復旧できます。候補は可視かつ有効なProject、Membership、設定から取得し、Issueが存在しないTrackerも含みます。候補とProjectとの対応関係は各資源10,000件までです。overflow時もHTTP 200とcore metadataを返し、`filter_options_complete: false`、空の候補配列、構造化された`filter_options_error`でcatalogが不完全であることを示します。部分候補は返しません。保存ビューの動的IDはcatalog不完全の間pendingとして保持し、完全なmetadata取得後に検証します。レーン・作成・編集・Workflow操作は引き続きsnapshotの`lists`を使い、Filter候補を変更権限の根拠にはしません。10,000件はサーバー安全上限であり、表示性能の保証値ではありません。
+`GET /projects/:project_id/kanban/metadata`は、snapshotの成否から独立してProject／Status候補と、担当者・Tracker・Priorityの`filter_options`を返します。担当者とTrackerは`available_project_ids`を持ちます。catalogが完全なら選択Projectに応じて候補をローカルで絞り込み、不完全な場合だけsettledな`project_ids[]`を使ってmetadataを再取得します。候補は既に認可済みの可視Project範囲、Membership、設定から取得し、Issueが存在しないTrackerも含みます。候補とProjectとの対応関係は各資源10,000件までです。overflow時もHTTP 200とcore metadataを返し、`filter_options_complete: false`、空の候補配列、構造化された`filter_options_error`でcatalogが不完全であることを示します。部分候補は返しません。候補復旧時の非Permissionエラーではcore metadataとBoardを維持し、401/403/404は従来どおりアクセス喪失として扱います。保存ビューの動的IDはcatalog不完全の間pendingとして保持し、完全なmetadata取得後に検証します。レーン・作成・編集・Workflow操作は引き続きsnapshotの`lists`を使い、Filter候補を変更権限の根拠にはしません。10,000件はサーバー安全上限であり、表示性能の保証値ではありません。
 
 ## 技術スタック
 
