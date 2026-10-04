@@ -66,6 +66,71 @@ describe('snapshot recovery without a successful cache', () => {
     expect(vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/metadata'))).toHaveLength(1);
   });
 
+  it.each([new Error('offline'), new HttpError(500, null)])('retains successful core and a selected board after base refetch fails (%s)', async (error) => {
+    vi.mocked(getJson).mockImplementation(async (url) => url.includes('/metadata') ? metadata : snapshot);
+    const { result, rerender } = setup();
+    rerender({ statusIds: [1], filterScope: emptyFilterScope, projectIds: [1] });
+    await waitFor(() => expect(result.current.data?.meta.complete).toBe(true));
+    const previousData = result.current.data;
+    const previousMetadata = result.current.metadata;
+    vi.mocked(getJson).mockClear();
+    vi.mocked(getJson).mockImplementation(async (url) => {
+      if (url.includes('/metadata')) throw error;
+      return snapshot;
+    });
+    await act(async () => { await result.current.metadataQuery.refetch(); });
+    await waitFor(() => expect(result.current.metadataQuery.isError).toBe(true));
+    expect(result.current.metadata).toBe(previousMetadata);
+    expect(result.current.data).toBe(previousData);
+    expect(result.current.filterOptionsState.state).toBe('complete');
+    expect(vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/data?'))).toHaveLength(0);
+
+    // Cached choices must still reject invalid IDs instead of broadening the scope.
+    rerender({ statusIds: [999], filterScope: emptyFilterScope, projectIds: [1] });
+    await waitFor(() => expect(result.current.boardQueryKey[4]).toBe('999'));
+    expect(result.current.data).toBeNull();
+    expect(vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/data?'))).toHaveLength(0);
+  });
+
+  it('retains core choices after base refetch failure during resource-limit recovery', async () => {
+    let metadataFailed = false;
+    vi.mocked(getJson).mockImplementation(async (url) => {
+      if (url.includes('/metadata')) {
+        if (metadataFailed) throw new Error('offline');
+        return metadata;
+      }
+      if (url.includes('issue_status_ids')) return snapshot;
+      throw new HttpError(422, { error: { code: 'BOARD_SCOPE_TOO_LARGE', effective_entity_limit: 2 } });
+    });
+    const { result, rerender } = setup();
+    await waitFor(() => expect(result.current.loadError).toBe('Limit 2'));
+    metadataFailed = true;
+    await act(async () => { await result.current.metadataQuery.refetch(); });
+    await waitFor(() => expect(result.current.metadataQuery.isError).toBe(true));
+    expect(result.current.toolbarData.columns).toEqual(metadata.statuses);
+    expect(result.current.toolbarData.lists.projects).toEqual(metadata.projects);
+    rerender({ statusIds: [1], filterScope: emptyFilterScope, projectIds: [1] });
+    await waitFor(() => expect(result.current.data?.meta.complete).toBe(true));
+  });
+
+  it('keeps selected scopes blocked until initial base metadata succeeds', async () => {
+    vi.mocked(getJson).mockImplementation(async (url) => {
+      if (url.includes('/metadata')) throw new Error('offline');
+      return snapshot;
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const { result } = renderHook(() => useBoardSnapshot({ baseUrl: '/projects/demo/kanban', currentUserId: 7, projectIds: [1], statusIds: [1], hiddenStatusIds: [], preferencesReady: true, initialLabels: {} }), { wrapper });
+    await waitFor(() => expect(result.current.metadataQuery.isError).toBe(true));
+    expect(result.current.metadata).toBeNull();
+    expect(result.current.data).toBeNull();
+    expect(result.current.toolbarData.columns).toEqual([]);
+    expect(vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/data?'))).toHaveLength(0);
+    vi.mocked(getJson).mockImplementation(async (url) => url.includes('/metadata') ? metadata : snapshot);
+    await act(async () => { await result.current.metadataQuery.refetch(); });
+    await waitFor(() => expect(result.current.data?.meta.complete).toBe(true));
+  });
+
   it('keeps the board available after scoped candidate failure and supports explicit candidate retry', async () => {
     const overflowMetadata = {
       ...metadata,
@@ -399,6 +464,56 @@ describe('snapshot recovery without a successful cache', () => {
     expect(result.current.toolbarData.columns).toEqual([]);
     expect(result.current.toolbarData.lists.projects).toEqual([]);
   });
+  it.each([401, 403, 404])('retains base permission denial through pending and failed retries until valid metadata succeeds (%s)', async (status) => {
+    vi.mocked(getJson).mockImplementation(async (url) => url.includes('/metadata') ? metadata : snapshot);
+    const { result, rerender } = setup();
+    rerender({ statusIds: [1], filterScope: emptyFilterScope, projectIds: [1] });
+    await waitFor(() => expect(result.current.data?.meta.complete).toBe(true));
+    vi.mocked(getJson).mockRejectedValue(new HttpError(status, null));
+    await act(async () => { await result.current.metadataQuery.refetch(); });
+    await waitFor(() => expect(result.current.metadata).toBeNull());
+
+    let rejectRetry!: (error: Error) => void;
+    const retryPending = new Promise<unknown>((_resolve, reject) => { rejectRetry = reject; });
+    vi.mocked(getJson).mockReturnValue(retryPending);
+    let retryResult!: Promise<unknown>;
+    act(() => { retryResult = result.current.metadataQuery.refetch(); });
+    await waitFor(() => expect(result.current.metadataQuery.isFetching).toBe(true));
+    expect(result.current.metadata).toBeNull();
+    expect(result.current.data).toBeNull();
+    await act(async () => { rejectRetry(new Error('offline')); await retryResult; });
+    await waitFor(() => expect(result.current.metadataQuery.error).toMatchObject({ message: 'offline' }));
+    expect(result.current.metadata).toBeNull();
+    expect(result.current.data).toBeNull();
+    expect(result.current.toolbarData.columns).toEqual([]);
+
+    vi.mocked(getJson).mockRejectedValue(new HttpError(500, null));
+    await act(async () => { await result.current.metadataQuery.refetch(); });
+    await waitFor(() => expect(result.current.metadataQuery.error).toMatchObject({ status: 500 }));
+    expect(result.current.metadata).toBeNull();
+    expect(result.current.data).toBeNull();
+    vi.mocked(getJson).mockImplementation(async (url) => url.includes('/metadata') ? metadata : snapshot);
+    await act(async () => { await result.current.metadataQuery.refetch(); });
+    await waitFor(() => expect(result.current.data?.meta.complete).toBe(true));
+    expect(result.current.metadata?.statuses).toEqual(metadata.statuses);
+  });
+
+  it('does not apply a base permission denial to a different metadata identity', async () => {
+    vi.mocked(getJson).mockImplementation(async (url) => url.includes('/metadata') ? metadata : snapshot);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const { result, rerender } = renderHook(({ baseUrl }) => useBoardSnapshot({ baseUrl, currentUserId: 7, projectIds: [1], statusIds: [1], hiddenStatusIds: [], preferencesReady: true, initialLabels: {} }), { initialProps: { baseUrl: '/projects/demo/kanban' }, wrapper });
+    await waitFor(() => expect(result.current.data?.meta.complete).toBe(true));
+    vi.mocked(getJson).mockRejectedValue(new HttpError(403, null));
+    await act(async () => { await result.current.metadataQuery.refetch(); });
+    await waitFor(() => expect(result.current.data).toBeNull());
+    vi.mocked(getJson).mockImplementation(async (url) => url.includes('/metadata') ? metadata : snapshot);
+    rerender({ baseUrl: '/projects/other/kanban' });
+    expect(result.current.metadata).toBeNull();
+    await waitFor(() => expect(result.current.data?.meta.complete).toBe(true));
+    expect(result.current.metadata?.statuses).toEqual(metadata.statuses);
+  });
+
   it.each([401, 403, 404])('blocks board access and reports failed candidates after scoped permission failure (%s)', async (status) => {
     const incomplete = {
       ...metadata,

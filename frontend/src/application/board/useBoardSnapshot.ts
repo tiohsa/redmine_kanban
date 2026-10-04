@@ -88,7 +88,17 @@ export function useBoardSnapshot({
     enabled: preferencesReady,
     retry: false,
   });
-  const basePermissionLost = isHttpError(metadataQuery.error) && [401, 403, 404].includes(metadataQuery.error.status);
+  const metadataIdentity = JSON.stringify(metadataQueryKey);
+  const [baseAccessFailure, setBaseAccessFailure] = useState<string | null>(null);
+  const basePermissionResponse = isHttpError(metadataQuery.error) && [401, 403, 404].includes(metadataQuery.error.status);
+  useEffect(() => {
+    if (basePermissionResponse) {
+      setBaseAccessFailure(metadataIdentity);
+    } else if (metadataQuery.isSuccess && !metadataQuery.isFetching) {
+      setBaseAccessFailure((previous) => previous === metadataIdentity ? null : previous);
+    }
+  }, [basePermissionResponse, metadataIdentity, metadataQuery.isFetching, metadataQuery.isSuccess]);
+  const basePermissionLost = basePermissionResponse || baseAccessFailure === metadataIdentity;
   const requestedScope = useMemo(() => ({
     projectIds: [...new Set(projectIds)].sort((a, b) => a - b),
     statusIds: [...new Set(statusIds)].sort((a, b) => a - b),
@@ -153,7 +163,8 @@ export function useBoardSnapshot({
     () => buildBoardQueryKey(baseUrl, queryProjectIds, queryStatusIds, queryHiddenStatusIds, queryFilterScope),
     [baseUrl, queryFilterScope, queryHiddenStatusIds, queryProjectIds, queryStatusIds],
   );
-  const choices = metadataQuery.error ? undefined : metadataQuery.data;
+  // A failed refetch does not invalidate the last successful core metadata.
+  const choices = basePermissionLost ? undefined : metadataQuery.data;
   const selectedHiddenStatuses = queryHiddenStatusIds;
   const hasScopeSelection = queryProjectIds.length + queryStatusIds.length + selectedHiddenStatuses.length > 0;
   const scopeChoicesReady = !hasScopeSelection || Boolean(choices?.board);
@@ -199,7 +210,7 @@ export function useBoardSnapshot({
   const data = displayBlocked || snapshotRefreshState !== 'ready' || transitioning ? null : boardQuery.data ?? null;
   const presentationData = displayBlocked || snapshotRefreshState === 'failed'
     ? null : transitioning && boardQuery.data ? emptyPresentationBoard(boardQuery.data) : boardQuery.data ?? null;
-  const metadata = accessDenied || metadataQuery.error ? null : metadataQuery.data;
+  const metadata = accessDenied ? null : metadataQuery.data;
   const toolbarData = useMemo<ToolbarViewModel>(() => presentationData ?? ({
     meta: {
       project_id: metadata?.board.id ?? 0,

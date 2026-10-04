@@ -396,6 +396,48 @@ describe('App board scope helpers', () => {
     queryClient.clear();
   });
 
+  it('retains board and core choices while showing a retryable base metadata refetch error', async () => {
+    const snapshot = makeBoardSnapshot();
+    snapshot.columns = metadata.statuses.map((column) => ({ ...column, count: column.id === 2 ? 1 : 0 }));
+    snapshot.labels = { ...snapshot.labels, project: 'Project', status: 'Status', board_metadata_failed: 'Metadata failed', retry: 'Retry' };
+    let metadataAttempts = 0;
+    vi.mocked(getJson).mockImplementation(async (url) => {
+      if (!url.includes('/metadata')) return snapshot;
+      metadataAttempts += 1;
+      if (metadataAttempts === 2) throw new Error('offline');
+      return metadata;
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(React.createElement(QueryClientProvider, { client: queryClient }, React.createElement(App, {
+      dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7,
+    })));
+    await screen.findByTestId('canvas-issue-ids');
+    const canvas = screen.getByTestId('canvas-issue-ids');
+    const issueIds = canvas.textContent;
+    await act(async () => { await queryClient.refetchQueries({ queryKey: ['kanban', 'metadata'] }); });
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('Metadata failed');
+    expect(screen.getByTestId('canvas-issue-ids')).toBe(canvas);
+    expect(canvas.textContent).toBe(issueIds);
+    const clickIcon = (icon: string) => {
+      const button = [...document.querySelectorAll('.rk-toolbar .rk-icon')].find((item) => item.textContent === icon)?.closest('button');
+      expect(button).toBeTruthy();
+      fireEvent.click(button!);
+    };
+    clickIcon('folder');
+    expect(await screen.findByRole('button', { name: 'Demo' })).toBeTruthy();
+    clickIcon('folder');
+    clickIcon('fact_check');
+    const statusDialog = within(screen.getByRole('dialog'));
+    expect(statusDialog.getByRole('button', { name: /Open/ })).toBeTruthy();
+    expect(statusDialog.getByRole('button', { name: /Closed/ })).toBeTruthy();
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.queryByText('Metadata failed')).toBeNull());
+    expect(metadataAttempts).toBe(3);
+    expect(vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/data?'))).toHaveLength(1);
+    queryClient.clear();
+  });
+
   it('shows the incomplete filter notice during snapshot recovery while core filters remain usable', async () => {
     const incompleteMetadata = { ...metadata, filter_options_complete: false, filter_options: { assignees: [], trackers: [], priorities: [] }, filter_options_error: { code: 'BOARD_FILTER_OPTIONS_TOO_LARGE', resource: 'assignees', limit: 10000 } };
     vi.mocked(getJson).mockImplementation((url) => url.includes('/metadata')
