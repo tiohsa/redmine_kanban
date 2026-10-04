@@ -199,6 +199,12 @@ export type BoardMetadata = {
   viewable_projects: ProjectListItem[];
   statuses: Column[];
   filter_options: BoardFilterOptions;
+  filter_options_complete: boolean;
+  filter_options_error?: {
+    code: 'BOARD_FILTER_OPTIONS_TOO_LARGE';
+    resource: string;
+    limit: number;
+  };
 };
 
 export type BoardErrorResponse = {

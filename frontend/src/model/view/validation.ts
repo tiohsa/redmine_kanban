@@ -16,8 +16,9 @@ export function validateViewReferences(settings: SavedViewSettings, metadata: Bo
   check(f.projectIds, metadata ? (settings.viewableProjectsEnabled ? metadata.viewable_projects : metadata.projects).map((p) => p.id) : undefined, labels.project);
   check(f.statusIds, metadata?.statuses.map((s) => s.id), labels.status);
   check(settings.hiddenStatusIds, metadata?.statuses.map((s) => s.id), labels.hidden_statuses);
-  check(f.assigneeIds.filter((id) => id !== 'unassigned'), metadata?.filter_options.assignees.map((a) => String(a.id)), labels.assignee);
-  check(f.trackerIds, metadata?.filter_options.trackers.map((t) => t.id), labels.issue_tracker);
-  check(f.priority, metadata?.filter_options.priorities.map((p) => String(p.id)).concat('no_priority'), labels.issue_priority);
+  const candidatesAvailable = metadata?.filter_options_complete ? metadata.filter_options : undefined;
+  check(f.assigneeIds.filter((id) => id !== 'unassigned'), candidatesAvailable?.assignees.map((a) => String(a.id)), labels.assignee);
+  check(f.trackerIds, candidatesAvailable?.trackers.map((t) => t.id), labels.issue_tracker);
+  check(f.priority, candidatesAvailable?.priorities.map((p) => String(p.id)).concat('no_priority'), labels.issue_priority);
   return { pending, unavailable };
 }

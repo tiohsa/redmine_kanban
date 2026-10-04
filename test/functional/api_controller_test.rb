@@ -47,6 +47,7 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     assert_kind_of Array, json.dig('filter_options', 'assignees')
     assert_kind_of Array, json.dig('filter_options', 'trackers')
     assert_kind_of Array, json.dig('filter_options', 'priorities')
+    assert_equal true, json['filter_options_complete']
     refute json.key?('entities')
     refute json.key?('tree')
     refute json.key?('meta')
@@ -63,17 +64,45 @@ class RedmineKanbanApiControllerTest < ActionController::TestCase
     refute_includes json['projects'].map { |project| project['id'] }, hidden.id
   end
 
-  def test_metadata_filter_candidate_overflow_returns_a_structured_error
+  def test_metadata_filter_candidate_overflow_preserves_core_metadata
     RedmineKanban::BoardFilterOptionsBuilder.any_instance.expects(:build)
       .raises(RedmineKanban::BoardFilterOptionsBuilder::ResourceLimitExceeded.new(resource: 'assignees', limit: 10_000))
 
     get :metadata, params: { project_id: @project.identifier }
 
-    assert_response :unprocessable_entity
+    assert_response :success
     json = JSON.parse(@response.body)
-    assert_equal 'BOARD_FILTER_OPTIONS_TOO_LARGE', json.dig('error', 'code')
-    assert_equal 'assignees', json.dig('error', 'resource')
-    refute json.key?('filter_options')
+    assert_equal true, json['ok']
+    assert_equal @project.id, json.dig('board', 'id')
+    assert_kind_of Array, json['projects']
+    assert_kind_of Array, json['viewable_projects']
+    assert_equal IssueStatus.sorted.map { |status| { 'id' => status.id, 'name' => status.name, 'is_closed' => status.is_closed } }, json['statuses']
+    assert_equal false, json['filter_options_complete']
+    assert_equal 'BOARD_FILTER_OPTIONS_TOO_LARGE', json.dig('filter_options_error', 'code')
+    assert_equal 'assignees', json.dig('filter_options_error', 'resource')
+    assert_equal 10_000, json.dig('filter_options_error', 'limit')
+    assert_equal({ 'assignees' => [], 'trackers' => [], 'priorities' => [] }, json['filter_options'])
+  end
+
+  def test_metadata_candidate_scope_includes_only_requested_visible_projects
+    hidden = Project.create!(name: 'Private candidate project', identifier: 'private-candidate', is_public: false)
+    builder = mock
+    builder.expects(:build).returns(assignees: [], trackers: [], priorities: [])
+    RedmineKanban::BoardFilterOptionsBuilder.expects(:new)
+      .with(project_ids: [@project.id], user: @user)
+      .returns(builder)
+
+    get :metadata, params: { project_id: @project.identifier, project_ids: [@project.id, hidden.id] }
+
+    assert_response :success
+    json = JSON.parse(@response.body)
+    assert_equal @project.id, json.dig('board', 'id')
+    assert_includes json['projects'].map { |project| project['id'] }, @project.id
+    assert_includes json['viewable_projects'].map { |project| project['id'] }, @project.id
+    assert_equal IssueStatus.sorted.map { |status| { 'id' => status.id, 'name' => status.name, 'is_closed' => status.is_closed } }, json['statuses']
+    assert_equal true, json['filter_options_complete']
+    assert_equal({ 'assignees' => [], 'trackers' => [], 'priorities' => [] }, json['filter_options'])
+    refute_includes json['filter_options'].values.flatten, hidden.id
   end
 
   def test_metadata_does_not_disclose_an_invisible_board

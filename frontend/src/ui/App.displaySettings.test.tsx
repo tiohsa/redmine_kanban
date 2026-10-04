@@ -17,7 +17,7 @@ vi.mock('./board/CanvasBoard', async () => {
 });
 
 vi.mock('../infrastructure/api/http', () => ({
-  getJson: vi.fn((url: string) => Promise.resolve(url.endsWith('/metadata') ? { ok: true, board: { id: 1, name: 'B', identifier: 'b' }, projects: [], viewable_projects: [], statuses: [], server_entity_limit: 10000, filter_options: { assignees: [], trackers: [], priorities: [] } } : {
+  getJson: vi.fn((url: string) => Promise.resolve(url.includes('/metadata') ? { ok: true, board: { id: 1, name: 'B', identifier: 'b' }, projects: [], viewable_projects: [], statuses: [], server_entity_limit: 10000, filter_options_complete: true, filter_options: { assignees: [], trackers: [], priorities: [] } } : {
     ok: true, contract_version: 3, scope_fingerprint: 'sha256:test',
     meta: { project_id: 1, project_ids: [1], scope_status_ids: [], current_user_id: 7, can_move: false, can_create: false, can_delete: false, lane_type: 'assignee', complete: true, entity_count: 0, server_entity_limit: null },
     columns: [], lanes: [], entities: [], tree: { root_ids: [], children_by_parent_id: {} },

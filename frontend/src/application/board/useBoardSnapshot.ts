@@ -4,7 +4,7 @@ import type { BoardData, ToolbarViewModel } from '../../model/board/types';
 import { canonicalBoardFilterScope, type BoardFilterScope } from '../../model/board/filterScope';
 import { getJson, isHttpError } from '../../infrastructure/api/http';
 import { parseBoardMetadata } from '../../infrastructure/api/boardMetadata';
-import { buildBoardDataUrl, buildBoardQueryKey } from '../../infrastructure/api/boardQuery';
+import { buildBoardDataUrl, buildBoardMetadataQueryKey, buildBoardMetadataUrl, buildBoardQueryKey } from '../../infrastructure/api/boardQuery';
 import { normalizeBoardData, parseBoardSnapshotV3 } from '../../infrastructure/api/boardSnapshot';
 import { getBoardFreshnessAuthority, releaseBoardFreshnessAuthority } from './asyncFreshness';
 
@@ -56,10 +56,21 @@ export function useBoardSnapshot({
 }: Args) {
   const queryClient = useQueryClient();
   const [loadFailure, setLoadFailure] = useState<{ error: unknown; scope: string; message: string } | null>(null);
+  const metadataQueryKey = buildBoardMetadataQueryKey(baseUrl, currentUserId, document.documentElement.lang, projectIds);
   const metadataQuery = useQuery({
-    queryKey: ['kanban', 'metadata', baseUrl, currentUserId, document.documentElement.lang],
+    queryKey: metadataQueryKey,
     queryFn: async () => {
-      return parseBoardMetadata(await getJson<unknown>(`${baseUrl}/metadata`));
+      return parseBoardMetadata(await getJson<unknown>(buildBoardMetadataUrl(baseUrl, projectIds)));
+    },
+    placeholderData: (previousData, previousQuery) => {
+      if (!previousData || !previousQuery || previousQuery.queryKey.slice(0, 5).some((part, index) => part !== metadataQueryKey[index])) return undefined;
+      const placeholder = {
+        ...previousData,
+        filter_options: { assignees: [], trackers: [], priorities: [] },
+        filter_options_complete: false,
+      };
+      delete placeholder.filter_options_error;
+      return placeholder;
     },
     enabled: preferencesReady,
     retry: false,

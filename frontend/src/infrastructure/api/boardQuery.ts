@@ -3,6 +3,21 @@ import { canonicalBoardFilterScope, type BoardFilterScope } from '../../model/bo
 
 export const ENTITY_RECONCILIATION_BATCH_SIZE = 100;
 
+function canonicalIds(values: Iterable<number>): number[] {
+  return Array.from(new Set(values)).filter((value) => Number.isSafeInteger(value) && value > 0).sort((a, b) => a - b);
+}
+
+export function buildBoardMetadataQueryKey(baseUrl: string, currentUserId: number, language: string, projectIds: Iterable<number>) {
+  return ['kanban', 'metadata', baseUrl, currentUserId, language, canonicalIds(projectIds).join(',')] as const;
+}
+
+export function buildBoardMetadataUrl(baseUrl: string, projectIds: Iterable<number>): string {
+  const params = new URLSearchParams();
+  appendNumberParams(params, 'project_ids[]', canonicalIds(projectIds));
+  const query = params.toString();
+  return `${baseUrl}/metadata${query ? `?${query}` : ''}`;
+}
+
 function serializeNumberSelection(values: Iterable<number>): string {
   return Array.from(new Set(values)).filter(Number.isFinite).sort((a, b) => a - b).join(',');
 }

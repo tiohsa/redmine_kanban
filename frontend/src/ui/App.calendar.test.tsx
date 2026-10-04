@@ -44,8 +44,8 @@ vi.mock('./useKanbanActions', () => ({
 }));
 
 vi.mock('../infrastructure/api/http', () => ({
-  getJson: vi.fn((url: string) => Promise.resolve(url.endsWith('/metadata')
-    ? { ok: true, board: { id: 4, name: 'B', identifier: 'b' }, projects: [], viewable_projects: [], statuses: [], server_entity_limit: 10000, filter_options: { assignees: [], trackers: [], priorities: [] } }
+  getJson: vi.fn((url: string) => Promise.resolve(url.includes('/metadata')
+    ? { ok: true, board: { id: 4, name: 'B', identifier: 'b' }, projects: [], viewable_projects: [], statuses: [], server_entity_limit: 10000, filter_options_complete: true, filter_options: { assignees: [], trackers: [], priorities: [] } }
     : boardSnapshot())),
   isHttpError: vi.fn(() => false),
   postJson: vi.fn(),

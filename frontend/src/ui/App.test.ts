@@ -8,7 +8,7 @@ import { getJson, isHttpError, postJson } from '../infrastructure/api/http';
 import { parseBoardSnapshotV3 } from '../infrastructure/api/boardSnapshot';
 import { makeBoardSnapshot } from '../test/fixtures/boardSnapshot';
 
-const metadata = vi.hoisted(() => ({ ok: true, board: { id: 1, name: 'Demo', identifier: 'demo' }, projects: [{ id: 4, name: 'Demo', level: 0 }], viewable_projects: [{ id: 4, name: 'Demo', level: 0 }], statuses: [{ id: 1, name: 'Open', is_closed: false }, { id: 2, name: 'Closed', is_closed: true }], server_entity_limit: 10000, filter_options: { assignees: [{ id: 8, name: 'Recovery Assignee', available_project_ids: [4] }], trackers: [{ id: 3, name: 'Recovery Tracker', available_project_ids: [4] }], priorities: [{ id: 2, name: 'Recovery Priority' }] } }));
+const metadata = vi.hoisted(() => ({ ok: true, board: { id: 1, name: 'Demo', identifier: 'demo' }, projects: [{ id: 4, name: 'Demo', level: 0 }], viewable_projects: [{ id: 4, name: 'Demo', level: 0 }], statuses: [{ id: 1, name: 'Open', is_closed: false }, { id: 2, name: 'Closed', is_closed: true }], server_entity_limit: 10000, filter_options_complete: true, filter_options: { assignees: [{ id: 8, name: 'Recovery Assignee', available_project_ids: [4] }], trackers: [{ id: 3, name: 'Recovery Tracker', available_project_ids: [4] }], priorities: [{ id: 2, name: 'Recovery Priority' }] } }));
 const iframeUnmountSpy = vi.hoisted(() => vi.fn());
 const canvasRenderSpy = vi.hoisted(() => vi.fn());
 const mockSetFilters = vi.hoisted(() => vi.fn());
@@ -90,7 +90,7 @@ vi.stubGlobal('ResizeObserver', class {
 });
 
 vi.mock('../infrastructure/api/http', () => ({
-  getJson: vi.fn((url: string) => Promise.resolve(url.endsWith('/metadata') ? metadata : {
+  getJson: vi.fn((url: string) => Promise.resolve(url.includes('/metadata') ? metadata : {
     ok: true, contract_version: 3, scope_fingerprint: 'sha256:test',
     meta: { project_id: 1, project_ids: [4], scope_status_ids: [2], scope_fingerprint: 'sha256:test', current_user_id: 7, can_move: false, can_create: false, can_delete: false, lane_type: 'none', aging_warn_days: 7, aging_danger_days: 14, aging_exclude_closed: false, complete: true, entity_count: 0 },
     columns: [], lanes: [], lists: { assignees: [], trackers: [], priorities: [], projects: [], viewable_projects: [], creatable_projects: [] }, issues: [], entities: [], tree: { root_ids: [], children_by_parent_id: {} }, labels: {},
@@ -158,7 +158,7 @@ describe('App board scope helpers', () => {
     let snapshotRequests = 0;
     let finishSnapshotRefresh: ((value: typeof snapshot) => void) | undefined;
     vi.mocked(getJson).mockImplementation((url) => {
-      if (url.endsWith('/metadata')) return Promise.resolve(metadata);
+      if (url.includes('/metadata')) return Promise.resolve(metadata);
       if (url.includes('/data?') && ++snapshotRequests > 1) return new Promise((resolve) => { finishSnapshotRefresh = resolve; });
       return Promise.resolve(snapshot);
     });
@@ -209,7 +209,7 @@ describe('App board scope helpers', () => {
     mockDialogControl.showCreateModal = false;
     vi.mocked(getJson).mockClear();
     vi.mocked(isHttpError).mockImplementation(() => false);
-    vi.mocked(getJson).mockImplementation((url) => Promise.resolve(url.endsWith('/metadata') ? metadata : makeBoardSnapshot()));
+    vi.mocked(getJson).mockImplementation((url) => Promise.resolve(url.includes('/metadata') ? metadata : makeBoardSnapshot()));
     vi.mocked(postJson).mockReset();
     mockSetFilters.mockReset();
     canvasRenderSpy.mockClear();
@@ -229,7 +229,7 @@ describe('App board scope helpers', () => {
     let finishInitialLoad: ((value: typeof snapshot) => void) | undefined;
     let finishSnapshotRefresh: ((value: typeof snapshot) => void) | undefined;
     vi.mocked(getJson).mockImplementation((url) => {
-      if (url.endsWith('/metadata')) return Promise.resolve(metadata);
+      if (url.includes('/metadata')) return Promise.resolve(metadata);
       snapshotRequests += 1;
       return new Promise((resolve) => {
         if (snapshotRequests === 1) finishInitialLoad = resolve;
@@ -265,7 +265,7 @@ describe('App board scope helpers', () => {
     expect(assigneeTrigger).not.toBeNull();
     expect(searchTrigger).not.toBeNull();
     expect((createButton as HTMLButtonElement).disabled).toBe(false);
-    const metadataRequestCount = () => vi.mocked(getJson).mock.calls.filter(([url]) => url.endsWith('/metadata')).length;
+    const metadataRequestCount = () => vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/metadata')).length;
     expect(metadataRequestCount()).toBe(1);
 
     fireEvent.click(screen.getByRole('button', { name: 'Move test issue' }));
@@ -324,7 +324,7 @@ describe('App board scope helpers', () => {
     ];
     snapshot.entities[0].allowed_status_ids = [1, 2];
     snapshot.lists.trackers[0].workflow_status_ids = [1, 2];
-    vi.mocked(getJson).mockImplementation((url) => Promise.resolve(url.endsWith('/metadata') ? metadata : snapshot));
+    vi.mocked(getJson).mockImplementation((url) => Promise.resolve(url.includes('/metadata') ? metadata : snapshot));
     const movedIssue = {
       ...snapshot.entities[0],
       status_id: 1,
@@ -349,7 +349,7 @@ describe('App board scope helpers', () => {
     await screen.findByTestId('canvas-issue-ids');
 
     const getCounts = () => ({
-      metadata: vi.mocked(getJson).mock.calls.filter(([url]) => url.endsWith('/metadata')).length,
+      metadata: vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/metadata')).length,
       snapshots: vi.mocked(getJson).mock.calls.filter(([url]) => url.includes('/data?')).length,
     });
     const beforeMove = getCounts();
@@ -370,14 +370,16 @@ describe('App board scope helpers', () => {
   });
 
   it('shows metadata filter choices after a 422 snapshot overflow and applies an assignee selection', async () => {
-    vi.mocked(getJson).mockImplementation((url) => url.endsWith('/metadata')
+    vi.mocked(getJson).mockImplementation((url) => url.includes('/metadata')
       ? Promise.resolve(metadata)
       : Promise.reject(Object.assign(new Error('snapshot overflow'), { status: 422, payload: { error: { code: 'BOARD_SCOPE_TOO_LARGE', effective_entity_limit: 2, server_entity_limit: 2 } } })));
     vi.mocked(isHttpError).mockImplementation((error) => typeof error === 'object' && error !== null && 'status' in error);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(React.createElement(QueryClientProvider, { client: queryClient }, React.createElement(App, { dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7, initialLabels: { board_scope_too_large: 'Scope %{limit}' } })));
+    const incompleteNotice = 'Filter choices unavailable';
+    render(React.createElement(QueryClientProvider, { client: queryClient }, React.createElement(App, { dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7, initialLabels: { board_scope_too_large: 'Scope %{limit}', board_filter_options_incomplete: incompleteNotice } })));
 
     await screen.findByText('Scope 2');
+    expect(screen.queryByText(incompleteNotice)).toBeNull();
     const clickIcon = (icon: string) => {
       const element = [...document.querySelectorAll('.rk-toolbar .rk-icon')].find((item) => item.textContent === icon);
       if (!element?.closest('button')) throw new Error(`Missing ${icon} toolbar button`);
@@ -391,6 +393,133 @@ describe('App board scope helpers', () => {
     expect(await screen.findByText('Recovery Tracker')).toBeTruthy();
     clickIcon('priority_high');
     expect(await screen.findByText('Recovery Priority')).toBeTruthy();
+    queryClient.clear();
+  });
+
+  it('shows the incomplete filter notice during snapshot recovery while core filters remain usable', async () => {
+    const incompleteMetadata = { ...metadata, filter_options_complete: false, filter_options: { assignees: [], trackers: [], priorities: [] }, filter_options_error: { code: 'BOARD_FILTER_OPTIONS_TOO_LARGE', resource: 'assignees', limit: 10000 } };
+    vi.mocked(getJson).mockImplementation((url) => url.includes('/metadata')
+      ? Promise.resolve(incompleteMetadata)
+      : Promise.reject(Object.assign(new Error('snapshot overflow'), { status: 422, payload: { error: { code: 'BOARD_SCOPE_TOO_LARGE', effective_entity_limit: 2, server_entity_limit: 2 } } })));
+    vi.mocked(isHttpError).mockImplementation((error) => typeof error === 'object' && error !== null && 'status' in error);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(React.createElement(QueryClientProvider, { client: queryClient }, React.createElement(App, {
+      dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7,
+      initialLabels: { board_scope_too_large: 'Scope %{limit}', board_filter_options_incomplete: 'Filter choices unavailable' },
+    })));
+
+    await screen.findByText('Scope 2');
+    expect(screen.getByRole('status').textContent).toContain('Filter choices unavailable');
+    const statusButton = [...document.querySelectorAll('.rk-toolbar .rk-icon')].find((item) => item.textContent === 'filter_list')?.closest('button');
+    expect(statusButton).toBeTruthy();
+    fireEvent.click(statusButton!);
+    await waitFor(() => expect(document.querySelector('.rk-dropdown-menu[role="dialog"]')).not.toBeNull());
+    queryClient.clear();
+  });
+
+  it('shows incomplete filter metadata alongside a successfully loaded board and hides it for complete metadata', async () => {
+    const incompleteMetadata = { ...metadata, filter_options_complete: false, filter_options: { assignees: [], trackers: [], priorities: [] }, filter_options_error: { code: 'BOARD_FILTER_OPTIONS_TOO_LARGE', resource: 'assignees', limit: 10000 } };
+    let metadataCalls = 0;
+    vi.mocked(getJson).mockImplementation((url) => url.includes('/metadata')
+      ? Promise.resolve(++metadataCalls === 1 ? incompleteMetadata : metadata)
+      : Promise.resolve(makeBoardSnapshot()));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = render(React.createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      React.createElement(App, { dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7, initialLabels: { board_filter_options_incomplete: 'Filter choices unavailable' } }),
+    ));
+
+    await screen.findByTestId('canvas-issue-ids');
+    expect(screen.getByRole('status').textContent).toContain('Filter choices unavailable');
+    expect(document.querySelector('.rk-toolbar')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Open issue 9' })).toBeTruthy();
+    fireEvent.click([...document.querySelectorAll('.rk-toolbar .rk-icon')].find((item) => item.textContent === 'filter_list')!.closest('button')!);
+    await waitFor(() => expect(document.querySelector('.rk-dropdown-menu[role="dialog"]')).not.toBeNull());
+
+    mockPreferenceFilters.projectIds = [];
+    view.rerender(React.createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      React.createElement(App, { dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7, initialLabels: { board_filter_options_incomplete: 'Filter choices unavailable' } }),
+    ));
+    await waitFor(() => expect(metadataCalls).toBe(2));
+    await screen.findByTestId('canvas-issue-ids');
+    await waitFor(() => expect(screen.queryByText('Filter choices unavailable')).toBeNull());
+    queryClient.clear();
+  });
+
+  it('keeps project and status choices available while scoped metadata is pending', async () => {
+    const expandedMetadata = {
+      ...metadata,
+      projects: [...metadata.projects, { id: 5, name: 'Other project', level: 0 }],
+      viewable_projects: [...metadata.viewable_projects, { id: 5, name: 'Other project', level: 0 }],
+    };
+    const boardSnapshot = makeBoardSnapshot();
+    boardSnapshot.lists.projects.push({ id: 5, name: 'Other project', level: 0 });
+    boardSnapshot.lists.viewable_projects.push({ id: 5, name: 'Other project', level: 0 });
+    let releaseScopedMetadata: ((value: typeof expandedMetadata) => void) | undefined;
+    let metadataCalls = 0;
+    vi.mocked(getJson).mockImplementation((url) => {
+      if (!url.includes('/metadata')) return Promise.resolve(boardSnapshot);
+      metadataCalls += 1;
+      if (metadataCalls === 1) return Promise.resolve(expandedMetadata);
+      return new Promise((resolve) => { releaseScopedMetadata = resolve; });
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const app = (labels: Record<string, string> = {}) => React.createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      React.createElement(App, {
+        dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7,
+        initialLabels: { project: 'Project', status: 'Status', assignee: 'Assignee', board_filter_options_incomplete: 'Filter choices unavailable', ...labels },
+      }),
+    );
+    const view = render(app());
+    await screen.findByTestId('canvas-issue-ids');
+    const canvasShell = screen.getByTestId('canvas-issue-ids');
+    const clickIcon = (icon: string) => {
+      const element = [...document.querySelectorAll('.rk-toolbar .rk-icon')].find((item) => item.textContent === icon);
+      if (!element?.closest('button')) throw new Error(`Missing ${icon} toolbar button`);
+      fireEvent.click(element.closest('button')!);
+    };
+
+    clickIcon('folder');
+    const projectDialog = document.querySelector('.rk-dropdown-menu[role="dialog"]')!;
+    expect(screen.getByRole('button', { name: 'Other project' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Other project' }));
+    expect(mockSetFilters).toHaveBeenCalledWith(expect.objectContaining({ projectIds: [4, 5] }));
+    mockPreferenceFilters.projectIds = [4, 5];
+    view.rerender(app());
+
+    await waitFor(() => expect(releaseScopedMetadata).toBeTypeOf('function'));
+    expect(projectDialog.isConnected).toBe(true);
+    expect(screen.getByRole('button', { name: 'Other project' })).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('canvas-issue-ids').textContent).toBe(''));
+    expect(screen.getByTestId('canvas-issue-ids')).toBe(canvasShell);
+    clickIcon('person');
+    expect(screen.queryByRole('button', { name: 'Recovery Assignee' })).toBeNull();
+    expect(screen.queryByText('Filter choices unavailable')).toBeNull();
+    clickIcon('fact_check');
+    expect(screen.getByRole('button', { name: 'Open' })).toBeTruthy();
+    expect(screen.getByTestId('canvas-issue-ids')).toBe(canvasShell);
+
+    await act(async () => { releaseScopedMetadata?.(expandedMetadata); });
+    await waitFor(() => expect(metadataCalls).toBe(2));
+    queryClient.clear();
+  });
+
+  it.each([500, 403])('does not show the incomplete filter notice when metadata fails with HTTP %i', async (status) => {
+    vi.mocked(getJson).mockRejectedValue(Object.assign(new Error('metadata failed'), { status }));
+    vi.mocked(isHttpError).mockImplementation((error) => typeof error === 'object' && error !== null && 'status' in error);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(React.createElement(QueryClientProvider, { client: queryClient }, React.createElement(App, {
+      dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7,
+      initialLabels: { board_metadata_failed: 'Metadata failed', retry: 'Retry', board_filter_options_incomplete: 'Filter choices unavailable' },
+    })));
+
+    await screen.findByText('Metadata failed');
+    expect(screen.queryByText('Filter choices unavailable')).toBeNull();
     queryClient.clear();
   });
 
@@ -488,7 +617,7 @@ describe('App board scope helpers', () => {
     queryClient.clear();
   });
 
-  it('picks up a new relative-date anchor on an ordinary App render', async () => {
+  it('fetches a new relative-date snapshot when the window resumes on a new local day', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(2026, 8, 30, 12));
     mockPreferenceFilters.due = 'overdue';
@@ -506,16 +635,35 @@ describe('App board scope helpers', () => {
     expect(urls()[0]).toContain('filter_date_anchor=2026-09-30');
 
     vi.setSystemTime(new Date(2026, 9, 1, 12));
-    view.rerender(React.createElement(
-      QueryClientProvider,
-      { client: queryClient },
-      React.createElement(App, { dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7 }),
-    ));
+    fireEvent.focus(window);
     await waitFor(() => expect(urls()).toHaveLength(2), { timeout: 1500 });
 
     expect(urls()[1]).toContain('filter_date_anchor=2026-10-01');
     expect(queryClient.getQueryCache().findAll({ queryKey: ['kanban', 'board'] })
       .some((query) => JSON.stringify(query.queryKey).includes('2026-10-01'))).toBe(true);
+    queryClient.clear();
+  });
+
+  it.each(['all', 'none'] as const)('does not fetch a new %s due snapshot when the local day syncs', async (due) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 8, 30, 12));
+    mockPreferenceFilters.due = due;
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(React.createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      React.createElement(App, { dataUrl: '/projects/demo/kanban/data', initialCurrentUserId: 7 }),
+    ));
+    await screen.findByTestId('canvas-issue-ids');
+    const urls = () => vi.mocked(getJson).mock.calls.map(([url]) => url).filter((url) => url.includes('/data?'));
+    expect(urls()).toHaveLength(1);
+
+    vi.setSystemTime(new Date(2026, 9, 1, 0, 0, 1));
+    fireEvent.focus(window);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(urls()).toHaveLength(1);
+    expect(urls()[0]).not.toContain('filter_date_anchor=');
     queryClient.clear();
   });
 

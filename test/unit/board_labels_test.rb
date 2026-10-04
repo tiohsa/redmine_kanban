@@ -23,6 +23,8 @@ class RedmineKanbanBoardLabelsTest < ActiveSupport::TestCase
     assert_equal I18n.t('redmine_kanban.label_all', locale: :en), english[:all]
     assert_equal I18n.t('redmine_kanban.label_all', locale: :ja), japanese[:all]
     refute_equal english[:all], japanese[:all]
+    assert_equal 'Assignee, tracker, and priority filter choices exceed the limit and cannot be displayed. Select projects to narrow the choices.', english[:board_filter_options_incomplete]
+    assert_equal '担当者・トラッカー・優先度の絞り込み候補が上限を超えたため表示できません。プロジェクトを選択して候補の範囲を絞り込んでください。', japanese[:board_filter_options_incomplete]
     assert_equal english, I18n.with_locale(:en) { build_labels }
   end
 

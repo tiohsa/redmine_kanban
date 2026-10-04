@@ -78,6 +78,131 @@ test('tracker filter recovers from the server cap using metadata candidates', as
   expect(metadataRequests).toHaveLength(1);
 });
 
+test('project narrowing reloads filter candidates after metadata overflow', async ({ page, baseURL }) => {
+  test.skip(process.env.REDMINE_KANBAN_RECOVERY_TEST !== '1', 'Requires the dedicated server with entity cap 2');
+  await login(page, baseURL);
+  let metadataCalls = 0;
+  const metadataProjectScopes = [];
+  let initialMetadata;
+  let signalScopedMetadata;
+  let releaseScopedMetadata;
+  const scopedMetadataStarted = new Promise((resolve) => { signalScopedMetadata = resolve; });
+  const scopedMetadataRelease = new Promise((resolve) => { releaseScopedMetadata = resolve; });
+  await page.route(/\/kanban\/metadata(?:\?|$)/, async (route) => {
+    const response = await route.fetch();
+    metadataCalls += 1;
+    metadataProjectScopes.push(new URL(route.request().url()).searchParams.getAll('project_ids[]').map(Number));
+    if (metadataCalls === 1) {
+      initialMetadata = await response.json();
+      await route.fulfill({
+        response,
+        body: JSON.stringify({
+          ...initialMetadata,
+          filter_options: { assignees: [], trackers: [], priorities: [] },
+          filter_options_complete: false,
+          filter_options_error: {
+            code: 'BOARD_FILTER_OPTIONS_TOO_LARGE',
+            resource: 'assignees',
+            limit: 10_000,
+          },
+        }),
+      });
+      return;
+    }
+    if (new URL(route.request().url()).searchParams.has('project_ids[]')) {
+      signalScopedMetadata();
+      await scopedMetadataRelease;
+    }
+    await route.fulfill({ response });
+  });
+
+  const metadataResponse = page.waitForResponse((response) => /\/kanban\/metadata(?:\?|$)/.test(response.url()));
+  const failed = page.waitForResponse(isSnapshot);
+  await page.goto(`${baseURL}/projects/ecookbook/kanban`);
+  expect((await failed).status()).toBe(422);
+  const incompleteMetadata = await (await metadataResponse).json();
+  expect(incompleteMetadata.filter_options_complete).toBe(false);
+  expect(incompleteMetadata.filter_options_error.code).toBe('BOARD_FILTER_OPTIONS_TOO_LARGE');
+
+  const l = await labels(page);
+  const nativeProject = initialMetadata.viewable_projects.find((project) => project.name === 'Kanban Native E2E');
+  expect(nativeProject).toBeTruthy();
+  await expect(page.getByRole('region', { name: l.board_recovery })).toBeVisible();
+  await expect(page.getByRole('status')).toContainText(l.board_filter_options_incomplete);
+
+  await page.getByRole('button', { name: l.status, exact: true }).click();
+  const statusName = initialMetadata.statuses[0].name;
+  await expect(page.getByRole('dialog', { name: l.status }).getByRole('button', { name: statusName, exact: true })).toBeVisible();
+  await page.getByRole('button', { name: l.filter, exact: true }).click();
+  const subject = page.getByRole('dialog', { name: l.filter }).getByPlaceholder(l.filter_subject);
+  await expect(subject).toBeEnabled();
+  const subjectResponse = page.waitForResponse((response) => isSnapshot(response) &&
+    new URL(response.url()).searchParams.get('filter_q') === 'calendar issue');
+  await subject.fill('calendar issue');
+  expect((await subjectResponse).ok()).toBe(true);
+  await expect(page.getByRole('region', { name: l.board_recovery })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Kanban Board' })).toBeVisible();
+  await expect(page.getByRole('status')).toContainText(l.board_filter_options_incomplete);
+
+  await page.getByRole('button', { name: l.project, exact: true }).click();
+  const projectDialog = page.getByRole('dialog', { name: l.project });
+  await projectDialog.getByRole('switch', { name: l.viewable_projects_short }).click();
+  const scopedMetadataResponse = page.waitForResponse((response) => {
+    if (!/\/kanban\/metadata(?:\?|$)/.test(response.url())) return false;
+    return new URL(response.url()).searchParams.getAll('project_ids[]').join() === String(nativeProject.id);
+  });
+  const finalSnapshotResponse = page.waitForResponse((response) => {
+    if (!isSnapshot(response) || !response.ok()) return false;
+    return new URL(response.url()).searchParams.getAll('project_ids[]').join() === String(nativeProject.id);
+  });
+  await projectDialog.getByRole('button', { name: nativeProject.name, exact: true }).click();
+
+  await scopedMetadataStarted;
+  await expect(projectDialog).toBeVisible();
+  const nativeProjectChoice = projectDialog.getByRole('button', { name: nativeProject.name, exact: true });
+  await expect(nativeProjectChoice).toBeVisible();
+  // Keep the project menu interactive while scoped metadata is still pending.
+  await nativeProjectChoice.click();
+  await expect(nativeProjectChoice).toBeVisible();
+  await nativeProjectChoice.click();
+  await expect(nativeProjectChoice).toBeVisible();
+  await expect(page.getByRole('status')).toHaveCount(0);
+  await page.getByRole('button', { name: l.issue_tracker, exact: true }).click();
+  const pendingTrackerDialog = page.getByRole('dialog', { name: l.issue_tracker });
+  await expect(pendingTrackerDialog.getByRole('button', { name: 'Kanban Recovery Tracker', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: l.status, exact: true }).click();
+  await expect(page.getByRole('dialog', { name: l.status }).getByRole('button', { name: statusName, exact: true })).toBeVisible();
+  await page.getByRole('button', { name: l.project, exact: true }).click();
+  await expect(page.getByRole('dialog', { name: l.project }).getByRole('button', { name: nativeProject.name, exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Kanban Board' })).toBeVisible();
+  releaseScopedMetadata();
+
+  const scopedMetadata = await (await scopedMetadataResponse).json();
+  expect(scopedMetadata.filter_options_complete).toBe(true);
+  expect(scopedMetadata.filter_options_error).toBeUndefined();
+  const nativeTracker = initialMetadata.filter_options.trackers.find((tracker) =>
+    tracker.available_project_ids.includes(nativeProject.id));
+  expect(nativeTracker).toBeTruthy();
+  const scopedTrackers = scopedMetadata.filter_options.trackers;
+  expect(scopedTrackers.map((tracker) => tracker.id)).toContain(nativeTracker.id);
+  expect(scopedTrackers.every((tracker) => tracker.available_project_ids.every((id) => id === nativeProject.id))).toBe(true);
+  const recoveryTracker = initialMetadata.filter_options.trackers.find((tracker) => tracker.name === 'Kanban Recovery Tracker');
+  expect(recoveryTracker).toBeTruthy();
+  expect(scopedTrackers.map((tracker) => tracker.id)).not.toContain(recoveryTracker.id);
+  const finalSnapshot = await (await finalSnapshotResponse).json();
+  expect(finalSnapshot.meta.complete).toBe(true);
+  expect(finalSnapshot.meta.project_ids).toEqual([nativeProject.id]);
+  await expect(page.getByRole('status')).toHaveCount(0);
+
+  await page.getByRole('button', { name: l.issue_tracker, exact: true }).click();
+  const trackerDialog = page.getByRole('dialog', { name: l.issue_tracker });
+  await expect(trackerDialog.getByRole('button', { name: nativeTracker.name, exact: true })).toBeVisible();
+  await expect(trackerDialog.getByRole('button', { name: 'Kanban Recovery Tracker', exact: true })).toHaveCount(0);
+  // Returning to the unscoped key refetches it because metadata queries use staleTime 0.
+  // Re-selecting the pending native scope reuses its in-flight request.
+  expect(metadataProjectScopes).toEqual([[], [nativeProject.id], []]);
+});
+
 test('subject filter recovers a large initial scope as a complete snapshot', async ({ page, baseURL }) => {
   test.skip(process.env.REDMINE_KANBAN_RECOVERY_TEST !== '1', 'Requires the dedicated server with entity cap 2');
   await login(page, baseURL);

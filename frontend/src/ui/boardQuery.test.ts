@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendScopeStatusParams, buildBoardCountsUrl, buildBoardDataUrl, buildBoardEntitiesUrl, buildBoardMutationUrl, buildBoardQueryKey, effectiveScopeStatusIds } from './boardQuery';
+import { appendScopeStatusParams, buildBoardCountsUrl, buildBoardDataUrl, buildBoardEntitiesUrl, buildBoardMetadataQueryKey, buildBoardMetadataUrl, buildBoardMutationUrl, buildBoardQueryKey, effectiveScopeStatusIds } from './boardQuery';
 import type { BoardData } from './types';
 import type { BoardFilterScope } from '../model/board/filterScope';
 import { boardFilterScopeFromFilters } from '../model/board/filterScope';
@@ -20,6 +20,13 @@ const filterScope: BoardFilterScope = {
 };
 
 describe('snapshot board query', () => {
+  it('canonicalizes metadata project scope in the URL and cache key', () => {
+    expect(buildBoardMetadataUrl('/board', [4, 2, 4])).toBe('/board/metadata?project_ids%5B%5D=2&project_ids%5B%5D=4');
+    expect(buildBoardMetadataUrl('/board', [])).toBe('/board/metadata');
+    expect(buildBoardMetadataQueryKey('/board', 7, 'en', [4, 2, 4])).toEqual(buildBoardMetadataQueryKey('/board', 7, 'en', [2, 4]));
+    expect(buildBoardMetadataQueryKey('/board', 7, 'en', [])).not.toEqual(buildBoardMetadataQueryKey('/board', 7, 'en', [2]));
+    expect(buildBoardMetadataQueryKey('/board', 7, 'en', [0, -1, 2.5])).toEqual(buildBoardMetadataQueryKey('/board', 7, 'en', []));
+  });
   it('resolves explicit, empty, and legacy status scopes consistently', () => {
     expect(effectiveScopeStatusIds(snapshot([2]))).toEqual([2]);
     expect(effectiveScopeStatusIds(snapshot([]))).toEqual([]);

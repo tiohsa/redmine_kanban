@@ -26,6 +26,7 @@ const metadata = {
   projects: [{ id: 4, name: 'Demo', level: 0 }],
   viewable_projects: [{ id: 4, name: 'Demo', level: 0 }],
   statuses: [{ id: 2, name: 'Open', is_closed: false }],
+  filter_options_complete: true,
   filter_options: { assignees: [], trackers: [], priorities: [] },
 };
 
@@ -55,7 +56,7 @@ describe('board snapshot refresh lifecycle', () => {
     const refreshed = deferred<ReturnType<typeof makeBoardSnapshot>>();
     let boardRequests = 0;
     vi.mocked(getJson).mockImplementation((url) => {
-      if (url.endsWith('/metadata')) return Promise.resolve(metadata);
+      if (url.includes('/metadata')) return Promise.resolve(metadata);
       boardRequests += 1;
       return boardRequests === 1 ? Promise.resolve(makeBoardSnapshot()) : refreshed.promise;
     });
@@ -83,7 +84,7 @@ describe('board snapshot refresh lifecycle', () => {
     const retried = deferred<ReturnType<typeof makeBoardSnapshot>>();
     let boardRequests = 0;
     vi.mocked(getJson).mockImplementation((url) => {
-      if (url.endsWith('/metadata')) return Promise.resolve(metadata);
+      if (url.includes('/metadata')) return Promise.resolve(metadata);
       boardRequests += 1;
       if (boardRequests === 1) return Promise.resolve(makeBoardSnapshot());
       return boardRequests === 2 ? failed.promise : retried.promise;
@@ -117,7 +118,7 @@ describe('board snapshot refresh lifecycle', () => {
     const refreshed = deferred<ReturnType<typeof makeBoardSnapshot>>();
     let boardRequests = 0;
     vi.mocked(getJson).mockImplementation((url) => {
-      if (url.endsWith('/metadata')) return Promise.resolve(metadata);
+      if (url.includes('/metadata')) return Promise.resolve(metadata);
       boardRequests += 1;
       return boardRequests === 1 ? Promise.resolve(makeBoardSnapshot()) : refreshed.promise;
     });
@@ -142,7 +143,7 @@ describe('board snapshot refresh lifecycle', () => {
     let boardRequests = 0;
     let oldSignal: AbortSignal | undefined;
     vi.mocked(getJson).mockImplementation((url, options) => {
-      if (url.endsWith('/metadata')) return Promise.resolve(metadata);
+      if (url.includes('/metadata')) return Promise.resolve(metadata);
       boardRequests += 1;
       if (boardRequests === 1) return Promise.resolve(makeBoardSnapshot());
       if (boardRequests === 2) {
@@ -180,7 +181,7 @@ describe('board snapshot refresh lifecycle', () => {
     const remountFailure = deferred<ReturnType<typeof makeBoardSnapshot>>();
     let boardRequests = 0;
     vi.mocked(getJson).mockImplementation((url) => {
-      if (url.endsWith('/metadata')) return Promise.resolve(metadata);
+      if (url.includes('/metadata')) return Promise.resolve(metadata);
       boardRequests += 1;
       if (boardRequests === 1) return Promise.resolve(makeBoardSnapshot());
       return boardRequests === 2 ? firstFailure.promise : remountFailure.promise;

@@ -117,7 +117,7 @@ if ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] == '2'
     candidate.default_status = status
   end
   project.trackers << recovery_tracker unless project.trackers.exists?(recovery_tracker.id)
-  calendar_issue.update!(tracker: recovery_tracker)
+  calendar_issue.reload.update!(tracker: recovery_tracker)
 end
 
 if ENV['REDMINE_KANBAN_E2E_TREE_FIXTURE'] == '1'

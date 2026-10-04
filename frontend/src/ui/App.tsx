@@ -23,9 +23,10 @@ import { resolveDefaultCreateProjectId, useBoardFilterNormalization } from './us
 import { useBoardPresentation } from './useBoardPresentation';
 import { savedViewsKey } from '../infrastructure/storage/savedViewsRepository';
 import { validateViewReferences } from '../model/view/validation';
+import { useLocalDateAnchor } from '../application/view/useLocalDateAnchor';
 import { SavedViewsPopover } from './toolbar/SavedViewsPopover';
 import { useBoardSnapshot } from './useBoardSnapshot';
-import { boardFilterScopeFromFilters, localDateAnchor } from '../model/board/filterScope';
+import { boardFilterScopeFromFilters } from '../model/board/filterScope';
 
 type Props = { dataUrl: string; initialCurrentUserId: number; initialLabels?: Record<string, string> };
 
@@ -85,10 +86,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
   } = useKanbanPreferences(dataUrl, initialCurrentUserId);
 
   const baseUrl = useMemo(() => projectScope, [projectScope]);
-  const today = localDateAnchor();
-  const [dateAnchor, setDateAnchor] = useState(today);
-  // Synchronize before committing a render so filter edits and a new day share one scope.
-  if (dateAnchor !== today) setDateAnchor(today);
+  const { dateAnchor, syncDateAnchor } = useLocalDateAnchor();
   const filterScope = useMemo(() => boardFilterScopeFromFilters(filters, dateAnchor), [filters, dateAnchor]);
   const snapshot = useBoardSnapshot({
     baseUrl,
@@ -103,14 +101,11 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
   });
   const { boardQueryKey, data, presentationData, refreshing, loading, refresh: refreshSnapshot, toolbarData } = snapshot;
   const refresh = useCallback(async (options: { suppressError?: boolean } = {}) => {
-    const nextDateAnchor = localDateAnchor();
-    if (nextDateAnchor !== dateAnchor) {
-      setDateAnchor(nextDateAnchor);
-      // A relative date change is fetched through the debounced snapshot scope.
-      if (filterScope.date_anchor) return;
-    }
+    const dateChanged = syncDateAnchor();
+    // A relative filter will refetch with the new scope after the state update.
+    if (dateChanged && filterScope.date_anchor) return;
     await refreshSnapshot(options);
-  }, [dateAnchor, filterScope.date_anchor, refreshSnapshot]);
+  }, [filterScope.date_anchor, refreshSnapshot, syncDateAnchor]);
   const timerInstanceKey = useMemo(() => {
     const pathname = new URL(dataUrl, window.location.origin).pathname;
     const projectIndex = pathname.indexOf('/projects/');
@@ -262,6 +257,11 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
         />
       ) : null}
 
+      {snapshot.metadata?.filter_options_error?.code === 'BOARD_FILTER_OPTIONS_TOO_LARGE' ? (
+        <div className="rk-recovery" role="status">
+          {toolbarData.labels.board_filter_options_incomplete ?? initialLabels.board_filter_options_incomplete}
+        </div>
+      ) : null}
       {viewValidation.unavailable.length ? <div className="rk-recovery" role="alert">
         {toolbarData.labels.saved_views_unavailable} {viewValidation.unavailable.join('; ')}
         {unavailableHiddenStatusIds.length ? <div>

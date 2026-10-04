@@ -94,7 +94,7 @@ REDMINE_KANBAN_MAX_BOARD_ENTITIES=5000
 
 entity上限は常に有限です。`0`では無効化されず、10,000を超える値は10,000件に制限されます。応答サイズとSQL回数の制限も独立して維持されます。旧クライアントが`board_entity_limit`を送信した場合は、サーバー上限より小さい値が適用されます。
 
-`GET /projects/:project_id/kanban/metadata`は、snapshotの成否から独立してProject／Status候補と、担当者・Tracker・Priorityの`filter_options`を返します。担当者とTrackerは`available_project_ids`を持ち、Project選択時はキャッシュ済み候補を絞るためmetadataの追加通信は発生しません。候補は可視かつ有効なProject、Membership、設定から取得し、Issueが存在しないTrackerも含みます。候補とProjectとの対応関係は各資源10,000件までとし、超過時は部分リストではなく構造化エラーを返します。保存ビューの動的IDもsnapshot取得前にmetadataで検証します。レーン・作成・編集・Workflow操作は引き続きsnapshotの`lists`を使い、Filter候補を変更権限の根拠にはしません。10,000件はサーバー安全上限であり、表示性能の保証値ではありません。
+`GET /projects/:project_id/kanban/metadata`は、snapshotの成否から独立してProject／Status候補と、担当者・Tracker・Priorityの`filter_options`を返します。担当者とTrackerは`available_project_ids`を持ちます。Project filterを変更すると、選択した`project_ids[]`をscopeにしてmetadataを再取得するため、候補catalogがoverflowした後も復旧できます。候補は可視かつ有効なProject、Membership、設定から取得し、Issueが存在しないTrackerも含みます。候補とProjectとの対応関係は各資源10,000件までです。overflow時もHTTP 200とcore metadataを返し、`filter_options_complete: false`、空の候補配列、構造化された`filter_options_error`でcatalogが不完全であることを示します。部分候補は返しません。保存ビューの動的IDはcatalog不完全の間pendingとして保持し、完全なmetadata取得後に検証します。レーン・作成・編集・Workflow操作は引き続きsnapshotの`lists`を使い、Filter候補を変更権限の根拠にはしません。10,000件はサーバー安全上限であり、表示性能の保証値ではありません。
 
 ## 技術スタック
 
@@ -181,7 +181,7 @@ REDMINE_BASE_URL=http://127.0.0.1:3002 \
 - contract version 3は `entities` にIssueを一意に返し、`tree.root_ids` と `tree.children_by_parent_id` から関係を表現します。Frontendはnormalized stateからCanvas用の行を派生します。
 - Requestの件数パラメータは `board_entity_limit` です。`issue_limit`、`offset`、`cursor`、`tree_parent_id` は400で拒否されます。
 - mutation responseはcontract version 3のflat delta（`issue_updates`、`created_issues`、`deleted_issue_ids`、`tree_changes`、`invalidations`）を返し、FrontendはEntity／Tree共通Reducerで適用します。
-- `lists.trackers` には、既存の `id/name` に加えて `workflow_status_ids`、`default_status_id`、`available_project_ids` を返します。トラッカー選択時は主Columnをワークフローへ投影し、root/context保護Columnは表示専用とします。明示Status filterが最終的な表示Columnを決め、metadataが不完全な場合はfail-openします。選択中のトラッカーが1件で作成先プロジェクトでも利用可能な場合だけ、Native Redmineの作成画面へ引き継ぎます。
+- `lists.trackers` には、既存の `id/name` に加えて `workflow_status_ids`、`default_status_id`、`available_project_ids` を返します。トラッカーフィルターはIssue membershipを絞り、表示するColumnはStatus filterで独立して選択します。Status移動の可否はRedmine Workflow metadata（`allowed_status_ids`）とサーバー側の検証で決まります。選択中のトラッカーが1件で作成先プロジェクトでも利用可能な場合だけ、Native Redmineの作成画面へ引き継ぎます。
 - Toolbar/Lane Header Createは、利用可能な単一Trackerのdefault status、最初のopen、最初のcandidateの順で選びます。context専用Columnは候補に含めず、候補が空の場合は固定Statusへfallbackせず作成操作を無効化します。
 - ドラッグ中の色や記号はsnapshot時点のワークフロー参考情報で、threshold超過後に表示中の全セルへ表示します。同一セルへのNOOPは送信せず、それ以外は既存のMutation経路へ渡してRedmineを最終Authorityとします。ワークフロー拒否時は自動再試行せず、`WORKFLOW_TRANSITION_NOT_ALLOWED` を使って対象Issueを一度だけ再同期します。
 - Physical Deleteの`deleted_issue_ids`は、現在のBoardから観測可能で実際に削除されたcascade集合を表します。scopeから外れただけのIssueは`evicted_issue_ids`に分離し、完全なbounded deltaを作れない場合はpartial tombstoneではなくBoard snapshot invalidationへfallbackします。Undoで再作成するのは要求されたトップレベルIssueだけです。

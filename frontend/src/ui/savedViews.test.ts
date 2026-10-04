@@ -50,7 +50,7 @@ describe('saved view documents', () => {
   it('keeps unknown references pending and reports known invalid IDs without deleting them', () => {
     const before = copyViewSettings(settings);
     expect(validateViewReferences(settings, null, {}).pending).toBe(true);
-    const validation = validateViewReferences(settings, { ok: true, board: { id: 1, name: 'B', identifier: 'b' }, projects: [], viewable_projects: [], statuses: [], server_entity_limit: 10000, filter_options: { assignees: [{ id: 2, name: 'A', available_project_ids: [1] }], trackers: [{ id: 3, name: 'T', available_project_ids: [1] }], priorities: [] } }, { project: 'Project', status: 'Status', hidden_statuses: 'Hidden', assignee: 'Assignee', issue_tracker: 'Tracker', issue_priority: 'Priority' });
+    const validation = validateViewReferences(settings, { ok: true, board: { id: 1, name: 'B', identifier: 'b' }, projects: [], viewable_projects: [], statuses: [], server_entity_limit: 10000, filter_options_complete: true, filter_options: { assignees: [{ id: 2, name: 'A', available_project_ids: [1] }], trackers: [{ id: 3, name: 'T', available_project_ids: [1] }], priorities: [] } }, { project: 'Project', status: 'Status', hidden_statuses: 'Hidden', assignee: 'Assignee', issue_tracker: 'Tracker', issue_priority: 'Priority' });
     expect(validation.unavailable).toEqual(['Project: 1', 'Status: 2', 'Hidden: 4']);
     expect(validation.pending).toBe(false);
     expect(settings).toEqual(before);
@@ -68,6 +68,7 @@ describe('saved view documents', () => {
       viewable_projects: [{ id: 1, name: 'Project', level: 0 }],
       statuses: [{ id: 2, name: 'Open', is_closed: false }, { id: 4, name: 'Done', is_closed: true }],
       server_entity_limit: 10000,
+      filter_options_complete: true,
       filter_options: {
         assignees: [{ id: 2, name: 'A', available_project_ids: [1] }],
         trackers: [{ id: 3, name: 'T', available_project_ids: [1] }],
@@ -84,5 +85,23 @@ describe('saved view documents', () => {
     expect(unavailableSaved.filters.assigneeIds).toEqual(['99']);
     expect(unavailableSaved.filters.trackerIds).toEqual([99]);
     expect(unavailableSaved.filters.priority).toEqual(['99']);
+  });
+
+  it('keeps dynamic IDs pending while the candidate catalog is incomplete but still validates core IDs', () => {
+    const pendingSettings = copyViewSettings(settings);
+    pendingSettings.filters.projectIds = [999];
+    pendingSettings.filters.statusIds = [999];
+    pendingSettings.hiddenStatusIds = [999];
+    pendingSettings.filters.assigneeIds = ['987'];
+    pendingSettings.filters.trackerIds = [987];
+    pendingSettings.filters.priority = ['987'];
+    const metadata = {
+      ok: true as const, board: { id: 1, name: 'B', identifier: 'b' }, projects: [], viewable_projects: [], statuses: [], server_entity_limit: 10000,
+      filter_options_complete: false, filter_options_error: { code: 'BOARD_FILTER_OPTIONS_TOO_LARGE' as const, resource: 'assignees', limit: 10000 },
+      filter_options: { assignees: [], trackers: [], priorities: [] },
+    };
+    const validation = validateViewReferences(pendingSettings, metadata, { project: 'Project', status: 'Status', hidden_statuses: 'Hidden', assignee: 'Assignee', issue_tracker: 'Tracker', issue_priority: 'Priority' });
+    expect(validation.pending).toBe(true);
+    expect(validation.unavailable).toEqual(['Project: 999', 'Status: 999', 'Hidden: 999']);
   });
 });

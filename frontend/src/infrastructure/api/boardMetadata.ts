@@ -38,7 +38,14 @@ export function parseBoardMetadata(value: unknown): BoardMetadata {
     !Number.isSafeInteger(value.server_entity_limit) || (value.server_entity_limit as number) < 1 ||
     !Array.isArray(value.projects) || !value.projects.every(isProject) ||
     !Array.isArray(value.viewable_projects) || !value.viewable_projects.every(isProject) ||
-    !Array.isArray(value.statuses) || !value.statuses.every(isStatus) || !isFilterOptions(value.filter_options)) {
+    !Array.isArray(value.statuses) || !value.statuses.every(isStatus) || !isFilterOptions(value.filter_options) ||
+    typeof value.filter_options_complete !== 'boolean' ||
+    (value.filter_options_complete && value.filter_options_error !== undefined) ||
+    (!value.filter_options_complete && (!isRecord(value.filter_options_error) ||
+      value.filter_options_error.code !== 'BOARD_FILTER_OPTIONS_TOO_LARGE' ||
+      typeof value.filter_options_error.resource !== 'string' ||
+      !Number.isSafeInteger(value.filter_options_error.limit) || (value.filter_options_error.limit as number) < 1)) ||
+    (!value.filter_options_complete && (value.filter_options.assignees.length > 0 || value.filter_options.trackers.length > 0 || value.filter_options.priorities.length > 0))) {
     throw new Error('Invalid board metadata');
   }
   return value as unknown as BoardMetadata;
