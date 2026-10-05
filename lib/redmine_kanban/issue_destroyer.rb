@@ -69,7 +69,7 @@ module RedmineKanban
           issue_ids: affected_ancestor_ids,
           parent_ids: [deleted_parent_id].compact,
           column_counts: true,
-          board_snapshot: deletion_delta_overflow
+          board_snapshot: deletion_delta_overflow || @board_context.issue_filter.active?
         }
       )
     rescue ActiveRecord::StaleObjectError

@@ -13,12 +13,13 @@ Redmine の運用を強化する、React + Vite で構築されたモダンな�
 - [クイックスタート（Docker Compose）](#クイックスタートdocker-compose)
 - [Redmine プラグインとして導入](#redmine-プラグインとして導入)
 - [利用方法](#利用方法)
-- [設定](#設定)
+- [表示設定](#表示設定)
 - [技術スタック](#技術スタック)
 - [開発](#開発)
 - [テスト](#テスト)
 - [API エンドポイント](#api-エンドポイント)
 - [CI](#ci)
+- [復旧と保存ビュー](#復旧と保存ビュー)
 - [ライセンス](#ライセンス)
 
 ## 概要
@@ -30,11 +31,11 @@ Redmine Kanban は、作業の滞留を早期に可視化し、チームのフ�
 
 - **Canvas 描画**: HTML Canvas による高パフォーマンスなボード描画。大量データでもスムーズ。
 - **停滞検知 (Aging)**: 長期間更新されていないタスクを視覚的に強調。閾値は各ユーザーの表示設定として保存されます。
-- **スイムレーン**: 担当者または優先度でレーンを切り替え可能（レーンなし表示にも対応）。
+- **スイムレーン**: 担当者・優先度・カテゴリでレーンを切り替え可能（レーンなし表示にも対応）。
 - **ドラッグ&ドロップ**: Redmine のワークフローに準拠したステータス遷移をサポート。子チケット表示エリア上からもカードをつかんで移動可能。
-- **高度なフィルタリング**: トラッカー、担当者、期限、優先度、Blocked 状態などで絞り込み可能。トラッカーを選択すると、そのワークフローで使用されるステータスに合わせて列を投影します。
+- **高度なフィルタリング**: トラッカー、担当者、期限、優先度、Blocked 状態などで絞り込み可能。表示するステータス列は、Statusフィルターで独立して選択します。
 - **Kanban からの直接作成**: 列ヘッダやセルから新規チケットを作成可能。
-- **再帰サブタスク表示**: 子・孫以降を含むサブタスク階層を表示できます。親チケット内にまとめて表示するか、子チケットを個別カードとして表示するかを切り替え可能です。
+- **再帰サブタスク表示**: 子・孫以降を含むサブタスク階層を表示できます。親チケット内にまとめて表示するか、子チケットを個別カードとして表示するかを切り替え可能で、完了状態も切り替えられます。
 - **削除後の再作成**: 削除したトップレベルチケットを、表示中の件名、プロジェクト、説明、ステータス、担当者、トラッカー、優先度、開始日、期日、進捗率で再作成できます。子チケットは親なしのトップレベルチケットとして再作成しません。新しいチケットが作成され、元のID・履歴・コメント・添付・関連・ウォッチャーは復元されません。
 - **プロジェクトフィルタ**: 複数プロジェクトやサブプロジェクトでフィルタリング可能。
 
@@ -76,15 +77,25 @@ pnpm run build
 
 ## 利用方法
 
-1. Redmine にログイン後、プロジェクトを作成します。
+1. Redmine にログイン後、プロジェクトを作成するか、既存のプロジェクトを開きます。
 2. 「設定」→「モジュール」で **Kanban** を有効化します。
 3. プロジェクトメニューの **Kanban** を開きます。
 
 ## 表示設定
 
-プラグイン全体の設定画面はありません。各ユーザーはボード上でスイムレーン、非表示ステータス、停滞閾値、並び替え、表示幅、文字サイズ、子チケット表示、最大表示件数を設定できます。最大表示件数のデフォルトは1,500件です。カード移動では、ユーザーが明示したレーン属性とステータスだけを変更し、Redmine の Workflow と権限を正とします。
+プラグイン全体の設定画面はありません。各ユーザーはボード上でスイムレーン、非表示ステータス、停滞閾値、並び替え、表示幅、文字サイズ、子チケット表示を設定できます。snapshotのAdmission Controlには、Issue entity 10,000件の有限なサーバー安全上限を使用します。カード移動では、ユーザーが明示したレーン属性とステータスだけを変更し、Redmine の Workflow と権限を正とします。
 
-APIは対象scopeを完全な単一snapshotとして返します。membershipはprimary Issueと、そのprimaryを表示するために必要なdependency-only descendantのunique unionです。primaryがちょうど上限に達した場合もdescendantの存在をprobeし、対象が上限を超える場合は一部Issueを返さず、構造化422エラーを返します。最大表示件数はページサイズではなくAdmission Controlです。サーバーは `REDMINE_KANBAN_MAX_BOARD_ENTITIES`（デフォルト5,000）、`REDMINE_KANBAN_MAX_RESPONSE_BYTES`（デフォルト8 MiB）、`REDMINE_KANBAN_MAX_BOARD_QUERIES`（デフォルト20）で資源を制限します。cursor、offset、子ツリーの追加取得、Load more操作はありません。運用時に性能ログが必要な場合だけ `REDMINE_KANBAN_PERF_LOG=1` を指定してください。
+APIは対象Project/StatusおよびIssue filter scopeの完全な単一snapshotを返します。Subject、担当者、Tracker、Priority、期限filterはAdmission前にserver側のprimary membershipを絞ります。dependency descendantがfilterに一致する場合、そのprimary ancestorもmembershipに残し、各primaryの完全なdependency subtreeをsnapshotに含めます。Frontendも最終表示のため同じfilterを適用します。membershipはprimary Issueと、そのprimaryを表示するために必要なdependency-only descendantのunique unionです。primaryがちょうど上限に達した場合もdescendantの存在をprobeし、対象が上限を超える場合は一部Issueを返さず、構造化422エラーを返します。entity件数はページサイズではなくAdmission Controlです。サーバーの既定hard ceilingは10,000件で、`REDMINE_KANBAN_MAX_BOARD_ENTITIES`を使ってそれ以下へ引き下げられます。未設定・空・不正・0・負数は10,000件になり、10,000を超える値も10,000に制限されます。サーバーは `REDMINE_KANBAN_MAX_RESPONSE_BYTES`（デフォルト8 MiB）、`REDMINE_KANBAN_MAX_BOARD_QUERIES`（デフォルト20）、`REDMINE_KANBAN_MAX_TOTAL_BOARD_QUERIES`（合計SQL回数、デフォルト100）でも資源を制限します。cursor、offset、子ツリーの追加取得、Load more操作はありません。運用時に性能ログが必要な場合だけ `REDMINE_KANBAN_PERF_LOG=1` を指定してください。
+
+サーバー側の件数上限を引き下げる場合は、10,000以下の正の整数をRedmineプロセスの環境変数に設定して再起動します。
+
+```sh
+REDMINE_KANBAN_MAX_BOARD_ENTITIES=5000
+```
+
+entity上限は常に有限です。`0`では無効化されず、10,000を超える値は10,000件に制限されます。応答サイズとSQL回数の制限も独立して維持されます。旧クライアントが`board_entity_limit`を送信した場合は、サーバー上限より小さい値が適用されます。
+
+`GET /projects/:project_id/kanban/metadata`は、snapshotの成否から独立してProject／Status候補と、担当者・Tracker・Priorityの`filter_options`を返します。担当者とTrackerは`available_project_ids`を持ちます。catalogが完全なら選択Projectに応じて候補をローカルで絞り込み、不完全な場合だけsettledな`project_ids[]`を使ってmetadataを再取得します。候補は既に認可済みの可視Project範囲、Membership、設定から取得し、Issueが存在しないTrackerも含みます。候補とProjectとの対応関係は各資源10,000件までです。overflow時もHTTP 200とcore metadataを返し、`filter_options_complete: false`、空の候補配列、構造化された`filter_options_error`でcatalogが不完全であることを示します。部分候補は返しません。候補復旧時の非Permissionエラーではcore metadataとBoardを維持し、401/403/404は従来どおりアクセス喪失として扱います。Base metadataの再取得が非Permissionエラーで失敗しても、最後に取得成功したcore metadataを維持し、その失敗だけで成功済みsnapshotを遮断しません。初回取得失敗時は取得済み候補がないため、エラーを表示して再試行できます。Base metadataでアクセス喪失を検知した場合は、再試行中や再試行失敗後も遮断を維持し、有効なmetadataの取得成功で解除します。保存ビューの動的IDはcatalog不完全の間pendingとして保持し、完全なmetadata取得後に検証します。レーン・作成・編集・Workflow操作は引き続きsnapshotの`lists`を使い、Filter候補を変更権限の根拠にはしません。10,000件はサーバー安全上限であり、表示性能の保証値ではありません。
 
 ## 技術スタック
 
@@ -108,6 +119,14 @@ pnpm run build
 ```
 
 `pnpm` を使わない環境では `npm ci` / `npm run ...` でも実行できます（`frontend/package-lock.json` 同梱）。
+
+seed済みのRedmineプロジェクトに対するTreeのresource指標は、次で再現できます。
+
+```bash
+REDMINE_KANBAN_BENCHMARK_PROJECT=ecookbook \
+  docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
+  bundle exec rails runner -e production plugins/redmine_kanban/script/benchmark_tree.rb
+```
 
 ビルド完了後、Redmine コンテナを再起動して変更を反映します。
 
@@ -147,7 +166,7 @@ docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
 docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
   env REDMINE_LANG=en bundle exec rake redmine:load_default_data RAILS_ENV=production
 docker compose -f .github/e2e/docker-compose.yml exec -T --user redmine redmine \
-bundle exec rails runner -e production plugins/redmine_kanban/e2e/setup_redmine.rb
+  bundle exec rails runner -e production plugins/redmine_kanban/e2e/setup_redmine.rb
 
 # E2E 実行
 REDMINE_BASE_URL=http://127.0.0.1:3002 \
@@ -169,28 +188,25 @@ REDMINE_BASE_URL=http://127.0.0.1:3002 \
 ボードデータ補足:
 
 - contract version 3は `entities` にIssueを一意に返し、`tree.root_ids` と `tree.children_by_parent_id` から関係を表現します。Frontendはnormalized stateからCanvas用の行を派生します。
-- Requestの件数パラメータは `board_entity_limit` です。`issue_limit`、`offset`、`cursor`、`tree_parent_id` は400で拒否されます。
-- mutation responseはcontract version 3のflat delta（`issue_updates`、`created_issues`、`deleted_issue_ids`、`tree_changes`、`invalidations`）を返し、FrontendはEntity／Tree共通Reducerで適用します。
-- `lists.trackers` には、既存の `id/name` に加えて `workflow_status_ids`、`default_status_id`、`available_project_ids` を返します。トラッカー選択時は主Columnをワークフローへ投影し、root/context保護Columnは表示専用とします。明示Status filterが最終的な表示Columnを決め、metadataが不完全な場合はfail-openします。選択中のトラッカーが1件で作成先プロジェクトでも利用可能な場合だけ、Native Redmineの作成画面へ引き継ぎます。
+- Requestの件数パラメータは `board_entity_limit` です。`issue_limit`、`offset`、`cursor`、`tree_parent_id` はHTTP 400で拒否され、部分snapshotが成功として返ることはありません。
+- mutation responseはcontract version 3のflat delta（`operation_id`、`scope_fingerprint`、`issue_updates`、`created_issues`、`deleted_issue_ids`、`tree_changes`、`invalidations`）を返し、FrontendはEntity／Tree共通Reducerでnormalized stateへ適用し、対象Issueの再同期にはentities endpointを使います。
+- `lists.trackers` には、既存の `id/name` に加えて `workflow_status_ids`、`default_status_id`、`available_project_ids` を返します。トラッカーフィルターはIssue membershipを絞り、表示するColumnはStatus filterで独立して選択します。Status移動の可否はRedmine Workflow metadata（`allowed_status_ids`）とサーバー側の検証で決まります。選択中のトラッカーが1件で作成先プロジェクトでも利用可能な場合だけ、Native Redmineの作成画面へ引き継ぎます。
+- Frontendの表示ルートは、filter済みtreeから表示用に派生します。明示的なStatus filterや`hiddenStatusIds`によりcontext親を表示できない場合、保持された表示可能な子孫をカードとして表示します。canonicalな`parent_id`やnormalized treeは変更しません。表示可能なcontext親は階層内に残り、子孫表示用・context専用ColumnはCreate候補に含めません。
 - Toolbar/Lane Header Createは、利用可能な単一Trackerのdefault status、最初のopen、最初のcandidateの順で選びます。context専用Columnは候補に含めず、候補が空の場合は固定Statusへfallbackせず作成操作を無効化します。
-- ドラッグ中の色や記号はsnapshot時点のワークフロー参考情報で、threshold超過後に表示中の全セルへ表示します。同一セルへのNOOPは送信せず、それ以外は既存のMutation経路へ渡してRedmineを最終Authorityとします。ワークフロー拒否時は自動再試行せず、`WORKFLOW_TRANSITION_NOT_ALLOWED` を使って対象Issueを一度だけ再同期します。
+- ドラッグ中の色や記号はsnapshot時点のワークフロー参考情報で、threshold超過後に表示中の全セルへ表示します（`✓`は許可、`!`はsnapshotとの不一致・参考情報、`?`は不明）。同一セルへのNOOPとカテゴリを変更するdropは送信せず、それ以外は許可・拒否・不明の参考情報にかかわらず既存のMutation経路へ渡してRedmineを最終Authorityとします。カテゴリレーン間の移動は、カテゴリなしへの移動・カテゴリなしからの移動を含めて禁止し、許可対象のhighlightやdrop previewを表示せず、Mutationも送信しません。同一カテゴリレーン内のStatus移動は既存のWorkflow経路を使います。ワークフロー拒否時は自動再試行せず、`WORKFLOW_TRANSITION_NOT_ALLOWED` を使って対象Issueを一度だけ再同期します。
 - Physical Deleteの`deleted_issue_ids`は、現在のBoardから観測可能で実際に削除されたcascade集合を表します。scopeから外れただけのIssueは`evicted_issue_ids`に分離し、完全なbounded deltaを作れない場合はpartial tombstoneではなくBoard snapshot invalidationへfallbackします。Undoで再作成するのは要求されたトップレベルIssueだけです。
-- `scope_fingerprint` はboard project、current user、sanitized project scope、primary status scope、dependency status scopeを表すopaqueな識別子です。plugin mutationは同じscope/admissionパラメータを使います。Redmine標準iframeのIssue/journal保存はtrusted deltaを生成できないため、bulk子チケットを含む成功操作の最後に現在のboard queryを一度だけresetし、完全snapshotへ収束させます。保存後のrefresh失敗は保存失敗ではなくBoard読み込みエラーとして扱います。
+- カード移動は、祖先・dependencyのmembershipへの追加や除外を含め、適用中のIssue filterをbounded deltaで同期し、Board全体を再取得しません。filter付き移動と同じBoardへの別の書き込みが重なる場合、Frontendはoptimistic表示を維持して重複するdeltaの適用を保留し、全書き込み完了後にauthoritative snapshotを一度取得します。完全なdeltaが資源上限を超える場合は、成功済み移動を維持したままsnapshotをinvalidateして復旧します。
+- `scope_fingerprint` はboard project、current user、sanitized project scope、primary status scope、dependency status scopeを表すopaqueな識別子であり、hashの具体的な値は公開された互換性契約ではありません。plugin mutationは同じscope/admissionパラメータを使います。Redmine標準iframeのIssue/journal保存はtrusted deltaを生成できないため、bulk子チケットを含む成功操作の最後に現在のboard queryを一度だけresetし、完全snapshotへ収束させます。保存後のrefresh失敗は保存失敗ではなくBoard読み込みエラーとして扱います。
+- Issue responseは、`lock_version`／`updated_on`のfreshnessがcached Entityより古くない場合だけ適用します。optimistic更新の失敗時は、そのMutationのoptimistic値が残るfieldだけをrollbackし、Mutationが重複する場合は対象Issueをサーバーと再同期します。
+- 削除後の再作成は、Issue階層上のトップレベルIssueだけが対象です。表示中の件名、Project、説明、Status、担当者、Tracker、Priority、日付、進捗率を使って新しいIssueを作成し、子Issueを親なしでは再作成しません。
 
 一括作成の冪等性は `Rails.cache` で管理します。cache identity はユーザー・プロジェクト・操作・`Idempotency-Key`・canonical request payload digest で識別されます。atomicなclaimに成功した処理だけが作成処理を実行し、同じキーでも異なるpayloadは409、同一payloadのcompletedは以前のresponseを返します。クライアントは同一ブラウザセッション中の同一論理操作で同じキーを再利用し、入力検証失敗または例外時はclaimを削除して再試行できます。
+
+一括作成は、空でない子チケットを1リクエストあたり50件まで受け付けます。51件以上のリクエストは、transaction開始前に拒否します。
 
 保証範囲は、同一ブラウザの二重送信、ブラウザセッション中の同一論理操作の再試行、同一Redmineプロセス内の重複claim、およびatomicな共有 `CacheStore` の `unless_exist` 書き込みを使う複数プロセス間の重複claim防止です。プロセス分離されたMemoryStore、キャッシュ消失、サーバー再起動をまたぐ永続的なexactly-onceは保証しません。
 
 このプラグインは特徴としてデータベースマイグレーションや独自テーブルを追加しません。キャッシュ消失、サーバー再起動、プロセスごとのMemoryStoreなど共有されないStoreでは、永続的なexactly-once保証はできません。より強い保証が必要な環境では、共有atomic/persistent CacheStoreまたは外部Idempotencyサービスを提供してください。
-
-seed済みのRedmineプロジェクトに対するTreeのresource指標は、次で再現できます。
-
-```bash
-REDMINE_KANBAN_BENCHMARK_PROJECT=ecookbook \
-  docker compose -f .github/e2e/docker-compose.yml exec -T redmine \
-  bundle exec rails runner -e production plugins/redmine_kanban/script/benchmark_tree.rb
-```
-
 
 ## CI
 
@@ -212,6 +228,18 @@ CI では以下を実行します。
 通常のRedmine test/browser jobは `.github/e2e/docker-compose.yml` のMariaDB 10を使い、PostgreSQL gateは `.github/e2e/docker-compose.postgres.yml` を使います。ブラウザ系jobはmigration、初期データ投入、`e2e/setup_redmine.rb` による `ecookbook` とnative専用 `kanban-native` のシード、Playwrightレポートのuploadまで実行します。
 
 検証entry pointは `script/ci/` に集約しています。`ruby-full.sh`、`snapshot-contract.sh`、`postgres-unit.sh`、`postgres-api.sh`、`e2e-full.sh`、`native-mutation-e2e.sh`、`large-data-e2e.sh`、`compatibility-smoke.sh`を、ローカルのRedmineコンテナ実行とCIで共通利用します。
+
+## 復旧と保存ビュー
+
+初回snapshotが資源上限を超えた場合も、Toolbarは`GET /projects/:project_id/kanban/metadata`からProject／Status候補を取得します。この権限検証済みendpointは、`board`の識別情報、`projects`（Board配下のProject）、`viewable_projects`、`statuses`、`server_entity_limit`を返し、Issue・件数・snapshotは返しません。既存の`bootstrap` responseは変更しません。Project、Status、件名、担当者、Tracker、Priority、期限filterで範囲を絞り、完全なsnapshotを取得してください。filterに一致するdependency descendantもsnapshotのentity件数に加わり、Frontendは最終表示のためfilterを再適用します。scopeを絞った候補復旧の失敗はfilter候補に影響し、権限エラーの場合だけBoardへのアクセス喪失として扱います。entity件数・応答サイズ・SQL回数のエラーは区別して表示します。
+
+Toolbarの**保存ビュー**では、新規保存・適用・上書き・名前変更・確認後の削除ができます。ビューには、すべてのfilter（期限の日数とPriority選択の意味を含む）、順序付きの並び替え、レーン種別、非表示Status ID、閲覧可能Projectの表示切替を保存します。文字サイズ、全画面、表示幅、カード表示モード、子チケット表示、停滞設定、entity上限、タイマーは保存対象に含めません。手動変更すると**変更あり**と表示し、明示的な保存操作でのみビューを更新します。ビューを削除しても現在の条件は維持します。
+
+ビューはlocalStorageの`rk_saved_views:<Redmine subpath>/projects/<board>/kanban:user:<id>`に保存し、ブラウザーのorigin・インスタンスのsubpath・ユーザー・Boardごとに分離します。JSON形式は`{ "version": 1, "views": [{ "id": "stable ID", "name": "name", "settings": { ... } }] }`です。各scopeで20件まで保存でき、前後の空白を除いた名前は1～80文字で重複不可です。この初期版には共有や組み込みpresetはありません。破損した形式や未知の形式のデータは保持してエラーを表示し、書き込み失敗を成功として扱いません。利用できない参照は警告とともに選択状態を維持し、現在のscopeの候補が取得できてから検証します。無効なserver scope IDを黙って未指定のscopeに変更することはありません。
+
+アクティブビューのIDは、同じkeyに`:active`を付けた別のkeyへ保存します。Boardを開き直すと、最後に使った条件の読み込み後にアクティブビュー名を復元します。その条件への手動変更は維持し、明示的に上書きするまで**変更あり**を表示します。アクティブビューの選択解除や削除では保存済みIDを消去し、現在の条件はリセットしません。
+
+ToolbarはTab、Enter／Space、Escapeで操作できます。Escapeは開いているpopoverを閉じ、開くためのボタンへfocusを戻します。外側をクリックした場合はクリック先のfocusを維持します。表示設定の文字サイズの既定値は13pxです。保存した停滞警告の閾値が0の場合、再読み込み後も0を維持します。
 
 ## ライセンス
 

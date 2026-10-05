@@ -13,6 +13,8 @@ module RedmineKanban
     end
 
     def build(issue_updates: [], created_issues: [], membership_recheck_ids: [], deleted_issue_ids: [], tree_changes: [], invalidations: {}, column_counts: {})
+      return overflow_result(deleted_issue_ids: deleted_issue_ids, invalidations: invalidations, column_counts: column_counts) if invalidations[:board_snapshot]
+
       resolver = BoardMembershipResolver.new(board_context: @board_context)
       admission = resolver.snapshot_issue_ids(limit: @board_context.effective_entity_limit)
       return overflow_result(deleted_issue_ids: deleted_issue_ids, invalidations: invalidations, column_counts: column_counts) if admission[:count_at_least]

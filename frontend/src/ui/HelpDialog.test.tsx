@@ -14,6 +14,8 @@ describe('HelpDialog', () => {
     help_chapter2_title: '第2章',
     help_add: '追加',
     help_filter: 'フィルタ',
+    help_tracker: 'トラッカーでチケットを絞り込みます。表示するステータス列はステータスフィルターで選択します。',
+    help_status: 'ステータスでチケットを絞り込みます。',
     help_drag_drop_title: 'ドラッグ',
     help_drag_drop_desc: 'ドラッグ説明',
     help_edit_title: '編集',
@@ -22,7 +24,6 @@ describe('HelpDialog', () => {
     help_quick_edit_desc: 'クイック説明',
     help_subtask_title: '子チケット',
     help_subtask_desc: '子チケット説明',
-    help_maximum_board_entity_count: '最大表示件数',
   };
 
   it('renders all sections and labels', () => {
@@ -34,6 +35,8 @@ describe('HelpDialog', () => {
     expect(screen.getByText('第1章')).toBeTruthy();
     expect(screen.getByText('第2章')).toBeTruthy();
     expect(screen.getByText('追加')).toBeTruthy();
+    expect(screen.getByText(mockLabels.help_tracker)).toBeTruthy();
+    expect(screen.getByText(mockLabels.help_status)).toBeTruthy();
     expect(screen.getByText('ドラッグ')).toBeTruthy();
   });
 

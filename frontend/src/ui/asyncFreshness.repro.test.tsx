@@ -84,6 +84,70 @@ function countResponse(open: number, closed = 0): { columns: BoardData['columns'
   };
 }
 
+describe('filtered mutation membership authority', () => {
+  it('invalidates unchanged membership reads until all overlapping writes finish', () => {
+    const client = new QueryClient();
+    const key = ['filtered-board'];
+    const data = board([issue(1), issue(2)]);
+    client.setQueryData(key, data);
+    const authority = getBoardFreshnessAuthority(client, key);
+    const entityRead = authority.beginEntityReconciliation(data, [2]);
+    const countsRead = authority.beginAggregateReconciliation(data);
+    const controller = new AbortController();
+    authority.attachEntityAbortController(entityRead, controller);
+    const first = authority.beginMutation(data, true);
+    const second = authority.beginMutation(data);
+    expect(controller.signal.aborted).toBe(true);
+    expect(authority.applicableNegativeIssueIds(entityRead, data, [2])).toBeNull();
+    expect(authority.canApplyAggregateReconciliation(countsRead, data)).toBe(false);
+    const duringConflict = authority.beginEntityReconciliation(data, [2]);
+    expect(authority.applicableEntityIds(duringConflict, data, [2])).toBeNull();
+    expect(authority.finishMutation(second)).toBe(false);
+    expect(authority.isMutationDeferred(first)).toBe(true);
+    expect(authority.finishMutation(first)).toBe(true);
+    expect(authority.finishMutation(first)).toBe(false);
+    authority.finish(duringConflict);
+    expect(authority.activeRequestCount).toBe(0);
+    client.clear();
+  });
+
+  it('keeps shared mutation authority alive after its subscriber releases it', () => {
+    const client = new QueryClient();
+    const key = ['filtered-board'];
+    const data = board();
+    const authority = getBoardFreshnessAuthority(client, key);
+    const first = authority.beginMutation(data, true);
+    releaseBoardFreshnessAuthority(client, key, authority);
+    expect(getBoardFreshnessAuthority(client, key)).toBe(authority);
+    const second = getBoardFreshnessAuthority(client, key).beginMutation(data);
+    expect(authority.isMutationDeferred(first)).toBe(true);
+    expect(authority.finishMutation(first)).toBe(false);
+    expect(authority.finishMutation(second)).toBe(true);
+    releaseBoardFreshnessAuthority(client, key, authority);
+    expect(getBoardFreshnessAuthority(client, key)).not.toBe(authority);
+    client.clear();
+  });
+
+  it('does not apply or recover old scope mutations over a new scope', () => {
+    const client = new QueryClient();
+    const key = ['board'];
+    const authority = getBoardFreshnessAuthority(client, key);
+    const first = authority.beginMutation(board(), true);
+    const second = authority.beginMutation(board());
+    const next = { ...board(), scope_fingerprint: 'project:2' };
+    authority.observe(next);
+    const current = authority.beginMutation(next);
+    expect(authority.isMutationDeferred(first)).toBe(true);
+    expect(authority.isMutationDeferred(current)).toBe(false);
+    expect(authority.mutationReconciliationDeferred).toBe(false);
+    expect(authority.finishMutation(first)).toBe(false);
+    expect(authority.finishMutation(second)).toBe(false);
+    expect(authority.finishMutation(current)).toBe(false);
+    expect(authority.activeRequestCount).toBe(0);
+    client.clear();
+  });
+});
+
 afterEach(() => {
   vi.restoreAllMocks();
   getJsonMock.mockReset();

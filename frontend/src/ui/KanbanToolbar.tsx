@@ -3,6 +3,7 @@ import type { ToolbarViewModel } from './types';
 import type { Filters } from './boardFilters';
 import type { SortConfig } from './board/sort';
 import type { FitMode } from '../model/view/types';
+import type { FilterOptionsState } from '../model/board/types';
 import type { CardDisplayMode, LaneType } from './useKanbanPreferences';
 import { buildToolbarOptions, togglePriorityFilter } from './toolbar/toolbarOptions';
 import { SearchPopover } from './toolbar/SearchPopover';
@@ -12,6 +13,8 @@ import { ToolbarDropdown, ToolbarMultiSelect } from './toolbar/ToolbarDropdown';
 
 type ToolbarProps = {
   data: ToolbarViewModel;
+  filterOptionsState: FilterOptionsState;
+  onRetryFilterOptions: () => void;
   savedViews?: React.ReactNode;
   filters: Filters;
   onChange: (filters: Filters) => void;
@@ -28,6 +31,7 @@ type ToolbarProps = {
   fontSize: number;
   onChangeFontSize: (size: number) => void;
   canCreate: boolean;
+  createDisabled?: boolean;
   onCreate: () => void;
   onScrollToTop: () => void;
   timeEntryOnClose: boolean;
@@ -40,9 +44,6 @@ type ToolbarProps = {
   onChangeAgingDangerDays?: (value: number) => void;
   agingExcludeClosed?: boolean;
   onToggleAgingExcludeClosed?: () => void;
-  maximumBoardEntityCount?: number;
-  onChangeMaximumBoardEntityCount?: (value: number) => void;
-  serverEntityLimit?: number;
   viewableProjectsEnabled: boolean;
   onToggleViewableProjects: () => void;
   onOpenHelp: () => void;
@@ -50,6 +51,8 @@ type ToolbarProps = {
 
 export function KanbanToolbar({
   data,
+  filterOptionsState,
+  onRetryFilterOptions,
   savedViews,
   filters,
   onChange,
@@ -66,6 +69,7 @@ export function KanbanToolbar({
   fontSize,
   onChangeFontSize,
   canCreate,
+  createDisabled = false,
   onCreate,
   onScrollToTop,
   timeEntryOnClose,
@@ -78,14 +82,16 @@ export function KanbanToolbar({
   onChangeAgingDangerDays = () => {},
   agingExcludeClosed = true,
   onToggleAgingExcludeClosed = () => {},
-  maximumBoardEntityCount = 1500,
-  onChangeMaximumBoardEntityCount = () => {},
-  serverEntityLimit,
   viewableProjectsEnabled,
   onToggleViewableProjects,
   onOpenHelp,
 }: ToolbarProps) {
   const labels = data.labels;
+  const filterOptions = filterOptionsState.state === 'complete' ? filterOptionsState.options : null;
+  const candidatesUnavailable = filterOptionsState.state !== 'complete';
+  const candidateMessage = filterOptionsState.state === 'loading' ? (labels.candidate_loading ?? 'Loading filter choices…')
+    : filterOptionsState.state === 'incomplete' ? (labels.board_filter_options_incomplete ?? 'Select projects to narrow filter choices.')
+      : filterOptionsState.state === 'failed' ? (labels.candidate_unavailable ?? 'Filter choices are temporarily unavailable.') : undefined;
   const updateFilters = (patch: Partial<Filters>) => onChange({ ...filters, ...patch });
   const {
     assigneeOptions,
@@ -95,7 +101,7 @@ export function KanbanToolbar({
     projectOptions,
     statusOptions,
     trackerOptions,
-  } = buildToolbarOptions(data, filters, viewableProjectsEnabled);
+  } = buildToolbarOptions(data, filters, viewableProjectsEnabled, filterOptions);
   const projectFilterValue = filters.projectIds.map(String);
   const statusFilterValue = filters.statusIds.map(String);
   const trackerFilterValue = filters.trackerIds.map(String);
@@ -111,7 +117,7 @@ export function KanbanToolbar({
       {canCreate ? (
         <>
           <div className="rk-toolbar-group">
-            <button type="button" className="rk-dropdown-trigger" onClick={onCreate} title={labels.create} aria-label={labels.create}>
+            <button type="button" className="rk-dropdown-trigger" disabled={createDisabled} onClick={onCreate} title={labels.create} aria-label={labels.create}>
               <span className="rk-icon" aria-hidden="true">add</span>
             </button>
           </div>
@@ -136,6 +142,9 @@ export function KanbanToolbar({
           label={labels.assignee}
           icon="person"
           options={assigneeOptions}
+          unavailable={candidatesUnavailable}
+          unavailableMessage={candidateMessage}
+          onRetryUnavailable={filterOptionsState.state === 'failed' ? onRetryFilterOptions : undefined}
           value={filters.assigneeIds}
           onChange={(value) => updateFilters({ assigneeIds: value })}
           onReset={() => updateFilters({ assigneeIds: [] })}
@@ -182,6 +191,9 @@ export function KanbanToolbar({
           label={labels.issue_tracker}
           icon="label"
           options={trackerOptions}
+          unavailable={candidatesUnavailable}
+          unavailableMessage={candidateMessage}
+          onRetryUnavailable={filterOptionsState.state === 'failed' ? onRetryFilterOptions : undefined}
           value={trackerFilterValue}
           onChange={(value) => updateFilters({ trackerIds: value.map(Number) })}
           onReset={() => updateFilters({ trackerIds: [] })}
@@ -219,6 +231,9 @@ export function KanbanToolbar({
           label={labels.issue_priority}
           icon="priority_high"
           options={priorityOptions}
+          unavailable={candidatesUnavailable}
+          unavailableMessage={candidateMessage}
+          onRetryUnavailable={filterOptionsState.state === 'failed' ? onRetryFilterOptions : undefined}
           value={priorityValue}
           onChange={(value) => {
             updateFilters(togglePriorityFilter(value, priorityOptions.length));
@@ -289,9 +304,6 @@ export function KanbanToolbar({
           onChangeCardDisplayMode={onChangeCardDisplayMode}
           fontSize={fontSize}
           onChangeFontSize={onChangeFontSize}
-          maximumBoardEntityCount={maximumBoardEntityCount}
-          onChangeMaximumBoardEntityCount={onChangeMaximumBoardEntityCount}
-          serverEntityLimit={serverEntityLimit}
         />
 
         <button type="button" className={`rk-btn ${fullWindow ? 'rk-btn-toggle-active' : ''}`} onClick={onToggleFullWindow} aria-label={fullWindow ? labels.normal_view : labels.fullscreen_view} title={fullWindow ? labels.normal_view : labels.fullscreen_view}>

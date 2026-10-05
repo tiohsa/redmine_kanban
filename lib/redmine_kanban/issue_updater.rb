@@ -24,6 +24,10 @@ module RedmineKanban
       return error_response(I18n.t('redmine_kanban.error_permission_denied'), status: :forbidden) unless PermissionPolicy.new(user: @user).can_update_issue?(issue, @project)
 
       issue.init_journal(@user)
+      filter_membership_before = {
+        subject: issue.subject, assigned_to_id: issue.assigned_to_id, tracker_id: issue.tracker_id,
+        priority_id: issue.priority_id, due_date: issue.due_date, status_id: issue.status_id
+      }
 
       attributes = {}
       priority_id = :no_change
@@ -71,7 +75,8 @@ module RedmineKanban
 
       error_result = nil
       membership_resolver = BoardMembershipResolver.new(board_context: @board_context)
-      before_primary_member = membership_resolver.primary_member?(issue.id)
+      before_primary_member = membership_resolver.primary_member?(issue.id) unless @board_context.issue_filter.active?
+      changed_filter_fields = []
       priority_updated = priority_id != :no_change
       priority_lock_versions = nil
       mutation_outcome = nil
@@ -84,6 +89,16 @@ module RedmineKanban
           raise ActiveRecord::Rollback
         end
 
+        filter_membership_before.each_key do |field|
+          changed_filter_fields << field if filter_membership_before[field] != issue.public_send(field)
+        end
+        # Redmine safe_attributes may discard a requested association field.
+        # Treat an explicit filter-sensitive request conservatively so a
+        # descendant or parent membership change cannot leave the snapshot stale.
+        %i[subject assigned_to_id tracker_id due_date].each do |field|
+          changed_filter_fields << field if params.key?(field)
+        end
+        changed_filter_fields << :priority_id if priority_updated
         mutation_outcome = mutation_outcome_for(issue)
         if priority_updated
           priority_error = apply_priority_updates!(issue, priority_id)
@@ -97,7 +112,8 @@ module RedmineKanban
 
       return error_result if error_result
 
-      after_primary_member = membership_resolver.primary_member?(issue.id)
+      filter_snapshot_invalidation = @board_context.filter_membership_changed?(changed_filter_fields)
+      after_primary_member = membership_resolver.primary_member?(issue.id) unless filter_snapshot_invalidation || @board_context.issue_filter.active?
 
       ancestor_updates_required = mutation_outcome[:status_changed] || mutation_outcome[:done_ratio_changed]
 
@@ -110,7 +126,7 @@ module RedmineKanban
       ancestor_issues = ancestor_issues_for(issue) if ancestor_updates_required
       propagated_issues = priority_id.is_a?(Integer) ? issue.children.to_a : []
       issue_updates = [issue, *(ancestor_issues || []), *propagated_issues].uniq { |item| item.id }
-      membership_recheck_ids = if before_primary_member != after_primary_member
+      membership_recheck_ids = if !filter_snapshot_invalidation && before_primary_member != after_primary_member
         membership_resolver.membership_candidate_ids([issue.id])
       else
         []
@@ -120,7 +136,7 @@ module RedmineKanban
         issue_updates: issue_updates,
         membership_recheck_ids: membership_recheck_ids,
         ancestor_updates: ancestor_updates,
-        invalidations: { column_counts: true }
+        invalidations: { column_counts: true, board_snapshot: filter_snapshot_invalidation }
       )
     rescue ActiveRecord::StaleObjectError
       error_response(I18n.t('redmine_kanban.error_conflict'), status: :conflict)

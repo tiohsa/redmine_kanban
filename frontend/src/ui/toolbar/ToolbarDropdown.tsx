@@ -94,6 +94,9 @@ export function ToolbarMultiSelect({
   searchable = false,
   searchPlaceholder,
   searchEmptyLabel,
+  unavailable = false,
+  unavailableMessage,
+  onRetryUnavailable,
 }: {
   label: string;
   icon: string;
@@ -112,6 +115,9 @@ export function ToolbarMultiSelect({
   searchable?: boolean;
   searchPlaceholder?: string;
   searchEmptyLabel?: string;
+  unavailable?: boolean;
+  unavailableMessage?: string;
+  onRetryUnavailable?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -175,19 +181,25 @@ export function ToolbarMultiSelect({
             </div>
           ) : null}
           {extraContent ? <div className="rk-dropdown-extra">{extraContent}</div> : null}
+          {unavailable ? (
+            <div role="status" style={{ padding: '8px 12px', color: 'var(--rk-text-secondary)', fontSize: '13px' }}>
+              {unavailableMessage}
+              {onRetryUnavailable ? <button type="button" className="rk-dropdown-link" onClick={onRetryUnavailable}>{labels.retry}</button> : null}
+            </div>
+          ) : null}
           <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-            {includeAllOption ? (
+            {includeAllOption && !unavailable ? (
               <button type="button" aria-pressed={allSelected} className={`rk-dropdown-item ${allSelected ? 'selected' : ''}`} onClick={() => onChange(allSelected ? [] : optionIds)}>
                 <span className="rk-dropdown-checkbox" aria-hidden="true" />
                 <span>{resolvedAllLabel}</span>
               </button>
             ) : null}
-            {searchable && visibleOptions.length === 0 ? (
+            {!unavailable && searchable && visibleOptions.length === 0 ? (
               <div role="status" style={{ padding: '8px 12px', color: 'var(--rk-text-secondary)', fontSize: '13px' }}>
                 {searchEmptyLabel ?? labels.no_result ?? 'No results'}
               </div>
             ) : null}
-            {visibleOptions.map((option) => {
+            {!unavailable ? visibleOptions.map((option) => {
               const checked = value.includes(option.id);
               return (
                 <button type="button" aria-pressed={checked}
@@ -199,7 +211,7 @@ export function ToolbarMultiSelect({
                   <span>{option.name}</span>
                 </button>
               );
-            })}
+            }) : null}
           </div>
           {onReset ? (
             <div className="rk-dropdown-footer">

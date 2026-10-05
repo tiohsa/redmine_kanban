@@ -82,6 +82,75 @@ class RedmineKanbanIssueCreatorTest < ActiveSupport::TestCase
     assert_nil Issue.find_by(subject: 'rollback child 1')
   end
 
+  def test_filtered_create_returns_the_success_dto_even_when_the_issue_does_not_match
+    creator, builder = issue_creator(issue_filter: RedmineKanban::BoardIssueFilter.new(q: 'different subject'))
+    result = creator.create(params: issue_params(subject: 'created outside subject filter'))
+
+    assert_equal true, result[:ok]
+    assert_equal 1, builder.build_count
+    assert_equal true, result.dig(:invalidations, :board_snapshot)
+    assert_equal Issue.find_by!(subject: 'created outside subject filter').id, result.dig(:issue, :id)
+    assert_empty result[:created_issues]
+    assert_empty result[:issue_updates]
+    assert_empty result[:tree_changes]
+  end
+
+  def test_filtered_bulk_create_with_existing_parent_preserves_dtos_and_idempotent_replay
+    parent = build_issue(subject: 'existing filtered bulk parent')
+    creator, builder = issue_creator(issue_filter: RedmineKanban::BoardIssueFilter.new(q: 'different subject'))
+    args = {
+      parent_params: { parent_issue_id: parent.id },
+      subtasks: [issue_params(subject: 'filtered bulk created child')],
+      idempotency_key: 'filtered-bulk-dto-replay'
+    }
+
+    result = creator.create_with_subtasks(**args)
+    replay = creator.create_with_subtasks(**args)
+
+    assert_equal true, result[:ok]
+    assert_equal true, result.dig(:invalidations, :board_snapshot)
+    assert_equal parent.id, result.dig(:issue, :id)
+    assert_equal [Issue.find_by!(subject: 'filtered bulk created child').id], result[:subtasks].map { |issue| issue[:id] }
+    assert_empty result[:created_issues]
+    assert_empty result[:issue_updates]
+    assert_empty result[:tree_changes]
+    assert_equal result, replay
+    assert_equal 1, builder.build_count
+    assert_equal 1, Issue.where(subject: 'filtered bulk created child').count
+  end
+
+  def test_filtered_create_omits_success_dto_when_the_complete_response_exceeds_the_byte_limit
+    creator, = issue_creator(issue_filter: RedmineKanban::BoardIssueFilter.new(q: 'byte limit'))
+    context = creator.instance_variable_get(:@board_context)
+    context.stubs(:response_byte_limit).returns(1024)
+    result = creator.create(params: issue_params(subject: 'byte limit create').merge(description: 'x' * 5000))
+
+    assert_equal true, result[:ok]
+    assert_equal true, result.dig(:invalidations, :board_snapshot)
+    refute result.key?(:issue)
+    assert_operator result.to_json.bytesize, :<=, 1024
+    assert Issue.find_by!(subject: 'byte limit create')
+  end
+
+  def test_filtered_bulk_create_omits_success_dtos_when_the_complete_response_exceeds_the_byte_limit
+    creator, = issue_creator(issue_filter: RedmineKanban::BoardIssueFilter.new(q: 'bulk byte limit'))
+    context = creator.instance_variable_get(:@board_context)
+    context.stubs(:response_byte_limit).returns(1024)
+    result = creator.create_with_subtasks(
+      parent_params: issue_params(subject: 'bulk byte limit parent'),
+      subtasks: [issue_params(subject: 'bulk byte limit child').merge(description: 'x' * 5000)],
+      idempotency_key: 'filtered-bulk-byte-limit'
+    )
+
+    assert_equal true, result[:ok]
+    assert_equal true, result.dig(:invalidations, :board_snapshot)
+    refute result.key?(:issue)
+    refute result.key?(:subtasks)
+    assert_operator result.to_json.bytesize, :<=, 1024
+    assert Issue.find_by!(subject: 'bulk byte limit parent')
+    assert Issue.find_by!(subject: 'bulk byte limit child')
+  end
+
   def test_single_create_rejects_a_parent_that_safe_attributes_discards
     parent = build_issue(subject: 'parent permission boundary')
     roles_with_permission = @user.roles_for_project(@project).select { |role| role.permissions.include?(:manage_subtasks) }
@@ -153,8 +222,9 @@ class RedmineKanbanIssueCreatorTest < ActiveSupport::TestCase
     [probe, denied_status]
   end
 
-  def issue_creator
-    creator = RedmineKanban::IssueCreator.new(project: @project, user: @user)
+  def issue_creator(issue_filter: nil)
+    context = RedmineKanban::BoardContext.new(project: @project, user: @user, issue_filter: issue_filter)
+    creator = RedmineKanban::IssueCreator.new(project: @project, user: @user, board_context: context)
     builder = CountingMutationResultBuilder.new(board_context: creator.instance_variable_get(:@board_context))
     creator.stubs(:mutation_result_builder).returns(builder)
     [creator, builder]
