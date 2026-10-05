@@ -13,12 +13,13 @@ It provides task visualization, per-user display preferences, aging detection, a
 - [Quick Start (Docker Compose)](#quick-start-docker-compose)
 - [Install as a Redmine Plugin](#install-as-a-redmine-plugin)
 - [Usage](#usage)
-- [Configuration](#configuration)
+- [Display preferences](#display-preferences)
 - [Technology Stack](#technology-stack)
 - [Development](#development)
 - [Testing](#testing)
 - [API Endpoints](#api-endpoints)
 - [CI](#ci)
+- [Recovery and saved views](#recovery-and-saved-views)
 - [License](#license)
 
 ## Overview
@@ -189,9 +190,9 @@ Board data notes:
 - `lists.trackers` includes additive `workflow_status_ids`, `default_status_id`, and `available_project_ids` metadata. Tracker filters narrow Issue membership; the explicit Status filter independently controls visible columns. Redmine workflow metadata (`allowed_status_ids`) and server validation determine whether a status move is allowed. A single selected tracker is propagated to Native Redmine Create only when it is available in the target project.
 - Frontend presentation roots are a display-only projection of the filtered tree. If an explicit Status filter or `hiddenStatusIds` makes a context parent non-renderable, a retained renderable descendant is promoted as a card without changing the canonical `parent_id` or normalized tree. Renderable context parents remain nested context, and promoted/context-only columns are never Create candidates.
 - Toolbar/Lane Header Create prefers an available selected tracker’s default status, then the first open/first candidate. Context-only columns are excluded, and an empty candidate disables those Create controls without falling back to a fixed status ID.
-- Drag drop cues are advisory workflow guidance from the snapshot and are shown for every rendered cell after the drag threshold (`✓` allowed, `!` snapshot mismatch/advisory, `?` unknown). NOOP drops are suppressed, while allowed, denied, and unknown drops still use the existing mutation path so Redmine remains the final Workflow authority. Category-lane drops that would change the Issue category are forbidden: they show no allowed-target highlight or drop preview and do not dispatch a mutation. Status moves within the same category lane continue to use the existing workflow path. Workflow rejection responses use `WORKFLOW_TRANSITION_NOT_ALLOWED` and trigger one targeted entity reconciliation without retrying.
+- Drag drop cues are advisory workflow guidance from the snapshot and are shown for every rendered cell after the drag threshold (`✓` allowed, `!` snapshot mismatch/advisory, `?` unknown). NOOP and forbidden category-lane drops are suppressed, while other drops with allowed, denied, or unknown workflow hints use the existing mutation path so Redmine remains the final Workflow authority. Category-lane drops that would change the Issue category, including moves to or from the no-category lane, are forbidden: they show no allowed-target highlight or drop preview and do not dispatch a mutation. Status moves within the same category lane continue to use the existing workflow path. Workflow rejection responses use `WORKFLOW_TRANSITION_NOT_ALLOWED` and trigger one targeted entity reconciliation without retrying.
 - Physical Delete responses list the actually deleted, Board-observable Issue cascade in `deleted_issue_ids`; scope eviction remains `evicted_issue_ids`. If a complete bounded deletion delta cannot be produced, the response invalidates the board snapshot instead of returning a partial tombstone. Delete Undo recreates only the requested top-level Issue.
-- `board_entity_limit` is the only board size request parameter. `offset`, `cursor`, `tree_parent_id`, and `issue_limit` are rejected; no partial snapshot is successful.
+- `board_entity_limit` is the only board size request parameter. `offset`, `cursor`, `tree_parent_id`, and `issue_limit` are rejected with HTTP 400; no partial snapshot is successful.
 - Mutation responses use contract version 3 fields (`operation_id`, `scope_fingerprint`, flat `issue_updates`/`created_issues`, `deleted_issue_ids`, `tree_changes`, and invalidations). The frontend applies these deltas to normalized state and uses the entities endpoint for targeted reconciliation.
 - Card moves also reconcile active Issue filters through bounded deltas, including entering/evicted ancestor and dependency membership, without refetching the full board. When a filtered move overlaps another write on the same board, the client retains optimistic display, defers the overlapping deltas, and fetches one authoritative snapshot after all pending writes settle. If a complete delta exceeds resource limits, the successful move invalidates the snapshot for authoritative recovery.
 - `scope_fingerprint` is an opaque identity for board project, current user, sanitized project scope, primary status scope, and dependency status scope; its exact hash value is not a public compatibility contract. Plugin mutations use the same scope and admission parameters. Native Redmine iframe writes cannot produce a trusted delta, so successful issue/journal saves (including composite bulk-subtask operations) reset the current board query to one complete snapshot; a refresh failure is reported as a board loading problem, not a save failure.
@@ -227,20 +228,20 @@ The main Redmine test and browser jobs use MariaDB 10 via `.github/e2e/docker-co
 
 The verification entry points live under `script/ci/` so local container runs and CI use the same suite boundaries: `ruby-full.sh`, `snapshot-contract.sh`, `postgres-unit.sh`, `postgres-api.sh`, `e2e-full.sh`, `native-mutation-e2e.sh`, `large-data-e2e.sh`, and `compatibility-smoke.sh`.
 
-## License
-
-Plugin code: GPLv2. Bundled third-party fonts: see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
-
-This project is licensed under the GNU General Public License v2.0 (GPLv2).
-
-### Recovery and saved views
+## Recovery and saved views
 
 If the initial snapshot exceeds a resource limit, the toolbar still loads project and status choices from `GET /projects/:project_id/kanban/metadata`. This permission-checked endpoint returns `board` identity, `projects` (the board subtree), `viewable_projects`, `statuses`, and `server_entity_limit`; it does not return Issues, counts, or a snapshot. The existing `bootstrap` response remains unchanged. Narrow projects, statuses, subject, assignee, tracker, priority, or due filters to request a complete snapshot. Matching dependency descendants can still add entities to the snapshot, and the frontend reapplies filters for final display. Scoped candidate recovery failures affect filter choices; only permission responses indicate loss of board access. Entity, response-size and query-limit errors remain distinct.
 
 The **Saved views** toolbar control supports Save new, Apply, Overwrite, Rename and confirmed Delete. A view stores all filters (including due days and priority selection semantics), ordered sorting, lane type, hidden status IDs and the viewable-projects switch. Font size, full screen, fit mode, card mode, subtasks, aging, entity limits and timers are excluded. Manual changes show **Modified** and are saved only with an explicit operation. Deleting a view retains the current conditions.
 
-Views are stored in localStorage under `rk_saved_views:<Redmine subpath>/projects/<board>/kanban:user:<id>`, isolated by browser origin, instance subpath, user and board. The JSON document is `{ "version": 1, "views": [{ "id": "stable UUID", "name": "name", "settings": { ... } }] }`. Each scope permits 20 views; trimmed names must be 1–80 characters and unique. This initial version has no sharing or built-in presets. Corrupt/unknown documents are retained and reported; failed writes never report success. Unavailable references remain selected with a warning, and validation waits for choices from the current scope. Invalid server scope IDs do not silently become an unfiltered request.
+Views are stored in localStorage under `rk_saved_views:<Redmine subpath>/projects/<board>/kanban:user:<id>`, isolated by browser origin, instance subpath, user and board. The JSON document is `{ "version": 1, "views": [{ "id": "stable ID", "name": "name", "settings": { ... } }] }`. Each scope permits 20 views; trimmed names must be 1–80 characters and unique. This initial version has no sharing or built-in presets. Corrupt/unknown documents are retained and reported; failed writes never report success. Unavailable references remain selected with a warning, and validation waits for choices from the current scope. Invalid server scope IDs do not silently become an unfiltered request.
 
 The active view ID is stored separately under the same key with an `:active` suffix. Reopening the board restores the active view label after the last used conditions have loaded. Manual changes to those conditions remain in place and show **Modified** until explicitly overwritten. Clearing the selection or deleting the active view removes the saved ID without resetting the current conditions.
 
 Toolbar controls support Tab, Enter/Space, and Escape. Escape closes the active popover and returns focus to its trigger; outside clicks retain their own focus. Display settings offer the unchanged default font size of 13px. A saved aging warning threshold of 0 remains 0 after reload.
+
+## License
+
+Plugin code: GPLv2. Bundled third-party fonts: see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+
+This project is licensed under the GNU General Public License v2.0 (GPLv2).
