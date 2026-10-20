@@ -52,6 +52,26 @@ module RedmineKanban
       descendant_scope_for_anchors(ids).distinct.pluck(:id)
     end
 
+    # A filtered child can admit or evict an ancestor's entire dependency
+    # subtree. Bound that complete family before collecting membership deltas.
+    def filtered_move_candidate_ids(issue, limit:)
+      ancestor_ids = visible_scope.where(root_id: issue.root_id)
+                     .where('issues.lft <= ? AND issues.rgt >= ?', issue.lft, issue.rgt)
+                     .order(:id).limit(limit + 1).pluck(:id)
+      return { ids: [], ancestor_ids: [], overflow: true } if ancestor_ids.length > limit
+
+      deletion_candidate_ids(ancestor_ids, limit: limit).merge(ancestor_ids: ancestor_ids)
+    end
+
+    def entering_tree_changes(member_ids, entered_ids:)
+      return [] if entered_ids.empty?
+
+      visible_scope.where(id: member_ids, parent_id: member_ids)
+        .where('issues.id IN (:ids) OR issues.parent_id IN (:ids)', ids: entered_ids)
+        .pluck(:parent_id, :id)
+        .map { |parent_id, child_id| { type: 'attach', parent_id: parent_id, child_id: child_id } }
+    end
+
     def deletion_candidate_ids(anchor_ids, limit:)
       ids = Array(anchor_ids).map(&:to_i).select(&:positive?).uniq
       return { ids: [], overflow: false } if ids.empty?
@@ -88,7 +108,16 @@ module RedmineKanban
     private
 
     def primary_scope
-      visible_scope.where(status_id: @context.scope_status_ids)
+      base = visible_scope.where(status_id: @context.scope_status_ids)
+      filter = @context.issue_filter
+      return base unless filter.active?
+
+      own_match_ids = filter.apply(base).select(:id)
+      descendant_match_anchors = filter.apply(dependency_scope)
+        .joins(primary_ancestor_join(base))
+        .select('board_primary_ancestors.id')
+        .distinct
+      base.where("issues.id IN (#{own_match_ids.to_sql}) OR issues.id IN (#{descendant_match_anchors.to_sql})")
     end
 
     def dependency_scope

@@ -5,6 +5,7 @@ REDMINE_ROOT="${REDMINE_ROOT:-/usr/src/redmine}"
 cd "$REDMINE_ROOT"
 
 exec bundle exec rails test \
+  plugins/redmine_kanban/test/unit/board_issue_filter_test.rb \
   plugins/redmine_kanban/test/unit/board_context_test.rb \
   plugins/redmine_kanban/test/unit/board_membership_resolver_test.rb \
   plugins/redmine_kanban/test/unit/board_data_test.rb \

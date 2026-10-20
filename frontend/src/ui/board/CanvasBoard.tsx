@@ -50,6 +50,7 @@ export type CanvasBoardHandle = {
 type Props = {
   data: BoardData;
   state: BoardState;
+  refreshing?: boolean;
   canMove: boolean;
   canCreate: boolean;
   onCommand: (command: BoardCommand) => boolean;
@@ -79,6 +80,7 @@ type Props = {
 export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasBoard({
   data,
   state,
+  refreshing = false,
   canMove,
   canCreate,
   onCommand,
@@ -162,6 +164,13 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
     scheduleRender();
   }, [scheduleRender]);
 
+  useEffect(() => {
+    if (!refreshing) return;
+    clearHoverState();
+    clearDragState();
+    setCursor(getBoardCursor({ phase: 'idle' }));
+  }, [refreshing, clearDragState, clearHoverState]);
+
   const transitionDragState = React.useCallback((event: DragLifecycleEvent) => {
     const drag = dragRef.current;
     if (!drag) return;
@@ -231,7 +240,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   }, []);
   useEffect(() => {
     scheduleRender();
-  }, [size, state, data.meta, trackerCatalog, canCreate, canMove, theme, fontSize, cardDisplayMode, defaultCreateStatusId, timerSession?.sessionId, timerSession?.issueId, timerSession?.state, scheduleRender]);
+  }, [size, state, data.meta, trackerCatalog, canCreate, canMove, refreshing, theme, fontSize, cardDisplayMode, defaultCreateStatusId, timerSession?.sessionId, timerSession?.issueId, timerSession?.state, scheduleRender]);
 
   useEffect(() => {
     const onViewportChange = () => {
@@ -454,6 +463,11 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   drawRef.current = draw;
 
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (refreshing) {
+      clearHoverState();
+      clearDragState();
+      return;
+    }
     if (dragRef.current?.phase === 'pending-drop') return;
     const point = toBoardPoint(event, scrollRef.current, canvasRef.current, scaleRef.current);
     const hit = hitTest(point, rectMapRef.current, data);
@@ -566,6 +580,11 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   };
 
   const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (refreshing) {
+      clearHoverState();
+      clearDragState();
+      return;
+    }
     const point = toBoardPoint(event, scrollRef.current, canvasRef.current, scaleRef.current);
     const drag = dragRef.current;
 
@@ -613,6 +632,11 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   };
 
   const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (refreshing) {
+      clearHoverState();
+      clearDragState();
+      return;
+    }
     const point = toBoardPoint(event, scrollRef.current, canvasRef.current, scaleRef.current);
     const drag = dragRef.current;
     if (!drag) return;

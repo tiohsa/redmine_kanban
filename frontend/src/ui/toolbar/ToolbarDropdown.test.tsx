@@ -114,4 +114,32 @@ describe('ToolbarMultiSelect search', () => {
     expect(screen.queryByRole('textbox')).toBeNull();
     expect(screen.getByText('Project Alpha')).toBeTruthy();
   });
+
+  it('hides candidates while unavailable, retains Reset, and exposes explicit Retry', () => {
+    const onReset = vi.fn();
+    const onRetry = vi.fn();
+    render(
+      <ToolbarMultiSelect
+        label="Assignee"
+        icon="person"
+        options={options}
+        value={['a']}
+        onChange={vi.fn()}
+        onReset={onReset}
+        labels={{ ...labels, retry: 'Retry' }}
+        includeAllOption
+        unavailable
+        unavailableMessage="Filter choices unavailable"
+        onRetryUnavailable={onRetry}
+      />,
+    );
+    fireEvent.click(screen.getByTitle('Project Alpha'));
+
+    expect(screen.getByRole('status').textContent).toContain('Filter choices unavailable');
+    expect(screen.queryByText('Project Beta')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(onRetry).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+    expect(onReset).toHaveBeenCalledOnce();
+  });
 });

@@ -1,6 +1,7 @@
 import type { BoardData, Column, Issue, ToolbarViewModel } from './types';
 import { flattenIssueTree, nestedIssueIds } from './boardTree';
 import type { Filters } from '../model/view/types';
+import { localDateAnchor } from '../model/board/filterScope';
 export type { Filters } from '../model/view/types';
 
 export type BoardPresentationProjection = {
@@ -12,7 +13,6 @@ export function applyBoardDataFilters(
   displayData: BoardData | null,
   showSubtasks: boolean,
   statusIds: number[],
-  trackerIds: number[] = [],
 ): BoardData | null {
   if (!displayData) return null;
 
@@ -31,41 +31,13 @@ export function applyBoardDataFilters(
       issues: flattenIssueTree(result.issues),
     };
   }
-  result = { ...result, columns: buildPrimaryColumns(result, trackerIds, statusIds) };
+  result = { ...result, columns: buildPrimaryColumns(result, statusIds) };
   return result;
 }
 
-export function buildPrimaryColumns(data: BoardData, selectedTrackerIds: number[], statusIds: number[]): Column[] {
+export function buildPrimaryColumns(data: BoardData, statusIds: number[]): Column[] {
   const statusFilter = new Set(statusIds);
-  const catalog = new Map(data.lists.trackers.map((tracker) => [tracker.id, tracker]));
-  let trackerStatusIds: Set<number> | null = null;
-
-  if (selectedTrackerIds.length > 0) {
-    const selectedTrackers = selectedTrackerIds.map((trackerId) => catalog.get(trackerId));
-    const metadataComplete = selectedTrackers.every((tracker) => (
-      tracker !== undefined && Array.isArray(tracker.workflow_status_ids)
-    ));
-
-    if (metadataComplete) {
-      const validStatusIds = new Set(data.columns.map((column) => column.id));
-      const selectedStatusIds = new Set<number>();
-      for (const tracker of selectedTrackers) {
-        for (const statusId of tracker!.workflow_status_ids ?? []) {
-          if (validStatusIds.has(statusId)) selectedStatusIds.add(statusId);
-        }
-        const defaultStatusId = tracker!.default_status_id;
-        if (defaultStatusId !== null && defaultStatusId !== undefined && validStatusIds.has(defaultStatusId)) {
-          selectedStatusIds.add(defaultStatusId);
-        }
-      }
-      if (selectedStatusIds.size > 0) trackerStatusIds = selectedStatusIds;
-    }
-  }
-
-  return data.columns.filter((column) => (
-    (!trackerStatusIds || trackerStatusIds.has(column.id))
-    && (statusFilter.size === 0 || statusFilter.has(column.id))
-  ));
+  return data.columns.filter((column) => statusFilter.size === 0 || statusFilter.has(column.id));
 }
 
 export function withContextColumns(
@@ -92,8 +64,7 @@ export function buildPresentationProjection(
   hiddenStatusIds: ReadonlySet<number> = new Set(),
 ): BoardPresentationProjection {
   // Select roots from every status the user can actually see, then close the
-  // rendered columns over those roots. Tracker metadata determines primary
-  // columns, but must not hide a filtered historical status after promotion.
+  // rendered columns over those roots.
   const candidateColumnIds = new Set(data.columns
     .filter((column) => !hiddenStatusIds.has(column.id) && (statusIds.length === 0 || statusIds.includes(column.id)))
     .map((column) => column.id));
@@ -202,26 +173,24 @@ function endOfWeek(date: Date): Date {
 
 function filterIssues(issues: Issue[], data: BoardData | null, filters: Filters): Issue[] {
   const q = filters.q.trim().toLowerCase();
-  const now = new Date();
-  const now0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const start = startOfWeek(now);
-  const end = endOfWeek(now);
+  const anchor = data?.meta.filter_scope?.date_anchor ?? localDateAnchor();
+  const now0 = parseISODate(anchor) ?? parseISODate(localDateAnchor())!;
+  const start = startOfWeek(now0);
+  const end = endOfWeek(now0);
 
   return issues.flatMap((issue) => {
-    const filteredSubtasks = filterSubtasks(issue.subtasks, filters);
+    const filteredSubtasks = filterSubtasks(issue.subtasks, filters, now0, start, end);
     const matchesSelf = matchesIssue(issue, data, filters, q, now0, start, end);
     if (!matchesSelf && filteredSubtasks.length === 0) return [];
     return [{ ...issue, subtasks: filteredSubtasks }];
   });
 }
 
-function filterSubtasks(subtasks: Issue['subtasks'], filters: Filters): NonNullable<Issue['subtasks']> {
+function filterSubtasks(subtasks: Issue['subtasks'], filters: Filters, now0: Date, start: Date, end: Date): NonNullable<Issue['subtasks']> {
   return (subtasks ?? []).flatMap((subtask) => {
     const child = subtask as unknown as Issue;
-    const nested = filterSubtasks(child.subtasks, filters);
-    const now = new Date();
-    const now0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const matchesSelf = matchesIssue(child, null, filters, filters.q.trim().toLowerCase(), now0, startOfWeek(now), endOfWeek(now));
+    const nested = filterSubtasks(child.subtasks, filters, now0, start, end);
+    const matchesSelf = matchesIssue(child, null, filters, filters.q.trim().toLowerCase(), now0, start, end);
     if (!matchesSelf && nested.length === 0) return [];
     return [{ ...subtask, subtasks: nested }];
   });

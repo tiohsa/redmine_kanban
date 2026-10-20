@@ -68,7 +68,7 @@ function makeFilters(overrides: Partial<Filters> = {}): Filters {
 }
 
 describe('applyBoardDataFilters', () => {
-  it('projects primary columns from one tracker workflow plus its default status in source order', () => {
+  it('keeps status columns when a selected tracker has a narrower workflow', () => {
     const data = makeBoardData([makeIssue(1, 1, 'Issue')]);
     const projected = buildPrimaryColumns({
       ...data,
@@ -81,21 +81,21 @@ describe('applyBoardDataFilters', () => {
         ...data.lists,
         trackers: [{ id: 1, name: 'Bug', workflow_status_ids: [2, 2], default_status_id: 1, available_project_ids: [1] }],
       },
-    }, [1], []);
+    }, []);
 
-    expect(projected.map((column) => column.id)).toEqual([1, 2]);
+    expect(projected.map((column) => column.id)).toEqual([1, 2, 3]);
   });
 
-  it('fails open when selected tracker workflow metadata is missing', () => {
+  it('uses the status filter to select columns', () => {
     const data = makeBoardData([makeIssue(1, 1, 'Issue')]);
-    expect(buildPrimaryColumns(data, [1], []).map((column) => column.id)).toEqual([1, 2]);
+    expect(buildPrimaryColumns(data, [2]).map((column) => column.id)).toEqual([2]);
   });
 
-  it('keeps a valid default status when workflow metadata is empty', () => {
+  it('does not use a tracker default status to change columns', () => {
     const data = makeBoardData([makeIssue(1, 1, 'Issue')]);
     data.lists.trackers = [{ id: 1, name: 'Bug', workflow_status_ids: [], default_status_id: 2 }];
 
-    expect(buildPrimaryColumns(data, [1], []).map((column) => column.id)).toEqual([2]);
+    expect(buildPrimaryColumns(data, []).map((column) => column.id)).toEqual([1, 2]);
   });
 
   it('adds the rendered root status without changing the primary column order', () => {
@@ -407,7 +407,7 @@ describe('buildVisibleIssues', () => {
     expect(projection.issues.every((issue) => projection.columns.some((column) => column.id === issue.status_id))).toBe(true);
   });
 
-  it('adds a presentation-only column for a promoted historical tracker status', () => {
+  it('keeps a historical tracker status selected by the status filter', () => {
     const data = makeBoardData([
       makeIssue(50, 2, 'Context parent', {
         subtasks: [{ id: 51, subject: 'Historical child', status_id: 3, tracker_id: 1, is_closed: false }],
@@ -420,10 +420,10 @@ describe('buildVisibleIssues', () => {
     ];
     data.lists.trackers = [{ id: 1, name: 'Bug', workflow_status_ids: [1], default_status_id: 1 }];
 
-    const primaryColumns = buildPrimaryColumns(data, [1], [3]);
+    const primaryColumns = buildPrimaryColumns(data, [3]);
     const projection = buildPresentationProjection(data, primaryColumns, data.issues, [3], new Set());
 
-    expect(primaryColumns).toEqual([]);
+    expect(primaryColumns.map((column) => column.id)).toEqual([3]);
     expect(projection.columns.map((column) => column.id)).toEqual([3]);
     expect(projection.issues.map((issue) => issue.id)).toEqual([51]);
   });
@@ -518,6 +518,20 @@ describe('buildVisibleIssues', () => {
       expect(issues).toHaveLength(1);
       expect(issues[0].subtasks?.map((subtask) => subtask.id)).toEqual([2]);
     }
+  });
+
+  it('uses the server date anchor for exact due-date filtering', () => {
+    const data = makeBoardData([
+      makeIssue(1, 1, 'Anchor day', { due_date: '2026-10-01' }),
+      makeIssue(2, 1, 'Next day', { due_date: '2026-10-02' }),
+    ]);
+    data.meta.filter_scope = {
+      q: '', assignee_ids: [], include_unassigned: false, tracker_ids: [],
+      priority_filter_enabled: false, priority_ids: [], include_no_priority: false,
+      due: '1day', date_anchor: '2026-10-01',
+    };
+
+    expect(buildVisibleIssues(data, makeFilters({ due: '1day' }), new Set(), null).map((issue) => issue.id)).toEqual([1]);
   });
 
   it('hides a parent when neither it nor any descendant matches', () => {

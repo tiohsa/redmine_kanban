@@ -57,6 +57,7 @@ class RedmineKanbanMutationFinalizerTest < Minitest::Test
     @builder.expects(:build).with(
       issue_updates: issue_updates,
       membership_recheck_ids: membership_recheck_ids,
+      tree_changes: [],
       invalidations: invalidations
     ).in_sequence(order).returns(@delta)
     @context.expects(:presenter).with([42]).in_sequence(order).returns([@presenter, nil])

@@ -133,9 +133,21 @@ function isSnapshotMeta(value: unknown): value is BoardSnapshotV3Dto['meta'] {
     isBoolean(value.can_move) && isBoolean(value.can_create) && isBoolean(value.can_delete) &&
     ['none', 'assignee', 'priority', 'category'].some((laneType) => value.lane_type === laneType) &&
     ['project_ids', 'scope_status_ids', 'dependency_status_ids'].every((key) => optional(value[key], isIds)) &&
+    optional(value.filter_scope, isBoardFilterScope) &&
     optional(value.scope_fingerprint, isNonBlankString) &&
-    ['requested_entity_limit', 'effective_entity_limit', 'server_entity_limit', 'response_byte_limit'].every((key) => optional(value[key], isId)) &&
+    ['requested_entity_limit', 'effective_entity_limit', 'response_byte_limit'].every((key) => optional(value[key], isId)) &&
+    optional(value.server_entity_limit, (item) => item === null || isId(item)) &&
     ['response_bytes', 'id_probe_count', 'materialized_row_count', 'query_count'].every((key) => optional(value[key], isNonNegativeInteger));
+}
+
+function isBoardFilterScope(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const dueModes = ['all', 'overdue', 'thisweek', '3days', '7days', '1day', 'custom', 'none'];
+  return isString(value.q) && isIds(value.assignee_ids) && isBoolean(value.include_unassigned) &&
+    isIds(value.tracker_ids) && isBoolean(value.priority_filter_enabled) && isIds(value.priority_ids) &&
+    isBoolean(value.include_no_priority) && dueModes.includes(String(value.due)) &&
+    optional(value.due_days, (item) => item === null || isNonNegativeInteger(item)) &&
+    optional(value.date_anchor, (item) => item === null || (isString(item) && /^\d{4}-\d{2}-\d{2}$/.test(item)));
 }
 
 export function parseBoardSnapshotV3(data: unknown): BoardSnapshotV3Dto {

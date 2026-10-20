@@ -1502,6 +1502,10 @@
   width: 80px;
 }
 
+.rk-settings-select-row select.rk-settings-dialog-width-select {
+  width: 180px;
+}
+
 .rk-settings-select-row select:focus,
 .rk-settings-row:focus-visible,
 .rk-sort-row:focus-visible {
@@ -1932,6 +1936,15 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   flex: 0 1 auto !important;
   max-height: 40vh;
   overflow-y: auto;
+}
+
+.rk-iframe-dialog-container-fixed-size .rk-iframe-wrapper {
+  min-height: 0;
+}
+
+.rk-iframe-dialog-container-fixed-size .rk-subtask-footer {
+  min-height: 0;
+  max-height: min(40vh, 40%);
 }
 
 .rk-subtask-textarea {

@@ -22,11 +22,9 @@ module RedmineKanban
       mutation = mutation_result_builder.build(
         created_issues: [issue],
         tree_changes: issue.parent_id ? [{ type: 'attach', parent_id: issue.parent_id, child_id: issue.id }] : [],
-        invalidations: { column_counts: true }
+        invalidations: { column_counts: true, board_snapshot: @board_context.issue_filter.active? }
       )
-      return mutation if snapshot_invalidated_result?(mutation)
-
-      mutation.merge(issue: issue_presenter(issue).issue_to_h(issue))
+      creation_result(mutation, issue: issue)
     end
 
     def create_with_subtasks(parent_params:, subtasks:, idempotency_key:)
@@ -97,14 +95,9 @@ module RedmineKanban
 
             { type: 'attach', parent_id: created_issue.parent_id, child_id: created_issue.id }
           end,
-          invalidations: { column_counts: true }
+          invalidations: { column_counts: true, board_snapshot: @board_context.issue_filter.active? }
         )
-        next mutation if snapshot_invalidated_result?(mutation)
-
-        mutation.merge(
-          issue: issue_presenter(parent_issue).issue_to_h(parent_issue),
-          subtasks: created.map { |child| issue_presenter(child).issue_to_h(child) }
-        )
+        creation_result(mutation, issue: parent_issue, subtasks: created)
       end
     end
 
@@ -217,6 +210,18 @@ module RedmineKanban
 
     def snapshot_invalidated_result?(result)
       result.dig(:invalidations, :board_snapshot) == true
+    end
+
+    def creation_result(mutation, issue:, subtasks: nil)
+      invalidated = snapshot_invalidated_result?(mutation)
+      return mutation if invalidated && !@board_context.issue_filter.active?
+
+      # These DTOs identify the successful creation; an invalidated board never applies them as a delta.
+      result = mutation.merge(issue: issue_presenter(issue).issue_to_h(issue))
+      result[:subtasks] = subtasks.map { |child| issue_presenter(child).issue_to_h(child) } if subtasks
+      return mutation if invalidated && result.to_json.bytesize > @board_context.response_byte_limit
+
+      result
     end
 
     def normalize_bulk_parent(parent_params)

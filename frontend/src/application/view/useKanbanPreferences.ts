@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type SetStateAction } from 'react';
 import { DEFAULT_SORT_CONFIG, parseSortConfig, serializeSortConfig, type SortConfig } from '../../model/view/sort';
 import type { CardDisplayMode, Filters, FitMode, LaneType } from '../../model/view/types';
-import { DEFAULT_FILTERS, DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT, normalizeMaximumBoardEntityCount, restoreAgingDays } from '../../model/view/preferences';
+import { DEFAULT_FILTERS, restoreAgingDays } from '../../model/view/preferences';
 import { readFilters, readStorageValue, removeStorageValue, writeStorageValue } from '../../infrastructure/storage/preferencesRepository';
-export { DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT, MAXIMUM_BOARD_ENTITY_COUNT, normalizeMaximumBoardEntityCount, parseMaximumBoardEntityCount } from '../../model/view/preferences';
 import { buildProjectScopeFromDataUrl, makeScopedStorageKey, readScopedBooleanWithLegacy, readScopedNumberSetWithLegacy, readScopedValueWithLegacy } from '../../infrastructure/storage/scopedStorage';
 import { copyViewSettings, type SavedViewSettings } from '../../model/view/savedViews';
+import { DEFAULT_ISSUE_DIALOG_SIZE, parseIssueDialogSize } from '../../model/view/issueDialogSize';
 
 export type { LaneType } from '../../model/view/types';
 export type { CardDisplayMode } from '../../model/view/types';
@@ -23,7 +23,6 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
   const agingDangerDaysStorageKey = projectKey('rk_aging_danger_days');
   const agingExcludeClosedStorageKey = projectKey('rk_aging_exclude_closed');
   const viewableProjectsStorageKey = projectKey('rk_viewable_projects_enabled');
-  const maximumBoardEntityCountStorageKey = projectKey('rk_maximum_board_entity_count');
   const fullWindowStorageKey = userKey('rk_fullwindow');
   const fitModeStorageKey = userKey('rk_fit_mode');
   const cardDisplayModeStorageKey = userKey('rk_card_display_mode');
@@ -31,6 +30,7 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
   const sortConfigStorageKey = userKey('rk_sortkey');
   const fontSizeStorageKey = userKey('rk_font_size');
   const timeEntryStorageKey = userKey('rk_time_entry_on_close');
+  const issueDialogSizeStorageKey = userKey('rk_issue_dialog_size');
 
   const [viewSettings, setViewSettings] = useState<SavedViewSettings>({
     filters: DEFAULT_FILTERS,
@@ -61,10 +61,10 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
   }, []);
   const [fontSize, setFontSize] = useState(13);
   const [timeEntryOnClose, setTimeEntryOnClose] = useState(false);
+  const [issueDialogSize, setIssueDialogSize] = useState(DEFAULT_ISSUE_DIALOG_SIZE);
   const [agingWarnDays, setAgingWarnDays] = useState(3);
   const [agingDangerDays, setAgingDangerDays] = useState(7);
   const [agingExcludeClosed, setAgingExcludeClosed] = useState(true);
-  const [maximumBoardEntityCount, setMaximumBoardEntityCount] = useState(DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT);
   const [hydratedScope, setHydratedScope] = useState<string | null>(null);
   const hydrationScope = userScope ? `${projectScope}:${userScope}` : null;
   const preferencesReady = hydrationScope !== null && hydratedScope === hydrationScope;
@@ -86,6 +86,7 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
     setHiddenStatusIds(readScopedNumberSetWithLegacy(hiddenStatusStorageKey!, makeScopedStorageKey('rk_hidden_status_ids', projectScope), new Set()));
     setFontSize(Number(readScopedValueWithLegacy(fontSizeStorageKey!, 'rk_font_size')) || 13);
     setTimeEntryOnClose(readScopedValueWithLegacy(timeEntryStorageKey!, 'rk_time_entry_on_close') === '1');
+    setIssueDialogSize(parseIssueDialogSize(readStorageValue(issueDialogSizeStorageKey!)));
     const laneType = readStorageValue(laneTypeStorageKey!);
     const legacyLaneTypeStorageKey = makeScopedStorageKey('rk_lane_type', projectScope);
     const legacyLaneType = laneType === null ? readStorageValue(legacyLaneTypeStorageKey) : null;
@@ -106,9 +107,8 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
     setAgingDangerDays(Math.max(warnDays, restoreAgingDays(readScopedValueWithLegacy(agingDangerDaysStorageKey!, makeScopedStorageKey('rk_aging_danger_days', projectScope)), 7)));
     setAgingExcludeClosed(readScopedBooleanWithLegacy(agingExcludeClosedStorageKey!, makeScopedStorageKey('rk_aging_exclude_closed', projectScope), true));
     setViewableProjectsEnabled(readScopedBooleanWithLegacy(viewableProjectsStorageKey!, makeScopedStorageKey('rk_viewable_projects_enabled', projectScope), false));
-    setMaximumBoardEntityCount(normalizeMaximumBoardEntityCount(readStorageValue(maximumBoardEntityCountStorageKey!)));
     setHydratedScope(hydrationScope);
-  }, [hydrationScope, setFilters, setSortConfig, setHiddenStatusIds, setLaneType, setViewableProjectsEnabled, agingDangerDaysStorageKey, agingExcludeClosedStorageKey, agingWarnDaysStorageKey, cardDisplayModeStorageKey, filtersStorageKey, fitModeStorageKey, fontSizeStorageKey, fullWindowStorageKey, hiddenStatusStorageKey, laneTypeStorageKey, maximumBoardEntityCountStorageKey, priorityLaneStorageKey, projectScope, showSubtasksStorageKey, sortConfigStorageKey, timeEntryStorageKey, userScope, viewableProjectsStorageKey]);
+  }, [hydrationScope, setFilters, setSortConfig, setHiddenStatusIds, setLaneType, setViewableProjectsEnabled, agingDangerDaysStorageKey, agingExcludeClosedStorageKey, agingWarnDaysStorageKey, cardDisplayModeStorageKey, filtersStorageKey, fitModeStorageKey, fontSizeStorageKey, fullWindowStorageKey, hiddenStatusStorageKey, issueDialogSizeStorageKey, laneTypeStorageKey, priorityLaneStorageKey, projectScope, showSubtasksStorageKey, sortConfigStorageKey, timeEntryStorageKey, userScope, viewableProjectsStorageKey]);
 
   useEffect(() => {
     if (!preferencesReady) return;
@@ -166,6 +166,10 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
   }, [preferencesReady, timeEntryOnClose, timeEntryStorageKey]);
 
   useEffect(() => {
+    if (preferencesReady && issueDialogSizeStorageKey) writeStorageValue(issueDialogSizeStorageKey, JSON.stringify(issueDialogSize));
+  }, [preferencesReady, issueDialogSize, issueDialogSizeStorageKey]);
+
+  useEffect(() => {
     if (preferencesReady && laneTypeStorageKey) writeStorageValue(laneTypeStorageKey, laneType);
   }, [laneType, laneTypeStorageKey, preferencesReady]);
 
@@ -184,17 +188,6 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
   useEffect(() => {
     if (preferencesReady && viewableProjectsStorageKey) writeStorageValue(viewableProjectsStorageKey, viewableProjectsEnabled ? '1' : '0');
   }, [preferencesReady, viewableProjectsEnabled, viewableProjectsStorageKey]);
-
-  useEffect(() => {
-    if (preferencesReady && maximumBoardEntityCountStorageKey) writeStorageValue(maximumBoardEntityCountStorageKey, String(maximumBoardEntityCount));
-  }, [maximumBoardEntityCount, maximumBoardEntityCountStorageKey, preferencesReady]);
-
-  const setMaximumBoardEntityCountImmediately = useCallback((value: number) => {
-    setMaximumBoardEntityCount(value);
-    if (preferencesReady && maximumBoardEntityCountStorageKey) {
-      writeStorageValue(maximumBoardEntityCountStorageKey, String(value));
-    }
-  }, [maximumBoardEntityCountStorageKey, preferencesReady]);
 
   return {
     viewSettings,
@@ -220,6 +213,8 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
     setFontSize,
     timeEntryOnClose,
     setTimeEntryOnClose,
+    issueDialogSize,
+    setIssueDialogSize,
     laneType,
     setLaneType,
     agingWarnDays,
@@ -230,7 +225,5 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
     setAgingExcludeClosed,
     viewableProjectsEnabled,
     setViewableProjectsEnabled,
-    maximumBoardEntityCount,
-    setMaximumBoardEntityCount: setMaximumBoardEntityCountImmediately,
   };
 }

@@ -16,6 +16,7 @@ module RedmineKanban
     before_action :require_update_permission, only: [:update]
     before_action :require_delete_permission, only: [:destroy]
     before_action :validate_board_entity_limit, only: [:move, :create, :update, :destroy, :bulk_create]
+    before_action :parse_board_filter, only: [:index, :bootstrap, :entities, :counts, :move, :create, :update, :destroy, :bulk_create]
 
     def index
       render_board_payload(board_payload)
@@ -27,7 +28,12 @@ module RedmineKanban
     end
 
     def metadata
-      render json: BoardMetadata.new(project: @project, user: User.current).to_h
+      project_ids = normalize_integer_array_param(params[:project_ids]).uniq if params.key?(:project_ids)
+      render json: BoardMetadata.new(
+        project: @project,
+        user: User.current,
+        project_ids: project_ids
+      ).to_h
     end
 
     def entities
@@ -134,7 +140,8 @@ module RedmineKanban
         project_ids: normalize_integer_array_param(params[:project_ids]),
         issue_status_ids: normalize_integer_array_param(params[:issue_status_ids]),
         exclude_status_ids: normalize_integer_array_param(params[:exclude_status_ids]),
-        board_entity_limit: params[:board_entity_limit]
+        board_entity_limit: params[:board_entity_limit],
+        issue_filter: @board_issue_filter
       ).to_h
     rescue SnapshotLimits::InvalidLimit => error
       {
@@ -143,6 +150,8 @@ module RedmineKanban
         error: { code: 'INVALID_BOARD_ENTITY_LIMIT', message: error.message },
         http_status: :bad_request
       }
+    rescue BoardIssueFilter::InvalidFilter => error
+      { ok: false, contract_version: 3, error: { code: 'INVALID_BOARD_FILTER', message: error.message }, http_status: :bad_request }
     end
 
     def legacy_pagination_param_present?
@@ -167,8 +176,16 @@ module RedmineKanban
         project_ids: normalize_integer_array_param(params[:project_ids]),
         scope_status_ids: scope_status_ids,
         dependency_status_ids: dependency_status_ids,
-        board_entity_limit: params[:board_entity_limit]
+        board_entity_limit: params[:board_entity_limit],
+        issue_filter: @board_issue_filter
       )
+    end
+
+    def parse_board_filter
+      @board_issue_filter = BoardIssueFilter.from_params(params)
+    rescue BoardIssueFilter::InvalidFilter => error
+      render json: { ok: false, contract_version: 3, error: { code: 'INVALID_BOARD_FILTER', message: error.message } }, status: :bad_request
+      false
     end
 
     def scope_status_ids_present?

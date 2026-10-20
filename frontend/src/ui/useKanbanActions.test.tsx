@@ -42,6 +42,26 @@ function makeBoardData(issue = makeIssue()): BoardData {
   };
 }
 
+function makeFilteredBoardData(issues: Issue[]): BoardData {
+  const board = makeBoardData(issues[0]);
+  board.issues = issues;
+  board.meta.filter_scope = {
+    q: 'needle', assignee_ids: [], include_unassigned: false, tracker_ids: [],
+    priority_filter_enabled: false, priority_ids: [], include_no_priority: false, due: 'all',
+  };
+  board.columns = [
+    { id: 1, name: 'Open', is_closed: false, count: issues.length },
+    { id: 2, name: 'Closed', is_closed: true, count: 0 },
+  ];
+  return board;
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => { resolve = complete; });
+  return { promise, resolve };
+}
+
 function createWrapper(client: QueryClient) {
   return function Wrapper({ children }: PropsWithChildren) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
@@ -52,11 +72,14 @@ function renderActions(options: {
   data?: BoardData;
   refresh?: () => Promise<void>;
   setError?: (value: string | null) => void;
+  setNotice?: (value: string | null) => void;
+  isWorkTimerIssue?: (issueId: number) => boolean;
   timeEntryOnClose?: boolean;
   setIframeTimeEntryOperation?: (value: import('./iframe/timeEntryOperation').TimeEntryOperation | null) => void;
 } = {}) {
   const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   const setError = options.setError ?? vi.fn();
+  const setNotice = options.setNotice ?? vi.fn();
   const refresh = options.refresh ?? vi.fn(async () => undefined);
   const setIframeTimeEntryOperation = options.setIframeTimeEntryOperation ?? vi.fn();
   const data = options.data ?? makeBoardData();
@@ -68,17 +91,145 @@ function renderActions(options: {
       data,
       refresh,
       timeEntryOnClose: options.timeEntryOnClose ?? false,
-      setNotice: vi.fn(),
+      isWorkTimerIssue: options.isWorkTimerIssue,
+      setNotice,
       setError,
       setIframeTimeEntryOperation,
     }),
     { wrapper: createWrapper(queryClient) },
   );
-  return { ...hook, setError, refresh, queryClient, setIframeTimeEntryOperation };
+  return { ...hook, setError, setNotice, refresh, queryClient, setIframeTimeEntryOperation };
 }
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe('filtered move overlap with board actions', () => {
+  it.each(['create', 'delete'] as const)(
+    'defers %s deltas and follow-up reads until the filtered move settles',
+    async (otherAction) => {
+      const board = makeFilteredBoardData([makeIssue(1), makeIssue(2)]);
+      const moveResponse = deferred<Response>();
+      const setNotice = vi.fn();
+      const queryKey = ['kanban', 'board'] as const;
+      const { result, queryClient } = renderActions({ data: board, setNotice });
+      const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+      const requests: Array<{ url: string; method: string }> = [];
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? 'GET';
+        requests.push({ url, method });
+        if (url.includes('/issues/1/move')) return moveResponse.promise;
+        if (otherAction === 'create' && url.includes('/issues?') && method === 'POST') {
+          return new Response(JSON.stringify({
+            ok: true,
+            created_issues: [makeIssue(3)],
+            invalidations: { issue_ids: [3], column_counts: true },
+          }), { status: 200 });
+        }
+        if (otherAction === 'delete' && url.includes('/issues/2')) {
+          return new Response(JSON.stringify({
+            ok: true,
+            deleted_issue_ids: [2],
+            invalidations: { issue_ids: [2], column_counts: true },
+          }), { status: 200 });
+        }
+        throw new Error(`Unexpected request: ${method} ${url}`);
+      });
+
+      await act(async () => { result.current.moveIssue(1, 2); });
+      await waitFor(() => expect(requests.some(({ url }) => url.includes('/issues/1/move'))).toBe(true));
+      if (otherAction === 'create') {
+        await act(async () => {
+          await result.current.createIssueMutation.mutateAsync({ subject: 'Created during move', project_id: 1, tracker_id: 1, status_id: 1 });
+        });
+      } else {
+        await act(async () => { result.current.requestDelete(2); });
+        await waitFor(() => expect(result.current.pendingDeleteIssue?.id).toBe(2));
+      }
+
+      const beforeMoveSettles = queryClient.getQueryData<BoardData>(queryKey);
+      expect(beforeMoveSettles?.issues.map((issue) => issue.id)).toEqual([1, 2]);
+      expect(beforeMoveSettles?.issues.find((issue) => issue.id === 1)?.status_id).toBe(2);
+      expect(requests.filter(({ method }) => method === 'GET')).toEqual([]);
+      expect(invalidateQueries).not.toHaveBeenCalled();
+      if (otherAction === 'delete') expect(result.current.pendingDeleteIssue?.id).toBe(2);
+
+      await act(async () => {
+        moveResponse.resolve(new Response(JSON.stringify({
+          ok: true,
+          issue: { ...makeIssue(1), subject: 'Move accepted', status_id: 2, lock_version: 4 },
+          evicted_issue_ids: [2],
+          invalidations: { issue_ids: [2], column_counts: true },
+          warning: 'Move completed',
+        }), { status: 200 }));
+        await waitFor(() => expect(setNotice).toHaveBeenCalledWith('Move completed'));
+      });
+
+      expect(queryClient.getQueryData<BoardData>(queryKey)?.issues.map((issue) => issue.id)).toEqual([1, 2]);
+      expect(requests.filter(({ method }) => method === 'GET')).toEqual([]);
+      expect(invalidateQueries).toHaveBeenCalledTimes(1);
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey, exact: true });
+      if (otherAction === 'delete') expect(result.current.pendingDeleteIssue?.id).toBe(2);
+    },
+  );
+
+  it('keeps Undo available and defers restore membership and entity reads during a filtered move', async () => {
+    const board = makeFilteredBoardData([makeIssue(1), makeIssue(2)]);
+    const moveResponse = deferred<Response>();
+    const setNotice = vi.fn();
+    const queryKey = ['kanban', 'board'] as const;
+    const { result, queryClient } = renderActions({ data: board, setNotice });
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+    const requests: Array<{ url: string; method: string }> = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      requests.push({ url, method });
+      if (url.includes('/issues/2?') && method === 'DELETE') {
+        return new Response(JSON.stringify({ ok: true, deleted_issue_ids: [2] }), { status: 200 });
+      }
+      if (url.includes('/issues/1/move')) return moveResponse.promise;
+      if (url.includes('/issues?') && method === 'POST') {
+        return new Response(JSON.stringify({
+          ok: true,
+          created_issues: [makeIssue(3)],
+          invalidations: { issue_ids: [3], column_counts: true },
+        }), { status: 200 });
+      }
+      throw new Error(`Unexpected request: ${method} ${url}`);
+    });
+
+    await act(async () => { result.current.requestDelete(2); });
+    await waitFor(() => expect(result.current.pendingDeleteIssue?.id).toBe(2));
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues.map((issue) => issue.id)).toEqual([1]);
+
+    await act(async () => { result.current.moveIssue(1, 2); });
+    await waitFor(() => expect(requests.some(({ url }) => url.includes('/issues/1/move'))).toBe(true));
+    await act(async () => { await result.current.handleUndo(); });
+
+    expect(result.current.pendingDeleteIssue).toBeNull();
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues.map((issue) => issue.id)).toEqual([1]);
+    expect(requests).toHaveLength(3);
+    expect(requests.filter(({ method }) => method === 'GET')).toEqual([]);
+    expect(invalidateQueries).not.toHaveBeenCalled();
+
+    await act(async () => {
+      moveResponse.resolve(new Response(JSON.stringify({
+        ok: true,
+        issue: { ...makeIssue(1), status_id: 2, lock_version: 4 },
+        invalidations: { issue_ids: [1], column_counts: true },
+        warning: 'Move completed',
+      }), { status: 200 }));
+      await waitFor(() => expect(setNotice).toHaveBeenCalledWith('Move completed'));
+    });
+
+    expect(queryClient.getQueryData<BoardData>(queryKey)?.issues.map((issue) => issue.id)).toEqual([1]);
+    expect(requests.filter(({ method }) => method === 'GET')).toEqual([]);
+    expect(invalidateQueries).toHaveBeenCalledTimes(1);
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey, exact: true });
+  });
 });
 
 describe('useKanbanActions delete flow', () => {
@@ -126,7 +277,7 @@ describe('useKanbanActions delete flow', () => {
       expect.objectContaining({ id: 2, lock_version: 4 }),
     ]);
     expect(globalThis.fetch).toHaveBeenLastCalledWith(
-      '/projects/demo/kanban/issues/entities?project_ids%5B%5D=1&ids%5B%5D=2&scope_status_ids_present=1&scope_status_ids%5B%5D=1&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1',
+      '/projects/demo/kanban/issues/entities?project_ids%5B%5D=1&ids%5B%5D=2&scope_status_ids_present=1&scope_status_ids%5B%5D=1&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1&filter_q=&filter_include_unassigned=0&filter_priority_enabled=0&filter_include_no_priority=0&filter_due=all',
       expect.objectContaining({ cache: 'no-store', credentials: 'same-origin' }),
     );
   });
@@ -135,6 +286,7 @@ describe('useKanbanActions delete flow', () => {
     const restored = makeIssue(2);
     const { result, queryClient } = renderActions();
     const resetQueries = vi.spyOn(queryClient, 'resetQueries');
+
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, deleted_issue_ids: [1] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, created_issues: [restored] }), { status: 200 }))
@@ -158,7 +310,7 @@ describe('useKanbanActions delete flow', () => {
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      '/projects/demo/kanban/issues/1?board_entity_limit=1500&scope_status_ids_present=1&scope_status_ids%5B%5D=1&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1',
+      '/projects/demo/kanban/issues/1?scope_status_ids_present=1&scope_status_ids%5B%5D=1&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1&filter_q=&filter_include_unassigned=0&filter_priority_enabled=0&filter_include_no_priority=0&filter_due=all',
       expect.objectContaining({ method: 'DELETE' }),
     );
     expect(result.current.pendingDeleteIssue).toBeNull();
@@ -195,7 +347,7 @@ describe('useKanbanActions delete flow', () => {
     await act(async () => { result.current.requestDelete(2); });
     await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
 
-    expect(globalThis.fetch).toHaveBeenCalledWith('/projects/demo/kanban/issues/2?board_entity_limit=1500&scope_status_ids_present=1&scope_status_ids%5B%5D=1&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1', expect.objectContaining({ method: 'DELETE' }));
+    expect(globalThis.fetch).toHaveBeenCalledWith('/projects/demo/kanban/issues/2?scope_status_ids_present=1&scope_status_ids%5B%5D=1&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1&filter_q=&filter_include_unassigned=0&filter_priority_enabled=0&filter_include_no_priority=0&filter_due=all', expect.objectContaining({ method: 'DELETE' }));
     expect(result.current.pendingDeleteIssue).toBeNull();
   });
 
@@ -222,7 +374,7 @@ describe('useKanbanActions delete flow', () => {
     await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      '/projects/demo/kanban/issues/1?project_ids%5B%5D=3&project_ids%5B%5D=7&board_entity_limit=1500&scope_status_ids_present=1&scope_status_ids%5B%5D=1&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1',
+      '/projects/demo/kanban/issues/1?project_ids%5B%5D=3&project_ids%5B%5D=7&scope_status_ids_present=1&scope_status_ids%5B%5D=1&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1&filter_q=&filter_include_unassigned=0&filter_priority_enabled=0&filter_include_no_priority=0&filter_due=all',
       expect.objectContaining({ method: 'DELETE' }),
     );
   });
@@ -240,7 +392,7 @@ describe('useKanbanActions delete flow', () => {
     await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      '/projects/demo/kanban/issues/1?board_entity_limit=1500&scope_status_ids_present=1&scope_status_ids%5B%5D=1&scope_status_ids%5B%5D=2&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1&dependency_status_ids%5B%5D=2',
+      '/projects/demo/kanban/issues/1?scope_status_ids_present=1&scope_status_ids%5B%5D=1&scope_status_ids%5B%5D=2&dependency_status_ids_present=1&dependency_status_ids%5B%5D=1&dependency_status_ids%5B%5D=2&filter_q=&filter_include_unassigned=0&filter_priority_enabled=0&filter_include_no_priority=0&filter_due=all',
       expect.objectContaining({ method: 'DELETE' }),
     );
   });
@@ -431,17 +583,24 @@ describe('useKanbanActions snapshot-invalidated success', () => {
     }), { status: 200 }));
     const { result, queryClient } = renderActions({ data: board, timeEntryOnClose: true, setIframeTimeEntryOperation });
     const resetQueries = vi.spyOn(queryClient, 'resetQueries');
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
 
     await act(async () => { result.current.moveIssue(1, 2); });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
-    expect(resetQueries).toHaveBeenCalledWith({ queryKey: ['kanban', 'board'] });
+    expect(resetQueries).not.toHaveBeenCalled();
+    expect(queryClient.getQueryData<BoardData>(['kanban', 'board'])?.issues[0]?.status_id).toBe(2);
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['kanban', 'board'], exact: true });
     expect(setIframeTimeEntryOperation).not.toHaveBeenCalled();
     expect(fetchMock.mock.calls[0][0]).toContain('/issues/1/move');
   });
 
-  it('keeps the normal close time entry flow when the issue DTO is present', async () => {
+  it.each([false, true])('opens close time entry with an issue DTO when board_snapshot is %s', async (invalidated) => {
     const board = makeBoardData(makeIssue(1));
+    board.meta.filter_scope = {
+      q: 'needle', assignee_ids: [], include_unassigned: false, tracker_ids: [],
+      priority_filter_enabled: false, priority_ids: [], include_no_priority: false, due: 'all',
+    };
     board.columns = [
       { id: 1, name: 'Open', is_closed: false, count: 1 },
       { id: 2, name: 'Closed', is_closed: true, count: 0 },
@@ -451,11 +610,51 @@ describe('useKanbanActions snapshot-invalidated success', () => {
       ok: true,
       contract_version: 3,
       issue: { ...makeIssue(1), status_id: 2, can_log_time: true, lock_version: 4 },
-      invalidations: { board_snapshot: false },
+      invalidations: { board_snapshot: invalidated },
     }), { status: 200 }));
-    const { result } = renderActions({ data: board, timeEntryOnClose: true, setIframeTimeEntryOperation });
+    const { result, queryClient } = renderActions({ data: board, timeEntryOnClose: true, setIframeTimeEntryOperation });
+    const resetQueries = vi.spyOn(queryClient, 'resetQueries');
 
     await act(async () => { result.current.moveIssue(1, 2); });
     await waitFor(() => expect(setIframeTimeEntryOperation).toHaveBeenCalledWith(expect.objectContaining({ origin: 'time_entry_on_close', issueId: 1 })));
+    expect(resetQueries).not.toHaveBeenCalled();
+    expect(queryClient.getQueryData<BoardData>(['kanban', 'board'])).toBeDefined();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(globalThis.fetch).mock.calls[0][0]).toContain('filter_q=needle');
+  });
+
+  it.each([
+    ['time entry on close is disabled', { timeEntryOnClose: false }],
+    ['the issue belongs to the running timer', { timeEntryOnClose: true, isWorkTimerIssue: () => true }],
+    ['the user cannot log time', { timeEntryOnClose: true, canLogTime: false }],
+  ] as Array<[string, { timeEntryOnClose: boolean; isWorkTimerIssue?: (issueId: number) => boolean; canLogTime?: boolean }]>)('respects close time entry eligibility when %s', async (_scenario, options) => {
+    const board = makeBoardData(makeIssue(1));
+    board.labels.time_entry_permission_required = 'Time logging is unavailable';
+    board.columns = [
+      { id: 1, name: 'Open', is_closed: false, count: 1 },
+      { id: 2, name: 'Closed', is_closed: true, count: 0 },
+    ];
+    const setIframeTimeEntryOperation = vi.fn();
+    const setNotice = vi.fn();
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      ok: true,
+      issue: { ...makeIssue(1), status_id: 2, can_log_time: options.canLogTime ?? true },
+      invalidations: { board_snapshot: true },
+    }), { status: 200 }));
+    const { result } = renderActions({
+      data: board,
+      timeEntryOnClose: options.timeEntryOnClose,
+      isWorkTimerIssue: options.isWorkTimerIssue,
+      setNotice,
+      setIframeTimeEntryOperation,
+    });
+
+    await act(async () => { result.current.moveIssue(1, 2); });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(result.current.busyIssueIds.has(1)).toBe(false));
+
+    expect(setIframeTimeEntryOperation).not.toHaveBeenCalled();
+    if (options.canLogTime === false) expect(setNotice).toHaveBeenCalledWith('Time logging is unavailable');
+    else expect(setNotice).toHaveBeenCalledTimes(1); // moveIssue clears any prior notice.
   });
 });

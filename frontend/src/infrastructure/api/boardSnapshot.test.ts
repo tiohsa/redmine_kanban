@@ -27,6 +27,18 @@ describe('parseBoardSnapshotV3', () => {
     expect(parseBoardSnapshotV3(data)).toBe(data);
   });
 
+  it('accepts a null server entity limit and rejects malformed numeric limits', () => {
+    const data = makeBoardSnapshot();
+    data.meta.server_entity_limit = null;
+    expect(parseBoardSnapshotV3(data)).toBe(data);
+
+    for (const value of [0, -1, 1.5, '5000']) {
+      const malformed = makeBoardSnapshot();
+      malformed.meta.server_entity_limit = value as number;
+      expect(() => parseBoardSnapshotV3(malformed)).toThrow('Invalid board snapshot');
+    }
+  });
+
   it('accepts nullable server attributes and minimal Issue attributes', () => {
     const data = makeBoardSnapshot();
     data.entities = [{ id: 9, subject: 'Issue', status_id: 2, tracker_id: null, description: null, assigned_to_id: null, urls: data.entities[0].urls }];
@@ -58,6 +70,7 @@ describe('parseBoardSnapshotV3', () => {
     ['meta', []], ['meta.project_id', null], ['meta.current_user_id', '7'],
     ['meta.can_move', 'false'], ['meta.lane_type', 'unknown'], ['meta.entity_count', undefined],
     ['meta.scope_status_ids', {}], ['meta.effective_entity_limit', '1500'],
+    ['meta.server_entity_limit', 0],
     ['tree.children_by_parent_id', []], ['scope_fingerprint', '  '],
   ])('rejects malformed %s (%j)', (path, value) => {
     const data = makeBoardSnapshot();

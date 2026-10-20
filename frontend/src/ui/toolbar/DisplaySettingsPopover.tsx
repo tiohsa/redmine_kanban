@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { FitMode } from '../../model/view/types';
-import { DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT, MAXIMUM_BOARD_ENTITY_COUNT, parseMaximumBoardEntityCount, type CardDisplayMode, type LaneType } from '../useKanbanPreferences';
+import type { CardDisplayMode, LaneType } from '../useKanbanPreferences';
 import { useDropdownDismiss } from './useDropdownDismiss';
+import { DEFAULT_ISSUE_DIALOG_SIZE, type IssueDialogSizeSettings } from '../../model/view/issueDialogSize';
 
 const FONT_SIZE_OPTIONS = ['10', '12', '13', '14', '16', '18', '20', '22', '24', '26', '28', '30'] as const;
 
@@ -16,11 +17,11 @@ export function SettingsToggle({ label, checked, onChange, disabled = false }: {
   );
 }
 
-function SettingsSelect({ label, value, options, onChange, selectClassName }: { label: string; value: string; options: { id: string; name: string }[]; onChange: (value: string) => void; selectClassName?: string }) {
+function SettingsSelect({ label, value, options, onChange, selectClassName, disabled = false }: { label: string; value: string; options: { id: string; name: string }[]; onChange: (value: string) => void; selectClassName?: string; disabled?: boolean }) {
   return (
     <label className="rk-settings-select-row">
       <span>{label}</span>
-      <select className={selectClassName} value={value} onChange={(event) => onChange(event.target.value)}>
+      <select className={selectClassName} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
         {options.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
       </select>
     </label>
@@ -47,9 +48,8 @@ export function DisplaySettingsPopover({
   onChangeCardDisplayMode,
   fontSize,
   onChangeFontSize,
-  maximumBoardEntityCount = DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT,
-  onChangeMaximumBoardEntityCount = () => {},
-  serverEntityLimit,
+  issueDialogSize = DEFAULT_ISSUE_DIALOG_SIZE,
+  onChangeIssueDialogSize = () => {},
 }: {
   labels: Record<string, string>;
   showSubtasks: boolean;
@@ -70,18 +70,11 @@ export function DisplaySettingsPopover({
   onChangeCardDisplayMode: (value: CardDisplayMode) => void;
   fontSize: number;
   onChangeFontSize: (size: number) => void;
-  maximumBoardEntityCount?: number;
-  onChangeMaximumBoardEntityCount?: (value: number) => void;
-  serverEntityLimit?: number;
+  issueDialogSize?: IssueDialogSizeSettings;
+  onChangeIssueDialogSize?: (settings: IssueDialogSizeSettings) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [maximumEntityCountDraft, setMaximumEntityCountDraft] = useState(String(maximumBoardEntityCount));
-  const [maximumEntityCountError, setMaximumEntityCountError] = useState<string | null>(null);
-  const [maximumEntityCountSaved, setMaximumEntityCountSaved] = useState(false);
   const { triggerRef, menuRef, menuId } = useDropdownDismiss(open, () => setOpen(false));
-  useEffect(() => {
-    setMaximumEntityCountDraft(String(maximumBoardEntityCount));
-  }, [maximumBoardEntityCount]);
   const title = labels.display_settings;
   const widthOptions = [
     { id: 'none', name: labels.fit_none },
@@ -110,65 +103,29 @@ export function DisplaySettingsPopover({
           <SettingsSelect label={labels.aging_danger_days} value={String(agingDangerDays)} options={[1, 3, 5, 7, 14, 30, 60].map((value) => ({ id: String(value), name: String(value) }))} onChange={(value) => onChangeAgingDangerDays(Number(value))} selectClassName="rk-settings-aging-days-select" />
           <SettingsToggle label={labels.aging_exclude_closed} checked={agingExcludeClosed} onChange={onToggleAgingExcludeClosed} />
           <SettingsToggle label={labels.time_entry_short} checked={timeEntryOnClose} onChange={onToggleTimeEntryOnClose} />
-          <div className="rk-settings-field">
-            <label className="rk-settings-field-label" htmlFor="rk-maximum-board-entity-count">
-              <span className="rk-settings-label-with-info">
-              <span>{labels.maximum_board_entity_count}</span>
-              <span className="rk-settings-info-wrap">
-                <button
-                  type="button"
-                  className="rk-settings-info"
-                  aria-label={labels.maximum_board_entity_count_help}
-                >
-                  <span className="rk-settings-info-glyph" aria-hidden="true">i</span>
-                </button>
-                <span className="rk-settings-tooltip" role="tooltip">
-                  {labels.maximum_board_entity_count_help.replace('%{max}', MAXIMUM_BOARD_ENTITY_COUNT.toLocaleString())}
-                  {serverEntityLimit ? ` ${labels.server_entity_limit_notice.replace('%{count}', String(serverEntityLimit))}` : ''}
-                </span>
-              </span>
-              </span>
-            </label>
-            <input
-              id="rk-maximum-board-entity-count"
-              className="rk-input"
-              type="text"
-              inputMode="numeric"
-              value={maximumEntityCountDraft}
-              onChange={(event) => {
-                setMaximumEntityCountDraft(event.target.value);
-                setMaximumEntityCountError(null);
-                setMaximumEntityCountSaved(false);
-              }}
-              aria-invalid={maximumEntityCountError ? 'true' : 'false'}
-            />
-          </div>
-          {maximumEntityCountError ? <div className="rk-settings-error" role="alert">{maximumEntityCountError}</div> : null}
-          {maximumEntityCountSaved ? <div className="rk-settings-help" role="status">{labels.maximum_board_entity_count_saved}</div> : null}
-          <div className="rk-settings-actions">
-            <button type="button" className="rk-btn rk-btn-sm" onClick={() => {
-              const parsed = parseMaximumBoardEntityCount(maximumEntityCountDraft);
-              if (parsed === null) {
-                setMaximumEntityCountError(labels.maximum_board_entity_count_invalid);
-                return;
-              }
-              onChangeMaximumBoardEntityCount(parsed);
-              setMaximumEntityCountError(null);
-              setMaximumEntityCountSaved(true);
-            }}>{labels.save}</button>
-            <button type="button" className="rk-btn rk-btn-sm" onClick={() => {
-              setMaximumEntityCountDraft(String(DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT));
-              onChangeMaximumBoardEntityCount(DEFAULT_MAXIMUM_BOARD_ENTITY_COUNT);
-              setMaximumEntityCountError(null);
-              setMaximumEntityCountSaved(true);
-            }}>{labels.reset}</button>
-          </div>
           <SettingsSelect label={labels.display_width} value={fitMode} options={widthOptions} onChange={(value) => { if (value !== fitMode) onToggleFitMode(); }} />
           <SettingsSelect label={labels.card_display_mode} value={cardDisplayMode} options={[
             { id: 'standard', name: labels.card_display_standard },
             { id: 'single_line', name: labels.card_display_single_line },
           ]} onChange={(value) => onChangeCardDisplayMode(value === 'single_line' ? 'single_line' : 'standard')} />
           <SettingsSelect label={labels.font_size} value={String(fontSize)} options={fontSizeOptions} onChange={(value) => onChangeFontSize(Number(value))} />
+          <div role="group" aria-label={labels.issue_dialog_settings}>
+            <div className="rk-settings-title">{labels.issue_dialog_settings}</div>
+            <SettingsSelect label={labels.issue_dialog_width} selectClassName="rk-settings-dialog-width-select" value={String(issueDialogSize.widthPx)} options={[
+              { id: '900', name: labels.issue_dialog_width_compact },
+              { id: '1200', name: labels.issue_dialog_width_standard },
+              { id: '1500', name: labels.issue_dialog_width_wide },
+            ]} disabled={issueDialogSize.fullScreen} onChange={(value) => onChangeIssueDialogSize({ ...issueDialogSize, widthPx: Number(value) as IssueDialogSizeSettings['widthPx'] })} />
+            <SettingsSelect label={labels.issue_dialog_height} value={issueDialogSize.heightMode} options={[
+              { id: 'auto', name: labels.issue_dialog_height_auto },
+              { id: 'fixed', name: labels.issue_dialog_height_fixed },
+            ]} disabled={issueDialogSize.fullScreen} onChange={(value) => onChangeIssueDialogSize({ ...issueDialogSize, heightMode: value === 'fixed' ? 'fixed' : 'auto' })} />
+            <SettingsSelect label={labels.issue_dialog_height_percent} value={String(issueDialogSize.heightPercent)} options={
+              Array.from({ length: 9 }, (_, index) => 50 + index * 5).map((percent) => ({ id: String(percent), name: `${percent}%` }))
+            } disabled={issueDialogSize.fullScreen || issueDialogSize.heightMode !== 'fixed'} onChange={(value) => onChangeIssueDialogSize({ ...issueDialogSize, heightPercent: Number(value) })} />
+            <SettingsToggle label={labels.issue_dialog_fullscreen} checked={issueDialogSize.fullScreen} onChange={() => onChangeIssueDialogSize({ ...issueDialogSize, fullScreen: !issueDialogSize.fullScreen })} />
+            <button type="button" className="rk-settings-row" onClick={() => onChangeIssueDialogSize({ ...DEFAULT_ISSUE_DIALOG_SIZE })}>{labels.issue_dialog_reset}</button>
+          </div>
         </div>
       ) : null}
     </div>

@@ -1,6 +1,7 @@
 require_relative 'board_context'
 require_relative 'ancestor_issue_updates'
 require_relative 'mutation_finalizer'
+require_relative 'filtered_move_reconciliation'
 
 module RedmineKanban
   class IssueMover
@@ -50,12 +51,15 @@ module RedmineKanban
 
       error_result = nil
       membership_resolver = BoardMembershipResolver.new(board_context: @board_context)
-      before_primary_member = membership_resolver.primary_member?(@issue.id)
+      before_primary_member = membership_resolver.primary_member?(@issue.id) unless @board_context.issue_filter.active?
       preserve_parent_priority = priority_id == :no_change && @issue.parent_id.present?
       parent = nil
       parent_priority_before = nil
       priority_lock_versions = nil
       mutation_outcome = nil
+      filtered_reconciliation = if @board_context.issue_filter.active?
+        FilteredMoveReconciliation.new(board_context: @board_context, issue: @issue)
+      end
 
       Issue.transaction do
         if preserve_parent_priority
@@ -91,7 +95,7 @@ module RedmineKanban
 
       return error_result if error_result
 
-      after_primary_member = membership_resolver.primary_member?(@issue.id)
+      after_primary_member = membership_resolver.primary_member?(@issue.id) unless filtered_reconciliation
 
       ancestor_updates_required = mutation_outcome[:status_changed] || mutation_outcome[:done_ratio_changed]
 
@@ -104,17 +108,29 @@ module RedmineKanban
       ancestor_issues = ancestor_issues_for(@issue) if ancestor_updates_required
       propagated_issues = priority_id.is_a?(Integer) ? @issue.children.to_a : []
       issue_updates = [@issue, *(ancestor_issues || []), *propagated_issues].uniq { |item| item.id }
-      membership_recheck_ids = if before_primary_member != after_primary_member
+      tree_changes = []
+      filter_snapshot_invalidation = false
+      membership_recheck_ids = if !filtered_reconciliation && before_primary_member != after_primary_member
         membership_resolver.membership_candidate_ids([@issue.id])
       else
         []
+      end
+      if filtered_reconciliation
+        reconciliation = filtered_reconciliation.result
+        filter_snapshot_invalidation = reconciliation[:overflow]
+        unless filter_snapshot_invalidation
+          issue_updates = [*issue_updates, *reconciliation[:issue_updates]].uniq { |item| item.id }
+          membership_recheck_ids = reconciliation[:membership_recheck_ids]
+          tree_changes = reconciliation[:tree_changes]
+        end
       end
       mutation_finalizer.build(
         issue: @issue,
         issue_updates: issue_updates,
         membership_recheck_ids: membership_recheck_ids,
         ancestor_updates: ancestor_updates,
-        invalidations: { column_counts: true }
+        tree_changes: tree_changes,
+        invalidations: { column_counts: true, board_snapshot: filter_snapshot_invalidation }
       )
     rescue ActiveRecord::StaleObjectError
       error_response(I18n.t('redmine_kanban.error_conflict'), status: :conflict)

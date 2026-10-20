@@ -13,13 +13,14 @@ module RedmineKanban
     LABEL_TRANSLATION_KEYS = BoardLabels::TRANSLATION_KEYS
 
 
-    def initialize(project:, user:, project_ids: nil, issue_status_ids: nil, exclude_status_ids: nil, board_entity_limit: nil)
+    def initialize(project:, user:, project_ids: nil, issue_status_ids: nil, exclude_status_ids: nil, board_entity_limit: nil, issue_filter: nil)
       @project = project
       @user = user
       @requested_project_ids = normalize_ids(project_ids)
       @issue_status_ids = normalize_ids(issue_status_ids)
       @exclude_status_ids = normalize_ids(exclude_status_ids)
       @board_entity_limit = board_entity_limit
+      @issue_filter = issue_filter
     end
 
     def to_h
@@ -44,7 +45,8 @@ module RedmineKanban
         project_ids: @requested_project_ids,
         issue_status_ids: @issue_status_ids,
         exclude_status_ids: @exclude_status_ids,
-        board_entity_limit: @board_entity_limit
+        board_entity_limit: @board_entity_limit,
+        issue_filter: @issue_filter
       )
       @user.groups.load
       @user.builtin_role
@@ -80,7 +82,7 @@ module RedmineKanban
         end.uniq
         lanes = build_lanes(lane_assignee_ids)
 
-        counts = if @board_context.scope_status_ids.sort == status_ids.sort
+        counts = if @board_context.scope_status_ids.sort == status_ids.sort && !@board_context.issue_filter.active?
           issues.each_with_object(Hash.new(0)) { |issue, grouped| grouped[issue.status_id] += 1 }
         else
           fetch_column_counts(status_ids, visible_scope: visible_scope)
@@ -100,6 +102,7 @@ module RedmineKanban
           project_ids: @project_ids,
           scope_status_ids: @board_context.scope_status_ids,
           dependency_status_ids: @board_context.dependency_status_ids,
+          filter_scope: @board_context.filter_scope,
           scope_fingerprint: @board_context.scope_fingerprint,
           current_user_id: @user.id,
           can_move: permission_policy.can_move_issue?(@project),

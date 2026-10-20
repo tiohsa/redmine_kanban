@@ -104,6 +104,7 @@ function createCanvasContextWithSpies() {
     lineTo: ReturnType<typeof vi.fn>;
     setTransform: ReturnType<typeof vi.fn>;
     fillRect: ReturnType<typeof vi.fn>;
+    translate: ReturnType<typeof vi.fn>;
   };
   return context;
 }
@@ -360,6 +361,53 @@ afterEach(() => {
     expect(ref.current?.dateAnchorPosition(point)).toBeNull();
     act(() => ref.current?.scrollToTop());
     expect(ref.current?.dateAnchorPosition(point)).toEqual(point);
+  });
+
+  it('keeps canvas identity and scroll offset while refreshing and after fresh data arrives', async () => {
+    const makeWideBoard = (subject: string) => {
+      const issues = Array.from({ length: 30 }, (_, index) => makeIssue(index + 1, { subject: `${subject} ${index + 1}` }));
+      const data = makeBoardData(issues[0]!);
+      data.issues = issues;
+      data.columns = Array.from({ length: 5 }, (_, index) => ({ id: index + 1, name: `Column ${index + 1}`, is_closed: false, count: 0 }));
+      return { data, state: buildBoardState(data, issues, [{ field: 'updated', direction: 'desc' }], new Map()) };
+    };
+    const initial = makeWideBoard('Initial');
+    const fresh = makeWideBoard('Fresh');
+    const context = createCanvasContextWithSpies();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+    const props = {
+      canMove: true,
+      canCreate: true,
+      onCommand: vi.fn(),
+      onCreate: vi.fn(),
+      onEdit: vi.fn(),
+      onView: vi.fn(),
+      onDelete: vi.fn(),
+      onEditClick: vi.fn(),
+    };
+    const { container, rerender } = render(
+      <CanvasBoard data={initial.data} state={initial.state} refreshing={false} labels={initial.data.labels} {...props} />,
+    );
+    const canvas = container.querySelector('canvas.rk-canvas')!;
+    await waitFor(() => expect(canvas).toHaveProperty('height', 600));
+
+    context.translate.mockClear();
+    fireEvent.wheel(canvas, { deltaX: 100, deltaY: 0 });
+    await waitFor(() => expect(context.translate).toHaveBeenCalledWith(-100, -0));
+
+    context.translate.mockClear();
+    rerender(<CanvasBoard data={initial.data} state={initial.state} refreshing labels={initial.data.labels} {...props} />);
+    expect(container.querySelector('canvas.rk-canvas')).toBe(canvas);
+    await waitFor(() => expect(context.translate).toHaveBeenCalledWith(-100, -0));
+
+    context.translate.mockClear();
+    fireEvent.wheel(canvas, { deltaX: 50, deltaY: 0 });
+    await waitFor(() => expect(context.translate).toHaveBeenCalledWith(-150, -0));
+
+    context.translate.mockClear();
+    rerender(<CanvasBoard data={fresh.data} state={fresh.state} refreshing={false} labels={fresh.data.labels} {...props} />);
+    expect(container.querySelector('canvas.rk-canvas')).toBe(canvas);
+    await waitFor(() => expect(context.translate).toHaveBeenCalledWith(-150, -0));
   });
 
   it('notifies after a resized fit-to-width board changes scale', async () => {
@@ -730,6 +778,47 @@ afterEach(() => {
     await waitFor(() => {
       expect(board.style.cursor).toBe('default');
     });
+  });
+
+  it('cancels active drags and blocks card actions while refreshing', async () => {
+    const issue = makeIssue(1);
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
+    const rectMap = hitTestIndex.createRectMap();
+    vi.spyOn(hitTestIndex, 'createRectMap').mockReturnValue(rectMap);
+    const onCommand = vi.fn(() => true);
+    const onView = vi.fn();
+    const onEdit = vi.fn();
+    const onDelete = vi.fn();
+    const { container, rerender } = render(
+      <CanvasBoard data={data} state={state} canMove canCreate refreshing={false}
+        onCommand={onCommand} onCreate={vi.fn()} onEdit={onEdit} onView={onView}
+        onDelete={onDelete} onEditClick={vi.fn()} labels={data.labels} />,
+    );
+    const board = container.querySelector('.rk-canvas-board') as HTMLDivElement;
+    const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
+    await waitFor(() => expect(rectMap.cardSubjects.has(issue.id)).toBe(true));
+
+    fireEvent.pointerDown(canvas, { clientX: 200, clientY: 100, pointerId: 1 });
+    fireEvent.pointerMove(canvas, { clientX: 240, clientY: 100, pointerId: 1 });
+    rerender(
+      <CanvasBoard data={data} state={state} canMove canCreate refreshing
+        onCommand={onCommand} onCreate={vi.fn()} onEdit={onEdit} onView={onView}
+        onDelete={onDelete} onEditClick={vi.fn()} labels={data.labels} />,
+    );
+
+    expect(board.style.cursor).toBe('default');
+    fireEvent.pointerUp(canvas, { clientX: 320, clientY: 100, pointerId: 1 });
+    const subject = rectMap.cardSubjects.get(issue.id)!;
+    fireEvent.pointerDown(canvas, {
+      clientX: subject.x + 2,
+      clientY: subject.y + subject.height / 2,
+    });
+
+    expect(onCommand).not.toHaveBeenCalled();
+    expect(onView).not.toHaveBeenCalled();
+    expect(onEdit).not.toHaveBeenCalled();
+    expect(onDelete).not.toHaveBeenCalled();
   });
 
   it('does not retain a rejected command as a pending drop', async () => {

@@ -79,7 +79,6 @@ export function HelpDialog({ labels, onClose }: Props) {
               <IconRow icon="fullscreen" text={labels.help_fullscreen} />
               <IconRow icon="vertical_align_top" text={labels.help_scroll_top} />
               <IconRow icon="format_size" text={labels.help_font_size} />
-              <IconRow icon="tune" text={labels.help_maximum_board_entity_count} />
             </div>
           </Section>
 

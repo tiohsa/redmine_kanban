@@ -176,7 +176,6 @@ describe('useKanbanDialogs issue resolution', () => {
       projectIds: [3],
       scopeStatusIds: [2],
       dependencyStatusIds: [2, 4],
-      boardEntityLimit: 2500,
     });
   });
 });

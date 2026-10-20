@@ -3,8 +3,8 @@ require_relative '../../lib/redmine_kanban/snapshot_limits'
 
 class RedmineKanbanSnapshotLimitsTest < ActiveSupport::TestCase
   def test_defaults_are_bounded
-    assert_equal 1_500, RedmineKanban::SnapshotLimits.requested(nil)
-    assert_equal 5_000, RedmineKanban::SnapshotLimits.server_entity_limit
+    assert_equal 10_000, RedmineKanban::SnapshotLimits.requested(nil)
+    assert_equal 10_000, RedmineKanban::SnapshotLimits.server_entity_limit
     assert_equal 8 * 1024 * 1024, RedmineKanban::SnapshotLimits.response_bytes
     assert_equal 20, RedmineKanban::SnapshotLimits.query_limit
     assert_equal 100, RedmineKanban::SnapshotLimits.total_query_limit
@@ -30,12 +30,12 @@ class RedmineKanbanSnapshotLimitsTest < ActiveSupport::TestCase
     previous_bytes = ENV['REDMINE_KANBAN_MAX_RESPONSE_BYTES']
     previous_queries = ENV['REDMINE_KANBAN_MAX_BOARD_QUERIES']
     previous_total_queries = ENV['REDMINE_KANBAN_MAX_TOTAL_BOARD_QUERIES']
-    ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = '0'
+    ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = '-1'
     ENV['REDMINE_KANBAN_MAX_RESPONSE_BYTES'] = '1e6'
     ENV['REDMINE_KANBAN_MAX_BOARD_QUERIES'] = '-1'
     ENV['REDMINE_KANBAN_MAX_TOTAL_BOARD_QUERIES'] = '0'
 
-    assert_equal 5_000, RedmineKanban::SnapshotLimits.server_entity_limit
+    assert_equal 10_000, RedmineKanban::SnapshotLimits.server_entity_limit
     assert_equal 8 * 1024 * 1024, RedmineKanban::SnapshotLimits.response_bytes
     assert_equal 20, RedmineKanban::SnapshotLimits.query_limit
     assert_equal 100, RedmineKanban::SnapshotLimits.total_query_limit
@@ -44,5 +44,30 @@ class RedmineKanbanSnapshotLimitsTest < ActiveSupport::TestCase
     ENV['REDMINE_KANBAN_MAX_RESPONSE_BYTES'] = previous_bytes
     ENV['REDMINE_KANBAN_MAX_BOARD_QUERIES'] = previous_queries
     ENV['REDMINE_KANBAN_MAX_TOTAL_BOARD_QUERIES'] = previous_total_queries
+  end
+
+  def test_environment_limit_is_finite_and_cannot_exceed_the_hard_ceiling
+    previous = ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES']
+    { nil => 10_000, '' => 10_000, '  ' => 10_000, '5000' => 5_000, '250' => 250,
+      '10000' => 10_000, '50000' => 10_000, '0' => 10_000, ' 0 ' => 10_000,
+      '-1' => 10_000, '00' => 10_000, '1e5' => 10_000, 'Infinity' => 10_000,
+      '2147483648' => 10_000 }.each do |value, expected|
+      ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = value
+      assert_equal expected, RedmineKanban::SnapshotLimits.server_entity_limit, value.inspect
+    end
+  ensure
+    ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = previous
+  end
+
+  def test_hard_ceiling_and_reconciliation_batch_limit_are_preserved
+    previous = ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES']
+    ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = '0'
+
+    assert_equal 10_000, RedmineKanban::SnapshotLimits.server_entity_limit
+    assert_equal 10_000, RedmineKanban::SnapshotLimits.effective(50_000)
+    assert_equal 10_000, RedmineKanban::SnapshotLimits.effective(RedmineKanban::SnapshotLimits.requested(nil))
+    assert_equal 100, RedmineKanban::SnapshotLimits.entity_reconciliation_limit
+  ensure
+    ENV['REDMINE_KANBAN_MAX_BOARD_ENTITIES'] = previous
   end
 end

@@ -6,20 +6,25 @@ import type { ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import type { CanvasBoard, CanvasBoardHandle } from './board/CanvasBoard';
+import { DEFAULT_ISSUE_DIALOG_SIZE } from '../model/view/issueDialogSize';
 
 vi.mock('./board/CanvasBoard', async () => {
   const { forwardRef } = await import('react');
   return {
     CanvasBoard: forwardRef<CanvasBoardHandle, ComponentProps<typeof CanvasBoard>>((props, _ref) => (
-      <div data-testid="canvas-board" data-card-display-mode={props.cardDisplayMode} data-fit-mode={props.fitMode} data-font-size={props.fontSize} />
+      <div data-testid="canvas-board" data-card-display-mode={props.cardDisplayMode} data-fit-mode={props.fitMode} data-font-size={props.fontSize}>
+        <button onClick={() => props.onEditClick('/issues/1')}>View issue</button>
+        <button onClick={() => props.onEditClick('/issues/1/edit')}>Edit issue</button>
+        <button onClick={() => props.onCreate({ statusId: 1, projectId: 1 })}>Create issue</button>
+      </div>
     )),
   };
 });
 
 vi.mock('../infrastructure/api/http', () => ({
-  getJson: vi.fn((url: string) => Promise.resolve(url.endsWith('/metadata') ? { ok: true, board: { id: 1 }, projects: [], viewable_projects: [], statuses: [], server_entity_limit: 5000 } : {
+  getJson: vi.fn((url: string) => Promise.resolve(url.includes('/trackers') ? { trackers: [] } : url.includes('/metadata') ? { ok: true, board: { id: 1, name: 'B', identifier: 'b' }, projects: [], viewable_projects: [], statuses: [], server_entity_limit: 10000, filter_options_complete: true, filter_options: { assignees: [], trackers: [], priorities: [] } } : {
     ok: true, contract_version: 3, scope_fingerprint: 'sha256:test',
-    meta: { project_id: 1, project_ids: [1], scope_status_ids: [], current_user_id: 7, can_move: false, can_create: false, can_delete: false, lane_type: 'assignee', complete: true, entity_count: 0 },
+    meta: { project_id: 1, project_ids: [1], scope_status_ids: [], current_user_id: 7, can_move: false, can_create: false, can_delete: false, lane_type: 'assignee', complete: true, entity_count: 0, server_entity_limit: null },
     columns: [], lanes: [], entities: [], tree: { root_ids: [], children_by_parent_id: {} },
     lists: { assignees: [], trackers: [], priorities: [], projects: [], viewable_projects: [], creatable_projects: [] },
     labels: {
@@ -32,7 +37,17 @@ vi.mock('../infrastructure/api/http', () => ({
       fit_width: '幅に合わせる',
       font_size: 'フォントサイズ',
       show_subtasks_short: '子チケットを表示',
-      maximum_board_entity_count_help: '最大 %{max} 件',
+      issue_dialog_settings: 'チケットダイアログ',
+      issue_dialog_width: '幅',
+      issue_dialog_width_compact: 'コンパクト (900px)',
+      issue_dialog_width_standard: '標準 (1200px)',
+      issue_dialog_width_wide: 'ワイド (1500px)',
+      issue_dialog_height: '高さ',
+      issue_dialog_height_auto: '自動',
+      issue_dialog_height_fixed: '固定',
+      issue_dialog_height_percent: '固定高さ (%)',
+      issue_dialog_fullscreen: '全画面表示',
+      issue_dialog_reset: 'サイズをリセット',
     },
   })),
   isHttpError: vi.fn(() => false),
@@ -63,6 +78,51 @@ describe('App display settings', () => {
     return view;
   }
 
+  it('changes and restores dialog sizes, disables overridden controls, and resets all fields', async () => {
+    const view = await openDisplaySettings();
+    const width = screen.getByRole<HTMLSelectElement>('combobox', { name: '幅' });
+    const height = screen.getByRole<HTMLSelectElement>('combobox', { name: '高さ' });
+    const percent = screen.getByRole<HTMLSelectElement>('combobox', { name: '固定高さ (%)' });
+    expect(width.value).toBe('1200');
+    expect(within(width).getAllByRole('option').map((option) => (option as HTMLOptionElement).value)).toEqual(['900', '1200', '1500']);
+    expect(percent.disabled).toBe(true);
+    expect(within(percent).getAllByRole('option').map((option) => (option as HTMLOptionElement).value)).toEqual(['50', '55', '60', '65', '70', '75', '80', '85', '90']);
+    fireEvent.change(width, { target: { value: '900' } });
+    fireEvent.change(height, { target: { value: 'fixed' } });
+    expect(percent.disabled).toBe(false);
+    fireEvent.change(percent, { target: { value: '65' } });
+    fireEvent.click(screen.getByRole('switch', { name: '全画面表示' }));
+    expect(width.disabled).toBe(true);
+    expect(height.disabled).toBe(true);
+    expect(percent.disabled).toBe(true);
+    expect(JSON.parse(localStorage.getItem('rk_issue_dialog_size:user:7')!)).toEqual({ widthPx: 900, heightMode: 'fixed', heightPercent: 65, fullScreen: true });
+    view.unmount();
+
+    await openDisplaySettings();
+    expect(screen.getByRole<HTMLSelectElement>('combobox', { name: '幅' }).value).toBe('900');
+    fireEvent.click(screen.getByRole('switch', { name: '全画面表示' }));
+    expect(screen.getByRole<HTMLSelectElement>('combobox', { name: '高さ' }).value).toBe('fixed');
+    expect(screen.getByRole<HTMLSelectElement>('combobox', { name: '固定高さ (%)' }).value).toBe('65');
+    expect(screen.getByRole<HTMLSelectElement>('combobox', { name: '幅' }).disabled).toBe(false);
+    fireEvent.click(screen.getByRole('switch', { name: '全画面表示' }));
+    fireEvent.click(screen.getByRole('button', { name: 'サイズをリセット' }));
+    expect(JSON.parse(localStorage.getItem('rk_issue_dialog_size:user:7')!)).toEqual(DEFAULT_ISSUE_DIALOG_SIZE);
+    expect(screen.getByRole<HTMLSelectElement>('combobox', { name: '幅' }).value).toBe('1200');
+    expect(screen.getByRole<HTMLSelectElement>('combobox', { name: '高さ' }).value).toBe('auto');
+    expect(screen.getByRole<HTMLSelectElement>('combobox', { name: '固定高さ (%)' }).disabled).toBe(true);
+  });
+
+  it.each(['View issue', 'Edit issue', 'Create issue'])('passes configured sizes from the toolbar to %s', async (action) => {
+    await openDisplaySettings();
+    fireEvent.change(screen.getByRole('combobox', { name: '幅' }), { target: { value: '900' } });
+    fireEvent.change(screen.getByRole('combobox', { name: '高さ' }), { target: { value: 'fixed' } });
+    fireEvent.change(screen.getByRole('combobox', { name: '固定高さ (%)' }), { target: { value: '65' } });
+    fireEvent.click(screen.getByRole('button', { name: action }));
+    const dialog = await screen.findByTestId('issue-dialog-header');
+    expect(dialog.parentElement?.style.width).toBe(`${Math.min(900, window.innerWidth * 0.98)}px`);
+    expect(dialog.parentElement?.style.height).toBe(`${Math.max(320, Math.floor(window.innerHeight * 0.65))}px`);
+  });
+
   it('returns focus on Escape, prevents propagation, and dismisses on outside mouse action', async () => {
     await openDisplaySettings();
     const trigger = screen.getByRole('button', { name: '表示設定' });
@@ -84,6 +144,12 @@ describe('App display settings', () => {
     expect(screen.queryByRole('dialog', { name: '表示設定' })).toBeNull();
     expect(document.activeElement).toBe(outside);
     outside.remove();
+  });
+
+  it('does not expose the server entity ceiling as a user setting', async () => {
+    await openDisplaySettings();
+    expect(document.querySelector('#rk-maximum-board-entity-count')).toBeNull();
+    expect(screen.queryByText('Maximum Board Entity Count')).toBeNull();
   });
 
   it.each([13, 18])('shows the same font size %i in settings and Canvas', async (size) => {

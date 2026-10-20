@@ -1,4 +1,5 @@
 import type { Filters } from '../boardFilters';
+import type { BoardFilterOptions } from '../../model/board/types';
 import type { ToolbarViewModel } from '../types';
 
 type ToolbarOption = { id: string; name: string };
@@ -7,14 +8,16 @@ export function buildToolbarOptions(
   data: ToolbarViewModel,
   filters: Filters,
   viewableProjectsEnabled: boolean,
+  filterOptions: BoardFilterOptions | null,
 ) {
   const labels = data.labels;
   const projects = (viewableProjectsEnabled ? data.lists.viewable_projects : data.lists.projects) ?? [];
+  const scopedProjectIds = new Set(filters.projectIds.length ? filters.projectIds : projects.map((project) => project.id));
+  const visibleCandidates = (candidates: { id: number; name: string; available_project_ids: number[] }[]) => candidates
+    .filter((candidate) => candidate.available_project_ids.some((projectId) => scopedProjectIds.has(projectId)));
   const assigneeOptions: ToolbarOption[] = [
     { id: 'unassigned', name: labels.unassigned },
-    ...(data.lists.assignees ?? [])
-      .filter((assignee) => assignee.id !== null)
-      .map((assignee) => ({ id: String(assignee.id), name: assignee.name })),
+    ...visibleCandidates(filterOptions?.assignees ?? []).map((assignee) => ({ id: String(assignee.id), name: assignee.name })),
   ];
   const dueOptions = [
     { id: 'all', name: labels.all },
@@ -27,7 +30,7 @@ export function buildToolbarOptions(
     { id: 'none', name: labels.not_set },
   ] satisfies Array<{ id: Filters['due']; name: string }>;
   const priorityOptions: ToolbarOption[] = [
-    ...(data.lists.priorities ?? []).map((priority) => ({ id: String(priority.id), name: priority.name })),
+    ...(filterOptions?.priorities ?? []).map((priority) => ({ id: String(priority.id), name: priority.name })),
     { id: 'no_priority', name: labels.not_set },
   ];
 
@@ -42,7 +45,7 @@ export function buildToolbarOptions(
       searchText: project.name,
     })),
     statusOptions: data.columns.map((column) => ({ id: String(column.id), name: column.name })),
-    trackerOptions: (data.lists.trackers ?? []).map((tracker) => ({ id: String(tracker.id), name: tracker.name })),
+    trackerOptions: visibleCandidates(filterOptions?.trackers ?? []).map((tracker) => ({ id: String(tracker.id), name: tracker.name })),
   };
 }
 
