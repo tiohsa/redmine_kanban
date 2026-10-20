@@ -6,6 +6,7 @@ import { IssueDialogHeader } from './IssueDialogHeader';
 import { extractIssueIdFromUrl } from './utils/url';
 import { BulkSubtaskError, useBulkSubtaskMutation } from './hooks/useBulkSubtaskMutation';
 import type { BoardFilterScope } from '../model/board/filterScope';
+import { DEFAULT_ISSUE_DIALOG_SIZE, type IssueDialogSizeSettings } from '../model/view/issueDialogSize';
 import { BulkSubtaskEditor } from './BulkSubtaskEditor';
 import type { SubtaskCreateInput } from './bulkSubtasks';
 import { getJson } from './http';
@@ -27,11 +28,12 @@ import {
   calculateDialogHeight,
   getDialogContentHeight,
   MAX_DIALOG_VIEWPORT_HEIGHT_RATIO,
+  MIN_DIALOG_HEIGHT_PX,
 } from './iframe/iframeMeasurement';
 import { observeDialogChrome, observeIframeDocument } from './iframe/iframeObservers';
 import { resolveSaveLoadOutcome } from './iframe/saveFlow';
 
-const DEFAULT_DIALOG_WIDTH_PX = 1600;
+const DEFAULT_TIME_ENTRY_DIALOG_WIDTH_PX = 1600;
 const COMPACT_ICON_BUTTON_SIZE = 24;
 const COMPACT_ACTION_BUTTON_HEIGHT = 28;
 const COMPACT_ACTION_BUTTON_MIN_WIDTH = 112;
@@ -79,6 +81,7 @@ export function formatBulkSubtaskError(error: unknown, fallback: string): string
 }
 
 type Props = {
+  issueDialogSize?: IssueDialogSizeSettings;
   issueTitle?: string;
   projectId?: number;
   labels: Record<string, string>;
@@ -97,7 +100,7 @@ type Props = {
   onTimeEntrySuccess?: () => Promise<TimerMutationResult> | TimerMutationResult;
 } & ({ mode: 'time_entry'; timeEntryOperation: TimeEntryOperation; url?: never; issueId?: never } | { mode?: 'create' | 'edit'; url: string; issueId: number; timeEntryOperation?: never });
 
-export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, timeEntryOperation, issueTitle, projectId, mode = 'edit', labels, baseUrl, queryKey, projectIds = [], scopeStatusIds = [], dependencyStatusIds = scopeStatusIds, filterScope, onClose, onSuccess, onNativeWriteComplete, onTimeEntrySubmitting, onTimeEntryValidationError, onTimeEntryUnknown, onTimeEntrySuccess }: Props) {
+export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, timeEntryOperation, issueTitle, projectId, mode = 'edit', issueDialogSize = DEFAULT_ISSUE_DIALOG_SIZE, labels, baseUrl, queryKey, projectIds = [], scopeStatusIds = [], dependencyStatusIds = scopeStatusIds, filterScope, onClose, onSuccess, onNativeWriteComplete, onTimeEntrySubmitting, onTimeEntryValidationError, onTimeEntryUnknown, onTimeEntrySuccess }: Props) {
   const url = timeEntryOperation?.url ?? navigationUrl!;
   const issueId = timeEntryOperation?.issueId ?? targetIssueId!;
   const [subtasks, setSubtasks] = useState<SubtaskCreateInput[]>([]);
@@ -110,6 +113,7 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
   const [isLoading, setIsLoading] = useState(true);
   const [currentUrl, setCurrentUrl] = useState(url);
   const [dialogHeightPx, setDialogHeightPx] = useState<number | null>(null);
+  const [viewportSize, setViewportSize] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }));
   const [iframeError, setIframeError] = useState<string | null>(null);
   const [isSubtasksOpen, setIsSubtasksOpen] = useState(false);
   const [subtaskRegistrationConsumed, setSubtaskRegistrationConsumed] = useState(false);
@@ -181,6 +185,8 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
   }, [mode]);
 
   const measureDialogHeight = useCallback(() => {
+    setViewportSize((previous) => previous.width === window.innerWidth && previous.height === window.innerHeight
+      ? previous : { width: window.innerWidth, height: window.innerHeight });
     const doc = iframeRef.current?.contentDocument;
     if (!doc) {
       setDialogHeightPx(Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO));
@@ -439,7 +445,7 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
         // A successful Time Entry redirect must be resolved before optional
         // iframe decoration.  Otherwise an observer/style error can turn a
         // confirmed Redmine POST into the conservative `unknown` state.
-        if (isSubmittingRef.current) {
+        if (isSubmittingRef.current && (mode === 'time_entry' || saveTargetRef.current === 'time_entry')) {
           const outcome = resolveSaveLoadOutcome({
             doc,
             currentUrl: nextCurrentUrl,
@@ -695,17 +701,26 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
   const issueDialogLinkUrl = currentUrl || url;
   const issueDialogLinkLabel = labels.open_in_redmine;
   const closeLabel = labels.close;
-  const maxDialogHeight = Math.floor(window.innerHeight * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO);
-  const effectiveDialogHeight = dialogHeightPx ?? maxDialogHeight;
+  const isIssueDialog = mode !== 'time_entry';
+  const isFullScreen = isIssueDialog && issueDialogSize.fullScreen;
+  const hasFixedDialogSize = isIssueDialog && (isFullScreen || issueDialogSize.heightMode === 'fixed');
+  const maxDialogHeight = Math.floor(viewportSize.height * MAX_DIALOG_VIEWPORT_HEIGHT_RATIO);
+  // Keep automatic measurements independent so observers cannot overwrite a configured size.
+  const effectiveDialogHeight = isIssueDialog && issueDialogSize.heightMode === 'fixed'
+    ? Math.min(maxDialogHeight, Math.max(MIN_DIALOG_HEIGHT_PX, Math.floor(viewportSize.height * issueDialogSize.heightPercent / 100)))
+    : dialogHeightPx ?? maxDialogHeight;
+  const effectiveDialogWidth = isIssueDialog
+    ? Math.min(issueDialogSize.widthPx, viewportSize.width * 0.98)
+    : DEFAULT_TIME_ENTRY_DIALOG_WIDTH_PX;
 
   const containerStyle: React.CSSProperties = {
-    width: `${DEFAULT_DIALOG_WIDTH_PX}px`,
-    maxWidth: '98vw',
-    height: `${effectiveDialogHeight}px`,
-    maxHeight: `${maxDialogHeight}px`,
+    width: `${isFullScreen ? viewportSize.width : effectiveDialogWidth}px`,
+    maxWidth: isFullScreen ? '100vw' : '98vw',
+    height: `${isFullScreen ? viewportSize.height : effectiveDialogHeight}px`,
+    maxHeight: `${isFullScreen ? viewportSize.height : maxDialogHeight}px`,
     backgroundColor: '#fff',
-    borderRadius: '6px',
-    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1)',
+    borderRadius: isFullScreen ? 0 : '6px',
+    boxShadow: isFullScreen ? 'none' : '0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1)',
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
@@ -724,7 +739,7 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
       }}
     >
       <div
-        className="rk-iframe-dialog-container rk-iframe-dialog-container-issue"
+        className={`rk-iframe-dialog-container rk-iframe-dialog-container-issue${hasFixedDialogSize ? ' rk-iframe-dialog-container-fixed-size' : ''}`}
         style={containerStyle}
         onClick={(event) => event.stopPropagation()}
       >

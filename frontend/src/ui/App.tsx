@@ -72,6 +72,8 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     setFontSize,
     timeEntryOnClose,
     setTimeEntryOnClose,
+    issueDialogSize,
+    setIssueDialogSize,
     laneType,
     setLaneType,
     agingWarnDays,
@@ -231,6 +233,8 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
           onToggleShowSubtasks={() => setShowSubtasks((value) => !value)}
           fontSize={fontSize}
           onChangeFontSize={setFontSize}
+          issueDialogSize={issueDialogSize}
+          onChangeIssueDialogSize={setIssueDialogSize}
           canCreate={showCreate}
           createDisabled={!canCreate}
           onCreate={() => {
@@ -441,6 +445,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
       {dialogs.iframeEditContext ? (
         <IframeEditDialog
           url={dialogs.iframeEditContext.url}
+          issueDialogSize={issueDialogSize}
           issueId={dialogs.iframeEditContext.issueId}
           issueTitle={dialogs.iframeEditContext.issueTitle}
           projectId={dialogs.iframeEditContext.projectId}
@@ -466,6 +471,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
       {dialogs.iframeCreateContext ? (
         <IframeEditDialog
           url={dialogs.iframeCreateContext.url}
+          issueDialogSize={issueDialogSize}
           issueId={0}
           mode="create"
           labels={dialogs.iframeCreateContext.labels}

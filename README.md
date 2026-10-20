@@ -240,6 +240,8 @@ The active view ID is stored separately under the same key with an `:active` suf
 
 Toolbar controls support Tab, Enter/Space, and Escape. Escape closes the active popover and returns focus to its trigger; outside clicks retain their own focus. Display settings offer the unchanged default font size of 13px. A saved aging warning threshold of 0 remains 0 after reload.
 
+Display settings also include **Ticket dialog** size controls: width (900/1200/1500px), height (automatic or 50–90% of the viewport), and **Fill viewport**. Defaults are 1200px, automatic height, and fill viewport off; **Reset size** restores them. Settings are saved per user in this browser and shared across projects. They apply to issue viewing, editing, and creation; time-entry dialogs and saved views keep their existing behavior.
+
 ## License
 
 Plugin code: GPLv2. Bundled third-party fonts: see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

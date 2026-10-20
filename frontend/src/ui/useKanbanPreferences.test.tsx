@@ -5,10 +5,56 @@ import { StrictMode, useEffect } from 'react';
 import { describe, expect, it, beforeEach } from 'vitest';
 import type { SavedViewSettings } from '../model/view/savedViews';
 import { useKanbanPreferences } from './useKanbanPreferences';
+import { DEFAULT_ISSUE_DIALOG_SIZE } from '../model/view/issueDialogSize';
 
 describe('useKanbanPreferences', () => {
   beforeEach(() => {
     localStorage.clear();
+  });
+
+  it('hydrates dialog sizes only after user discovery and isolates users during scope changes', () => {
+    const saved = { widthPx: 900, heightMode: 'fixed', heightPercent: 65, fullScreen: true } as const;
+    localStorage.setItem('rk_issue_dialog_size:user:7', JSON.stringify(saved));
+    const { result, rerender, unmount } = renderHook(({ url }) => useKanbanPreferences(url), {
+      initialProps: { url: '/projects/alpha/kanban/data' }, wrapper: StrictMode,
+    });
+    expect(result.current.issueDialogSize).toEqual(DEFAULT_ISSUE_DIALOG_SIZE);
+    expect(localStorage.length).toBe(1);
+    act(() => { result.current.setCurrentUserId(7); });
+    expect(result.current.issueDialogSize).toEqual(saved);
+    expect(JSON.parse(localStorage.getItem('rk_issue_dialog_size:user:7')!)).toEqual(saved);
+
+    rerender({ url: '/projects/beta/kanban/data' });
+    expect(result.current.issueDialogSize).toEqual(saved);
+    act(() => { result.current.setCurrentUserId(8); });
+    expect(result.current.issueDialogSize).toEqual(DEFAULT_ISSUE_DIALOG_SIZE);
+    act(() => { result.current.setIssueDialogSize({ ...DEFAULT_ISSUE_DIALOG_SIZE, widthPx: 1500 }); });
+    expect(JSON.parse(localStorage.getItem('rk_issue_dialog_size:user:7')!)).toEqual(saved);
+    act(() => { result.current.setCurrentUserId(7); });
+    expect(result.current.issueDialogSize).toEqual(saved);
+    unmount();
+
+    const restored = renderHook(() => useKanbanPreferences('/projects/gamma/kanban/data', 8));
+    expect(restored.result.current.issueDialogSize).toEqual({ ...DEFAULT_ISSUE_DIALOG_SIZE, widthPx: 1500 });
+  });
+
+  it.each([
+    'broken-json', 'null', '[]', 'true',
+    JSON.stringify({ widthPx: 1000, heightMode: 'content', heightPercent: 72, fullScreen: 'true' }),
+    JSON.stringify({ widthPx: '900', heightPercent: 95, fullScreen: 1 }),
+    JSON.stringify({ heightPercent: 45 }),
+    JSON.stringify({ heightPercent: 65.5 }),
+  ])('repairs corrupt dialog size settings %s', (saved) => {
+    localStorage.setItem('rk_issue_dialog_size:user:7', saved);
+    const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data', 7));
+    expect(result.current.issueDialogSize).toEqual(DEFAULT_ISSUE_DIALOG_SIZE);
+    expect(JSON.parse(localStorage.getItem('rk_issue_dialog_size:user:7')!)).toEqual(DEFAULT_ISSUE_DIALOG_SIZE);
+  });
+
+  it('restores valid dialog fields when another stored field is invalid', () => {
+    localStorage.setItem('rk_issue_dialog_size:user:7', JSON.stringify({ widthPx: 900, heightMode: 'fixed', heightPercent: 72, fullScreen: true }));
+    const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data', 7));
+    expect(result.current.issueDialogSize).toEqual({ widthPx: 900, heightMode: 'fixed', heightPercent: 80, fullScreen: true });
   });
 
   it('applies all saved settings in one render and preserves excluded settings', () => {
@@ -18,7 +64,7 @@ describe('useKanbanPreferences', () => {
       useEffect(() => { if (preferences.preferencesReady) observed.push(preferences.viewSettings); }, [preferences.preferencesReady, preferences.viewSettings]);
       return preferences;
     });
-    act(() => { result.current.setFontSize(18); result.current.setAgingWarnDays(0); result.current.setCardDisplayMode('single_line'); });
+    act(() => { result.current.setFontSize(18); result.current.setAgingWarnDays(0); result.current.setCardDisplayMode('single_line'); result.current.setIssueDialogSize({ ...DEFAULT_ISSUE_DIALOG_SIZE, widthPx: 900 }); });
     observed.length = 0;
     const saved: SavedViewSettings = { filters: { assigneeIds: ['12'], q: 'saved', due: 'custom', dueDays: 5, priority: [], priorityFilterEnabled: true, projectIds: [4], statusIds: [2], trackerIds: [3] }, sortConfig: [{ field: 'due', direction: 'asc' }], laneType: 'category', hiddenStatusIds: [6], viewableProjectsEnabled: true };
     act(() => result.current.applyViewSettings(saved));
@@ -26,6 +72,7 @@ describe('useKanbanPreferences', () => {
     expect(result.current.fontSize).toBe(18);
     expect(result.current.agingWarnDays).toBe(0);
     expect(result.current.cardDisplayMode).toBe('single_line');
+    expect(result.current.issueDialogSize.widthPx).toBe(900);
     expect(JSON.parse(localStorage.getItem('rk_filters:/projects/demo/kanban:user:7') ?? '{}')).toEqual(saved.filters);
   });
 

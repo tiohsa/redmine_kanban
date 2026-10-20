@@ -3,6 +3,7 @@ import type { ToolbarViewModel } from './types';
 import type { Filters } from './boardFilters';
 import type { SortConfig } from './board/sort';
 import type { FitMode } from '../model/view/types';
+import type { IssueDialogSizeSettings } from '../model/view/issueDialogSize';
 import type { FilterOptionsState } from '../model/board/types';
 import type { CardDisplayMode, LaneType } from './useKanbanPreferences';
 import { buildToolbarOptions, togglePriorityFilter } from './toolbar/toolbarOptions';
@@ -30,6 +31,8 @@ type ToolbarProps = {
   onToggleShowSubtasks: () => void;
   fontSize: number;
   onChangeFontSize: (size: number) => void;
+  issueDialogSize?: IssueDialogSizeSettings;
+  onChangeIssueDialogSize?: (settings: IssueDialogSizeSettings) => void;
   canCreate: boolean;
   createDisabled?: boolean;
   onCreate: () => void;
@@ -68,6 +71,8 @@ export function KanbanToolbar({
   onToggleShowSubtasks,
   fontSize,
   onChangeFontSize,
+  issueDialogSize,
+  onChangeIssueDialogSize,
   canCreate,
   createDisabled = false,
   onCreate,
@@ -304,6 +309,8 @@ export function KanbanToolbar({
           onChangeCardDisplayMode={onChangeCardDisplayMode}
           fontSize={fontSize}
           onChangeFontSize={onChangeFontSize}
+          issueDialogSize={issueDialogSize}
+          onChangeIssueDialogSize={onChangeIssueDialogSize}
         />
 
         <button type="button" className={`rk-btn ${fullWindow ? 'rk-btn-toggle-active' : ''}`} onClick={onToggleFullWindow} aria-label={fullWindow ? labels.normal_view : labels.fullscreen_view} title={fullWindow ? labels.normal_view : labels.fullscreen_view}>

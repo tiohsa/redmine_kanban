@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IframeEditDialog } from './IframeEditDialog';
 import { getCleanDialogStyles } from './board/iframeStyles';
+import { DEFAULT_ISSUE_DIALOG_SIZE, type IssueDialogSizeSettings } from '../model/view/issueDialogSize';
 
 const mutateAsyncMock = vi.hoisted(() => vi.fn());
 const getJsonMock = vi.hoisted(() => vi.fn());
@@ -97,6 +98,118 @@ describe('IframeEditDialog layout variants', () => {
 
   afterEach(() => {
     cleanup();
+  });
+
+  describe('configured sizes', () => {
+    const common = { labels, baseUrl: '/projects/demo/kanban', queryKey: ['kanban', 'board'], onClose: () => {}, onSuccess: () => {} };
+    const fixed: IssueDialogSizeSettings = { widthPx: 1500, heightMode: 'fixed', heightPercent: 65, fullScreen: false };
+    let resizeCallbacks: Array<() => void>;
+
+    beforeEach(() => {
+      vi.stubGlobal('innerWidth', 2000);
+      vi.stubGlobal('innerHeight', 1000);
+      resizeCallbacks = [];
+      window.ResizeObserver = class extends ResizeObserverMock {
+        constructor(callback: () => void) { super(); resizeCallbacks.push(callback); }
+      } as unknown as typeof ResizeObserver;
+    });
+
+    afterEach(() => { vi.unstubAllGlobals(); });
+
+    function loadContent(container: HTMLElement, height: number, url = '/issues/1/edit') {
+      const iframe = container.querySelector('iframe')!;
+      const doc = document.implementation.createHTMLDocument('iframe');
+      doc.body.innerHTML = '<div id="content">Issue content</div>';
+      const content = doc.querySelector<HTMLElement>('#content')!;
+      setElementHeight(content, height);
+      Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+      Object.defineProperty(iframe, 'contentWindow', {
+        value: { location: { href: `http://example.com${url}` }, document: doc, addEventListener: vi.fn(), removeEventListener: vi.fn() }, configurable: true,
+      });
+      fireEvent.load(iframe);
+      return { iframe, content };
+    }
+
+    it.each(['/issues/1', '/issues/1/edit', '/issues/new'])('uses configured sizes for %s without remounting its iframe', async (url) => {
+      const props = { ...common, url, issueId: url.endsWith('new') ? 0 : 1, mode: url.endsWith('new') ? 'create' as const : 'edit' as const };
+      const view = render(<IframeEditDialog {...props} issueDialogSize={fixed} />);
+      const { iframe, content } = loadContent(view.container, 2000, url);
+      const dialog = screen.getByTestId('issue-dialog-header').parentElement!;
+      expect(dialog.style.width).toBe('1500px');
+      expect(dialog.style.height).toBe('650px');
+      setElementHeight(content, 120);
+      act(() => { resizeCallbacks.forEach((callback) => callback()); });
+      fireEvent.click(screen.getByRole('button', { name: /子チケット一括登録/ }));
+      expect(dialog.style.height).toBe('650px');
+
+      view.rerender(<IframeEditDialog {...props} issueDialogSize={{ ...fixed, fullScreen: true }} />);
+      expect(dialog.style.width).toBe('2000px');
+      expect(dialog.style.height).toBe('1000px');
+      expect(dialog.style.maxWidth).toBe('100vw');
+      expect(dialog.style.maxHeight).toBe('1000px');
+      expect(dialog.style.borderRadius).toBe('0');
+      expect(dialog.style.boxShadow).toBe('none');
+      expect(view.container.querySelector('iframe')).toBe(iframe);
+
+      vi.stubGlobal('innerWidth', 800);
+      vi.stubGlobal('innerHeight', 800);
+      fireEvent.resize(window);
+      expect(dialog.style.width).toBe('800px');
+      expect(dialog.style.height).toBe('800px');
+      view.rerender(<IframeEditDialog {...props} issueDialogSize={fixed} />);
+      expect(dialog.style.width).toBe('784px');
+      expect(dialog.style.height).toBe('520px');
+      expect(dialog.style.borderRadius).toBe('6px');
+      expect(dialog.style.boxShadow).not.toBe('none');
+
+      view.rerender(<IframeEditDialog {...props} issueDialogSize={DEFAULT_ISSUE_DIALOG_SIZE} />);
+      act(() => { resizeCallbacks.forEach((callback) => callback()); });
+      await waitFor(() => expect(dialog.style.height).toBe('320px'));
+    });
+
+    it('keeps fixed height through iframe navigation and content observer callbacks', async () => {
+      const view = render(<IframeEditDialog {...common} url="/issues/1/edit" issueId={1} issueDialogSize={fixed} />);
+      loadContent(view.container, 2000);
+      const dialog = screen.getByTestId('issue-dialog-header').parentElement!;
+      loadContent(view.container, 120, '/issues/1');
+      act(() => { resizeCallbacks.forEach((callback) => callback()); });
+      expect(dialog.style.height).toBe('650px');
+      expect(await screen.findByRole('button', { name: labels.edit_issue })).toBeTruthy();
+    });
+
+    it.each([900, 1200, 1500] as const)('uses width %i and clamps it on a narrow viewport', (widthPx) => {
+      const view = render(<IframeEditDialog {...common} url="/issues/1/edit" issueId={1} issueDialogSize={{ ...fixed, widthPx }} />);
+      const dialog = screen.getByTestId('issue-dialog-header').parentElement!;
+      expect(dialog.style.width).toBe(`${widthPx}px`);
+      expect(dialog.style.maxWidth).toBe('98vw');
+      vi.stubGlobal('innerWidth', 600);
+      fireEvent.resize(window);
+      expect(dialog.style.width).toBe('588px');
+      view.unmount();
+    });
+
+    it('limits fixed height by the existing minimum and viewport maximum', () => {
+      vi.stubGlobal('innerHeight', 600);
+      render(<IframeEditDialog {...common} url="/issues/1/edit" issueId={1} issueDialogSize={{ ...fixed, heightPercent: 50 }} />);
+      const dialog = screen.getByTestId('issue-dialog-header').parentElement!;
+      expect(dialog.style.height).toBe('320px');
+      vi.stubGlobal('innerHeight', 200);
+      fireEvent.resize(window);
+      expect(dialog.style.height).toBe('180px');
+      expect(dialog.style.maxHeight).toBe('180px');
+    });
+
+    it('preserves time-entry width and automatic height even with fixed/fullscreen issue settings', async () => {
+      const view = render(<IframeEditDialog {...common} mode="time_entry"
+        timeEntryOperation={{ origin: 'time_entry_on_close', issueId: 1, url: '/issues/1/time_entries/new' }}
+        issueDialogSize={{ ...fixed, fullScreen: true }} />);
+      loadContent(view.container, 120, '/issues/1/time_entries/new');
+      const dialog = screen.getByTestId('issue-dialog-header').parentElement!;
+      expect(dialog.style.width).toBe('1600px');
+      expect(dialog.style.maxWidth).toBe('98vw');
+      await waitFor(() => expect(dialog.style.height).toBe('320px'));
+      expect(dialog.style.borderRadius).toBe('6px');
+    });
   });
 
   it('renders compact issue header and left-aligned footer actions', () => {
@@ -195,6 +308,51 @@ describe('IframeEditDialog layout variants', () => {
       expect(screen.getByRole('button', { name: 'チケットを編集' })).toBeTruthy();
       expect(onNativeWriteComplete).toHaveBeenCalledOnce();
     });
+  });
+
+  it.each(['edit', 'create', 'journal'] as const)('decorates the new document after %s save and keeps its controls working', async (target) => {
+    const onClose = vi.fn();
+    const onSuccess = vi.fn();
+    const onNativeWriteComplete = vi.fn();
+    const initialUrl = target === 'create' ? '/issues/new' : target === 'journal' ? '/issues/1' : '/issues/1/edit';
+    const savedId = target === 'create' ? 42 : 1;
+    const view = render(<IframeEditDialog url={initialUrl} issueId={target === 'create' ? 0 : 1}
+      mode={target === 'create' ? 'create' : 'edit'} labels={labels} baseUrl="" queryKey={['kanban', 'board']}
+      onClose={onClose} onSuccess={onSuccess} onNativeWriteComplete={onNativeWriteComplete} />);
+    const iframe = view.container.querySelector('iframe')!;
+    const initialDoc = document.implementation.createHTMLDocument('editor');
+    initialDoc.body.innerHTML = target === 'journal'
+      ? '<form id="journal-42-form"><textarea name="journal[notes]"></textarea><button type="submit">Save</button></form>'
+      : '<form id="issue-form"><button type="submit">Save</button></form>';
+    const initialWindow = { location: { href: `http://example.com${initialUrl}` }, document: initialDoc, addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    Object.defineProperty(iframe, 'contentDocument', { value: initialDoc, configurable: true });
+    Object.defineProperty(iframe, 'contentWindow', { value: initialWindow, configurable: true });
+    const nativeClick = vi.spyOn(initialDoc.querySelector('button')!, 'click').mockImplementation(() => undefined);
+    fireEvent.load(iframe);
+    const saveLabel = target === 'create' ? labels.create_issue : target === 'journal' ? labels.save_comment : labels.save;
+    fireEvent.click(await screen.findByRole('button', { name: saveLabel }));
+    expect(nativeClick).toHaveBeenCalledOnce();
+
+    const savedDoc = document.implementation.createHTMLDocument('saved issue');
+    savedDoc.body.innerHTML = '<div id="top-menu">Menu</div><div id="header">Redmine header</div><div id="main-menu">Navigation</div><div id="content"><div class="wiki"><a href="/help">Help</a></div><div class="issue details">Saved</div></div><div id="footer">Footer</div>';
+    const savedWindow = { location: { href: `http://example.com/issues/${savedId}` }, document: savedDoc, addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    Object.defineProperty(iframe, 'contentDocument', { value: savedDoc, configurable: true });
+    Object.defineProperty(iframe, 'contentWindow', { value: savedWindow, configurable: true });
+    fireEvent.load(iframe);
+    await screen.findByRole('button', { name: labels.edit_issue });
+    expect(savedDoc.head.querySelector('style')?.textContent).toBe(getCleanDialogStyles({ variant: 'issue-view' }));
+    expect(savedDoc.querySelector('a')?.target).toBe('_blank');
+    expect(savedWindow.addEventListener).toHaveBeenCalledWith('keydown', expect.any(Function), true);
+    fireEvent.load(iframe);
+    expect(onSuccess).toHaveBeenCalledOnce();
+    expect(onNativeWriteComplete).toHaveBeenCalledOnce();
+    expect(mutateAsyncMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: labels.edit_issue }));
+    expect(savedWindow.location.href).toBe(`http://example.com/issues/${savedId}/edit`);
+    const escapeListener = savedWindow.addEventListener.mock.calls.find(([name]) => name === 'keydown')![1];
+    act(() => escapeListener(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true })));
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it('keeps the initial edit save locked when the iframe reloads the edit form', async () => {
@@ -806,6 +964,19 @@ describe('IframeEditDialog layout variants', () => {
     await waitFor(() => expect(submit).toHaveBeenCalledOnce());
     return { ...view, iframe, doc, iframeWindow, submit, onTimeEntrySubmitting, onTimeEntryValidationError, onTimeEntrySuccess, onTimeEntryUnknown, onSuccess };
   }
+
+  it('confirms a saved time entry before optional iframe decoration can fail', async () => {
+    const state = await openTimeEntry();
+    state.iframeWindow.location.href = new URL('/issues/1', state.iframe.src).href;
+    state.doc.body.innerHTML = '<div id="flash_notice">Created</div>';
+    const appendStyle = vi.spyOn(state.doc.head, 'appendChild').mockImplementation(() => { throw new Error('Decoration failed'); });
+    fireEvent.load(state.iframe);
+    await waitFor(() => expect(state.onSuccess).toHaveBeenCalledOnce());
+    expect(state.onTimeEntrySuccess).toHaveBeenCalledOnce();
+    expect(state.onTimeEntryUnknown).not.toHaveBeenCalled();
+    expect(appendStyle).not.toHaveBeenCalled();
+    appendStyle.mockRestore();
+  });
 
   it('restores Save after validation and submits the corrected form once before completing', async () => {
     const state = await openTimeEntry();

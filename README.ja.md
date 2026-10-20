@@ -83,6 +83,8 @@ pnpm run build
 
 ## 表示設定
 
+「チケットダイアログ」では幅（900／1200／1500px）、高さ（自動または画面高さの50〜90%）、全画面表示を設定できます。初期値は幅1200px・高さ自動・全画面OFFで、「サイズをリセット」で戻せます。設定はこのブラウザーのユーザー単位で保存し、プロジェクト間で共有します。チケットの表示・編集・新規作成に適用し、作業時間入力と保存ビューには適用しません。
+
 プラグイン全体の設定画面はありません。各ユーザーはボード上でスイムレーン、非表示ステータス、停滞閾値、並び替え、表示幅、文字サイズ、子チケット表示を設定できます。snapshotのAdmission Controlには、Issue entity 10,000件の有限なサーバー安全上限を使用します。カード移動では、ユーザーが明示したレーン属性とステータスだけを変更し、Redmine の Workflow と権限を正とします。
 
 APIは対象Project/StatusおよびIssue filter scopeの完全な単一snapshotを返します。Subject、担当者、Tracker、Priority、期限filterはAdmission前にserver側のprimary membershipを絞ります。dependency descendantがfilterに一致する場合、そのprimary ancestorもmembershipに残し、各primaryの完全なdependency subtreeをsnapshotに含めます。Frontendも最終表示のため同じfilterを適用します。membershipはprimary Issueと、そのprimaryを表示するために必要なdependency-only descendantのunique unionです。primaryがちょうど上限に達した場合もdescendantの存在をprobeし、対象が上限を超える場合は一部Issueを返さず、構造化422エラーを返します。entity件数はページサイズではなくAdmission Controlです。サーバーの既定hard ceilingは10,000件で、`REDMINE_KANBAN_MAX_BOARD_ENTITIES`を使ってそれ以下へ引き下げられます。未設定・空・不正・0・負数は10,000件になり、10,000を超える値も10,000に制限されます。サーバーは `REDMINE_KANBAN_MAX_RESPONSE_BYTES`（デフォルト8 MiB）、`REDMINE_KANBAN_MAX_BOARD_QUERIES`（デフォルト20）、`REDMINE_KANBAN_MAX_TOTAL_BOARD_QUERIES`（合計SQL回数、デフォルト100）でも資源を制限します。cursor、offset、子ツリーの追加取得、Load more操作はありません。運用時に性能ログが必要な場合だけ `REDMINE_KANBAN_PERF_LOG=1` を指定してください。
