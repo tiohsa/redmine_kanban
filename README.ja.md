@@ -38,9 +38,9 @@ Redmine Kanban は、作業の滞留を早期に可視化し、チームのフ�
 
 ## スクリーンショット
 
-![Kanban demo](./images/demo-current.gif)
-![Kanban board](./images/kanban.png)
-![Settings](./images/settings.png)
+![Redmine Kanban のボード画面](./website/public/images/kanban-overview-ja.png)
+![担当者別のスイムレーンを表示したボード](./website/public/images/swimlanes-ja.png)
+![Kanban の表示設定](./website/public/images/display-settings-ja.png)
 
 ## クイックスタート（Docker Compose）
 

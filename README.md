@@ -37,9 +37,9 @@ Redmine Kanban helps teams keep flow healthy and visible by exposing stalled wor
 
 ## Screenshots
 
-![Kanban demo](./images/demo-current.gif)
-![Kanban board](./images/kanban.png)
-![Settings](./images/settings.png)
+![Redmine Kanban board overview](./website/public/images/kanban-overview-en.png)
+![Assignee swimlanes on the Kanban board](./website/public/images/swimlanes-en.png)
+![Kanban display settings](./website/public/images/display-settings-en.png)
 
 ## Quick Start (Docker Compose)
 
