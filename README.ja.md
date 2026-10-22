@@ -76,6 +76,18 @@ pnpm run build
 
 インストール、基本操作、表示設定、フィルター、保存ビュー、トラブルシューティングは[日本語マニュアル](https://tiohsa.github.io/redmine_kanban/ja/)を参照してください。
 
+### 利用方法
+
+[基本操作](website/ja/guide/basic-operations.md)を参照してください。
+
+### 表示設定
+
+[表示設定](website/ja/features/display-settings.md)を参照してください。
+
+### 復旧と保存ビュー
+
+[トラブルシューティングと復旧](website/ja/troubleshooting/index.md)および[保存ビュー](website/ja/features/saved-views.md)を参照してください。
+
 ## 技術スタック
 
 | レイヤー | 技術 |
@@ -155,6 +167,14 @@ REDMINE_BASE_URL=http://127.0.0.1:3002 \
 ## 開発者向け資料
 
 API仕様とCIの詳細は[開発者向け資料](DEVELOPMENT.ja.md)を参照してください。
+
+### API エンドポイント
+
+[開発者向け資料のAPI エンドポイント](DEVELOPMENT.ja.md#api-エンドポイント)を参照してください。
+
+### CI
+
+[開発者向け資料のCI](DEVELOPMENT.ja.md#ci)を参照してください。
 
 ## ライセンス
 

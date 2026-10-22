@@ -75,6 +75,18 @@ pnpm run build
 
 See the [English manual](https://tiohsa.github.io/redmine_kanban/en/) for installation, board operations, display settings, filtering, saved views, and troubleshooting.
 
+### Usage
+
+See [basic board operations](website/en/guide/basic-operations.md).
+
+### Display preferences
+
+See [display settings](website/en/features/display-settings.md).
+
+### Recovery and saved views
+
+See [troubleshooting and recovery](website/en/troubleshooting/index.md) and [saved views](website/en/features/saved-views.md).
+
 ## Technology Stack
 
 | Layer | Technology |
@@ -154,6 +166,14 @@ REDMINE_BASE_URL=http://127.0.0.1:3002 \
 ## Developer reference
 
 API contracts and CI details for contributors are in [the developer reference](DEVELOPMENT.md).
+
+### API Endpoints
+
+See [API endpoints in the developer reference](DEVELOPMENT.md#api-endpoints).
+
+### CI
+
+See [CI in the developer reference](DEVELOPMENT.md#ci).
 
 ## License
 
