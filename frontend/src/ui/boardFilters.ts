@@ -227,42 +227,32 @@ function matchesIssue(issue: Issue, _data: BoardData | null, filters: Filters, q
       if (!matchesPriority) return false;
     }
 
-    if (filters.due !== 'all') {
-      if (!issue.due_date) return filters.due === 'none';
-      if (filters.due === 'none') return false;
+    return matchesDueDate(issue.due_date, filters, now0, start, end);
+}
 
-      const due = parseISODate(issue.due_date);
-      if (!due) return false;
+function matchesDueDate(dueDate: Issue['due_date'], filters: Filters, now0: Date, start: Date, end: Date): boolean {
+  if (filters.due === 'all') return true;
+  if (!dueDate) return filters.due === 'none';
+  if (filters.due === 'none') return false;
 
-      if (filters.due === 'overdue') return due < now0;
-      if (filters.due === 'thisweek') return due >= start && due <= end;
+  const due = parseISODate(dueDate);
+  if (!due) return false;
 
-      if (filters.due === '3days') {
-        const limit = new Date(now0);
-        limit.setDate(now0.getDate() + 3);
-        return due >= now0 && due < limit;
-      }
+  if (filters.due === 'overdue') return due < now0;
+  if (filters.due === 'thisweek') return due >= start && due <= end;
 
-      if (filters.due === '7days') {
-        const limit = new Date(now0);
-        limit.setDate(now0.getDate() + 7);
-        return due >= now0 && due < limit;
-      }
+  let days: number;
+  switch (filters.due) {
+    case '1day': days = 1; break;
+    case '3days': days = 3; break;
+    case '7days': days = 7; break;
+    case 'custom': days = filters.dueDays ?? 7; break;
+    default: return true;
+  }
 
-      if (filters.due === '1day') {
-        const limit = new Date(now0);
-        limit.setDate(now0.getDate() + 1);
-        return due >= now0 && due < limit;
-      }
-
-      if (filters.due === 'custom') {
-        const limit = new Date(now0);
-        limit.setDate(now0.getDate() + (filters.dueDays ?? 7));
-        return due >= now0 && due < limit;
-      }
-    }
-
-    return true;
+  const limit = new Date(now0);
+  limit.setDate(now0.getDate() + days);
+  return due >= now0 && due < limit;
 }
 
 function parseISODate(dateString: string): Date | null {

@@ -534,6 +534,41 @@ describe('buildVisibleIssues', () => {
     expect(buildVisibleIssues(data, makeFilters({ due: '1day' }), new Set(), null).map((issue) => issue.id)).toEqual([1]);
   });
 
+  it.each<{ due: Filters['due']; dueDays?: number; expectedIds: number[] }>([
+    { due: 'all', expectedIds: [1, 2, 3, 4, 5, 6, 7, 8, 9] },
+    { due: 'none', expectedIds: [8] },
+    { due: 'overdue', expectedIds: [1] },
+    { due: 'thisweek', expectedIds: [1, 2, 3, 4, 5] },
+    { due: '1day', expectedIds: [2] },
+    { due: '3days', expectedIds: [2, 3, 4] },
+    { due: '7days', expectedIds: [2, 3, 4, 5, 6] },
+    { due: 'custom', dueDays: 2, expectedIds: [2, 3] },
+    { due: 'custom', expectedIds: [2, 3, 4, 5, 6] },
+    { due: 'custom', dueDays: 0, expectedIds: [] },
+    { due: 'custom', dueDays: -1, expectedIds: [] },
+  ])('preserves root and descendant date boundaries for $due ($dueDays days)', ({ due, dueDays, expectedIds }) => {
+    const candidates = [
+      '2026-12-30', '2026-12-31', '2027-01-01', '2027-01-02',
+      '2027-01-03', '2027-01-06', '2027-01-07', null, 'invalid',
+    ].map((dueDate, index) => ({
+      ...makeIssue(index + 1, 1, `Issue ${index + 1}`, { due_date: dueDate }),
+      is_closed: false,
+    }));
+    const data = makeBoardData(candidates);
+    data.meta.filter_scope = {
+      q: '', assignee_ids: [], include_unassigned: false, tracker_ids: [],
+      priority_filter_enabled: false, priority_ids: [], include_no_priority: false,
+      due, date_anchor: '2026-12-31',
+    };
+    const filters = makeFilters({ due, dueDays });
+
+    expect(buildVisibleIssues(data, filters, new Set(), null).map((issue) => issue.id)).toEqual(expectedIds);
+
+    const nestedData = { ...data, issues: [makeIssue(10, 1, 'Parent', { subtasks: candidates })] };
+    const nestedIssues = buildVisibleIssues(nestedData, filters, new Set(), null);
+    expect(nestedIssues[0]?.subtasks?.map((issue) => issue.id) ?? []).toEqual(expectedIds);
+  });
+
   it('hides a parent when neither it nor any descendant matches', () => {
     const data = makeBoardData([makeIssue(1, 1, 'Parent', {
       subtasks: [{ id: 2, subject: 'Child', status_id: 1, tracker_id: 1, assigned_to_id: 3, is_closed: false }],
