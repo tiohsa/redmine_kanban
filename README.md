@@ -3,7 +3,7 @@
 Modern Kanban board plugin for Redmine, built with React + Vite.
 It provides task visualization, per-user display preferences, aging detection, and flow-focused controls.
 
-[日本語版はこちら](README.ja.md) | [Setup](../../SETUP.md) | [Requirements](../../requirement.md)
+> **Documentation**: [English manual](https://tiohsa.github.io/redmine_kanban/en/) | [日本語マニュアル](https://tiohsa.github.io/redmine_kanban/ja/) | [日本語版README](README.ja.md)
 
 ## Table of Contents
 
@@ -40,6 +40,7 @@ Redmine Kanban helps teams keep flow healthy and visible by exposing stalled wor
 
 ## Screenshots
 
+![Kanban demo](./images/demo-current.gif)
 ![Kanban board](./images/kanban.png)
 ![Settings](./images/settings.png)
 

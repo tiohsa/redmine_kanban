@@ -3,7 +3,7 @@
 Redmine の運用を強化する、React + Vite で構築されたモダンなカンバンボードプラグインです。
 個人ごとの表示設定と停滞検知により、日々のフローを見えやすくします。
 
-[English version is here](README.md) | [セットアップ](../../SETUP.md) | [要件定義](../../requirement.md)
+> **公式マニュアル**: [日本語マニュアル](https://tiohsa.github.io/redmine_kanban/ja/) | [English manual](https://tiohsa.github.io/redmine_kanban/en/) | [English README](README.md)
 
 ## 目次
 
@@ -41,6 +41,7 @@ Redmine Kanban は、作業の滞留を早期に可視化し、チームのフ�
 
 ## スクリーンショット
 
+![Kanban demo](./images/demo-current.gif)
 ![Kanban board](./images/kanban.png)
 ![Settings](./images/settings.png)
 
