@@ -12,14 +12,11 @@ Redmine の運用を強化する、React + Vite で構築されたモダンな�
 - [スクリーンショット](#スクリーンショット)
 - [クイックスタート（Docker Compose）](#クイックスタートdocker-compose)
 - [Redmine プラグインとして導入](#redmine-プラグインとして導入)
-- [利用方法](#利用方法)
-- [表示設定](#表示設定)
 - [技術スタック](#技術スタック)
 - [開発](#開発)
 - [テスト](#テスト)
 - [API エンドポイント](#api-エンドポイント)
 - [CI](#ci)
-- [復旧と保存ビュー](#復旧と保存ビュー)
 - [ライセンス](#ライセンス)
 
 ## 概要
@@ -76,29 +73,9 @@ pnpm run typecheck
 pnpm run build
 ```
 
-## 利用方法
+## マニュアル
 
-1. Redmine にログイン後、プロジェクトを作成するか、既存のプロジェクトを開きます。
-2. 「設定」→「モジュール」で **Kanban** を有効化します。
-3. プロジェクトメニューの **Kanban** を開きます。
-
-## 表示設定
-
-「チケットダイアログ」では幅（900／1200／1500px）、高さ（自動または画面高さの50〜90%）、全画面表示を設定できます。初期値は幅1200px・高さ自動・全画面OFFで、「サイズをリセット」で戻せます。設定はこのブラウザーのユーザー単位で保存し、プロジェクト間で共有します。チケットの表示・編集・新規作成に適用し、作業時間入力と保存ビューには適用しません。
-
-プラグイン全体の設定画面はありません。各ユーザーはボード上でスイムレーン、非表示ステータス、停滞閾値、並び替え、表示幅、文字サイズ、子チケット表示を設定できます。snapshotのAdmission Controlには、Issue entity 10,000件の有限なサーバー安全上限を使用します。カード移動では、ユーザーが明示したレーン属性とステータスだけを変更し、Redmine の Workflow と権限を正とします。
-
-APIは対象Project/StatusおよびIssue filter scopeの完全な単一snapshotを返します。Subject、担当者、Tracker、Priority、期限filterはAdmission前にserver側のprimary membershipを絞ります。dependency descendantがfilterに一致する場合、そのprimary ancestorもmembershipに残し、各primaryの完全なdependency subtreeをsnapshotに含めます。Frontendも最終表示のため同じfilterを適用します。membershipはprimary Issueと、そのprimaryを表示するために必要なdependency-only descendantのunique unionです。primaryがちょうど上限に達した場合もdescendantの存在をprobeし、対象が上限を超える場合は一部Issueを返さず、構造化422エラーを返します。entity件数はページサイズではなくAdmission Controlです。サーバーの既定hard ceilingは10,000件で、`REDMINE_KANBAN_MAX_BOARD_ENTITIES`を使ってそれ以下へ引き下げられます。未設定・空・不正・0・負数は10,000件になり、10,000を超える値も10,000に制限されます。サーバーは `REDMINE_KANBAN_MAX_RESPONSE_BYTES`（デフォルト8 MiB）、`REDMINE_KANBAN_MAX_BOARD_QUERIES`（デフォルト20）、`REDMINE_KANBAN_MAX_TOTAL_BOARD_QUERIES`（合計SQL回数、デフォルト100）でも資源を制限します。cursor、offset、子ツリーの追加取得、Load more操作はありません。運用時に性能ログが必要な場合だけ `REDMINE_KANBAN_PERF_LOG=1` を指定してください。
-
-サーバー側の件数上限を引き下げる場合は、10,000以下の正の整数をRedmineプロセスの環境変数に設定して再起動します。
-
-```sh
-REDMINE_KANBAN_MAX_BOARD_ENTITIES=5000
-```
-
-entity上限は常に有限です。`0`では無効化されず、10,000を超える値は10,000件に制限されます。応答サイズとSQL回数の制限も独立して維持されます。旧クライアントが`board_entity_limit`を送信した場合は、サーバー上限より小さい値が適用されます。
-
-`GET /projects/:project_id/kanban/metadata`は、snapshotの成否から独立してProject／Status候補と、担当者・Tracker・Priorityの`filter_options`を返します。担当者とTrackerは`available_project_ids`を持ちます。catalogが完全なら選択Projectに応じて候補をローカルで絞り込み、不完全な場合だけsettledな`project_ids[]`を使ってmetadataを再取得します。候補は既に認可済みの可視Project範囲、Membership、設定から取得し、Issueが存在しないTrackerも含みます。候補とProjectとの対応関係は各資源10,000件までです。overflow時もHTTP 200とcore metadataを返し、`filter_options_complete: false`、空の候補配列、構造化された`filter_options_error`でcatalogが不完全であることを示します。部分候補は返しません。候補復旧時の非Permissionエラーではcore metadataとBoardを維持し、401/403/404は従来どおりアクセス喪失として扱います。Base metadataの再取得が非Permissionエラーで失敗しても、最後に取得成功したcore metadataを維持し、その失敗だけで成功済みsnapshotを遮断しません。初回取得失敗時は取得済み候補がないため、エラーを表示して再試行できます。Base metadataでアクセス喪失を検知した場合は、再試行中や再試行失敗後も遮断を維持し、有効なmetadataの取得成功で解除します。保存ビューの動的IDはcatalog不完全の間pendingとして保持し、完全なmetadata取得後に検証します。レーン・作成・編集・Workflow操作は引き続きsnapshotの`lists`を使い、Filter候補を変更権限の根拠にはしません。10,000件はサーバー安全上限であり、表示性能の保証値ではありません。
+インストール、基本操作、表示設定、フィルター、保存ビュー、トラブルシューティングは[日本語マニュアル](https://tiohsa.github.io/redmine_kanban/ja/)を参照してください。
 
 ## 技術スタック
 
@@ -232,20 +209,7 @@ CI では以下を実行します。
 
 検証entry pointは `script/ci/` に集約しています。`ruby-full.sh`、`snapshot-contract.sh`、`postgres-unit.sh`、`postgres-api.sh`、`e2e-full.sh`、`native-mutation-e2e.sh`、`large-data-e2e.sh`、`compatibility-smoke.sh`を、ローカルのRedmineコンテナ実行とCIで共通利用します。
 
-## 復旧と保存ビュー
-
-初回snapshotが資源上限を超えた場合も、Toolbarは`GET /projects/:project_id/kanban/metadata`からProject／Status候補を取得します。この権限検証済みendpointは、`board`の識別情報、`projects`（Board配下のProject）、`viewable_projects`、`statuses`、`server_entity_limit`を返し、Issue・件数・snapshotは返しません。既存の`bootstrap` responseは変更しません。Project、Status、件名、担当者、Tracker、Priority、期限filterで範囲を絞り、完全なsnapshotを取得してください。filterに一致するdependency descendantもsnapshotのentity件数に加わり、Frontendは最終表示のためfilterを再適用します。scopeを絞った候補復旧の失敗はfilter候補に影響し、権限エラーの場合だけBoardへのアクセス喪失として扱います。entity件数・応答サイズ・SQL回数のエラーは区別して表示します。
-
-Toolbarの**保存ビュー**では、新規保存・適用・上書き・名前変更・確認後の削除ができます。ビューには、すべてのfilter（期限の日数とPriority選択の意味を含む）、順序付きの並び替え、レーン種別、非表示Status ID、閲覧可能Projectの表示切替を保存します。文字サイズ、全画面、表示幅、カード表示モード、子チケット表示、停滞設定、entity上限、タイマーは保存対象に含めません。手動変更すると**変更あり**と表示し、明示的な保存操作でのみビューを更新します。ビューを削除しても現在の条件は維持します。
-
-ビューはlocalStorageの`rk_saved_views:<Redmine subpath>/projects/<board>/kanban:user:<id>`に保存し、ブラウザーのorigin・インスタンスのsubpath・ユーザー・Boardごとに分離します。JSON形式は`{ "version": 1, "views": [{ "id": "stable ID", "name": "name", "settings": { ... } }] }`です。各scopeで20件まで保存でき、前後の空白を除いた名前は1～80文字で重複不可です。この初期版には共有や組み込みpresetはありません。破損した形式や未知の形式のデータは保持してエラーを表示し、書き込み失敗を成功として扱いません。利用できない参照は警告とともに選択状態を維持し、現在のscopeの候補が取得できてから検証します。無効なserver scope IDを黙って未指定のscopeに変更することはありません。
-
-アクティブビューのIDは、同じkeyに`:active`を付けた別のkeyへ保存します。Boardを開き直すと、最後に使った条件の読み込み後にアクティブビュー名を復元します。その条件への手動変更は維持し、明示的に上書きするまで**変更あり**を表示します。アクティブビューの選択解除や削除では保存済みIDを消去し、現在の条件はリセットしません。
-
-ToolbarはTab、Enter／Space、Escapeで操作できます。Escapeは開いているpopoverを閉じ、開くためのボタンへfocusを戻します。外側をクリックした場合はクリック先のfocusを維持します。表示設定の文字サイズの既定値は13pxです。保存した停滞警告の閾値が0の場合、再読み込み後も0を維持します。
-
 ## ライセンス
 
-プラグインコードは GPLv2 です。同梱する第三者フォントについては [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) を参照してください。
+プラグインコードは GPLv2 です。同梱フォントのライセンスは [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) を参照してください。
 
-本プロジェクトは GNU General Public License v2.0 (GPLv2) の下で公開されています。
