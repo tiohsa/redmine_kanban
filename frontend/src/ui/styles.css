@@ -58,6 +58,72 @@
   --rk-font-main: 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif;
 }
 
+.rk-root[data-rk-theme="light"] {
+  color-scheme: light;
+}
+
+.rk-root[data-rk-theme="dark"],
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] {
+  color-scheme: dark;
+
+  /* Surface & Background */
+  --rk-bg-main: #0b0f19;
+  --rk-bg-surface: #1e293b;
+  --rk-bg-secondary: #334155;
+
+  /* Borders */
+  --rk-border: #3b4758;
+  --rk-border-light: #283344;
+  --rk-border-strong: #4e5d73;
+
+  /* Text Colors */
+  --rk-text-primary: #f8fafc;
+  --rk-text-dark: #f8fafc;
+  --rk-text-charcoal: #f1f5f9;
+  --rk-text-secondary: #cbd5e1;
+  --rk-text-muted: #94a3b8;
+
+  /* Brand Colors */
+  --rk-brand-blue: #60a5fa;
+  --rk-primary: #3b82f6;
+  --rk-primary-hover: #60a5fa;
+  --rk-primary-active: #93c5fd;
+
+  /* Semantic */
+  --rk-danger: #f87171;
+  --rk-danger-bg: #451a1a;
+  --rk-warn: #fbbf24;
+  --rk-warn-bg: #453310;
+  --rk-success-bg: #14381e;
+
+  /* Column Background Colors in Canvas & Board */
+  --rk-col-bg-1: #0f172a;
+  --rk-col-bg-2: #0f172a;
+  --rk-col-bg-3: #0f172a;
+  --rk-col-bg-4: #0f172a;
+  --rk-col-bg-5: #0f172a;
+  --rk-col-bg-6: #0f172a;
+  --rk-col-bg-7: #0f172a;
+
+  /* Shadows */
+  --rk-shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.3);
+  --rk-shadow: rgba(0, 0, 0, 0.45) 0px 4px 6px;
+  --rk-shadow-md: rgba(0, 0, 0, 0.6) 0px 12px 16px -4px;
+  --rk-shadow-glow: rgba(96, 165, 250, 0.25) 0px 0px 15px;
+
+  /* Datepicker */
+  --rk-datepicker-surface-subtle: #1e293b;
+  --rk-datepicker-surface-muted: #334155;
+  --rk-datepicker-border-strong: #4e5d73;
+  --rk-datepicker-primary-200: #1e3a8a;
+
+  /* Timer */
+  --rk-timer-surface-running: #0f172a;
+  --rk-timer-surface-pending: #262117;
+  --rk-timer-primary: #3b82f6;
+  --rk-timer-border: #4e5d73;
+}
+
 .rk-root {
   margin-top: 4px;
   font-family: var(--rk-font-main);
@@ -684,9 +750,13 @@
   color: #ffffff !important;
 }
 
-.rk-minimax-datepicker .react-datepicker__day--keyboard-selected {
-  background-color: var(--rk-datepicker-primary-200) !important;
-  color: var(--rk-text-primary) !important;
+.rk-minimax-datepicker .react-datepicker__day--keyboard-selected:not(.react-datepicker__day--selected) {
+  background-color: transparent !important;
+  color: inherit !important;
+}
+
+.rk-minimax-datepicker .react-datepicker__day--keyboard-selected:not(.react-datepicker__day--selected):hover {
+  background-color: var(--rk-datepicker-surface-muted) !important;
 }
 
 .rk-minimax-datepicker .react-datepicker__day--outside-month:not(.react-datepicker__day--selected) {
@@ -694,15 +764,21 @@
 }
 
 .rk-minimax-datepicker .react-datepicker__day:focus,
+.rk-minimax-datepicker .react-datepicker__day--keyboard-selected:focus {
+  outline: none !important;
+  box-shadow: 0 0 0 2px var(--rk-brand-blue) !important;
+}
+
+.rk-minimax-datepicker .react-datepicker__day--selected:focus {
+  outline: none !important;
+  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--rk-brand-blue) !important;
+}
+
 .rk-minimax-datepicker-select:focus,
 .rk-minimax-datepicker-nav-btn:focus,
 .rk-minimax-datepicker-btn:focus {
   outline: 2px solid var(--rk-brand-blue) !important;
   outline-offset: 2px !important;
-}
-
-.rk-minimax-datepicker .react-datepicker__day--selected:focus {
-  outline-color: var(--rk-text-primary) !important;
 }
 
 .rk-minimax-datepicker .react-datepicker__navigation {
@@ -2308,3 +2384,514 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 .rk-saved-views-message.is-error { color: #b91c1c; background: var(--rk-danger-bg); }
 .rk-saved-views-message.is-success { color: #166534; background: var(--rk-success-bg); }
 .rk-saved-views > .rk-settings-help { margin: 0; padding: 8px 10px 2px; color: var(--rk-text-secondary); font-size: 11px; line-height: 1.5; }
+
+/* Dark Mode Component Overrides */
+.rk-root[data-rk-theme="dark"] .rk-toolbar {
+  border-color: var(--rk-border);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-toolbar-separator {
+  background: var(--rk-border-strong);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-btn {
+  background: #0f172a;
+  color: var(--rk-text-primary);
+  border-color: var(--rk-border-strong);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-btn:hover {
+  background: var(--rk-bg-secondary);
+  color: var(--rk-primary);
+  border-color: var(--rk-border-strong) !important;
+}
+
+.rk-root[data-rk-theme="dark"] .rk-btn-toggle-active,
+.rk-root[data-rk-theme="dark"] .rk-active-soft {
+  background: var(--rk-bg-secondary) !important;
+  color: var(--rk-primary) !important;
+  border-color: var(--rk-border-strong) !important;
+}
+
+.rk-root[data-rk-theme="dark"] .rk-dropdown-trigger {
+  background: #0f172a;
+  border-color: var(--rk-border-strong);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-dropdown-menu,
+.rk-root[data-rk-theme="dark"] .rk-sort-menu,
+.rk-root[data-rk-theme="dark"] .rk-settings-menu,
+.rk-root[data-rk-theme="dark"] .rk-priority-popup,
+.rk-root[data-rk-theme="dark"] .rk-progress-popup {
+  background: var(--rk-bg-surface);
+  border: 1px solid var(--rk-border-strong);
+  box-shadow: var(--rk-shadow-md);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-dropdown-item:hover,
+.rk-root[data-rk-theme="dark"] .rk-sort-row:hover,
+.rk-root[data-rk-theme="dark"] .rk-sort-row-selected {
+  background: var(--rk-bg-secondary);
+  color: var(--rk-text-primary);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-dropdown-checkbox {
+  background: var(--rk-bg-surface);
+  border-color: var(--rk-border-strong);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-search-box {
+  background: var(--rk-bg-surface);
+  border-color: var(--rk-border);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-search-box input {
+  background: transparent;
+  color: var(--rk-text-primary);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-icon-btn {
+  color: var(--rk-text-secondary);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-icon-btn:hover {
+  background: var(--rk-bg-secondary);
+  color: var(--rk-text-primary);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-settings-select-row select {
+  background: #0f172a;
+  color: var(--rk-text-primary);
+  border-color: var(--rk-border-strong);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-switch {
+  background: #334155;
+  border: 1px solid #475569;
+}
+
+.rk-root[data-rk-theme="dark"] .rk-switch-thumb {
+  background: #94a3b8;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 40%);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-switch.rk-switch-on,
+.rk-root[data-rk-theme="dark"] .rk-switch-on {
+  background: var(--rk-primary, #3b82f6) !important;
+  border-color: var(--rk-primary, #3b82f6) !important;
+}
+
+.rk-root[data-rk-theme="dark"] .rk-switch-on .rk-switch-thumb {
+  background: #ffffff !important;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 50%);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-modal {
+  background: var(--rk-bg-surface);
+  border-color: var(--rk-border);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-issue-dialog-head {
+  background: var(--rk-bg-surface);
+  border-color: var(--rk-border);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-issue-dialog-actions .rk-icon-btn {
+  background: var(--rk-bg-surface);
+  border-color: var(--rk-border);
+  color: var(--rk-text-primary);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-issue-dialog-actions .rk-icon-btn:hover {
+  background: var(--rk-bg-secondary);
+  border-color: var(--rk-border-strong);
+  color: var(--rk-text-primary);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-modal-actions .rk-btn,
+.rk-root[data-rk-theme="dark"] .rk-create-footer .rk-btn {
+  background: var(--rk-bg-surface);
+  border-color: var(--rk-border);
+  color: var(--rk-text-primary);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-modal-actions .rk-btn:hover,
+.rk-root[data-rk-theme="dark"] .rk-create-footer .rk-btn:hover {
+  background: var(--rk-bg-secondary);
+  border-color: var(--rk-border-strong);
+  color: var(--rk-text-primary);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-btn-primary {
+  background: var(--rk-primary);
+  border-color: var(--rk-primary);
+  color: #ffffff;
+}
+
+.rk-root[data-rk-theme="dark"] .rk-btn-primary:hover {
+  background: var(--rk-primary-hover);
+  border-color: var(--rk-primary-hover);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-form textarea,
+.rk-root[data-rk-theme="dark"] .rk-form .rk-field input,
+.rk-root[data-rk-theme="dark"] .rk-form .rk-field select {
+  background: var(--rk-bg-surface);
+  color: var(--rk-text-primary);
+  border-color: var(--rk-border);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-desc-preview {
+  background: var(--rk-bg-secondary);
+  border-color: var(--rk-border);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-bulk-subtask-mode.is-active {
+  background: var(--rk-bg-surface);
+  border-color: var(--rk-border);
+  color: var(--rk-text-primary);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-bulk-subtask-editor textarea,
+.rk-root[data-rk-theme="dark"] .rk-bulk-subtask-table input,
+.rk-root[data-rk-theme="dark"] .rk-bulk-subtask-table select {
+  background: var(--rk-bg-surface);
+  color: var(--rk-text-primary);
+  border-color: var(--rk-border);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-bulk-subtask-add-row {
+  background: var(--rk-bg-secondary);
+  border-color: var(--rk-border);
+  color: var(--rk-text-secondary);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-bulk-subtask-add-row:hover {
+  background: var(--rk-bg-surface);
+  color: var(--rk-text-primary);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-help-header,
+.rk-root[data-rk-theme="dark"] .rk-help-footer {
+  background: var(--rk-bg-surface);
+  border-color: var(--rk-border);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-help-icon-row {
+  background: var(--rk-bg-surface);
+  border-color: var(--rk-border);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-work-timer-modal {
+  background: var(--rk-bg-surface);
+  color: var(--rk-text-primary);
+  border-color: var(--rk-border);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-work-timer-duration-button {
+  background: var(--rk-bg-surface);
+  color: var(--rk-text-primary);
+  border-color: var(--rk-border);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-work-timer-duration-button.is-selected {
+  background: var(--rk-primary);
+  border-color: var(--rk-primary);
+  color: #fff;
+}
+
+.rk-root[data-rk-theme="dark"] .rk-work-timer-extend-menu {
+  background: var(--rk-bg-surface);
+  color: var(--rk-text-primary);
+  border-color: var(--rk-border);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-work-timer-extend-menu button:hover {
+  background: var(--rk-bg-secondary);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-timer-button-secondary {
+  background: var(--rk-bg-surface);
+  color: var(--rk-text-primary);
+  border-color: var(--rk-border);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-timer-button-light {
+  background: var(--rk-bg-secondary);
+  color: var(--rk-text-primary);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-work-timer-pending {
+  background: #2a2415;
+  border-color: #854d0e;
+  color: var(--rk-text-primary);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-pending-work-modal {
+  background: var(--rk-bg-surface);
+  color: var(--rk-text-primary);
+  border-color: var(--rk-border);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-pending-work-header p {
+  color: var(--rk-text-primary) !important;
+}
+
+.rk-root[data-rk-theme="dark"] .rk-pending-work-elapsed {
+  background: var(--rk-bg-secondary);
+  border-color: var(--rk-border);
+  color: var(--rk-text-secondary);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-pending-work-elapsed strong {
+  color: var(--rk-text-primary);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-pending-work-section {
+  background: var(--rk-bg-secondary);
+  border-color: var(--rk-border);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-pending-work-section p {
+  color: var(--rk-text-secondary);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-pending-work-resume-section h3 {
+  color: var(--rk-text-primary);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-pending-work-record-button,
+.rk-root[data-rk-theme="dark"] .rk-pending-work-resume-button {
+  background: var(--rk-bg-surface);
+  color: var(--rk-text-primary);
+  border-color: var(--rk-border);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-pending-work-resume-button:hover {
+  background: var(--rk-bg-secondary);
+  border-color: var(--rk-primary);
+  color: var(--rk-primary);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-pending-work-state-card {
+  background: #2a2415;
+  border-color: #854d0e;
+  color: #fde047;
+}
+
+.rk-root[data-rk-theme="dark"] .rk-pending-work-discard-confirm {
+  background: #451a1a;
+  border-color: #991b1b;
+  color: #fca5a5;
+}
+
+.rk-root[data-rk-theme="dark"] .rk-timer-button-danger-outline {
+  background: #451a1a;
+  border-color: #991b1b;
+  color: #fca5a5;
+}
+
+.rk-root[data-rk-theme="dark"] .rk-saved-views .rk-saved-views-row[aria-pressed="true"] {
+  background: var(--rk-bg-secondary);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-saved-views-message {
+  background: var(--rk-bg-secondary);
+  color: var(--rk-primary);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-saved-views-message.is-error {
+  background: var(--rk-danger-bg);
+  color: var(--rk-danger);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-saved-views-message.is-success {
+  background: var(--rk-success-bg);
+  color: #86efac;
+}
+
+.rk-root[data-rk-theme="dark"] .rk-saved-views .rk-btn.rk-btn-danger {
+  background: var(--rk-bg-surface);
+  border-color: var(--rk-danger);
+  color: var(--rk-danger);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-saved-views-row-actions {
+  border-color: var(--rk-border);
+}
+
+.rk-root[data-rk-theme="dark"] .rk-badge-priority-low {
+  background: #14532d;
+  color: #86efac;
+  border-color: #166534;
+}
+
+.rk-root[data-rk-theme="dark"] .rk-badge-priority-normal {
+  background: #334155;
+  color: #cbd5e1;
+  border-color: #475569;
+}
+
+.rk-root[data-rk-theme="dark"] .rk-badge-priority-high {
+  background: #713f12;
+  color: #fde047;
+  border-color: #854d0e;
+}
+
+.rk-root[data-rk-theme="dark"] .rk-badge-priority-urgent {
+  background: #7c2d12;
+  color: #fdba74;
+  border-color: #9a3412;
+}
+
+.rk-root[data-rk-theme="dark"] .rk-badge-priority-immediate {
+  background: #7f1d1d;
+  color: #fca5a5;
+  border-color: #991b1b;
+}
+
+.rk-root[data-rk-theme="dark"] .rk-overdue {
+  background: var(--rk-danger-bg);
+  color: var(--rk-danger);
+  border-color: #991b1b;
+}
+
+.rk-root[data-rk-theme="dark"] .rk-aging-warn {
+  background: var(--rk-warn-bg);
+  color: #fde047;
+  border-color: #854d0e;
+}
+
+.rk-root[data-rk-theme="dark"] .rk-aging-danger {
+  background: var(--rk-danger-bg);
+  color: #fca5a5;
+  border-color: #991b1b;
+}
+
+/* Datepicker dark mode */
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker,
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker {
+  background-color: var(--rk-bg-surface) !important;
+  color: var(--rk-text-primary) !important;
+  border: 1px solid var(--rk-border-strong) !important;
+  box-shadow: var(--rk-shadow-md) !important;
+}
+
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__month-container,
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__month,
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__month-container,
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__month {
+  background-color: var(--rk-bg-surface) !important;
+  color: var(--rk-text-primary) !important;
+}
+
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__header,
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .rk-minimax-datepicker-footer,
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__children-container,
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__header,
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .rk-minimax-datepicker-footer,
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__children-container {
+  background-color: #0f172a !important;
+  border-color: var(--rk-border) !important;
+}
+
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__current-month,
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__current-month {
+  color: var(--rk-text-primary) !important;
+}
+
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day-name,
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day-name {
+  color: var(--rk-text-secondary) !important;
+}
+
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day,
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day {
+  color: var(--rk-text-primary) !important;
+}
+
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day:hover,
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day:hover {
+  background-color: var(--rk-bg-secondary) !important;
+}
+
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--selected,
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--selected:hover,
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--selected,
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--selected:hover {
+  background-color: var(--rk-primary) !important;
+  color: #ffffff !important;
+}
+
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--keyboard-selected:not(.react-datepicker__day--selected),
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--keyboard-selected:not(.react-datepicker__day--selected) {
+  background-color: transparent !important;
+  color: var(--rk-text-primary) !important;
+}
+
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--keyboard-selected:not(.react-datepicker__day--selected):hover,
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--keyboard-selected:not(.react-datepicker__day--selected):hover {
+  background-color: var(--rk-bg-secondary) !important;
+}
+
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day:focus,
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--keyboard-selected:focus,
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day:focus,
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--keyboard-selected:focus {
+  outline: none !important;
+  box-shadow: 0 0 0 2px var(--rk-brand-blue) !important;
+}
+
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--selected:focus,
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--selected:focus {
+  outline: none !important;
+  box-shadow: 0 0 0 2px var(--rk-bg-surface), 0 0 0 4px var(--rk-primary) !important;
+}
+
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--outside-month:not(.react-datepicker__day--selected),
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--outside-month:not(.react-datepicker__day--selected) {
+  color: var(--rk-text-muted) !important;
+}
+
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker-select,
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] select.react-datepicker__month-select,
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] select.react-datepicker__year-select,
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker-select,
+.rk-root[data-rk-theme="dark"] select.react-datepicker__month-select,
+.rk-root[data-rk-theme="dark"] select.react-datepicker__year-select {
+  background-color: #0f172a !important;
+  color: var(--rk-text-primary) !important;
+  border-color: var(--rk-border-strong) !important;
+}
+
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker-nav-btn,
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker-btn,
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker-nav-btn,
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker-btn {
+  background-color: #334155 !important;
+  color: var(--rk-text-primary) !important;
+  border-color: var(--rk-border-strong) !important;
+}
+
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker-nav-btn:hover,
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker-btn:hover,
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker-nav-btn:hover,
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker-btn:hover {
+  background-color: #475569 !important;
+  color: #ffffff !important;
+  border-color: var(--rk-border-strong) !important;
+}
+
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker-btn--clear,
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker-btn--clear {
+  background-color: #334155 !important;
+  color: var(--rk-danger) !important;
+  border-color: var(--rk-border-strong) !important;
+}
+
+#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker-btn--clear:hover,
+.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker-btn--clear:hover {
+  background-color: var(--rk-danger-bg) !important;
+  border-color: var(--rk-danger) !important;
+  color: var(--rk-danger) !important;
+}

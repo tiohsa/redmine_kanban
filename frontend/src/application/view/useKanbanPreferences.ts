@@ -1,17 +1,35 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type SetStateAction } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
 import { DEFAULT_SORT_CONFIG, parseSortConfig, serializeSortConfig, type SortConfig } from '../../model/view/sort';
-import type { CardDisplayMode, Filters, FitMode, LaneType } from '../../model/view/types';
-import { DEFAULT_FILTERS, restoreAgingDays } from '../../model/view/preferences';
+import type { CardDisplayMode, Filters, FitMode, KanbanColorTheme, LaneType } from '../../model/view/types';
+import { DEFAULT_COLOR_THEME, DEFAULT_FILTERS, restoreAgingDays } from '../../model/view/preferences';
 import { readFilters, readStorageValue, removeStorageValue, writeStorageValue } from '../../infrastructure/storage/preferencesRepository';
-import { buildProjectScopeFromDataUrl, makeScopedStorageKey, readScopedBooleanWithLegacy, readScopedNumberSetWithLegacy, readScopedValueWithLegacy } from '../../infrastructure/storage/scopedStorage';
+import { buildProjectScopeFromDataUrl, colorThemeStorageKey, makeScopedStorageKey, readColorTheme, readScopedBooleanWithLegacy, readScopedNumberSetWithLegacy, readScopedValueWithLegacy, writeColorTheme } from '../../infrastructure/storage/scopedStorage';
 import { copyViewSettings, type SavedViewSettings } from '../../model/view/savedViews';
 import { DEFAULT_ISSUE_DIALOG_SIZE, parseIssueDialogSize } from '../../model/view/issueDialogSize';
 
 export type { LaneType } from '../../model/view/types';
 export type { CardDisplayMode } from '../../model/view/types';
+export type { KanbanColorTheme } from '../../model/view/types';
 export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: number) {
   const projectScope = useMemo(() => buildProjectScopeFromDataUrl(dataUrl), [dataUrl]);
   const [currentUserId, setCurrentUserId] = useState<number | null>(initialCurrentUserId ?? null);
+  const colorThemeKey = useMemo(() => {
+    return currentUserId !== null ? colorThemeStorageKey(dataUrl, currentUserId) : null;
+  }, [dataUrl, currentUserId]);
+
+  const [colorTheme, setColorThemeState] = useState<KanbanColorTheme>(() => {
+    return initialCurrentUserId != null
+      ? readColorTheme(colorThemeStorageKey(dataUrl, initialCurrentUserId))
+      : DEFAULT_COLOR_THEME;
+  });
+
+  const lastRestoredThemeUserIdRef = useRef<number | null>(initialCurrentUserId ?? null);
+  const userChangedThemeRef = useRef(false);
+
+  const setColorTheme = useCallback((theme: KanbanColorTheme) => {
+    userChangedThemeRef.current = true;
+    setColorThemeState(theme);
+  }, []);
   const userScope = currentUserId === null ? null : `user:${currentUserId}`;
   const projectKey = useMemo(() => (baseKey: string) => userScope ? makeScopedStorageKey(baseKey, `${projectScope}:${userScope}`) : null, [projectScope, userScope]);
   const userKey = useMemo(() => (baseKey: string) => userScope ? makeScopedStorageKey(baseKey, userScope) : null, [userScope]);
@@ -68,6 +86,24 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
   const [hydratedScope, setHydratedScope] = useState<string | null>(null);
   const hydrationScope = userScope ? `${projectScope}:${userScope}` : null;
   const preferencesReady = hydrationScope !== null && hydratedScope === hydrationScope;
+
+  useLayoutEffect(() => {
+    if (currentUserId === null) return;
+    if (lastRestoredThemeUserIdRef.current !== currentUserId) {
+      lastRestoredThemeUserIdRef.current = currentUserId;
+      userChangedThemeRef.current = false;
+      setColorThemeState(readColorTheme(colorThemeStorageKey(dataUrl, currentUserId)));
+    }
+  }, [currentUserId, dataUrl]);
+
+  useEffect(() => {
+    if (currentUserId === null) return;
+    if (lastRestoredThemeUserIdRef.current !== currentUserId) return;
+    if (!userChangedThemeRef.current) return;
+    if (colorThemeKey) {
+      writeColorTheme(colorThemeKey, colorTheme);
+    }
+  }, [colorTheme, colorThemeKey, currentUserId]);
 
   useLayoutEffect(() => {
     if (!userScope) return;
@@ -225,5 +261,7 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
     setAgingExcludeClosed,
     viewableProjectsEnabled,
     setViewableProjectsEnabled,
+    colorTheme,
+    setColorTheme,
   };
 }

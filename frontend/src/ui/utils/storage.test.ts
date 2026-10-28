@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  buildInstanceBasePathFromDataUrl,
   buildProjectScopeFromDataUrl,
+  colorThemeStorageKey,
   makeScopedStorageKey,
+  readColorTheme,
   readScopedBooleanWithLegacy,
   readScopedNumberSetWithLegacy,
+  writeColorTheme,
 } from './storage';
 
 describe('storage utils', () => {
@@ -110,6 +114,96 @@ describe('storage utils', () => {
       );
 
       expect(Array.from(result)).toEqual([10]);
+    });
+  });
+
+  describe('buildInstanceBasePathFromDataUrl', () => {
+    it('returns / for root Redmine project board', () => {
+      expect(buildInstanceBasePathFromDataUrl('/projects/ecookbook/kanban/data')).toBe('/');
+    });
+
+    it('returns / for root Redmine global board', () => {
+      expect(buildInstanceBasePathFromDataUrl('/kanban/data')).toBe('/');
+    });
+
+    it('returns /subpath for sub-URI Redmine project board', () => {
+      expect(buildInstanceBasePathFromDataUrl('/redmine/projects/ecookbook/kanban/data')).toBe('/redmine');
+    });
+
+    it('returns /subpath for sub-URI Redmine global board', () => {
+      expect(buildInstanceBasePathFromDataUrl('/redmine/kanban/data')).toBe('/redmine');
+    });
+
+    it('strips query strings before resolving base path', () => {
+      expect(buildInstanceBasePathFromDataUrl('/redmine/kanban/data?project_ids%5B%5D=1')).toBe('/redmine');
+      expect(buildInstanceBasePathFromDataUrl('/projects/demo/kanban/data?tab=board')).toBe('/');
+    });
+
+    it('handles nested sub-URIs', () => {
+      expect(buildInstanceBasePathFromDataUrl('/corporate/redmine/projects/alpha/kanban/data')).toBe('/corporate/redmine');
+    });
+
+    it('defaults to / for empty or invalid data URLs', () => {
+      expect(buildInstanceBasePathFromDataUrl('')).toBe('/');
+      expect(buildInstanceBasePathFromDataUrl('/unknown/format')).toBe('/');
+    });
+  });
+
+  describe('colorThemeStorageKey', () => {
+    it('formats key with root instance base path and user id', () => {
+      expect(colorThemeStorageKey('/projects/demo/kanban/data', 42)).toBe('rk_color_theme:/:user:42');
+    });
+
+    it('formats key with subpath instance base path and user id', () => {
+      expect(colorThemeStorageKey('/redmine/projects/demo/kanban/data', 42)).toBe('rk_color_theme:/redmine:user:42');
+    });
+
+    it('formats key with anonymous when user id is undefined or null', () => {
+      expect(colorThemeStorageKey('/projects/demo/kanban/data', undefined)).toBe('rk_color_theme:/:user:anonymous');
+      expect(colorThemeStorageKey('/redmine/kanban/data', null)).toBe('rk_color_theme:/redmine:user:anonymous');
+    });
+  });
+
+  describe('readColorTheme and writeColorTheme', () => {
+    it('returns default light theme when storage key is absent', () => {
+      expect(readColorTheme('rk_color_theme:/:user:1')).toBe('light');
+    });
+
+    it('reads saved light or dark theme', () => {
+      localStorage.setItem('rk_color_theme:/:user:1', 'dark');
+      expect(readColorTheme('rk_color_theme:/:user:1')).toBe('dark');
+
+      localStorage.setItem('rk_color_theme:/:user:1', 'light');
+      expect(readColorTheme('rk_color_theme:/:user:1')).toBe('light');
+    });
+
+    it('falls back to light theme for invalid or corrupt storage values', () => {
+      localStorage.setItem('rk_color_theme:/:user:1', 'neon');
+      expect(readColorTheme('rk_color_theme:/:user:1')).toBe('light');
+
+      localStorage.setItem('rk_color_theme:/:user:1', '');
+      expect(readColorTheme('rk_color_theme:/:user:1')).toBe('light');
+
+      localStorage.setItem('rk_color_theme:/:user:1', 'null');
+      expect(readColorTheme('rk_color_theme:/:user:1')).toBe('light');
+    });
+
+    it('writes theme to localStorage', () => {
+      writeColorTheme('rk_color_theme:/:user:7', 'dark');
+      expect(localStorage.getItem('rk_color_theme:/:user:7')).toBe('dark');
+
+      writeColorTheme('rk_color_theme:/:user:7', 'light');
+      expect(localStorage.getItem('rk_color_theme:/:user:7')).toBe('light');
+    });
+
+    it('handles localStorage errors gracefully without throwing', () => {
+      const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new Error('QuotaExceededError');
+      });
+
+      expect(() => writeColorTheme('rk_color_theme:/:user:7', 'dark')).not.toThrow();
+
+      setItemSpy.mockRestore();
     });
   });
 });

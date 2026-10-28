@@ -11,6 +11,7 @@ import { buildBoardState } from './state';
 import * as hitTestIndex from './HitTestIndex';
 import * as canvasGeometry from './canvasGeometry';
 import { measureSingleLineCardHeight } from './BoardLayout';
+import { DARK_PRIORITY_PALETTE, LIGHT_PRIORITY_PALETTE, readTheme } from './CanvasDrawing';
 
 function makeIssue(id: number, attrs: Partial<Issue> = {}): Issue {
   return {
@@ -1472,5 +1473,171 @@ describe('CanvasBoard card height cache', () => {
     });
 
     expect(makeSubtaskSignature(open)).not.toBe(makeSubtaskSignature(closed));
+  });
+});
+
+describe('CanvasBoard colorTheme', () => {
+  beforeEach(() => {
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      return window.setTimeout(() => cb(performance.now()), 0);
+    });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+      window.clearTimeout(id);
+    });
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('reads correct theme values for light and dark themes', () => {
+    const light = readTheme(null, 'light');
+    expect(light.bgMain).toBe('#ffffff');
+    expect(light.headerBg).toBe('#f8fafc');
+    expect(light.badgeBg).toBe('#f1f5f9');
+    expect(light.priorityPalette).toEqual(LIGHT_PRIORITY_PALETTE);
+
+    const dark = readTheme(null, 'dark');
+    expect(dark.bgMain).toBe('#0b0f19');
+    expect(dark.headerBg).toBe('#182234');
+    expect(dark.badgeBg).toBe('#334155');
+    expect(dark.priorityPalette).toEqual(DARK_PRIORITY_PALETTE);
+  });
+
+  it('renders board headers with dark theme headerBg when colorTheme="dark"', async () => {
+    const issue = makeIssue(1);
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
+
+    const context = createCanvasContextWithSpies();
+    const fillStyles: string[] = [];
+    context.fillRect = vi.fn(() => {
+      fillStyles.push(String((context as unknown as { fillStyle: string }).fillStyle));
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+
+    render(
+      <CanvasBoard
+        data={data}
+        state={state}
+        fitMode="width"
+        colorTheme="dark"
+        canMove
+        canCreate
+        onCommand={vi.fn()}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onView={vi.fn()}
+        onDelete={vi.fn()}
+        onEditClick={vi.fn()}
+        labels={data.labels}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(fillStyles).toContain('#182234');
+    });
+  });
+
+  it('updates canvas fill styles dynamically when colorTheme changes', async () => {
+    const issue = makeIssue(1);
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
+
+    const context = createCanvasContextWithSpies();
+    const fillStyles: string[] = [];
+    context.fillRect = vi.fn(() => {
+      fillStyles.push(String((context as unknown as { fillStyle: string }).fillStyle));
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+
+    const { rerender } = render(
+      <CanvasBoard
+        data={data}
+        state={state}
+        fitMode="width"
+        colorTheme="light"
+        canMove
+        canCreate
+        onCommand={vi.fn()}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onView={vi.fn()}
+        onDelete={vi.fn()}
+        onEditClick={vi.fn()}
+        labels={data.labels}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(fillStyles).toContain('#f8fafc');
+    });
+
+    fillStyles.length = 0;
+
+    rerender(
+      <CanvasBoard
+        data={data}
+        state={state}
+        fitMode="width"
+        colorTheme="dark"
+        canMove
+        canCreate
+        onCommand={vi.fn()}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onView={vi.fn()}
+        onDelete={vi.fn()}
+        onEditClick={vi.fn()}
+        labels={data.labels}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(fillStyles).toContain('#182234');
+    });
+  });
+
+  it('draws card outline stroke with theme.border', async () => {
+    const issue = makeIssue(1);
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
+
+    const context = createCanvasContextWithSpies();
+    const strokeStyles: string[] = [];
+    let currentStrokeStyle = '';
+    Object.defineProperty(context, 'strokeStyle', {
+      configurable: true,
+      get: () => currentStrokeStyle,
+      set: (value: string) => { currentStrokeStyle = value; },
+    });
+    context.stroke = vi.fn(() => {
+      strokeStyles.push(currentStrokeStyle);
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+
+    render(
+      <CanvasBoard
+        data={data}
+        state={state}
+        fitMode="width"
+        colorTheme="dark"
+        canMove
+        canCreate
+        onCommand={vi.fn()}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onView={vi.fn()}
+        onDelete={vi.fn()}
+        onEditClick={vi.fn()}
+        labels={data.labels}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(strokeStyles).toContain('#3b4758');
+    });
   });
 });

@@ -718,7 +718,7 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
     maxWidth: isFullScreen ? '100vw' : '98vw',
     height: `${isFullScreen ? viewportSize.height : effectiveDialogHeight}px`,
     maxHeight: `${isFullScreen ? viewportSize.height : maxDialogHeight}px`,
-    backgroundColor: '#fff',
+    backgroundColor: 'var(--rk-bg-surface)',
     borderRadius: isFullScreen ? 0 : '6px',
     boxShadow: isFullScreen ? 'none' : '0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1)',
     display: 'flex',
@@ -763,9 +763,9 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
               style={{
                 flex: '0 0 auto',
                 padding: '12px 16px',
-                backgroundColor: '#fdecea',
-                color: '#b71c1c',
-                borderBottom: '1px solid #f5c6cb',
+                backgroundColor: 'var(--rk-danger-bg)',
+                color: 'var(--rk-danger)',
+                borderBottom: '1px solid var(--rk-border)',
                 fontSize: 13,
               }}
             >
@@ -790,8 +790,8 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
             style={{
               flex: '0 0 auto',
               padding: '8px 12px 0 12px',
-              backgroundColor: '#fff',
-              borderTop: '1px solid #e0e0e0',
+              backgroundColor: 'var(--rk-bg-surface)',
+              borderTop: '1px solid var(--rk-border)',
             }}
           >
             <div className="rk-subtask-input">
@@ -836,8 +836,8 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
             display: 'flex',
             justifyContent: 'flex-start',
             gap: '6px',
-            backgroundColor: '#fff',
-            borderTop: mode === 'time_entry' ? '1px solid #e0e0e0' : 'none',
+            backgroundColor: 'var(--rk-bg-surface)',
+            borderTop: mode === 'time_entry' ? '1px solid var(--rk-border)' : 'none',
           }}
         >
           <button

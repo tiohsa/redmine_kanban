@@ -10,7 +10,19 @@ Click the gear icon on the board toolbar to configure layout preferences.
 
 [Enlarge image](/images/display-settings-en.png)
 
-### 1. Board Layout Preferences
+### 1. Color Theme
+
+Switch between color themes for the Kanban board:
+
+- **Light**: Standard light appearance (default).
+- **Dark**: Dark mode optimized for reduced glare and enhanced contrast. Canvas cards, headers, badges, toolbars, and popovers immediately adapt to dark tones.
+
+#### Features & Behavior
+- **Instant Reflection**: Theme changes apply immediately without reloading the page.
+- **Per-User & Per-Instance Persistence**: The preference is saved in browser local storage per user and per Redmine instance, persisting across sessions.
+- **Redmine Theme Compatibility**: Redmine Kanban independently manages its board color scheme. Issue view/edit dialogs (iframe) inherit the Redmine instance CSS theme; Redmine instances with custom dark themes will display cleanly without forced white backgrounds.
+
+### 2. Board Layout Preferences
 
 - **Card Display Mode**:
   - **Standard**: Displays complete issue details including avatar, tracker, priority, due date, progress ratio, and subtasks.

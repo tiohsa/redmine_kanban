@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,7 +12,13 @@ vi.mock('./board/CanvasBoard', async () => {
   const { forwardRef } = await import('react');
   return {
     CanvasBoard: forwardRef<CanvasBoardHandle, ComponentProps<typeof CanvasBoard>>((props, _ref) => (
-      <div data-testid="canvas-board" data-card-display-mode={props.cardDisplayMode} data-fit-mode={props.fitMode} data-font-size={props.fontSize}>
+      <div
+        data-testid="canvas-board"
+        data-card-display-mode={props.cardDisplayMode}
+        data-fit-mode={props.fitMode}
+        data-font-size={props.fontSize}
+        data-color-theme={props.colorTheme}
+      >
         <button onClick={() => props.onEditClick('/issues/1')}>View issue</button>
         <button onClick={() => props.onEditClick('/issues/1/edit')}>Edit issue</button>
         <button onClick={() => props.onCreate({ statusId: 1, projectId: 1 })}>Create issue</button>
@@ -28,6 +34,9 @@ vi.mock('../infrastructure/api/http', () => ({
     columns: [], lanes: [], entities: [], tree: { root_ids: [], children_by_parent_id: {} },
     lists: { assignees: [], trackers: [], priorities: [], projects: [], viewable_projects: [], creatable_projects: [] },
     labels: {
+      color_theme: 'カラーテーマ',
+      color_theme_light: 'ライト',
+      color_theme_dark: 'ダーク',
       display_settings: '表示設定',
       card_display_mode: 'カード表示',
       card_display_standard: '標準',
@@ -215,5 +224,79 @@ describe('App display settings', () => {
     expect(board.getAttribute('data-card-display-mode')).toBe('single_line');
     expect(board.getAttribute('data-fit-mode')).toBe('none');
     expect(board.getAttribute('data-font-size')).toBe('10');
+  });
+
+  describe('color theme display settings', () => {
+    it('switches color theme between light and dark, updating data-rk-theme on root and canvas board', async () => {
+      await openDisplaySettings();
+      const themeSelect = screen.getByRole<HTMLSelectElement>('combobox', { name: 'カラーテーマ' });
+      expect(themeSelect.value).toBe('light');
+
+      const rkRoot = document.querySelector('.rk-root');
+      expect(rkRoot?.getAttribute('data-rk-theme')).toBe('light');
+      expect(screen.getByTestId('canvas-board').getAttribute('data-color-theme')).toBe('light');
+
+      fireEvent.change(themeSelect, { target: { value: 'dark' } });
+
+      expect(themeSelect.value).toBe('dark');
+      expect(rkRoot?.getAttribute('data-rk-theme')).toBe('dark');
+      expect(screen.getByTestId('canvas-board').getAttribute('data-color-theme')).toBe('dark');
+      expect(localStorage.getItem('rk_color_theme:/:user:7')).toBe('dark');
+
+      fireEvent.change(themeSelect, { target: { value: 'light' } });
+      expect(themeSelect.value).toBe('light');
+      expect(rkRoot?.getAttribute('data-rk-theme')).toBe('light');
+      expect(screen.getByTestId('canvas-board').getAttribute('data-color-theme')).toBe('light');
+      expect(localStorage.getItem('rk_color_theme:/:user:7')).toBe('light');
+    });
+
+    it('restores dark theme from localStorage on initial render', async () => {
+      localStorage.setItem('rk_color_theme:/:user:7', 'dark');
+      await openDisplaySettings();
+
+      const themeSelect = screen.getByRole<HTMLSelectElement>('combobox', { name: 'カラーテーマ' });
+      expect(themeSelect.value).toBe('dark');
+
+      const rkRoot = document.querySelector('.rk-root');
+      expect(rkRoot?.getAttribute('data-rk-theme')).toBe('dark');
+      expect(screen.getByTestId('canvas-board').getAttribute('data-color-theme')).toBe('dark');
+    });
+
+    it('syncs data-rk-theme to datepicker portal element', async () => {
+      const portal = document.createElement('div');
+      portal.id = 'redmine-kanban-datepicker-portal';
+      document.body.appendChild(portal);
+
+      try {
+        await openDisplaySettings();
+        expect(portal.getAttribute('data-rk-theme')).toBe('light');
+
+        const themeSelect = screen.getByRole<HTMLSelectElement>('combobox', { name: 'カラーテーマ' });
+        fireEvent.change(themeSelect, { target: { value: 'dark' } });
+
+        expect(portal.getAttribute('data-rk-theme')).toBe('dark');
+      } finally {
+        portal.remove();
+      }
+    });
+
+    it('automatically sets data-rk-theme on datepicker portal when created dynamically in document.body', async () => {
+      localStorage.setItem('rk_color_theme:/:user:7', 'dark');
+      await openDisplaySettings();
+
+      expect(document.getElementById('redmine-kanban-datepicker-portal')).toBeNull();
+
+      const dynamicPortal = document.createElement('div');
+      dynamicPortal.id = 'redmine-kanban-datepicker-portal';
+      document.body.appendChild(dynamicPortal);
+
+      try {
+        await waitFor(() => {
+          expect(dynamicPortal.getAttribute('data-rk-theme')).toBe('dark');
+        });
+      } finally {
+        dynamicPortal.remove();
+      }
+    });
   });
 });

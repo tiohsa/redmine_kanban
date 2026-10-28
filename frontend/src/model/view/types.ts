@@ -10,6 +10,7 @@ export type Filters = {
   trackerIds: number[];
 };
 
+export type KanbanColorTheme = 'light' | 'dark';
 export type LaneType = 'none' | 'assignee' | 'priority' | 'category';
 export type FitMode = 'none' | 'width';
 export type CardDisplayMode = 'standard' | 'single_line';

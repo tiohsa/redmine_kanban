@@ -1,6 +1,44 @@
+import { DEFAULT_COLOR_THEME, parseColorTheme } from '../../model/view/preferences';
+import type { KanbanColorTheme } from '../../model/view/types';
+
 export function buildProjectScopeFromDataUrl(dataUrl: string): string {
   const normalizedDataUrl = dataUrl.replace(/\?.*$/, '');
   return normalizedDataUrl.replace(/\/data$/, '');
+}
+
+export function buildInstanceBasePathFromDataUrl(dataUrl: string): string {
+  try {
+    const parsed = new URL(dataUrl, 'http://localhost');
+    const pathname = parsed.pathname;
+    const match = pathname.match(/^(.*?)(?:\/projects(?:\/|$))|^(.*?)(?:\/kanban(?:\/|$))/);
+    const rawPrefix = match ? (match[1] ?? match[2] ?? '') : '';
+    const cleaned = rawPrefix.replace(/\/+$/, '');
+    if (!cleaned) return '/';
+    return cleaned.startsWith('/') ? cleaned : `/${cleaned}`;
+  } catch {
+    return '/';
+  }
+}
+
+export function colorThemeStorageKey(dataUrl: string, userId?: number | string | null): string {
+  const instanceBasePath = buildInstanceBasePathFromDataUrl(dataUrl);
+  const userSegment = userId != null ? String(userId) : 'anonymous';
+  return `rk_color_theme:${instanceBasePath}:user:${userSegment}`;
+}
+
+export function readColorTheme(key: string | null): KanbanColorTheme {
+  if (!key) return DEFAULT_COLOR_THEME;
+  const raw = readStorageRaw(key);
+  return parseColorTheme(raw);
+}
+
+export function writeColorTheme(key: string | null, theme: KanbanColorTheme): void {
+  if (!key) return;
+  try {
+    localStorage.setItem(key, theme);
+  } catch {
+    // Keep operation functional even if storage writes fail
+  }
 }
 
 export function makeScopedStorageKey(baseKey: string, scope: string): string {

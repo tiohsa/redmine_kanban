@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { BoardData, Issue } from './types';
 import { CanvasBoard, type CanvasBoardHandle } from './board/CanvasBoard';
@@ -84,6 +84,8 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     setAgingExcludeClosed,
     viewableProjectsEnabled,
     setViewableProjectsEnabled,
+    colorTheme,
+    setColorTheme,
     preferencesReady,
   } = useKanbanPreferences(dataUrl, initialCurrentUserId);
 
@@ -145,6 +147,25 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
       window.removeEventListener('resize', repositionDatePopup);
     };
   }, [repositionDatePopup]);
+
+  useLayoutEffect(() => {
+    const syncPortalTheme = () => {
+      const portal = document.getElementById('redmine-kanban-datepicker-portal');
+      if (portal && portal.getAttribute('data-rk-theme') !== colorTheme) {
+        portal.setAttribute('data-rk-theme', colorTheme);
+      }
+    };
+
+    syncPortalTheme();
+
+    if (typeof MutationObserver !== 'undefined') {
+      const observer = new MutationObserver(syncPortalTheme);
+      observer.observe(document.body, { childList: true });
+      return () => {
+        observer.disconnect();
+      };
+    }
+  }, [colorTheme]);
   const actions = useKanbanActions({
     baseUrl,
     boardQueryKey,
@@ -199,7 +220,10 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
   const canCreate = Boolean(data) && showCreate;
 
   return (
-    <div className={`rk-root${fullWindow ? ' rk-root-fullwindow' : ''}`}>
+    <div
+      className={`rk-root${fullWindow ? ' rk-root-fullwindow' : ''}`}
+      data-rk-theme={colorTheme}
+    >
       <KanbanPopupHost
         data={toolbarData}
         loading={loading}
@@ -216,6 +240,8 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
       {toolbarData ? (
         <KanbanToolbar
           data={toolbarData}
+          colorTheme={colorTheme}
+          onChangeColorTheme={setColorTheme}
           filterOptionsState={snapshot.filterOptionsState}
           onRetryFilterOptions={() => { void snapshot.candidateQuery.refetch(); }}
           savedViews={preferencesReady ? <SavedViewsPopover key={viewsStorageKey} storageKey={viewsStorageKey} current={viewSettings} onApply={applyViewSettings} validation={viewValidation} labels={toolbarData.labels} /> : null}
@@ -305,6 +331,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
         {filteredData && boardState ? (
           <CanvasBoard
             ref={boardRef}
+            colorTheme={colorTheme}
             onViewportChange={repositionDatePopup}
             data={filteredData}
             state={boardState}

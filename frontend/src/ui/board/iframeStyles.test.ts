@@ -76,6 +76,14 @@ describe('getCleanDialogStyles', () => {
     expect(css).not.toContain('a[href*="/issues/"][href$="/edit"]');
     expect(css).not.toContain('a[href*="/issues/"][href*="/edit?"]');
   });
+
+  it('should not force body background to white in any dialog variant', () => {
+    const variants = ['default', 'issue-compact', 'issue-view', 'time-entry-compact'] as const;
+    for (const variant of variants) {
+      const css = getCleanDialogStyles({ variant });
+      expect(css).not.toMatch(/body\s*\{\s*background:\s*#fff/);
+    }
+  });
 });
 
 describe('applyLinkTargetBlank', () => {

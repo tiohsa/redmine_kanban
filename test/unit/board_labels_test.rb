@@ -31,6 +31,12 @@ class RedmineKanbanBoardLabelsTest < ActiveSupport::TestCase
     assert_equal '絞り込み候補を一時的に取得できません。', japanese[:candidate_unavailable]
     assert_equal 'Board access could not be confirmed. Check that you are signed in and have permission, then retry.', english[:board_access_lost]
     assert_equal 'ボードへのアクセスを確認できません。ログイン状態や権限を確認して再試行してください。', japanese[:board_access_lost]
+    assert_equal 'Color theme', english[:color_theme]
+    assert_equal 'カラーテーマ', japanese[:color_theme]
+    assert_equal 'Light', english[:color_theme_light]
+    assert_equal 'ライト', japanese[:color_theme_light]
+    assert_equal 'Dark', english[:color_theme_dark]
+    assert_equal 'ダーク', japanese[:color_theme_dark]
     assert_equal english, I18n.with_locale(:en) { build_labels }
   end
 

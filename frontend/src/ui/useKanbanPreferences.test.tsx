@@ -409,4 +409,108 @@ describe('useKanbanPreferences', () => {
       { field: 'updated', direction: 'desc' },
     ]);
   });
+
+  describe('colorTheme preference', () => {
+    it('defaults to light theme when no storage preference exists without writing on mount', () => {
+      const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data', 7));
+      expect(result.current.colorTheme).toBe('light');
+      expect(localStorage.getItem('rk_color_theme:/:user:7')).toBeNull();
+    });
+
+    it('restores saved dark theme from scoped storage during initial mount', () => {
+      localStorage.setItem('rk_color_theme:/:user:7', 'dark');
+      const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data', 7));
+      expect(result.current.colorTheme).toBe('dark');
+    });
+
+    it('updates state immediately and writes to scoped storage on setColorTheme', () => {
+      const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data', 7));
+      expect(result.current.colorTheme).toBe('light');
+
+      act(() => {
+        result.current.setColorTheme('dark');
+      });
+
+      expect(result.current.colorTheme).toBe('dark');
+      expect(localStorage.getItem('rk_color_theme:/:user:7')).toBe('dark');
+
+      act(() => {
+        result.current.setColorTheme('light');
+      });
+
+      expect(result.current.colorTheme).toBe('light');
+      expect(localStorage.getItem('rk_color_theme:/:user:7')).toBe('light');
+    });
+
+    it('isolates color theme by user id and restores per user', () => {
+      localStorage.setItem('rk_color_theme:/:user:7', 'dark');
+      localStorage.setItem('rk_color_theme:/:user:8', 'light');
+
+      const { result, rerender } = renderHook(
+        ({ userId }) => useKanbanPreferences('/projects/demo/kanban/data', userId),
+        { initialProps: { userId: 7 as number | undefined } },
+      );
+
+      expect(result.current.colorTheme).toBe('dark');
+
+      // Change user to user 8
+      act(() => {
+        result.current.setCurrentUserId(8);
+      });
+      rerender({ userId: 8 });
+
+      expect(result.current.colorTheme).toBe('light');
+
+      // Change user 8 to dark
+      act(() => {
+        result.current.setColorTheme('dark');
+      });
+      expect(localStorage.getItem('rk_color_theme:/:user:8')).toBe('dark');
+      expect(localStorage.getItem('rk_color_theme:/:user:7')).toBe('dark');
+    });
+
+    it('shares theme across project scopes in same instance and isolates subpaths', () => {
+      localStorage.setItem('rk_color_theme:/:user:7', 'dark');
+      localStorage.setItem('rk_color_theme:/redmine:user:7', 'light');
+
+      const rootProjA = renderHook(() => useKanbanPreferences('/projects/alpha/kanban/data', 7));
+      expect(rootProjA.result.current.colorTheme).toBe('dark');
+
+      const rootProjB = renderHook(() => useKanbanPreferences('/projects/beta/kanban/data', 7));
+      expect(rootProjB.result.current.colorTheme).toBe('dark');
+
+      const subpathProj = renderHook(() => useKanbanPreferences('/redmine/projects/alpha/kanban/data', 7));
+      expect(subpathProj.result.current.colorTheme).toBe('light');
+    });
+
+    it('preserves colorTheme when applyViewSettings is called', () => {
+      localStorage.setItem('rk_color_theme:/:user:7', 'dark');
+      const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data', 7));
+      expect(result.current.colorTheme).toBe('dark');
+
+      const saved: SavedViewSettings = {
+        filters: {
+          assigneeIds: ['12'],
+          q: 'saved',
+          due: 'custom',
+          dueDays: 5,
+          priority: [],
+          priorityFilterEnabled: true,
+          projectIds: [4],
+          statusIds: [2],
+          trackerIds: [3],
+        },
+        sortConfig: [{ field: 'due', direction: 'asc' }],
+        laneType: 'category',
+        hiddenStatusIds: [],
+        viewableProjectsEnabled: true,
+      };
+
+      act(() => {
+        result.current.applyViewSettings(saved);
+      });
+
+      expect(result.current.colorTheme).toBe('dark');
+    });
+  });
 });

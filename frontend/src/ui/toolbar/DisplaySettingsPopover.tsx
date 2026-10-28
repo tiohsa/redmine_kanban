@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { FitMode } from '../../model/view/types';
-import type { CardDisplayMode, LaneType } from '../useKanbanPreferences';
+import type { CardDisplayMode, KanbanColorTheme, LaneType } from '../useKanbanPreferences';
 import { useDropdownDismiss } from './useDropdownDismiss';
 import { DEFAULT_ISSUE_DIALOG_SIZE, type IssueDialogSizeSettings } from '../../model/view/issueDialogSize';
 
@@ -30,6 +30,8 @@ function SettingsSelect({ label, value, options, onChange, selectClassName, disa
 
 export function DisplaySettingsPopover({
   labels,
+  colorTheme = 'light',
+  onChangeColorTheme,
   showSubtasks,
   onToggleShowSubtasks,
   laneType,
@@ -52,6 +54,8 @@ export function DisplaySettingsPopover({
   onChangeIssueDialogSize = () => {},
 }: {
   labels: Record<string, string>;
+  colorTheme?: KanbanColorTheme;
+  onChangeColorTheme?: (value: KanbanColorTheme) => void;
   showSubtasks: boolean;
   onToggleShowSubtasks: () => void;
   laneType: LaneType;
@@ -92,6 +96,17 @@ export function DisplaySettingsPopover({
       {open ? (
         <div id={menuId} ref={menuRef} className="rk-settings-menu" role="dialog" aria-label={title}>
           <div className="rk-settings-title">{title}</div>
+          {onChangeColorTheme ? (
+            <SettingsSelect
+              label={labels.color_theme ?? 'Color theme'}
+              value={colorTheme}
+              options={[
+                { id: 'light', name: labels.color_theme_light ?? 'Light' },
+                { id: 'dark', name: labels.color_theme_dark ?? 'Dark' },
+              ]}
+              onChange={(value) => onChangeColorTheme(value === 'dark' ? 'dark' : 'light')}
+            />
+          ) : null}
           <SettingsToggle label={labels.show_subtasks_short} checked={isSingleLineMode ? false : showSubtasks} onChange={onToggleShowSubtasks} disabled={isSingleLineMode} />
           <SettingsSelect label={labels.lane_type} value={laneType} options={[
             { id: 'none', name: labels.none },
