@@ -1007,7 +1007,10 @@
 
 .rk-minimax-datepicker-select:focus,
 .rk-minimax-datepicker-nav-btn:focus,
-.rk-minimax-datepicker-btn:focus {
+.rk-minimax-datepicker-btn:focus,
+.rk-minimax-datepicker .react-datepicker__day:focus,
+.rk-minimax-datepicker .react-datepicker__day:focus-visible,
+.rk-minimax-datepicker [tabindex]:focus {
   outline: 2px solid var(--rk-brand-blue) !important;
   outline-offset: 2px !important;
 }

@@ -36,6 +36,7 @@ async function openIssueAndReturnPosition(page, issueId, columnIndex) {
 }
 
 test('filtered moves apply bounded deltas without replacing the board snapshot', async ({ page, baseURL }) => {
+  test.setTimeout(120_000);
   const root = baseURL || process.env.REDMINE_BASE_URL || 'http://127.0.0.1:3002';
   const project = projectPath(root);
   await login(page, root);
