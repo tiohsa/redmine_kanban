@@ -1,14 +1,45 @@
-/* MiniMax Inspired Design System */
-:root {
+/* ==========================================================================
+   Two-Tier Token Architecture
+   Tier 1: Slate-based primitive color palette & base values
+   Tier 2: Purpose-specific semantic tokens (Light / Dark)
+   ========================================================================== */
+
+:root,
+.rk-root[data-rk-theme="light"],
+#redmine-kanban-datepicker-portal[data-rk-theme="light"] {
+  color-scheme: light;
+
+  /* Tier 1 Primitives (Slate Palette Base) */
+  --rk-palette-slate-50: #f8fafc;
+  --rk-palette-slate-100: #f1f5f9;
+  --rk-palette-slate-200: #e2e8f0;
+  --rk-palette-slate-300: #cbd5e1;
+  --rk-palette-slate-400: #94a3b8;
+  --rk-palette-slate-500: #64748b;
+  --rk-palette-slate-600: #475569;
+  --rk-palette-slate-700: #334155;
+  --rk-palette-slate-800: #1e293b;
+  --rk-palette-slate-900: #0f172a;
+  --rk-palette-slate-950: #0b0f19;
+
+  /* Tier 2 Semantic Tokens (Light) */
   /* Surface & Background */
   --rk-bg-main: #ffffff;
   --rk-bg-surface: #ffffff;
   --rk-bg-secondary: #f0f0f0;
+  --rk-bg-elevated: #ffffff;
+  --rk-bg-subtle: var(--rk-palette-slate-50);
+  --rk-bg-control: #ffffff;
+  --rk-bg-input: #ffffff;
+  --rk-bg-hover: var(--rk-palette-slate-100);
+  --rk-bg-accent-soft: #eff6ff;
 
   /* Borders */
   --rk-border: #e5e7eb;
   --rk-border-light: #f2f3f5;
   --rk-border-strong: #cbd5e1;
+  --rk-border-control: var(--rk-border);
+  --rk-border-elevated: var(--rk-border);
 
   /* Text Colors */
   --rk-text-primary: #222222;
@@ -16,19 +47,63 @@
   --rk-text-charcoal: #181e25;
   --rk-text-secondary: #45515e;
   --rk-text-muted: #8e8e93;
+  --rk-text-accent-hover: var(--rk-brand-blue);
+  --rk-accent-fg: #ffffff;
+  --rk-tooltip-bg: #18181b;
+  --rk-tooltip-fg: #ffffff;
 
   /* Brand Colors */
   --rk-brand-blue: #1456f0;
   --rk-primary: #3b82f6;
   --rk-primary-hover: #2563eb;
   --rk-primary-active: #1d4ed8;
+  --rk-btn-primary-bg: var(--rk-text-charcoal);
+  --rk-btn-primary-hover-bg: #2b3542;
 
-  /* Semantic */
+  /* Toolbar */
+  --rk-toolbar-separator-bg: var(--rk-border);
+
+  /* Dropdown & Form Controls */
+  --rk-dropdown-checkbox-bg: #ffffff;
+  --rk-dropdown-checkbox-border: var(--rk-palette-slate-400);
+
+  /* Switch */
+  --rk-switch-bg: var(--rk-palette-slate-300);
+  --rk-switch-border: transparent;
+  --rk-switch-thumb-bg: #ffffff;
+  --rk-switch-thumb-shadow: 0 1px 3px rgb(15 23 42 / 18%);
+
+  /* Semantic Alerts / Status */
   --rk-danger: #ef4444;
   --rk-danger-bg: #fef2f2;
+  --rk-danger-hover: #dc2626;
+  --rk-danger-text: #b91c1c;
+  --rk-danger-border: #fecaca;
   --rk-warn: #f59e0b;
   --rk-warn-bg: #fffbeb;
+  --rk-warn-text: #b45309;
+  --rk-warn-border: #fde68a;
   --rk-success-bg: #e8ffea;
+  --rk-success-text: #166534;
+  --rk-pill-bg: #e0e7ff;
+  --rk-pill-text: #3730a3;
+
+  /* Priority Badges */
+  --rk-badge-low-bg: #e0f2fe;
+  --rk-badge-low-fg: #0369a1;
+  --rk-badge-low-border: transparent;
+  --rk-badge-normal-bg: var(--rk-palette-slate-100);
+  --rk-badge-normal-fg: var(--rk-text-secondary);
+  --rk-badge-normal-border: transparent;
+  --rk-badge-high-bg: #fef9c3;
+  --rk-badge-high-fg: #a16207;
+  --rk-badge-high-border: #fde047;
+  --rk-badge-urgent-bg: #ffedd5;
+  --rk-badge-urgent-fg: #c2410c;
+  --rk-badge-urgent-border: #fdba74;
+  --rk-badge-immediate-bg: #fee2e2;
+  --rk-badge-immediate-fg: #b91c1c;
+  --rk-badge-immediate-border: #fca5a5;
 
   /* Sticky Note Colors (Matching brand spectrum) */
   --rk-note-lime: #bef264;
@@ -56,45 +131,165 @@
 
   /* Typography */
   --rk-font-main: 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif;
-}
 
-.rk-root[data-rk-theme="light"] {
-  color-scheme: light;
+  /* Datepicker */
+  --rk-datepicker-surface-subtle: #f7f9fc;
+  --rk-datepicker-surface-muted: #f3f6fb;
+  --rk-datepicker-border-strong: #d6deea;
+  --rk-datepicker-primary-200: #bfdbfe;
+  --rk-datepicker-header-bg: #f7f9fc;
+  --rk-datepicker-day-selected-bg: var(--rk-brand-blue);
+  --rk-datepicker-select-bg: #ffffff;
+  --rk-datepicker-btn-bg: #ffffff;
+  --rk-datepicker-btn-border: var(--rk-datepicker-border-strong);
+  --rk-datepicker-btn-hover-bg: var(--rk-datepicker-primary-200);
+  --rk-datepicker-btn-hover-fg: var(--rk-text-primary);
+  --rk-datepicker-clear-bg: #ffffff;
+  --rk-datepicker-clear-border: var(--rk-datepicker-border-strong);
+  --rk-datepicker-clear-fg: #d94242;
+  --rk-datepicker-clear-hover-bg: #fee2e2;
+  --rk-datepicker-clear-hover-border: #ef4444;
+  --rk-datepicker-clear-hover-fg: #b91c1c;
+
+  /* Work Timer & Pending Work */
+  --rk-timer-surface-running: #181d22;
+  --rk-timer-surface-pending: #fffcf0;
+  --rk-timer-primary: #181d22;
+  --rk-timer-danger: #ff454d;
+  --rk-timer-blue: #1f5cff;
+  --rk-timer-green: #42e986;
+  --rk-timer-warning: #b77900;
+  --rk-timer-border: #d6dae0;
+  --rk-timer-radius: 20px;
+  --rk-timer-button-radius: 9999px;
+  --rk-timer-shadow: 0 10px 30px rgba(15, 23, 42, .2), 0 2px 8px rgba(15, 23, 42, .08);
+  --rk-timer-pending-bg: var(--rk-timer-surface-pending);
+  --rk-timer-pending-border: #e4a72b;
+  --rk-timer-btn-light-color: #262b31;
+  --rk-timer-btn-light-bg: #f1f1f1;
+  --rk-timer-btn-secondary-color: #24292f;
+  --rk-timer-btn-secondary-border: #c8cdd3;
+  --rk-timer-btn-secondary-bg: #ffffff;
+  --rk-timer-danger-outline-color: #c52d35;
+  --rk-timer-danger-outline-border: #ef9da1;
+  --rk-timer-danger-outline-bg: #fff5f5;
+  --rk-timer-extend-menu-border: var(--rk-timer-border);
+  --rk-timer-duration-btn-color: #31363d;
+  --rk-timer-duration-btn-border: var(--rk-timer-border);
+  --rk-timer-duration-btn-bg: #ffffff;
+  --rk-timer-duration-btn-selected-border: var(--rk-timer-blue);
+  --rk-timer-duration-btn-selected-bg: var(--rk-timer-blue);
+  --rk-pending-work-header-color: #b84700;
+  --rk-pending-work-box-bg: #f7f8fa;
+  --rk-pending-work-box-border: #dce1e8;
+  --rk-pending-work-btn-color: #2b2f35;
+  --rk-pending-work-btn-border: #d5d9df;
+  --rk-pending-work-btn-bg: #ffffff;
+  --rk-pending-work-btn-hover-color: var(--rk-timer-blue);
+  --rk-pending-work-btn-hover-border: #9eb9ff;
+  --rk-pending-work-btn-hover-bg: #f4f7ff;
+  --rk-pending-work-state-bg: #fff9e8;
+  --rk-pending-work-state-border: #e5b651;
+  --rk-pending-work-state-fg: var(--rk-timer-warning);
+  --rk-pending-work-discard-bg: #fff5f5;
+  --rk-pending-work-discard-border: #efb4b7;
+  --rk-pending-work-discard-fg: #a5242b;
+
+  /* Miscellaneous components */
+  --rk-desc-preview-bg: #f8fafc;
+  --rk-bulk-add-row-bg: #f6f6f6;
+  --rk-bulk-add-row-border: #ccc;
+  --rk-bulk-add-row-fg: #555;
+  --rk-bulk-add-row-hover-bg: #e6e6e6;
+  --rk-bulk-add-row-hover-fg: #333;
 }
 
 .rk-root[data-rk-theme="dark"],
 #redmine-kanban-datepicker-portal[data-rk-theme="dark"] {
   color-scheme: dark;
 
+  /* Tier 2 Semantic Tokens (Dark) */
   /* Surface & Background */
   --rk-bg-main: #0b0f19;
   --rk-bg-surface: #1e293b;
-  --rk-bg-secondary: #334155;
+  --rk-bg-secondary: var(--rk-palette-slate-700);
+  --rk-bg-elevated: var(--rk-palette-slate-800);
+  --rk-bg-subtle: var(--rk-palette-slate-800);
+  --rk-bg-control: var(--rk-palette-slate-900);
+  --rk-bg-input: var(--rk-palette-slate-800);
+  --rk-bg-hover: var(--rk-palette-slate-700);
+  --rk-bg-accent-soft: var(--rk-palette-slate-700);
 
   /* Borders */
   --rk-border: #3b4758;
   --rk-border-light: #283344;
   --rk-border-strong: #4e5d73;
+  --rk-border-control: var(--rk-border-strong);
+  --rk-border-elevated: var(--rk-border-strong);
 
   /* Text Colors */
   --rk-text-primary: #f8fafc;
   --rk-text-dark: #f8fafc;
-  --rk-text-charcoal: #f1f5f9;
+  --rk-text-charcoal: var(--rk-palette-slate-100);
   --rk-text-secondary: #cbd5e1;
-  --rk-text-muted: #94a3b8;
+  --rk-text-muted: var(--rk-palette-slate-400);
+  --rk-text-accent-hover: var(--rk-primary);
+  --rk-accent-fg: #ffffff;
+  --rk-tooltip-bg: var(--rk-palette-slate-900);
+  --rk-tooltip-fg: var(--rk-palette-slate-50);
 
   /* Brand Colors */
   --rk-brand-blue: #60a5fa;
   --rk-primary: #3b82f6;
   --rk-primary-hover: #60a5fa;
   --rk-primary-active: #93c5fd;
+  --rk-btn-primary-bg: var(--rk-primary);
+  --rk-btn-primary-hover-bg: var(--rk-primary-hover);
 
-  /* Semantic */
+  /* Toolbar */
+  --rk-toolbar-separator-bg: var(--rk-border-strong);
+
+  /* Dropdown & Form Controls */
+  --rk-dropdown-checkbox-bg: var(--rk-bg-surface);
+  --rk-dropdown-checkbox-border: var(--rk-border-strong);
+
+  /* Switch */
+  --rk-switch-bg: var(--rk-palette-slate-700);
+  --rk-switch-border: var(--rk-palette-slate-600);
+  --rk-switch-thumb-bg: var(--rk-palette-slate-400);
+  --rk-switch-thumb-shadow: 0 1px 3px rgb(0 0 0 / 40%);
+
+  /* Semantic Alerts / Status */
   --rk-danger: #f87171;
   --rk-danger-bg: #451a1a;
+  --rk-danger-hover: #ef4444;
+  --rk-danger-text: #fca5a5;
+  --rk-danger-border: #991b1b;
   --rk-warn: #fbbf24;
   --rk-warn-bg: #453310;
+  --rk-warn-text: #fde047;
+  --rk-warn-border: #854d0e;
   --rk-success-bg: #14381e;
+  --rk-success-text: #86efac;
+  --rk-pill-bg: #312e81;
+  --rk-pill-text: #c7d2fe;
+
+  /* Priority Badges */
+  --rk-badge-low-bg: #14532d;
+  --rk-badge-low-fg: #86efac;
+  --rk-badge-low-border: #166534;
+  --rk-badge-normal-bg: var(--rk-palette-slate-700);
+  --rk-badge-normal-fg: var(--rk-palette-slate-300);
+  --rk-badge-normal-border: var(--rk-palette-slate-600);
+  --rk-badge-high-bg: #713f12;
+  --rk-badge-high-fg: #fde047;
+  --rk-badge-high-border: #854d0e;
+  --rk-badge-urgent-bg: #7c2d12;
+  --rk-badge-urgent-fg: #fdba74;
+  --rk-badge-urgent-border: #9a3412;
+  --rk-badge-immediate-bg: #7f1d1d;
+  --rk-badge-immediate-fg: #fca5a5;
+  --rk-badge-immediate-border: #991b1b;
 
   /* Column Background Colors in Canvas & Board */
   --rk-col-bg-1: #0f172a;
@@ -112,16 +307,68 @@
   --rk-shadow-glow: rgba(96, 165, 250, 0.25) 0px 0px 15px;
 
   /* Datepicker */
-  --rk-datepicker-surface-subtle: #1e293b;
-  --rk-datepicker-surface-muted: #334155;
-  --rk-datepicker-border-strong: #4e5d73;
+  --rk-datepicker-surface-subtle: var(--rk-palette-slate-800);
+  --rk-datepicker-surface-muted: var(--rk-palette-slate-700);
+  --rk-datepicker-border-strong: var(--rk-palette-slate-600);
   --rk-datepicker-primary-200: #1e3a8a;
+  --rk-datepicker-header-bg: var(--rk-palette-slate-900);
+  --rk-datepicker-day-selected-bg: var(--rk-primary);
+  --rk-datepicker-select-bg: var(--rk-palette-slate-900);
+  --rk-datepicker-btn-bg: var(--rk-palette-slate-700);
+  --rk-datepicker-btn-border: var(--rk-border-strong);
+  --rk-datepicker-btn-hover-bg: var(--rk-palette-slate-600);
+  --rk-datepicker-btn-hover-fg: #ffffff;
+  --rk-datepicker-clear-bg: var(--rk-palette-slate-700);
+  --rk-datepicker-clear-border: var(--rk-border-strong);
+  --rk-datepicker-clear-fg: var(--rk-danger);
+  --rk-datepicker-clear-hover-bg: var(--rk-danger-bg);
+  --rk-datepicker-clear-hover-border: var(--rk-danger);
+  --rk-datepicker-clear-hover-fg: var(--rk-danger);
 
-  /* Timer */
-  --rk-timer-surface-running: #0f172a;
+  /* Work Timer & Pending Work */
+  --rk-timer-surface-running: var(--rk-palette-slate-900);
   --rk-timer-surface-pending: #262117;
   --rk-timer-primary: #3b82f6;
   --rk-timer-border: #4e5d73;
+  --rk-timer-pending-bg: #2a2415;
+  --rk-timer-pending-border: #854d0e;
+  --rk-timer-btn-light-color: var(--rk-text-primary);
+  --rk-timer-btn-light-bg: var(--rk-bg-secondary);
+  --rk-timer-btn-secondary-color: var(--rk-text-primary);
+  --rk-timer-btn-secondary-border: var(--rk-border);
+  --rk-timer-btn-secondary-bg: var(--rk-bg-surface);
+  --rk-timer-danger-outline-color: #fca5a5;
+  --rk-timer-danger-outline-border: #991b1b;
+  --rk-timer-danger-outline-bg: #451a1a;
+  --rk-timer-extend-menu-border: var(--rk-border);
+  --rk-timer-duration-btn-color: var(--rk-text-primary);
+  --rk-timer-duration-btn-border: var(--rk-border);
+  --rk-timer-duration-btn-bg: var(--rk-bg-surface);
+  --rk-timer-duration-btn-selected-border: var(--rk-primary);
+  --rk-timer-duration-btn-selected-bg: var(--rk-primary);
+  --rk-pending-work-header-color: var(--rk-warn);
+  --rk-pending-work-box-bg: var(--rk-bg-secondary);
+  --rk-pending-work-box-border: var(--rk-border);
+  --rk-pending-work-btn-color: var(--rk-text-primary);
+  --rk-pending-work-btn-border: var(--rk-border);
+  --rk-pending-work-btn-bg: var(--rk-bg-surface);
+  --rk-pending-work-btn-hover-color: var(--rk-primary);
+  --rk-pending-work-btn-hover-border: var(--rk-primary);
+  --rk-pending-work-btn-hover-bg: var(--rk-bg-secondary);
+  --rk-pending-work-state-bg: #2a2415;
+  --rk-pending-work-state-border: #854d0e;
+  --rk-pending-work-state-fg: #fde047;
+  --rk-pending-work-discard-bg: #451a1a;
+  --rk-pending-work-discard-border: #991b1b;
+  --rk-pending-work-discard-fg: #fca5a5;
+
+  /* Miscellaneous components */
+  --rk-desc-preview-bg: var(--rk-bg-secondary);
+  --rk-bulk-add-row-bg: var(--rk-bg-secondary);
+  --rk-bulk-add-row-border: var(--rk-border);
+  --rk-bulk-add-row-fg: var(--rk-text-secondary);
+  --rk-bulk-add-row-hover-bg: var(--rk-bg-surface);
+  --rk-bulk-add-row-hover-fg: var(--rk-text-primary);
 }
 
 .rk-root {
@@ -132,23 +379,9 @@
   background-color: var(--rk-bg-main);
 }
 
-.rk-root {
-  --rk-timer-surface-running: #181d22;
-  --rk-timer-surface-pending: #fffcf0;
-  --rk-timer-primary: #181d22;
-  --rk-timer-danger: #ff454d;
-  --rk-timer-blue: #1f5cff;
-  --rk-timer-green: #42e986;
-  --rk-timer-warning: #b77900;
-  --rk-timer-border: #d6dae0;
-  --rk-timer-radius: 20px;
-  --rk-timer-button-radius: 9999px;
-  --rk-timer-shadow: 0 10px 30px rgba(15, 23, 42, .2), 0 2px 8px rgba(15, 23, 42, .08);
-}
-
 .rk-work-timer { position: fixed; right: 24px; bottom: 20px; z-index: 2000; display: flex; align-items: center; gap: 14px; box-sizing: border-box; max-width: min(660px, calc(100vw - 32px)); padding: 11px 17px; border-radius: var(--rk-timer-radius); box-shadow: var(--rk-timer-shadow); font-size: 13px; }
-.rk-work-timer-running { color: #fff; border: 1px solid rgba(255, 255, 255, .14); background: var(--rk-timer-surface-running); }
-.rk-work-timer-pending { color: var(--rk-text-primary); border: 1px solid #e4a72b; background: var(--rk-timer-surface-pending); }
+.rk-work-timer-running { color: var(--rk-accent-fg); border: 1px solid rgba(255, 255, 255, .14); background: var(--rk-timer-surface-running); }
+.rk-work-timer-pending { color: var(--rk-text-primary); border: 1px solid var(--rk-timer-pending-border); background: var(--rk-timer-pending-bg); }
 .rk-work-timer-status-icon { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; }
 .rk-work-timer-details { display: flex; flex: 1 1 auto; min-width: 150px; flex-direction: column; }
 .rk-work-timer-subject { overflow: hidden; font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
@@ -162,16 +395,16 @@
 .rk-timer-button { display: inline-flex; min-height: 30px; align-items: center; justify-content: center; box-sizing: border-box; padding: 0 14px; border: 0; border-radius: var(--rk-timer-button-radius); font: inherit; font-size: 12px; font-weight: 650; line-height: 1; white-space: nowrap; cursor: pointer; transition: transform .12s ease, background-color .12s ease, box-shadow .12s ease; }
 .rk-timer-button:hover { transform: translateY(-1px); }
 .rk-timer-button:focus-visible { outline: 3px solid rgba(31, 92, 255, .28); outline-offset: 2px; }
-.rk-timer-button-primary { color: #fff; background: var(--rk-timer-primary); box-shadow: 0 2px 5px rgba(0, 0, 0, .12); }
-.rk-timer-button-light { color: #262b31; background: #f1f1f1; }
-.rk-timer-button-secondary { color: #24292f; border: 1px solid #c8cdd3; background: #fff; }
-.rk-timer-button-dark-secondary { color: #fff; border: 1px solid rgba(255, 255, 255, .24); background: rgba(255, 255, 255, .1); }
-.rk-timer-button-icon { width: 30px; padding: 0; color: #fff; border: 1px solid rgba(255, 255, 255, .24); background: rgba(255, 255, 255, .1); }
-.rk-timer-button-danger { color: #fff; background: var(--rk-timer-danger); box-shadow: 0 2px 5px rgba(255, 69, 77, .28); }
-.rk-timer-button-danger-outline { color: #c52d35; border: 1px solid #ef9da1; background: #fff5f5; }
-.rk-work-timer-extend-menu { position: absolute; right: 0; bottom: calc(100% + 9px); z-index: 2100; display: grid; min-width: 104px; gap: 3px; padding: 6px; color: #24292f; border: 1px solid var(--rk-timer-border); border-radius: 13px; background: #fff; box-shadow: var(--rk-timer-shadow); }
+.rk-timer-button-primary { color: var(--rk-accent-fg); background: var(--rk-timer-primary); box-shadow: 0 2px 5px rgba(0, 0, 0, .12); }
+.rk-timer-button-light { color: var(--rk-timer-btn-light-color); background: var(--rk-timer-btn-light-bg); }
+.rk-timer-button-secondary { color: var(--rk-timer-btn-secondary-color); border: 1px solid var(--rk-timer-btn-secondary-border); background: var(--rk-timer-btn-secondary-bg); }
+.rk-timer-button-dark-secondary { color: var(--rk-accent-fg); border: 1px solid rgba(255, 255, 255, .24); background: rgba(255, 255, 255, .1); }
+.rk-timer-button-icon { width: 30px; padding: 0; color: var(--rk-accent-fg); border: 1px solid rgba(255, 255, 255, .24); background: rgba(255, 255, 255, .1); }
+.rk-timer-button-danger { color: var(--rk-accent-fg); background: var(--rk-timer-danger); box-shadow: 0 2px 5px rgba(255, 69, 77, .28); }
+.rk-timer-button-danger-outline { color: var(--rk-timer-danger-outline-color); border: 1px solid var(--rk-timer-danger-outline-border); background: var(--rk-timer-danger-outline-bg); }
+.rk-work-timer-extend-menu { position: absolute; right: 0; bottom: calc(100% + 9px); z-index: 2100; display: grid; min-width: 104px; gap: 3px; padding: 6px; color: var(--rk-text-primary); border: 1px solid var(--rk-timer-extend-menu-border); border-radius: 13px; background: var(--rk-bg-elevated); box-shadow: var(--rk-timer-shadow); }
 .rk-work-timer-extend-menu button { padding: 7px 12px; color: inherit; border: 0; border-radius: 8px; background: transparent; font: inherit; font-size: 12px; text-align: left; white-space: nowrap; cursor: pointer; }
-.rk-work-timer-extend-menu button:hover { background: #f0f2f5; }
+.rk-work-timer-extend-menu button:hover { background: var(--rk-bg-hover); }
 
 .rk-work-timer-icon circle { stroke-width: 1.5; }
 .rk-work-timer-icon path { stroke-linecap: round; stroke-linejoin: round; stroke-width: 3.5; }
@@ -183,45 +416,45 @@
 .rk-work-timer-icon-pending path { stroke: #bd8500; }
 
 .rk-work-timer-backdrop { z-index: 2500; }
-.rk-work-timer-modal { display: flex; width: min(550px, calc(100vw - 32px)); box-sizing: border-box; flex-direction: column; gap: 19px; padding: 24px; color: #24292f; border: 1px solid rgba(15, 23, 42, .1); border-radius: 18px; background: #fff; box-shadow: var(--rk-timer-shadow); }
+.rk-work-timer-modal { display: flex; width: min(550px, calc(100vw - 32px)); box-sizing: border-box; flex-direction: column; gap: 19px; padding: 24px; color: var(--rk-text-primary); border: 1px solid var(--rk-border); border-radius: 18px; background: var(--rk-bg-elevated); box-shadow: var(--rk-timer-shadow); }
 .rk-work-timer-modal-header { min-width: 0; }
-.rk-work-timer-eyebrow { display: flex; align-items: center; gap: 7px; color: #6c737d; font-size: 12px; font-weight: 650; }
+.rk-work-timer-eyebrow { display: flex; align-items: center; gap: 7px; color: var(--rk-text-secondary); font-size: 12px; font-weight: 650; }
 .rk-work-timer-eyebrow-warning { color: var(--rk-timer-warning); }
 .rk-work-timer-modal h2 { overflow: hidden; margin: 6px 0 0; font-size: 16px; font-weight: 750; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 .rk-work-timer-modal p { margin: 0; }
 .rk-work-timer-duration { min-width: 0; margin: 0; padding: 0; border: 0; }
-.rk-work-timer-duration legend { margin-bottom: 9px; color: #5d6570; font-size: 12px; font-weight: 650; }
+.rk-work-timer-duration legend { margin-bottom: 9px; color: var(--rk-text-secondary); font-size: 12px; font-weight: 650; }
 .rk-work-timer-duration-options { display: flex; gap: 8px; overflow-x: auto; padding: 1px 1px 4px; }
-.rk-work-timer-duration-button { flex: 0 0 auto; min-width: 64px; height: 32px; padding: 0 14px; color: #31363d; border: 1px solid var(--rk-timer-border); border-radius: var(--rk-timer-button-radius); background: #fff; font: inherit; font-size: 13px; font-weight: 550; cursor: pointer; }
-.rk-work-timer-duration-button.is-selected { color: #fff; border-color: var(--rk-timer-blue); background: var(--rk-timer-blue); font-weight: 750; box-shadow: 0 3px 8px rgba(31, 92, 255, .22); }
-.rk-work-timer-autostop { display: flex; align-items: center; gap: 8px; color: #4e5660; font-size: 13px; cursor: pointer; }
+.rk-work-timer-duration-button { flex: 0 0 auto; min-width: 64px; height: 32px; padding: 0 14px; color: var(--rk-timer-duration-btn-color); border: 1px solid var(--rk-timer-duration-btn-border); border-radius: var(--rk-timer-button-radius); background: var(--rk-timer-duration-btn-bg); font: inherit; font-size: 13px; font-weight: 550; cursor: pointer; }
+.rk-work-timer-duration-button.is-selected { color: var(--rk-accent-fg); border-color: var(--rk-timer-duration-btn-selected-border); background: var(--rk-timer-duration-btn-selected-bg); font-weight: 750; box-shadow: 0 3px 8px rgba(31, 92, 255, .22); }
+.rk-work-timer-autostop { display: flex; align-items: center; gap: 8px; color: var(--rk-text-secondary); font-size: 13px; cursor: pointer; }
 .rk-work-timer-autostop input { width: 16px; height: 16px; margin: 0; accent-color: var(--rk-timer-blue); }
 .rk-work-timer-modal-footer { display: flex; justify-content: flex-end; gap: 9px; margin-top: 3px; }
-.rk-pending-work-modal { width: min(696px, calc(100vw - 32px)); gap: 20px; padding: 25px 30px 24px; border-radius: 18px; }
+.rk-pending-work-modal { width: min(696px, calc(100vw - 32px)); gap: 20px; padding: 25px 30px 24px; border-radius: 18px; background: var(--rk-bg-elevated); color: var(--rk-text-primary); border: 1px solid var(--rk-border); }
 .rk-pending-work-header { display: flex; min-width: 0; align-items: flex-start; gap: 12px; }
 .rk-pending-work-header > div { min-width: 0; }
-.rk-pending-work-modal .rk-pending-work-header h2 { margin: 0; color: #b84700; font-size: 17px; font-weight: 750; line-height: 1.35; }
-.rk-pending-work-header p { overflow: hidden; margin-top: 3px !important; color: #252a31; font-size: 14px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
-.rk-pending-work-elapsed { display: flex; min-height: 62px; align-items: center; justify-content: space-between; box-sizing: border-box; padding: 13px 20px; color: #626b78; border: 1px solid #dce1e8; border-radius: 14px; background: #f7f8fa; }
-.rk-pending-work-elapsed strong { color: #20242a; font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace; font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
-.rk-pending-work-section { display: flex; flex-direction: column; box-sizing: border-box; gap: 8px; padding: 15px 16px; border: 1px solid #dce1e8; border-radius: 14px; background: #f7f8fa; }
-.rk-pending-work-section p { color: #5c6674; font-size: 14px; line-height: 1.5; }
-.rk-pending-work-record-button { display: flex; width: 100%; min-height: 48px; align-items: center; justify-content: center; gap: 7px; box-sizing: border-box; color: #2b2f35; border: 1px solid #d5d9df; border-radius: var(--rk-timer-button-radius); background: #fff; box-shadow: 0 2px 5px rgba(15, 23, 42, .14); font: inherit; font-size: 15px; font-weight: 750; cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease, transform .12s ease; }
-.rk-pending-work-record-button:hover { border-color: #9eb9ff; box-shadow: 0 3px 9px rgba(31, 92, 255, .15); transform: translateY(-1px); }
+.rk-pending-work-modal .rk-pending-work-header h2 { margin: 0; color: var(--rk-pending-work-header-color); font-size: 17px; font-weight: 750; line-height: 1.35; }
+.rk-pending-work-header p { overflow: hidden; margin-top: 3px !important; color: var(--rk-text-primary); font-size: 14px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.rk-pending-work-elapsed { display: flex; min-height: 62px; align-items: center; justify-content: space-between; box-sizing: border-box; padding: 13px 20px; color: var(--rk-text-secondary); border: 1px solid var(--rk-pending-work-box-border); border-radius: 14px; background: var(--rk-pending-work-box-bg); }
+.rk-pending-work-elapsed strong { color: var(--rk-text-primary); font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace; font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.rk-pending-work-section { display: flex; flex-direction: column; box-sizing: border-box; gap: 8px; padding: 15px 16px; border: 1px solid var(--rk-pending-work-box-border); border-radius: 14px; background: var(--rk-pending-work-box-bg); }
+.rk-pending-work-section p { color: var(--rk-text-secondary); font-size: 14px; line-height: 1.5; }
+.rk-pending-work-record-button { display: flex; width: 100%; min-height: 48px; align-items: center; justify-content: center; gap: 7px; box-sizing: border-box; color: var(--rk-pending-work-btn-color); border: 1px solid var(--rk-pending-work-btn-border); border-radius: var(--rk-timer-button-radius); background: var(--rk-pending-work-btn-bg); box-shadow: 0 2px 5px rgba(15, 23, 42, .14); font: inherit; font-size: 15px; font-weight: 750; cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease, transform .12s ease; }
+.rk-pending-work-record-button:hover { border-color: var(--rk-pending-work-btn-hover-border); box-shadow: 0 3px 9px rgba(31, 92, 255, .15); transform: translateY(-1px); }
 .rk-pending-work-record-button:focus-visible, .rk-pending-work-resume-button:focus-visible, .rk-pending-work-discard-button:focus-visible { outline: 3px solid rgba(31, 92, 255, .24); outline-offset: 2px; }
-.rk-pending-work-separator { display: flex; align-items: center; gap: 12px; color: #515966; font-size: 12px; }
-.rk-pending-work-separator span { height: 1px; flex: 1; background: #dce1e8; }
+.rk-pending-work-separator { display: flex; align-items: center; gap: 12px; color: var(--rk-text-secondary); font-size: 12px; }
+.rk-pending-work-separator span { height: 1px; flex: 1; background: var(--rk-border); }
 .rk-pending-work-separator b { font-weight: 650; }
-.rk-pending-work-resume-section h3 { margin: 0; color: #252a31; font-size: 15px; font-weight: 750; }
+.rk-pending-work-resume-section h3 { margin: 0; color: var(--rk-text-primary); font-size: 15px; font-weight: 750; }
 .rk-pending-work-resume-options { display: flex; flex-wrap: nowrap; gap: 8px; margin-top: 2px; overflow-x: auto; padding: 1px 0 2px; }
-.rk-pending-work-resume-button { min-width: 64px; height: 36px; flex: 0 0 auto; padding: 0 15px; color: #2b3037; border: 1px solid #d6dbe1; border-radius: var(--rk-timer-button-radius); background: #fff; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; transition: color .12s ease, border-color .12s ease, background-color .12s ease; }
-.rk-pending-work-resume-button:hover { color: var(--rk-timer-blue); border-color: #9eb9ff; background: #f4f7ff; }
-.rk-pending-work-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding-top: 16px; border-top: 1px solid #dce1e8; }
-.rk-pending-work-footer .rk-timer-button-light { min-width: 86px; min-height: 36px; color: #333940; font-size: 14px; }
-.rk-pending-work-discard-button { display: inline-flex; align-items: center; gap: 5px; padding: 7px 12px; color: #c7272f; border: 0; border-radius: var(--rk-timer-button-radius); background: transparent; font: inherit; font-size: 14px; font-weight: 750; cursor: pointer; }
-.rk-pending-work-discard-button .rk-icon { color: #e07176; font-size: 16px; }
-.rk-pending-work-state-card, .rk-pending-work-discard-confirm { display: flex; flex-direction: column; gap: 12px; padding: 16px; color: var(--rk-timer-warning); border: 1px solid #e5b651; border-radius: 14px; background: #fff9e8; font-weight: 650; }
-.rk-pending-work-discard-confirm { color: #a5242b; border-color: #efb4b7; background: #fff5f5; }
+.rk-pending-work-resume-button { min-width: 64px; height: 36px; flex: 0 0 auto; padding: 0 15px; color: var(--rk-pending-work-btn-color); border: 1px solid var(--rk-pending-work-btn-border); border-radius: var(--rk-timer-button-radius); background: var(--rk-pending-work-btn-bg); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; transition: color .12s ease, border-color .12s ease, background-color .12s ease; }
+.rk-pending-work-resume-button:hover { color: var(--rk-pending-work-btn-hover-color); border-color: var(--rk-pending-work-btn-hover-border); background: var(--rk-pending-work-btn-hover-bg); }
+.rk-pending-work-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding-top: 16px; border-top: 1px solid var(--rk-border); }
+.rk-pending-work-footer .rk-timer-button-light { min-width: 86px; min-height: 36px; color: var(--rk-timer-btn-light-color); font-size: 14px; }
+.rk-pending-work-discard-button { display: inline-flex; align-items: center; gap: 5px; padding: 7px 12px; color: var(--rk-danger-text); border: 0; border-radius: var(--rk-timer-button-radius); background: transparent; font: inherit; font-size: 14px; font-weight: 750; cursor: pointer; }
+.rk-pending-work-discard-button .rk-icon { color: var(--rk-danger); font-size: 16px; }
+.rk-pending-work-state-card, .rk-pending-work-discard-confirm { display: flex; flex-direction: column; gap: 12px; padding: 16px; color: var(--rk-pending-work-state-fg); border: 1px solid var(--rk-pending-work-state-border); border-radius: 14px; background: var(--rk-pending-work-state-bg); font-weight: 650; }
+.rk-pending-work-discard-confirm { color: var(--rk-pending-work-discard-fg); border-color: var(--rk-pending-work-discard-border); background: var(--rk-pending-work-discard-bg); }
 .rk-pending-work-state-actions, .rk-pending-work-discard-confirm > div { display: flex; justify-content: flex-end; gap: 8px; }
 .rk-other-timer-modal p { font-weight: 650; }
 
@@ -355,20 +588,20 @@
   font-weight: 600;
   padding: 4px 12px;
   border-radius: 9999px;
-  background: #e0e7ff;
-  color: #3730a3;
+  background: var(--rk-pill-bg);
+  color: var(--rk-pill-text);
   display: inline-flex;
   align-items: center;
 }
 
 .rk-pill-warn {
   background: var(--rk-warn-bg);
-  color: #92400e;
+  color: var(--rk-warn-text);
 }
 
 .rk-pill-error {
   background: var(--rk-danger-bg);
-  color: #991b1b;
+  color: var(--rk-danger-text);
 }
 
 .rk-toolbar {
@@ -420,7 +653,7 @@
 .rk-toolbar-separator {
   width: 1px;
   height: 20px;
-  background: var(--rk-border);
+  background: var(--rk-toolbar-separator-bg);
   margin: 0 2px;
 }
 
@@ -449,22 +682,22 @@
   height: 32px;
   width: 32px;
   padding: 0;
-  border: 1px solid var(--rk-border);
+  border: 1px solid var(--rk-border-control);
   border-radius: 6px;
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
-  background: #ffffff;
-  color: var(--rk-text-dark);
+  background: var(--rk-bg-control);
+  color: var(--rk-text-primary);
   white-space: nowrap;
   position: relative;
 }
 
 .rk-btn:hover {
-  background: #eff6ff;
-  color: var(--rk-brand-blue);
-  border-color: var(--rk-border) !important;
+  background: var(--rk-bg-accent-soft);
+  color: var(--rk-text-accent-hover);
+  border-color: var(--rk-border-control) !important;
 }
 
 .rk-btn:hover .rk-icon {
@@ -472,9 +705,9 @@
 }
 
 .rk-btn-toggle-active {
-  background: #eff6ff !important;
-  color: var(--rk-brand-blue) !important;
-  border-color: var(--rk-border) !important;
+  background: var(--rk-bg-accent-soft) !important;
+  color: var(--rk-text-accent-hover) !important;
+  border-color: var(--rk-border-control) !important;
 }
 
 .rk-btn-toggle-active .rk-icon {
@@ -493,9 +726,9 @@
 }
 
 .rk-active-soft {
-  background: #eff6ff !important;
-  color: var(--rk-brand-blue) !important;
-  border-color: var(--rk-border) !important;
+  background: var(--rk-bg-accent-soft) !important;
+  color: var(--rk-text-accent-hover) !important;
+  border-color: var(--rk-border-control) !important;
 }
 
 .rk-active-soft .rk-icon {
@@ -510,12 +743,12 @@
   height: 32px;
   width: 32px;
   padding: 0;
-  background: #ffffff;
-  border: 1px solid var(--rk-border);
+  background: var(--rk-bg-control);
+  border: 1px solid var(--rk-border-control);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
-  color: var(--rk-text-dark);
+  color: var(--rk-text-primary);
   font-size: 14px;
   font-weight: 500;
   user-select: none;
@@ -525,9 +758,9 @@
 
 .rk-dropdown-trigger:hover,
 .rk-dropdown-trigger.rk-active {
-  background: #eff6ff;
-  border-color: var(--rk-border) !important;
-  color: var(--rk-brand-blue);
+  background: var(--rk-bg-accent-soft);
+  border-color: var(--rk-border-control) !important;
+  color: var(--rk-text-accent-hover);
 }
 
 .rk-dropdown-trigger:hover .rk-icon,
@@ -561,8 +794,8 @@
   top: 100%;
   left: 0;
   margin-top: 4px;
-  background: #fff;
-  border: 1px solid var(--rk-border);
+  background: var(--rk-bg-elevated);
+  border: 1px solid var(--rk-border-elevated);
   border-radius: 12px;
   box-shadow: var(--rk-shadow-md);
   padding: 8px;
@@ -609,7 +842,8 @@
 }
 
 .rk-dropdown-item:hover {
-  background: #f1f5f9;
+  background: var(--rk-bg-hover);
+  color: var(--rk-text-primary);
 }
 
 .rk-dropdown-item:focus-visible {
@@ -620,14 +854,14 @@
 .rk-dropdown-checkbox {
   width: 18px;
   height: 18px;
-  border: 2px solid #94a3b8;
+  border: 2px solid var(--rk-dropdown-checkbox-border);
   border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
   box-sizing: border-box;
-  background: #fff;
+  background: var(--rk-dropdown-checkbox-bg);
   flex-shrink: 0;
 }
 
@@ -640,7 +874,7 @@
   content: "check";
   font-family: 'Material Symbols Outlined';
   font-size: 16px;
-  color: #fff;
+  color: var(--rk-accent-fg);
   font-weight: 700;
   display: block;
 }
@@ -660,19 +894,13 @@
   opacity: 0;
 }
 
-.rk-datepicker-popper {
-  --rk-datepicker-surface-subtle: #f7f9fc;
-  --rk-datepicker-surface-muted: #f3f6fb;
-  --rk-datepicker-border-strong: #d6deea;
-  --rk-datepicker-primary-200: #bfdbfe;
-}
-
 .rk-minimax-datepicker {
   font-family: var(--rk-font-main) !important;
-  border: 1px solid var(--rk-border) !important;
+  border: 1px solid var(--rk-border-elevated) !important;
   border-radius: 16px !important;
-  box-shadow: var(--rk-shadow) !important;
-  background-color: #ffffff !important;
+  box-shadow: var(--rk-shadow-md) !important;
+  background-color: var(--rk-bg-elevated) !important;
+  color: var(--rk-text-primary) !important;
   overflow: hidden !important;
   padding: 0 !important;
   z-index: 10000 !important;
@@ -694,11 +922,12 @@
 .rk-minimax-datepicker .react-datepicker__month-container {
   float: none !important;
   width: 100% !important;
-  background-color: #ffffff !important;
+  background-color: var(--rk-bg-surface) !important;
+  color: var(--rk-text-primary) !important;
 }
 
 .rk-minimax-datepicker .react-datepicker__header {
-  background-color: var(--rk-datepicker-surface-subtle) !important;
+  background-color: var(--rk-datepicker-header-bg) !important;
   border-bottom: 1px solid var(--rk-border) !important;
   border-top-left-radius: 16px !important;
   border-top-right-radius: 16px !important;
@@ -708,14 +937,15 @@
 .rk-minimax-datepicker .react-datepicker__month {
   margin: 0 !important;
   padding: 8px 10px 10px !important;
-  background-color: #ffffff !important;
+  background-color: var(--rk-bg-surface) !important;
+  color: var(--rk-text-primary) !important;
 }
 
 .rk-minimax-datepicker .react-datepicker__children-container {
   width: 100% !important;
   margin: 0 !important;
   padding: 0 !important;
-  background-color: var(--rk-datepicker-surface-subtle) !important;
+  background-color: var(--rk-datepicker-header-bg) !important;
 }
 
 .rk-minimax-datepicker .react-datepicker__current-month {
@@ -731,6 +961,7 @@
 }
 
 .rk-minimax-datepicker .react-datepicker__day {
+  color: var(--rk-text-primary) !important;
   border-radius: 50% !important;
   transition: background-color 0.2s, color 0.2s !important;
   width: 1.52rem !important;
@@ -746,13 +977,13 @@
 .rk-minimax-datepicker .react-datepicker__day--selected:hover,
 .rk-minimax-datepicker .react-datepicker__day--selected.react-datepicker__day--keyboard-selected,
 .rk-minimax-datepicker .react-datepicker__day--selected.react-datepicker__day--keyboard-selected:hover {
-  background-color: var(--rk-brand-blue) !important;
-  color: #ffffff !important;
+  background-color: var(--rk-datepicker-day-selected-bg) !important;
+  color: var(--rk-accent-fg) !important;
 }
 
 .rk-minimax-datepicker .react-datepicker__day--keyboard-selected:not(.react-datepicker__day--selected) {
   background-color: transparent !important;
-  color: inherit !important;
+  color: var(--rk-text-primary) !important;
 }
 
 .rk-minimax-datepicker .react-datepicker__day--keyboard-selected:not(.react-datepicker__day--selected):hover {
@@ -760,7 +991,7 @@
 }
 
 .rk-minimax-datepicker .react-datepicker__day--outside-month:not(.react-datepicker__day--selected) {
-  color: #ccc !important;
+  color: var(--rk-text-muted) !important;
 }
 
 .rk-minimax-datepicker .react-datepicker__day:focus,
@@ -771,7 +1002,7 @@
 
 .rk-minimax-datepicker .react-datepicker__day--selected:focus {
   outline: none !important;
-  box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--rk-brand-blue) !important;
+  box-shadow: 0 0 0 2px var(--rk-bg-surface), 0 0 0 4px var(--rk-primary) !important;
 }
 
 .rk-minimax-datepicker-select:focus,
@@ -806,7 +1037,7 @@
   border: 1px solid var(--rk-datepicker-border-strong) !important;
   font-family: var(--rk-font-main) !important;
   font-size: 11px !important;
-  background-color: #ffffff !important;
+  background-color: var(--rk-datepicker-select-bg) !important;
   color: var(--rk-text-primary) !important;
   cursor: pointer !important;
 }
@@ -814,8 +1045,8 @@
 .rk-minimax-datepicker-nav-btn {
   width: 24px !important;
   height: 24px !important;
-  border: 1px solid var(--rk-border) !important;
-  background-color: #ffffff !important;
+  border: 1px solid var(--rk-datepicker-btn-border) !important;
+  background-color: var(--rk-datepicker-btn-bg) !important;
   border-radius: 999px !important;
   color: var(--rk-text-primary) !important;
   font-size: 14px !important;
@@ -824,6 +1055,12 @@
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
+}
+
+.rk-minimax-datepicker-nav-btn:hover {
+  background-color: var(--rk-datepicker-btn-hover-bg) !important;
+  color: var(--rk-datepicker-btn-hover-fg) !important;
+  border-color: var(--rk-datepicker-btn-border) !important;
 }
 
 .rk-minimax-datepicker-nav-btn:disabled {
@@ -866,7 +1103,8 @@
   border: 1px solid var(--rk-datepicker-border-strong) !important;
   font-family: var(--rk-font-main) !important;
   font-size: 11px !important;
-  background-color: #ffffff !important;
+  background-color: var(--rk-datepicker-select-bg) !important;
+  color: var(--rk-text-primary) !important;
   cursor: pointer !important;
 }
 
@@ -877,14 +1115,14 @@
   box-sizing: border-box !important;
   padding: 6px 10px !important;
   border-top: 1px solid var(--rk-border) !important;
-  background-color: var(--rk-datepicker-surface-subtle) !important;
+  background-color: var(--rk-datepicker-header-bg) !important;
   border-bottom-left-radius: 16px !important;
   border-bottom-right-radius: 16px !important;
 }
 
 .rk-minimax-datepicker-btn {
-  background-color: #ffffff !important;
-  border: 1px solid var(--rk-datepicker-border-strong) !important;
+  background-color: var(--rk-datepicker-btn-bg) !important;
+  border: 1px solid var(--rk-datepicker-btn-border) !important;
   color: var(--rk-text-primary) !important;
   padding: 4px 12px !important;
   border-radius: 6px !important;
@@ -896,18 +1134,21 @@
 }
 
 .rk-minimax-datepicker-btn:hover {
-  background-color: var(--rk-datepicker-primary-200) !important;
-  border-color: var(--rk-primary) !important;
+  background-color: var(--rk-datepicker-btn-hover-bg) !important;
+  border-color: var(--rk-datepicker-btn-border) !important;
+  color: var(--rk-datepicker-btn-hover-fg) !important;
 }
 
 .rk-minimax-datepicker-btn--clear {
-  color: #d94242 !important;
+  background-color: var(--rk-datepicker-clear-bg) !important;
+  border: 1px solid var(--rk-datepicker-clear-border) !important;
+  color: var(--rk-datepicker-clear-fg) !important;
 }
 
 .rk-minimax-datepicker-btn--clear:hover {
-  background-color: #fee2e2 !important;
-  border-color: #ef4444 !important;
-  color: #b91c1c !important;
+  background-color: var(--rk-datepicker-clear-hover-bg) !important;
+  border-color: var(--rk-datepicker-clear-hover-border) !important;
+  color: var(--rk-datepicker-clear-hover-fg) !important;
 }
 
 .rk-dropdown-footer {
@@ -931,7 +1172,7 @@
 }
 
 .rk-dropdown-link:hover {
-  background: #eff6ff;
+  background: var(--rk-bg-accent-soft);
 }
 
 @keyframes rk-fade-in {
@@ -952,7 +1193,7 @@
   gap: 6px;
   height: 32px;
   padding: 0 12px;
-  background: #fff;
+  background: var(--rk-bg-input);
   border: 1px solid var(--rk-border);
   border-radius: 8px;
   transition: all 0.2s;
@@ -970,6 +1211,7 @@
   font-size: 13px;
   width: 100%;
   color: var(--rk-text-primary);
+  background: transparent;
 }
 
 .rk-search-box .rk-icon {
@@ -1001,7 +1243,7 @@
   height: 7px;
   background-color: var(--rk-primary);
   border-radius: 50%;
-  border: 1.5px solid #eff6ff;
+  border: 1.5px solid var(--rk-bg-accent-soft);
   pointer-events: none;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
 }
@@ -1135,7 +1377,7 @@
 }
 
 .rk-cell-over {
-  background: #eff6ff !important;
+  background: var(--rk-bg-accent-soft) !important;
   box-shadow: inset 0 0 0 2px var(--rk-primary);
 }
 
@@ -1153,7 +1395,7 @@
 .rk-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--rk-shadow-md);
-  border-color: #cbd5e1;
+  border-color: var(--rk-border-strong);
 }
 
 .rk-icon-btn {
@@ -1172,7 +1414,7 @@
 }
 
 .rk-icon-btn:hover {
-  background: #f1f5f9;
+  background: var(--rk-bg-hover);
   color: var(--rk-text-primary);
 }
 
@@ -1239,73 +1481,75 @@
 }
 
 .rk-badge-priority-low {
-  background: #e0f2fe;
-  color: #0369a1;
+  background: var(--rk-badge-low-bg);
+  color: var(--rk-badge-low-fg);
+  border-color: var(--rk-badge-low-border);
 }
 
 .rk-badge-priority-normal {
-  background: #f1f5f9;
-  color: var(--rk-text-secondary);
+  background: var(--rk-badge-normal-bg);
+  color: var(--rk-badge-normal-fg);
+  border-color: var(--rk-badge-normal-border);
 }
 
 .rk-badge-priority-high {
-  background: #fef9c3;
-  color: #a16207;
-  border-color: #fde047;
+  background: var(--rk-badge-high-bg);
+  color: var(--rk-badge-high-fg);
+  border-color: var(--rk-badge-high-border);
 }
 
 .rk-badge-priority-urgent {
-  background: #ffedd5;
-  color: #c2410c;
-  border-color: #fdba74;
+  background: var(--rk-badge-urgent-bg);
+  color: var(--rk-badge-urgent-fg);
+  border-color: var(--rk-badge-urgent-border);
 }
 
 .rk-badge-priority-immediate {
-  background: #fee2e2;
-  color: #b91c1c;
-  border-color: #fca5a5;
+  background: var(--rk-badge-immediate-bg);
+  color: var(--rk-badge-immediate-fg);
+  border-color: var(--rk-badge-immediate-border);
   font-weight: 700;
 }
 
 .rk-overdue {
   background: var(--rk-danger-bg);
   color: var(--rk-danger);
-  border-color: #fecaca;
+  border-color: var(--rk-danger-border);
 }
 
 .rk-aging-warn {
   background: var(--rk-warn-bg);
-  color: #b45309;
-  border-color: #fde68a;
+  color: var(--rk-warn-text);
+  border-color: var(--rk-warn-border);
 }
 
 .rk-aging-danger {
-  background: #fef2f2;
-  color: #b91c1c;
-  border-color: #fecaca;
+  background: var(--rk-danger-bg);
+  color: var(--rk-danger-text);
+  border-color: var(--rk-danger-border);
 }
 
 .rk-btn-primary {
-  background: var(--rk-text-charcoal);
-  border-color: var(--rk-text-charcoal);
-  color: #ffffff;
+  background: var(--rk-btn-primary-bg);
+  border-color: var(--rk-btn-primary-bg);
+  color: var(--rk-accent-fg);
 }
 
 .rk-btn-primary:hover {
-  background: #2b3542;
-  border-color: #2b3542;
-  color: #ffffff;
+  background: var(--rk-btn-primary-hover-bg);
+  border-color: var(--rk-btn-primary-hover-bg);
+  color: var(--rk-accent-fg);
 }
 
 .rk-btn-danger {
   background: var(--rk-danger);
   border-color: var(--rk-danger);
-  color: #fff;
+  color: var(--rk-accent-fg);
 }
 
 .rk-btn-danger:hover {
-  background: #dc2626;
-  border-color: #dc2626;
+  background: var(--rk-danger-hover);
+  border-color: var(--rk-danger-hover);
 }
 
 .rk-btn-ghost {
@@ -1315,7 +1559,7 @@
 }
 
 .rk-btn-ghost:hover {
-  background: #f1f5f9;
+  background: var(--rk-bg-hover);
   color: var(--rk-text-primary);
 }
 
@@ -1323,12 +1567,6 @@
   padding: 0 10px;
   font-size: 0.8rem;
   height: 32px;
-}
-
-.rk-btn-toggle-active {
-  background: #eff6ff;
-  border-color: #93c5fd;
-  color: #3b82f6;
 }
 
 .rk-sort {
@@ -1351,10 +1589,10 @@
   z-index: 200;
   width: 240px;
   padding: 8px;
-  background: #fff;
-  border: 1px solid var(--rk-border);
+  background: var(--rk-bg-elevated);
+  border: 1px solid var(--rk-border-elevated);
   border-radius: 12px;
-  box-shadow: 0 16px 34px rgb(15 23 42 / 14%), 0 3px 8px rgb(15 23 42 / 8%);
+  box-shadow: var(--rk-shadow-md);
   animation: rk-fade-in 0.15s ease-out;
 }
 
@@ -1413,7 +1651,8 @@
 
 .rk-sort-row:hover,
 .rk-sort-row-selected {
-  background: #eff6ff;
+  background: var(--rk-bg-accent-soft);
+  color: var(--rk-text-primary);
   border-radius: 8px;
 }
 
@@ -1434,12 +1673,14 @@
   padding: 3px;
   box-sizing: border-box;
   border-radius: 999px;
-  background: #d1d5db;
+  background: var(--rk-switch-bg);
+  border: 1px solid var(--rk-switch-border);
   transition: background 0.15s ease;
 }
 
 .rk-switch-on {
-  background: var(--rk-primary);
+  background: var(--rk-primary) !important;
+  border-color: var(--rk-primary) !important;
 }
 
 .rk-switch-thumb {
@@ -1447,13 +1688,15 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgb(15 23 42 / 18%);
+  background: var(--rk-switch-thumb-bg);
+  box-shadow: var(--rk-switch-thumb-shadow);
   transition: transform 0.15s ease;
 }
 
 .rk-switch-on .rk-switch-thumb {
+  background: #ffffff !important;
   transform: translateX(20px);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 50%);
 }
 
 .rk-settings-select-row {
@@ -1535,7 +1778,7 @@
 .rk-settings-info:hover,
 .rk-settings-info:focus-visible {
   color: var(--rk-primary);
-  background: #eff6ff;
+  background: var(--rk-bg-accent-soft);
   outline: none;
 }
 
@@ -1549,8 +1792,8 @@
   padding: 8px 10px;
   border: 1px solid var(--rk-border);
   border-radius: 8px;
-  background: var(--rk-text-dark);
-  color: #fff;
+  background: var(--rk-tooltip-bg);
+  color: var(--rk-tooltip-fg);
   box-shadow: var(--rk-shadow-md);
   font-size: 12px;
   line-height: 1.5;
@@ -1568,7 +1811,7 @@
   padding: 0 28px 0 10px;
   border: 1px solid var(--rk-border-strong);
   border-radius: 8px;
-  background: #fff;
+  background: var(--rk-bg-control);
   color: var(--rk-text-primary);
   font: inherit;
   font-size: 13px;
@@ -1632,21 +1875,21 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 }
 
 .rk-btn-dashed:hover {
-  background: #fff;
+  background: var(--rk-bg-control);
   border-color: var(--rk-primary);
   color: var(--rk-primary);
 }
 
 .rk-bulk-subtask-add-row {
-  background: #f6f6f6;
-  border: 1px solid #ccc;
-  color: #555;
+  background: var(--rk-bulk-add-row-bg);
+  border: 1px solid var(--rk-bulk-add-row-border);
+  color: var(--rk-bulk-add-row-fg);
   cursor: pointer;
 }
 
 .rk-bulk-subtask-add-row:hover {
-  background: #e6e6e6;
-  color: #333;
+  background: var(--rk-bulk-add-row-hover-bg);
+  color: var(--rk-bulk-add-row-hover-fg);
 }
 
 .rk-modal-backdrop {
@@ -1663,7 +1906,7 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 .rk-modal {
   width: 600px;
   max-width: calc(100vw - 32px);
-  background: #fff;
+  background: var(--rk-bg-elevated);
   border: 1px solid var(--rk-border);
   border-radius: 16px;
   padding: 24px;
@@ -1715,7 +1958,7 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   margin: 0;
   padding: 4px 12px;
   border-bottom: 1px solid var(--rk-border);
-  background: #fff;
+  background: var(--rk-bg-surface);
 }
 
 .rk-issue-dialog-title-wrap {
@@ -1750,14 +1993,14 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   width: 24px;
   height: 24px;
   border-radius: 6px;
-  border-color: var(--rk-border);
-  background: #fff;
-  color: #333;
+  border: 1px solid var(--rk-border);
+  background: var(--rk-bg-surface);
+  color: var(--rk-text-primary);
 }
 
 .rk-issue-dialog-actions .rk-icon-btn:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
+  background: var(--rk-bg-secondary);
+  border-color: var(--rk-border-strong);
   color: var(--rk-text-primary);
 }
 
@@ -1807,8 +2050,8 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   padding: 0 20px;
   border-radius: 8px;
   border: 1px solid var(--rk-border);
-  background: #fff;
-  color: var(--rk-text-dark);
+  background: var(--rk-bg-surface);
+  color: var(--rk-text-primary);
   font-size: 14px;
   font-weight: 500;
   box-shadow: none;
@@ -1818,23 +2061,23 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 .rk-create-footer .rk-btn:hover {
   background: var(--rk-bg-secondary);
   border-color: var(--rk-border-strong);
-  color: var(--rk-text-dark);
+  color: var(--rk-text-primary);
   box-shadow: none;
 }
 
 .rk-modal-actions .rk-btn.rk-btn-primary,
 .rk-create-footer .rk-btn.rk-btn-primary {
-  border-color: var(--rk-text-charcoal);
-  background: var(--rk-text-charcoal);
-  color: #fff;
+  border-color: var(--rk-btn-primary-bg);
+  background: var(--rk-btn-primary-bg);
+  color: var(--rk-accent-fg);
   font-weight: 600;
 }
 
 .rk-modal-actions .rk-btn.rk-btn-primary:hover,
 .rk-create-footer .rk-btn.rk-btn-primary:hover {
-  border-color: #2b3542;
-  background: #2b3542;
-  color: #fff;
+  border-color: var(--rk-btn-primary-hover-bg);
+  background: var(--rk-btn-primary-hover-bg);
+  color: var(--rk-accent-fg);
 }
 
 .rk-modal-actions .rk-btn:disabled,
@@ -1848,6 +2091,8 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   padding: 12px;
   border: 1px solid var(--rk-border);
   border-radius: 6px;
+  background: var(--rk-bg-input);
+  color: var(--rk-text-primary);
   font-family: inherit;
   resize: vertical;
 }
@@ -1871,11 +2116,15 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 .rk-form .rk-field select {
   height: 40px;
   width: 100%;
+  background: var(--rk-bg-input);
+  color: var(--rk-text-primary);
+  border: 1px solid var(--rk-border);
+  border-radius: 6px;
 }
 
 .rk-desc-preview {
   border: 1px solid var(--rk-border);
-  background: #f8fafc;
+  background: var(--rk-desc-preview-bg);
   border-radius: 12px;
   padding: 12px;
 }
@@ -1915,7 +2164,7 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   width: 32px;
   height: 32px;
   border: none;
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--rk-bg-elevated);
   border-radius: 50%;
   font-size: 20px;
   cursor: pointer;
@@ -1953,14 +2202,14 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   flex: 1;
   overflow: hidden;
   position: relative;
-  background: #fff;
+  background: var(--rk-bg-surface);
   min-height: 220px;
 }
 
 .rk-create-footer {
   padding: 16px;
   border-top: 1px solid var(--rk-border);
-  background: #fff;
+  background: var(--rk-bg-surface);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -2032,6 +2281,8 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   padding: 12px;
   border: 1px solid var(--rk-border);
   border-radius: 6px;
+  background: var(--rk-bg-input);
+  color: var(--rk-text-primary);
   font-family: inherit;
   resize: vertical;
 }
@@ -2113,7 +2364,7 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 
 .rk-bulk-subtask-mode.is-active {
   border-color: var(--rk-border);
-  background: #fff;
+  background: var(--rk-bg-surface);
   color: var(--rk-text-primary);
   box-shadow: var(--rk-shadow-sm);
 }
@@ -2153,6 +2404,10 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   box-sizing: border-box;
   width: 100%;
   min-height: 34px;
+  background: var(--rk-bg-input);
+  color: var(--rk-text-primary);
+  border: 1px solid var(--rk-border);
+  border-radius: 4px;
 }
 
 .rk-bulk-subtask-table input {
@@ -2216,7 +2471,7 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid var(--rk-border);
-  background: #fff;
+  background: var(--rk-bg-surface);
 }
 
 .rk-help-title-wrap {
@@ -2269,7 +2524,7 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
   padding: 8px;
   border: 1px solid var(--rk-border);
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--rk-bg-subtle);
 }
 
 .rk-help-icon {
@@ -2304,7 +2559,7 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 .rk-help-footer {
   padding: 16px 24px;
   border-top: 1px solid var(--rk-border);
-  background: #fff;
+  background: var(--rk-bg-surface);
   display: flex;
   justify-content: flex-start;
 }
@@ -2342,9 +2597,9 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 .rk-saved-views-field input { box-sizing: border-box; width: 100%; min-width: 0; height: 38px; padding: 0 10px; border: 1px solid var(--rk-border-strong); border-radius: 7px; outline: none; color: var(--rk-text-primary); background: var(--rk-bg-main); font: 400 13px/1.5 var(--rk-font-main); }
 .rk-saved-views-field input:focus-visible { outline: 2px solid var(--rk-primary); outline-offset: 2px; }
 .rk-saved-views .rk-btn { width: auto; min-width: 32px; }
-.rk-saved-views .rk-btn.rk-btn-primary { border-color: var(--rk-primary); background: var(--rk-primary); color: #fff; }
+.rk-saved-views .rk-btn.rk-btn-primary { border-color: var(--rk-primary); background: var(--rk-primary); color: var(--rk-accent-fg); }
 .rk-saved-views .rk-btn.rk-btn-primary:hover { background: var(--rk-primary-hover); }
-.rk-saved-views .rk-btn.rk-btn-danger { border-color: var(--rk-danger); color: var(--rk-danger); background: var(--rk-bg-main); }
+.rk-saved-views .rk-btn.rk-btn-danger { border-color: var(--rk-danger); color: var(--rk-danger); background: var(--rk-bg-surface); }
 .rk-saved-views .rk-btn.rk-btn-danger:hover { background: var(--rk-danger-bg); }
 .rk-saved-views .rk-btn.rk-btn-ghost { border-color: transparent; background: transparent; padding: 0; }
 .rk-saved-views .rk-btn.rk-btn-ghost:hover { background: var(--rk-bg-secondary); }
@@ -2357,14 +2612,14 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 .rk-saved-views-list { display: flex; flex-direction: column; gap: 3px; max-height: 320px; overflow-y: auto; padding: 2px; }
 .rk-saved-views-row { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 9px 10px; border: 0; border-radius: 8px; }
 .rk-saved-views .rk-settings-row:hover { background: var(--rk-bg-secondary); }
-.rk-saved-views .rk-saved-views-row[aria-pressed="true"] { background: #eff6ff; }
+.rk-saved-views .rk-saved-views-row[aria-pressed="true"] { background: var(--rk-bg-accent-soft); }
 .rk-saved-views-check { display: grid; place-items: center; box-sizing: border-box; flex: 0 0 18px; width: 18px; height: 18px; border: 1px solid transparent; border-radius: 50%; font-size: 14px; }
 .rk-saved-views-row[aria-pressed="true"] .rk-saved-views-check,
-.rk-saved-views-managed[aria-current="true"] .rk-saved-views-check { color: #fff; background: var(--rk-primary); border-color: var(--rk-primary); }
+.rk-saved-views-managed[aria-current="true"] .rk-saved-views-check { color: var(--rk-accent-fg); background: var(--rk-primary); border-color: var(--rk-primary); }
 .rk-saved-views-label { flex: 1; min-width: 0; }
 .rk-saved-views-name { display: block; flex: 1; min-width: 0; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
 .rk-saved-views-description { display: block; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rk-text-secondary); font-size: 11px; }
-.rk-saved-views-dirty { flex-shrink: 0; padding: 2px 6px; border: 1px solid var(--rk-warn); border-radius: 4px; background: var(--rk-warn-bg); color: #b45309; font-size: 11px; font-weight: 500; line-height: 1.3; white-space: nowrap; }
+.rk-saved-views-dirty { flex-shrink: 0; padding: 2px 6px; border: 1px solid var(--rk-warn); border-radius: 4px; background: var(--rk-warn-bg); color: var(--rk-warn-text); font-size: 11px; font-weight: 500; line-height: 1.3; white-space: nowrap; }
 .rk-saved-views-save-changes { display: flex; padding: 8px 8px 2px; }
 .rk-saved-views-save-changes .rk-btn { flex: 1; }
 .rk-saved-views-footer { gap: 3px; margin-top: 10px; padding: 10px 0 0; border-top: 1px solid var(--rk-border-light); }
@@ -2380,518 +2635,8 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 .rk-saved-views-form-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .rk-saved-views-confirm { margin: 4px 8px 8px; }
 .rk-saved-views-confirm p { margin: 0 0 8px; color: var(--rk-text-secondary); font-size: 13px; line-height: 1.6; }
-.rk-saved-views-message { margin: 8px 8px 0; padding: 6px 8px; border-radius: 8px; color: var(--rk-brand-blue); background: #eff6ff; font-size: 12px; line-height: 1.5; }
-.rk-saved-views-message.is-error { color: #b91c1c; background: var(--rk-danger-bg); }
-.rk-saved-views-message.is-success { color: #166534; background: var(--rk-success-bg); }
+.rk-saved-views-message { margin: 8px 8px 0; padding: 6px 8px; border-radius: 8px; color: var(--rk-text-accent-hover); background: var(--rk-bg-accent-soft); font-size: 12px; line-height: 1.5; }
+.rk-saved-views-message.is-error { color: var(--rk-danger-text); background: var(--rk-danger-bg); }
+.rk-saved-views-message.is-success { color: var(--rk-success-text); background: var(--rk-success-bg); }
 .rk-saved-views > .rk-settings-help { margin: 0; padding: 8px 10px 2px; color: var(--rk-text-secondary); font-size: 11px; line-height: 1.5; }
 
-/* Dark Mode Component Overrides */
-.rk-root[data-rk-theme="dark"] .rk-toolbar {
-  border-color: var(--rk-border);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-toolbar-separator {
-  background: var(--rk-border-strong);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-btn {
-  background: #0f172a;
-  color: var(--rk-text-primary);
-  border-color: var(--rk-border-strong);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-btn:hover {
-  background: var(--rk-bg-secondary);
-  color: var(--rk-primary);
-  border-color: var(--rk-border-strong) !important;
-}
-
-.rk-root[data-rk-theme="dark"] .rk-btn-toggle-active,
-.rk-root[data-rk-theme="dark"] .rk-active-soft {
-  background: var(--rk-bg-secondary) !important;
-  color: var(--rk-primary) !important;
-  border-color: var(--rk-border-strong) !important;
-}
-
-.rk-root[data-rk-theme="dark"] .rk-dropdown-trigger {
-  background: #0f172a;
-  border-color: var(--rk-border-strong);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-dropdown-menu,
-.rk-root[data-rk-theme="dark"] .rk-sort-menu,
-.rk-root[data-rk-theme="dark"] .rk-settings-menu,
-.rk-root[data-rk-theme="dark"] .rk-priority-popup,
-.rk-root[data-rk-theme="dark"] .rk-progress-popup {
-  background: var(--rk-bg-surface);
-  border: 1px solid var(--rk-border-strong);
-  box-shadow: var(--rk-shadow-md);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-dropdown-item:hover,
-.rk-root[data-rk-theme="dark"] .rk-sort-row:hover,
-.rk-root[data-rk-theme="dark"] .rk-sort-row-selected {
-  background: var(--rk-bg-secondary);
-  color: var(--rk-text-primary);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-dropdown-checkbox {
-  background: var(--rk-bg-surface);
-  border-color: var(--rk-border-strong);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-search-box {
-  background: var(--rk-bg-surface);
-  border-color: var(--rk-border);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-search-box input {
-  background: transparent;
-  color: var(--rk-text-primary);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-icon-btn {
-  color: var(--rk-text-secondary);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-icon-btn:hover {
-  background: var(--rk-bg-secondary);
-  color: var(--rk-text-primary);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-settings-select-row select {
-  background: #0f172a;
-  color: var(--rk-text-primary);
-  border-color: var(--rk-border-strong);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-switch {
-  background: #334155;
-  border: 1px solid #475569;
-}
-
-.rk-root[data-rk-theme="dark"] .rk-switch-thumb {
-  background: #94a3b8;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 40%);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-switch.rk-switch-on,
-.rk-root[data-rk-theme="dark"] .rk-switch-on {
-  background: var(--rk-primary, #3b82f6) !important;
-  border-color: var(--rk-primary, #3b82f6) !important;
-}
-
-.rk-root[data-rk-theme="dark"] .rk-switch-on .rk-switch-thumb {
-  background: #ffffff !important;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 50%);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-modal {
-  background: var(--rk-bg-surface);
-  border-color: var(--rk-border);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-issue-dialog-head {
-  background: var(--rk-bg-surface);
-  border-color: var(--rk-border);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-issue-dialog-actions .rk-icon-btn {
-  background: var(--rk-bg-surface);
-  border-color: var(--rk-border);
-  color: var(--rk-text-primary);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-issue-dialog-actions .rk-icon-btn:hover {
-  background: var(--rk-bg-secondary);
-  border-color: var(--rk-border-strong);
-  color: var(--rk-text-primary);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-modal-actions .rk-btn,
-.rk-root[data-rk-theme="dark"] .rk-create-footer .rk-btn {
-  background: var(--rk-bg-surface);
-  border-color: var(--rk-border);
-  color: var(--rk-text-primary);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-modal-actions .rk-btn:hover,
-.rk-root[data-rk-theme="dark"] .rk-create-footer .rk-btn:hover {
-  background: var(--rk-bg-secondary);
-  border-color: var(--rk-border-strong);
-  color: var(--rk-text-primary);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-btn-primary {
-  background: var(--rk-primary);
-  border-color: var(--rk-primary);
-  color: #ffffff;
-}
-
-.rk-root[data-rk-theme="dark"] .rk-btn-primary:hover {
-  background: var(--rk-primary-hover);
-  border-color: var(--rk-primary-hover);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-form textarea,
-.rk-root[data-rk-theme="dark"] .rk-form .rk-field input,
-.rk-root[data-rk-theme="dark"] .rk-form .rk-field select {
-  background: var(--rk-bg-surface);
-  color: var(--rk-text-primary);
-  border-color: var(--rk-border);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-desc-preview {
-  background: var(--rk-bg-secondary);
-  border-color: var(--rk-border);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-bulk-subtask-mode.is-active {
-  background: var(--rk-bg-surface);
-  border-color: var(--rk-border);
-  color: var(--rk-text-primary);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-bulk-subtask-editor textarea,
-.rk-root[data-rk-theme="dark"] .rk-bulk-subtask-table input,
-.rk-root[data-rk-theme="dark"] .rk-bulk-subtask-table select {
-  background: var(--rk-bg-surface);
-  color: var(--rk-text-primary);
-  border-color: var(--rk-border);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-bulk-subtask-add-row {
-  background: var(--rk-bg-secondary);
-  border-color: var(--rk-border);
-  color: var(--rk-text-secondary);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-bulk-subtask-add-row:hover {
-  background: var(--rk-bg-surface);
-  color: var(--rk-text-primary);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-help-header,
-.rk-root[data-rk-theme="dark"] .rk-help-footer {
-  background: var(--rk-bg-surface);
-  border-color: var(--rk-border);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-help-icon-row {
-  background: var(--rk-bg-surface);
-  border-color: var(--rk-border);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-work-timer-modal {
-  background: var(--rk-bg-surface);
-  color: var(--rk-text-primary);
-  border-color: var(--rk-border);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-work-timer-duration-button {
-  background: var(--rk-bg-surface);
-  color: var(--rk-text-primary);
-  border-color: var(--rk-border);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-work-timer-duration-button.is-selected {
-  background: var(--rk-primary);
-  border-color: var(--rk-primary);
-  color: #fff;
-}
-
-.rk-root[data-rk-theme="dark"] .rk-work-timer-extend-menu {
-  background: var(--rk-bg-surface);
-  color: var(--rk-text-primary);
-  border-color: var(--rk-border);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-work-timer-extend-menu button:hover {
-  background: var(--rk-bg-secondary);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-timer-button-secondary {
-  background: var(--rk-bg-surface);
-  color: var(--rk-text-primary);
-  border-color: var(--rk-border);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-timer-button-light {
-  background: var(--rk-bg-secondary);
-  color: var(--rk-text-primary);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-work-timer-pending {
-  background: #2a2415;
-  border-color: #854d0e;
-  color: var(--rk-text-primary);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-pending-work-modal {
-  background: var(--rk-bg-surface);
-  color: var(--rk-text-primary);
-  border-color: var(--rk-border);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-pending-work-header p {
-  color: var(--rk-text-primary) !important;
-}
-
-.rk-root[data-rk-theme="dark"] .rk-pending-work-elapsed {
-  background: var(--rk-bg-secondary);
-  border-color: var(--rk-border);
-  color: var(--rk-text-secondary);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-pending-work-elapsed strong {
-  color: var(--rk-text-primary);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-pending-work-section {
-  background: var(--rk-bg-secondary);
-  border-color: var(--rk-border);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-pending-work-section p {
-  color: var(--rk-text-secondary);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-pending-work-resume-section h3 {
-  color: var(--rk-text-primary);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-pending-work-record-button,
-.rk-root[data-rk-theme="dark"] .rk-pending-work-resume-button {
-  background: var(--rk-bg-surface);
-  color: var(--rk-text-primary);
-  border-color: var(--rk-border);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-pending-work-resume-button:hover {
-  background: var(--rk-bg-secondary);
-  border-color: var(--rk-primary);
-  color: var(--rk-primary);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-pending-work-state-card {
-  background: #2a2415;
-  border-color: #854d0e;
-  color: #fde047;
-}
-
-.rk-root[data-rk-theme="dark"] .rk-pending-work-discard-confirm {
-  background: #451a1a;
-  border-color: #991b1b;
-  color: #fca5a5;
-}
-
-.rk-root[data-rk-theme="dark"] .rk-timer-button-danger-outline {
-  background: #451a1a;
-  border-color: #991b1b;
-  color: #fca5a5;
-}
-
-.rk-root[data-rk-theme="dark"] .rk-saved-views .rk-saved-views-row[aria-pressed="true"] {
-  background: var(--rk-bg-secondary);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-saved-views-message {
-  background: var(--rk-bg-secondary);
-  color: var(--rk-primary);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-saved-views-message.is-error {
-  background: var(--rk-danger-bg);
-  color: var(--rk-danger);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-saved-views-message.is-success {
-  background: var(--rk-success-bg);
-  color: #86efac;
-}
-
-.rk-root[data-rk-theme="dark"] .rk-saved-views .rk-btn.rk-btn-danger {
-  background: var(--rk-bg-surface);
-  border-color: var(--rk-danger);
-  color: var(--rk-danger);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-saved-views-row-actions {
-  border-color: var(--rk-border);
-}
-
-.rk-root[data-rk-theme="dark"] .rk-badge-priority-low {
-  background: #14532d;
-  color: #86efac;
-  border-color: #166534;
-}
-
-.rk-root[data-rk-theme="dark"] .rk-badge-priority-normal {
-  background: #334155;
-  color: #cbd5e1;
-  border-color: #475569;
-}
-
-.rk-root[data-rk-theme="dark"] .rk-badge-priority-high {
-  background: #713f12;
-  color: #fde047;
-  border-color: #854d0e;
-}
-
-.rk-root[data-rk-theme="dark"] .rk-badge-priority-urgent {
-  background: #7c2d12;
-  color: #fdba74;
-  border-color: #9a3412;
-}
-
-.rk-root[data-rk-theme="dark"] .rk-badge-priority-immediate {
-  background: #7f1d1d;
-  color: #fca5a5;
-  border-color: #991b1b;
-}
-
-.rk-root[data-rk-theme="dark"] .rk-overdue {
-  background: var(--rk-danger-bg);
-  color: var(--rk-danger);
-  border-color: #991b1b;
-}
-
-.rk-root[data-rk-theme="dark"] .rk-aging-warn {
-  background: var(--rk-warn-bg);
-  color: #fde047;
-  border-color: #854d0e;
-}
-
-.rk-root[data-rk-theme="dark"] .rk-aging-danger {
-  background: var(--rk-danger-bg);
-  color: #fca5a5;
-  border-color: #991b1b;
-}
-
-/* Datepicker dark mode */
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker,
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker {
-  background-color: var(--rk-bg-surface) !important;
-  color: var(--rk-text-primary) !important;
-  border: 1px solid var(--rk-border-strong) !important;
-  box-shadow: var(--rk-shadow-md) !important;
-}
-
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__month-container,
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__month,
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__month-container,
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__month {
-  background-color: var(--rk-bg-surface) !important;
-  color: var(--rk-text-primary) !important;
-}
-
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__header,
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .rk-minimax-datepicker-footer,
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__children-container,
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__header,
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .rk-minimax-datepicker-footer,
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__children-container {
-  background-color: #0f172a !important;
-  border-color: var(--rk-border) !important;
-}
-
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__current-month,
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__current-month {
-  color: var(--rk-text-primary) !important;
-}
-
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day-name,
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day-name {
-  color: var(--rk-text-secondary) !important;
-}
-
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day,
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day {
-  color: var(--rk-text-primary) !important;
-}
-
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day:hover,
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day:hover {
-  background-color: var(--rk-bg-secondary) !important;
-}
-
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--selected,
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--selected:hover,
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--selected,
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--selected:hover {
-  background-color: var(--rk-primary) !important;
-  color: #ffffff !important;
-}
-
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--keyboard-selected:not(.react-datepicker__day--selected),
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--keyboard-selected:not(.react-datepicker__day--selected) {
-  background-color: transparent !important;
-  color: var(--rk-text-primary) !important;
-}
-
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--keyboard-selected:not(.react-datepicker__day--selected):hover,
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--keyboard-selected:not(.react-datepicker__day--selected):hover {
-  background-color: var(--rk-bg-secondary) !important;
-}
-
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day:focus,
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--keyboard-selected:focus,
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day:focus,
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--keyboard-selected:focus {
-  outline: none !important;
-  box-shadow: 0 0 0 2px var(--rk-brand-blue) !important;
-}
-
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--selected:focus,
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--selected:focus {
-  outline: none !important;
-  box-shadow: 0 0 0 2px var(--rk-bg-surface), 0 0 0 4px var(--rk-primary) !important;
-}
-
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--outside-month:not(.react-datepicker__day--selected),
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker .react-datepicker__day--outside-month:not(.react-datepicker__day--selected) {
-  color: var(--rk-text-muted) !important;
-}
-
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker-select,
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] select.react-datepicker__month-select,
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] select.react-datepicker__year-select,
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker-select,
-.rk-root[data-rk-theme="dark"] select.react-datepicker__month-select,
-.rk-root[data-rk-theme="dark"] select.react-datepicker__year-select {
-  background-color: #0f172a !important;
-  color: var(--rk-text-primary) !important;
-  border-color: var(--rk-border-strong) !important;
-}
-
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker-nav-btn,
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker-btn,
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker-nav-btn,
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker-btn {
-  background-color: #334155 !important;
-  color: var(--rk-text-primary) !important;
-  border-color: var(--rk-border-strong) !important;
-}
-
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker-nav-btn:hover,
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker-btn:hover,
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker-nav-btn:hover,
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker-btn:hover {
-  background-color: #475569 !important;
-  color: #ffffff !important;
-  border-color: var(--rk-border-strong) !important;
-}
-
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker-btn--clear,
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker-btn--clear {
-  background-color: #334155 !important;
-  color: var(--rk-danger) !important;
-  border-color: var(--rk-border-strong) !important;
-}
-
-#redmine-kanban-datepicker-portal[data-rk-theme="dark"] .rk-minimax-datepicker-btn--clear:hover,
-.rk-root[data-rk-theme="dark"] .rk-minimax-datepicker-btn--clear:hover {
-  background-color: var(--rk-danger-bg) !important;
-  border-color: var(--rk-danger) !important;
-  color: var(--rk-danger) !important;
-}
