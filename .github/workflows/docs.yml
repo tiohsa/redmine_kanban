@@ -13,9 +13,14 @@ concurrency:
   group: docs-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: ubuntu24.04-x64
+
 jobs:
   validate:
     runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: ubuntu24.04-x64
     defaults:
       run:
         working-directory: website

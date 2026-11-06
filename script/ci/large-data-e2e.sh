@@ -2,6 +2,7 @@
 set -euo pipefail
 
 unset TMPDIR TEMP TMP
+export PLAYWRIGHT_HOST_PLATFORM_OVERRIDE="${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-ubuntu24.04-x64}"
 
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$PLUGIN_ROOT"
