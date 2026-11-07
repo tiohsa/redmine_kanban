@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 import type { BoardData } from '../types';
-import type { CardDisplayMode } from '../useKanbanPreferences';
+import type { CardDisplayMode, KanbanColorTheme } from '../useKanbanPreferences';
 import type { BoardCommand } from './commands';
 import { getBoardCursor } from './cursor';
 import { clamp } from './canvasGeometry';
@@ -75,6 +75,7 @@ type Props = {
   fontSize?: number;
   cardDisplayMode?: CardDisplayMode;
   defaultCreateStatusId?: number;
+  colorTheme?: KanbanColorTheme;
 };
 
 export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasBoard({
@@ -105,6 +106,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
   fontSize = 13,
   cardDisplayMode = 'standard',
   defaultCreateStatusId,
+  colorTheme = 'light',
 }: Props, ref) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -212,7 +214,11 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
 
   const trackerCatalog = useMemo(() => buildTrackerCatalog(data.lists.trackers), [data.lists.trackers]);
 
-  const theme = useMemo(() => readTheme(containerRef.current), []);
+  const [theme, setTheme] = useState(() => readTheme(containerRef.current, colorTheme));
+
+  useLayoutEffect(() => {
+    setTheme(readTheme(containerRef.current, colorTheme));
+  }, [colorTheme]);
 
   // Scale calculation is now handled directly in draw() to ensure it's always in sync with the latest layout and size.
   useEffect(() => {

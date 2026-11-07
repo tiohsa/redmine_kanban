@@ -1,4 +1,10 @@
-import type { Filters } from './types';
+import type { Filters, KanbanColorTheme } from './types';
+
+export const DEFAULT_COLOR_THEME: KanbanColorTheme = 'light';
+
+export function parseColorTheme(value: string | null): KanbanColorTheme {
+  return value === 'dark' ? 'dark' : 'light';
+}
 
 export function restoreAgingDays(value: string | null, fallback: number): number {
   if (value === null || value.trim() === '') return fallback;

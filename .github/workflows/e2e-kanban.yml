@@ -16,6 +16,9 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: ubuntu24.04-x64
+
 jobs:
   init:
     name: init
@@ -354,6 +357,7 @@ jobs:
         redmine_version: ['7.0', '6.1']
     env:
       REDMINE_IMAGE: redmine:${{ matrix.redmine_version }}
+      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: ubuntu24.04-x64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -455,6 +459,7 @@ jobs:
     env:
       REDMINE_IMAGE: redmine:7.0
       REDMINE_KANBAN_MAX_BOARD_ENTITIES: '2'
+      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: ubuntu24.04-x64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -552,6 +557,7 @@ jobs:
     timeout-minutes: 35
     env:
       REDMINE_IMAGE: redmine:7.0
+      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: ubuntu24.04-x64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -632,6 +638,7 @@ jobs:
     timeout-minutes: 30
     env:
       REDMINE_IMAGE: redmine:6.0
+      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: ubuntu24.04-x64
     steps:
       - name: Checkout
         uses: actions/checkout@v4

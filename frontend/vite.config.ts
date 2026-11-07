@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import path from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -16,6 +17,9 @@ const fontsourceAssets = {
 };
 
 export default defineConfig(({ mode }) => ({
+  test: {
+    css: true,
+  },
   base: './',
   plugins: [fontsourceAssets, react()],
   define: mode === 'test'

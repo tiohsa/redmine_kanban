@@ -48,6 +48,9 @@ describe('DatePopup', () => {
     expect(onCommit).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
 
+    const day31 = document.querySelector('.react-datepicker__day--031:not(.react-datepicker__day--outside-month)');
+    expect(day31?.classList.contains('react-datepicker__day--selected')).toBe(false);
+
     fireEvent.click(screen.getByRole('button', { name: 'Previous month' }));
     expect(screen.getByRole('combobox', { name: 'Year' })).toHaveProperty('value', '2026');
     expect(screen.getByRole('combobox', { name: 'Month' })).toHaveProperty('value', '11');
@@ -690,5 +693,38 @@ describe.each(['priority', 'progress'] as const)('%s popup keyboard access', (ki
     expect(sourceFocus).not.toHaveBeenCalled();
     expect(document.activeElement).not.toBe(source);
     unmount();
+  });
+
+  it('applies rk-dropdown-menu classes without hardcoded inline white background', () => {
+    const { container: pContainer } = render(
+      <PriorityPopup
+        x={10}
+        y={20}
+        value="1"
+        options={[{ id: '1', name: 'Low' }]}
+        onClose={vi.fn()}
+        onChange={vi.fn()}
+      />,
+    );
+    const priorityPopup = pContainer.firstElementChild as HTMLElement;
+    expect(priorityPopup.className).toContain('rk-priority-popup');
+    expect(priorityPopup.className).toContain('rk-dropdown-menu');
+    expect(priorityPopup.style.background).not.toBe('white');
+    expect(priorityPopup.style.backgroundColor).not.toBe('white');
+
+    const { container: progContainer } = render(
+      <ProgressPopup
+        x={10}
+        y={20}
+        value={10}
+        onClose={vi.fn()}
+        onChange={vi.fn()}
+      />,
+    );
+    const progressPopup = progContainer.firstElementChild as HTMLElement;
+    expect(progressPopup.className).toContain('rk-progress-popup');
+    expect(progressPopup.className).toContain('rk-dropdown-menu');
+    expect(progressPopup.style.background).not.toBe('white');
+    expect(progressPopup.style.backgroundColor).not.toBe('white');
   });
 });

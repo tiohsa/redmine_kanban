@@ -1,5 +1,5 @@
 import type { BoardData, Column, Issue, Lane } from '../../model/board/types';
-import type { CardDisplayMode } from '../useKanbanPreferences';
+import type { CardDisplayMode, KanbanColorTheme } from '../useKanbanPreferences';
 import type { Rect } from './canvasGeometry';
 import { rectIntersects, roundedRect } from './canvasGeometry';
 import { assessDrop, canDeleteIssue, canEditIssue, getDropHintVisual } from './canvasInteraction';
@@ -22,6 +22,11 @@ import type { DragState } from './CanvasPointerController';
 
 const subtaskIndentPx = 14;
 const maxSubtaskIndentLevel = 6;
+
+export type BadgeColors = {
+  bg: string;
+  fg: string;
+};
 
 export type CanvasTheme = {
   bgMain: string;
@@ -52,6 +57,9 @@ export type CanvasTheme = {
   badgeOverdueColor: string;
   badgeWarnBg: string;
   badgeWarnColor: string;
+  priorityPalette: BadgeColors[];
+  actionOverlayBg: string;
+  headerBg: string;
 };
 
 export function createSubjectLineMeasurer(ctx: CanvasRenderingContext2D | null): SubjectLineMeasurer | undefined {
@@ -88,7 +96,7 @@ export function drawHeaders(
   offsetY: number = 0
 ) {
   ctx.save();
-  ctx.fillStyle = '#f8fafc';
+  ctx.fillStyle = theme.headerBg;
   ctx.fillRect(0, 0, layout.gridStartX + layout.gridWidth, layout.headerHeight);
 
   ctx.strokeStyle = theme.border;
@@ -131,7 +139,7 @@ export function drawHeaders(
       const badgeX = x + layout.columnWidth - badgeWidth - 12;
       const badgeY = (layout.headerHeight - badgeHeight) / 2;
 
-      ctx.fillStyle = '#e2e8f0';
+      ctx.fillStyle = theme.badgeBg;
       ctx.strokeStyle = 'transparent';
 
       roundedRect(ctx, badgeX, badgeY, badgeWidth, badgeHeight, 4);
@@ -223,7 +231,7 @@ export function drawLaneLabels(
       const key = cellKey(defaultStatusId, lane.id);
       if (rectMap) rectMap.addButtons.set(key, addRect);
 
-      drawIconBox(ctx, addRect, theme.textSecondary, '+');
+      drawIconBox(ctx, addRect, theme.textSecondary, '+', theme.surface);
     }
   });
   ctx.restore();
@@ -288,29 +296,29 @@ export function drawCells(
         && drag.targetCellKey === key
         && targetAssessment?.action === 'dispatch';
       ctx.fillStyle = hintVisual?.tone === 'advisory'
-        ? '#fef3c7'
+        ? theme.warnBg
         : hintVisual?.tone === 'allowed'
-          ? '#dcfce7'
+          ? theme.badgeLowBg
           : hintVisual?.tone === 'neutral'
-            ? '#f1f5f9'
+            ? theme.badgeBg
             : isTarget
-              ? '#e0f2fe'
+              ? theme.badgeLowBg
               : colBg;
       ctx.fillRect(cellRect.x, cellRect.y, cellRect.width, cellRect.height);
       if (hintVisual?.glyph) {
         ctx.save();
         ctx.fillStyle = hintVisual.tone === 'advisory'
-          ? '#92400e'
+          ? theme.warn
           : hintVisual.tone === 'allowed'
-            ? '#166534'
-            : '#64748b';
+            ? theme.badgeLowColor
+            : theme.textSecondary;
         ctx.font = '700 14px "DM Sans Variable", "Noto Sans JP Variable", sans-serif';
         ctx.textBaseline = 'top';
         ctx.fillText(hintVisual.glyph, cellRect.x + cellRect.width - 18, cellRect.y + 6);
         ctx.restore();
       }
       if (isTarget) {
-        ctx.strokeStyle = hintVisual?.tone === 'advisory' ? '#b45309' : '#0369a1';
+        ctx.strokeStyle = hintVisual?.tone === 'advisory' ? theme.warn : theme.primary;
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.moveTo(cellRect.x + 2, cellRect.y + 2);
@@ -423,7 +431,7 @@ function drawSingleLineCard(
 	const w = rect.width;
 	const h = rect.height;
 	const radius = 6;
-	ctx.shadowColor = 'rgba(0, 0, 0, 0.08)';
+	ctx.shadowColor = theme.shadow;
 	ctx.shadowBlur = 6;
 	ctx.shadowOffsetY = 3;
 	ctx.fillStyle = theme.surface;
@@ -442,6 +450,11 @@ function drawSingleLineCard(
 	ctx.lineTo(x, y + radius);
 	ctx.quadraticCurveTo(x, y, x + radius, y);
 	ctx.fill();
+
+	ctx.strokeStyle = theme.border;
+	ctx.lineWidth = 1;
+	roundedRect(ctx, x, y, w, h, 8);
+	ctx.stroke();
 
 	const contentX = x + stripWidth + 8;
 	const contentRight = x + w - 8;
@@ -504,7 +517,7 @@ function drawSingleLineCard(
 	if (rectMap && (isActionIconsVisible || isActiveTimer) && actionButtonCount > 0) {
 		const overlayRect = { x: actionStart - 3, y: y + (h - actionIconSize) / 2 - 2, width: actionButtonCount * actionIconSize + 6, height: actionIconSize + 4 };
 		if (isActionIconsVisible) {
-			ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+			ctx.fillStyle = theme.actionOverlayBg;
 			roundedRect(ctx, overlayRect.x, overlayRect.y, overlayRect.width, overlayRect.height, 6);
 			ctx.fill();
 		}
@@ -570,7 +583,7 @@ function drawStandardCard(
   const h = rect.height;
 
   // 1. Draw Card Shadow
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.08)';
+  ctx.shadowColor = theme.shadow;
   ctx.shadowBlur = 6;
   ctx.shadowOffsetY = 4;
 
@@ -594,6 +607,12 @@ function drawStandardCard(
   ctx.lineTo(x, y + radius);
   ctx.quadraticCurveTo(x, y, x + radius, y);
   ctx.fill();
+
+  // Card Border
+  ctx.strokeStyle = theme.border;
+  ctx.lineWidth = 1;
+  roundedRect(ctx, x, y, w, h, 8);
+  ctx.stroke();
 
   const contentX = x + stripWidth + 8;
   const contentW = w - stripWidth - 16;
@@ -698,18 +717,8 @@ function drawStandardCard(
 
     // Priority Colors - use index-based palette for distinct colors
     const priorities = data.lists.priorities ?? [];
-    const priorityColorPalette = [
-      { bg: '#dcfce7', fg: '#15803d' }, // Green (Low)
-      { bg: '#f1f5f9', fg: '#64748b' }, // Slate (Normal)
-      { bg: '#fef9c3', fg: '#a16207' }, // Yellow (High)
-      { bg: '#ffedd5', fg: '#c2410c' }, // Orange (Urgent)
-      { bg: '#fee2e2', fg: '#b91c1c' }, // Red (Immediate)
-      { bg: '#dbeafe', fg: '#1d4ed8' }, // Blue
-      { bg: '#e0e7ff', fg: '#4338ca' }, // Indigo
-      { bg: '#f5d0fe', fg: '#a21caf' }, // Fuchsia
-    ];
     const priorityIndex = priorities.findIndex(p => p.id === issue.priority_id);
-    const colorEntry = priorityColorPalette[priorityIndex >= 0 ? priorityIndex % priorityColorPalette.length : 1];
+    const colorEntry = theme.priorityPalette[priorityIndex >= 0 ? priorityIndex % theme.priorityPalette.length : 1] ?? theme.priorityPalette[1]!;
     bg = colorEntry.bg;
     fg = colorEntry.fg;
 
@@ -1022,7 +1031,7 @@ function drawStandardCard(
         };
 
         ctx.save();
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+        ctx.fillStyle = theme.actionOverlayBg;
         roundedRect(ctx, overlayRect.x, overlayRect.y, overlayRect.width, overlayRect.height, 6);
         ctx.fill();
         ctx.font = '18px "Material Symbols Outlined"';
@@ -1091,7 +1100,7 @@ function drawStandardCard(
       };
 
       ctx.save();
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+      ctx.fillStyle = theme.actionOverlayBg;
       roundedRect(ctx, overlayRect.x, overlayRect.y, overlayRect.width, overlayRect.height, 7);
       ctx.fill();
       ctx.restore();
@@ -1196,9 +1205,9 @@ function drawIcon(ctx: CanvasRenderingContext2D, icon: string, x: number, y: num
   ctx.restore();
 }
 
-function drawIconBox(ctx: CanvasRenderingContext2D, rect: Rect, color: string, label: string) {
+function drawIconBox(ctx: CanvasRenderingContext2D, rect: Rect, color: string, label: string, bgColor?: string) {
   ctx.save();
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = bgColor ?? '#ffffff';
   ctx.strokeStyle = color;
   roundedRect(ctx, rect.x, rect.y, rect.width, rect.height, 4);
   ctx.fill();
@@ -1255,8 +1264,35 @@ function getCardColor(trackerId: number | null | undefined, theme: CanvasTheme):
   return theme.noteColors[index];
 }
 
-export function readTheme(container: HTMLDivElement | null): CanvasTheme {
-  const fallback = {
+export const LIGHT_PRIORITY_PALETTE: BadgeColors[] = [
+  { bg: '#dcfce7', fg: '#15803d' }, // Green (Low)
+  { bg: '#f1f5f9', fg: '#64748b' }, // Slate (Normal)
+  { bg: '#fef9c3', fg: '#a16207' }, // Yellow (High)
+  { bg: '#ffedd5', fg: '#c2410c' }, // Orange (Urgent)
+  { bg: '#fee2e2', fg: '#b91c1c' }, // Red (Immediate)
+  { bg: '#dbeafe', fg: '#1d4ed8' }, // Blue
+  { bg: '#e0e7ff', fg: '#4338ca' }, // Indigo
+  { bg: '#f5d0fe', fg: '#a21caf' }, // Fuchsia
+];
+
+export const DARK_PRIORITY_PALETTE: BadgeColors[] = [
+  { bg: '#14532d', fg: '#86efac' }, // Green (Low)
+  { bg: '#334155', fg: '#cbd5e1' }, // Slate (Normal)
+  { bg: '#713f12', fg: '#fde047' }, // Yellow (High)
+  { bg: '#7c2d12', fg: '#fdba74' }, // Orange (Urgent)
+  { bg: '#7f1d1d', fg: '#fca5a5' }, // Red (Immediate)
+  { bg: '#1e3a8a', fg: '#93c5fd' }, // Blue
+  { bg: '#312e81', fg: '#a5b4fc' }, // Indigo
+  { bg: '#701a75', fg: '#f0abfc' }, // Fuchsia
+];
+
+export function readTheme(container: HTMLDivElement | null, colorTheme?: KanbanColorTheme): CanvasTheme {
+  const themeAttr = colorTheme
+    ?? container?.closest('[data-rk-theme]')?.getAttribute('data-rk-theme')
+    ?? container?.getAttribute('data-rk-theme');
+  const isDark = themeAttr === 'dark';
+
+  const lightFallback: CanvasTheme = {
     bgMain: '#ffffff',
     surface: '#ffffff',
     border: '#e5e7eb',
@@ -1271,8 +1307,8 @@ export function readTheme(container: HTMLDivElement | null): CanvasTheme {
     shadow: 'rgba(0, 0, 0, 0.08)',
     noteColors: ['#bef264', '#fdba74', '#93c5fd', '#f9a8d4', '#fde047', '#d8b4fe', '#5eead4'],
     columnBgs: ['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff'],
-    badgeBg: '#f0f0f0',
-    badgeText: '#45515e',
+    badgeBg: '#f1f5f9',
+    badgeText: '#64748b',
     badgeLowBg: '#dcfce7',
     badgeLowColor: '#15803d',
     badgeHighBg: '#fef9c3', // Yellow-100
@@ -1285,7 +1321,46 @@ export function readTheme(container: HTMLDivElement | null): CanvasTheme {
     badgeOverdueColor: '#b91c1c', // Red-700
     badgeWarnBg: '#fef9c3',
     badgeWarnColor: '#a16207',
+    priorityPalette: LIGHT_PRIORITY_PALETTE,
+    actionOverlayBg: 'rgba(255, 255, 255, 0.96)',
+    headerBg: '#f8fafc',
   };
+
+  const darkFallback: CanvasTheme = {
+    bgMain: '#0b0f19',
+    surface: '#1e293b',
+    border: '#3b4758',
+    borderStrong: '#4e5d73',
+    textPrimary: '#f8fafc',
+    textSecondary: '#cbd5e1',
+    primary: '#3b82f6',
+    danger: '#f87171',
+    warn: '#fbbf24',
+    warnBg: '#453310',
+    dangerBg: '#451a1a',
+    shadow: 'rgba(0, 0, 0, 0.45)',
+    noteColors: ['#bef264', '#fdba74', '#93c5fd', '#f9a8d4', '#fde047', '#d8b4fe', '#5eead4'],
+    columnBgs: ['#0f172a', '#0f172a', '#0f172a', '#0f172a', '#0f172a', '#0f172a', '#0f172a'],
+    badgeBg: '#334155',
+    badgeText: '#cbd5e1',
+    badgeLowBg: '#14532d',
+    badgeLowColor: '#86efac',
+    badgeHighBg: '#713f12',
+    badgeHighColor: '#fde047',
+    badgeUrgentBg: '#7c2d12',
+    badgeUrgentColor: '#fdba74',
+    badgeImmediateBg: '#7f1d1d',
+    badgeImmediateColor: '#fca5a5',
+    badgeOverdueBg: '#7f1d1d',
+    badgeOverdueColor: '#fca5a5',
+    badgeWarnBg: '#713f12',
+    badgeWarnColor: '#fde047',
+    priorityPalette: DARK_PRIORITY_PALETTE,
+    actionOverlayBg: 'rgba(30, 41, 59, 0.96)',
+    headerBg: '#182234',
+  };
+
+  const fallback = isDark ? darkFallback : lightFallback;
   if (!container) return fallback;
   const styles = getComputedStyle(container);
   return {
@@ -1302,37 +1377,40 @@ export function readTheme(container: HTMLDivElement | null): CanvasTheme {
     dangerBg: styles.getPropertyValue('--rk-danger-bg').trim() || fallback.dangerBg,
     shadow: fallback.shadow,
     noteColors: [
-      styles.getPropertyValue('--rk-note-lime').trim() || '#bef264',
-      styles.getPropertyValue('--rk-note-orange').trim() || '#fdba74',
-      styles.getPropertyValue('--rk-note-blue').trim() || '#93c5fd',
-      styles.getPropertyValue('--rk-note-pink').trim() || '#f9a8d4',
-      styles.getPropertyValue('--rk-note-yellow').trim() || '#fde047',
-      styles.getPropertyValue('--rk-note-purple').trim() || '#d8b4fe',
-      styles.getPropertyValue('--rk-note-teal').trim() || '#5eead4',
+      styles.getPropertyValue('--rk-note-lime').trim() || fallback.noteColors[0]!,
+      styles.getPropertyValue('--rk-note-orange').trim() || fallback.noteColors[1]!,
+      styles.getPropertyValue('--rk-note-blue').trim() || fallback.noteColors[2]!,
+      styles.getPropertyValue('--rk-note-pink').trim() || fallback.noteColors[3]!,
+      styles.getPropertyValue('--rk-note-yellow').trim() || fallback.noteColors[4]!,
+      styles.getPropertyValue('--rk-note-purple').trim() || fallback.noteColors[5]!,
+      styles.getPropertyValue('--rk-note-teal').trim() || fallback.noteColors[6]!,
     ],
     columnBgs: [
-      styles.getPropertyValue('--rk-col-bg-1').trim() || '#f1f5f9',
-      styles.getPropertyValue('--rk-col-bg-2').trim() || '#eff6ff',
-      styles.getPropertyValue('--rk-col-bg-3').trim() || '#fefce8',
-      styles.getPropertyValue('--rk-col-bg-4').trim() || '#f0fdf4',
-      styles.getPropertyValue('--rk-col-bg-5').trim() || '#faf5ff',
-      styles.getPropertyValue('--rk-col-bg-6').trim() || '#fff7ed',
-      styles.getPropertyValue('--rk-col-bg-7').trim() || '#fdf2f8',
+      styles.getPropertyValue('--rk-col-bg-1').trim() || fallback.columnBgs[0]!,
+      styles.getPropertyValue('--rk-col-bg-2').trim() || fallback.columnBgs[1]!,
+      styles.getPropertyValue('--rk-col-bg-3').trim() || fallback.columnBgs[2]!,
+      styles.getPropertyValue('--rk-col-bg-4').trim() || fallback.columnBgs[3]!,
+      styles.getPropertyValue('--rk-col-bg-5').trim() || fallback.columnBgs[4]!,
+      styles.getPropertyValue('--rk-col-bg-6').trim() || fallback.columnBgs[5]!,
+      styles.getPropertyValue('--rk-col-bg-7').trim() || fallback.columnBgs[6]!,
     ],
-    badgeBg: '#f1f5f9',
-    badgeText: '#64748b',
-    badgeLowBg: '#dcfce7',
-    badgeLowColor: '#15803d',
-    badgeHighBg: '#fef9c3', // Yellow-100
-    badgeHighColor: '#a16207', // Yellow-700
-    badgeUrgentBg: '#ffedd5', // Orange-100
-    badgeUrgentColor: '#c2410c', // Orange-700
-    badgeImmediateBg: '#fee2e2', // Red-100
-    badgeImmediateColor: '#b91c1c', // Red-700
-    badgeOverdueBg: '#fee2e2', // Red-100
-    badgeOverdueColor: '#b91c1c', // Red-700
-    badgeWarnBg: '#fef9c3',
-    badgeWarnColor: '#a16207',
+    badgeBg: fallback.badgeBg,
+    badgeText: fallback.badgeText,
+    badgeLowBg: fallback.badgeLowBg,
+    badgeLowColor: fallback.badgeLowColor,
+    badgeHighBg: fallback.badgeHighBg,
+    badgeHighColor: fallback.badgeHighColor,
+    badgeUrgentBg: fallback.badgeUrgentBg,
+    badgeUrgentColor: fallback.badgeUrgentColor,
+    badgeImmediateBg: fallback.badgeImmediateBg,
+    badgeImmediateColor: fallback.badgeImmediateColor,
+    badgeOverdueBg: fallback.badgeOverdueBg,
+    badgeOverdueColor: fallback.badgeOverdueColor,
+    badgeWarnBg: fallback.badgeWarnBg,
+    badgeWarnColor: fallback.badgeWarnColor,
+    priorityPalette: fallback.priorityPalette,
+    actionOverlayBg: fallback.actionOverlayBg,
+    headerBg: fallback.headerBg,
   };
 }
 

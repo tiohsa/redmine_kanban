@@ -5,7 +5,7 @@ import type { SortConfig } from './board/sort';
 import type { FitMode } from '../model/view/types';
 import type { IssueDialogSizeSettings } from '../model/view/issueDialogSize';
 import type { FilterOptionsState } from '../model/board/types';
-import type { CardDisplayMode, LaneType } from './useKanbanPreferences';
+import type { CardDisplayMode, KanbanColorTheme, LaneType } from './useKanbanPreferences';
 import { buildToolbarOptions, togglePriorityFilter } from './toolbar/toolbarOptions';
 import { SearchPopover } from './toolbar/SearchPopover';
 import { SortPopover } from './toolbar/SortPopover';
@@ -27,6 +27,8 @@ type ToolbarProps = {
   onToggleFitMode: () => void;
   cardDisplayMode: CardDisplayMode;
   onChangeCardDisplayMode: (value: CardDisplayMode) => void;
+  colorTheme?: KanbanColorTheme;
+  onChangeColorTheme?: (value: KanbanColorTheme) => void;
   showSubtasks: boolean;
   onToggleShowSubtasks: () => void;
   fontSize: number;
@@ -67,6 +69,8 @@ export function KanbanToolbar({
   onToggleFitMode,
   cardDisplayMode,
   onChangeCardDisplayMode,
+  colorTheme,
+  onChangeColorTheme,
   showSubtasks,
   onToggleShowSubtasks,
   fontSize,
@@ -291,6 +295,8 @@ export function KanbanToolbar({
       <div className="rk-toolbar-group">
         <DisplaySettingsPopover
           labels={labels}
+          colorTheme={colorTheme}
+          onChangeColorTheme={onChangeColorTheme}
           showSubtasks={showSubtasks}
           onToggleShowSubtasks={onToggleShowSubtasks}
           laneType={laneType}

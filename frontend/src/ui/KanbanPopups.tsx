@@ -250,15 +250,12 @@ export function PriorityPopup({
       ref={menuRef}
       role="group"
       aria-label={ariaLabel}
+      className="rk-priority-popup rk-dropdown-menu"
       style={{
         position: 'fixed',
         left: x,
         top: y,
         zIndex: 1000,
-        background: 'white',
-        borderRadius: '6px',
-        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-        border: '1px solid #e2e8f0',
         minWidth: '160px',
         padding: '4px 0',
       }}
@@ -533,16 +530,13 @@ export function ProgressPopup({
       ref={menuRef}
       role="group"
       aria-label={ariaLabel}
+      className="rk-progress-popup rk-dropdown-menu"
       style={{
         position: 'fixed',
         left: x,
         top: y,
         transform: transformStyle,
         zIndex: 1000,
-        background: 'white',
-        borderRadius: '6px',
-        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-        border: '1px solid #e2e8f0',
         minWidth: '100px',
         padding: '4px 0',
       }}

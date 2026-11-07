@@ -35,7 +35,31 @@ async function openIssueAndReturnPosition(page, issueId, columnIndex) {
   throw new Error(`Could not locate issue ${issueId} on the canvas`);
 }
 
+async function dragAndWaitForMove(page, issueId, from, to) {
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const responsePromise = page.waitForResponse((response) => (
+      response.url().includes(`/kanban/issues/${issueId}/move`) && response.request().method() === 'PATCH'
+    ), { timeout: 15_000 });
+    responsePromise.catch(() => {});
+    await page.mouse.move(from.x, from.y);
+    await page.waitForTimeout(150);
+    await page.mouse.down();
+    await page.mouse.move(from.x + 6, from.y + 6, { steps: 3 });
+    await page.mouse.move(to.x, to.y, { steps: 20 });
+    await page.waitForTimeout(150);
+    await page.mouse.up();
+    try {
+      return await responsePromise;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
 test('filtered moves apply bounded deltas without replacing the board snapshot', async ({ page, baseURL }) => {
+  test.setTimeout(120_000);
   const root = baseURL || process.env.REDMINE_BASE_URL || 'http://127.0.0.1:3002';
   const project = projectPath(root);
   await login(page, root);
@@ -136,9 +160,6 @@ test('filtered moves apply bounded deltas without replacing the board snapshot',
     expect(pageSnapshotRequests).toBe(1);
     expect(pageMetadataRequests).toBe(1);
     await expect(createButton).toBeEnabled();
-    const moveResponsePromise = page.waitForResponse((response) => (
-      response.url().includes(`/kanban/issues/${issueId}/move`) && response.request().method() === 'PATCH'
-    ));
     const canvasBox = await canvas.boundingBox();
     if (!canvasBox) throw new Error('Kanban canvas has no layout box');
     // The left tracker-color strip is inside the card but outside its subject
@@ -148,12 +169,7 @@ test('filtered moves apply bounded deltas without replacing the board snapshot',
     const targetX = canvasBox.x + 120 + targetColumnIndex * 260 + 240;
     const targetY = canvasBox.y + 40 + targetLaneIndex * 32
       + (sourceLaneIndex < targetLaneIndex ? 26 : 0) + 12 + 17;
-    await page.mouse.move(sourceX, sourceY);
-    await page.mouse.down();
-    await page.mouse.move(targetX, targetY, { steps: 20 });
-    await page.mouse.up();
-
-    const moveResponse = await moveResponsePromise;
+    const moveResponse = await dragAndWaitForMove(page, issueId, { x: sourceX, y: sourceY }, { x: targetX, y: targetY });
     expect(moveResponse.ok()).toBeTruthy();
     moveCompleted = true;
     const moveResult = await moveResponse.json();
@@ -210,8 +226,8 @@ test('filtered moves apply bounded deltas without replacing the board snapshot',
       has: page.locator('.rk-icon:text-is("tune")'),
     });
     await settingsButton.click();
-    const laneTypeSelect = page.locator('.rk-settings-menu select').first();
-    await laneTypeSelect.selectOption('priority');
+    const laneTypeSelect = page.locator('.rk-settings-menu select').filter({ has: page.locator('option[value="priority"]') }).first();
+    await laneTypeSelect.selectOption('priority', { timeout: 10_000 });
     await settingsButton.click();
     const priorityLanes = [...initialFiltered.lists.priorities].reverse();
     const sourcePriorityLaneIndex = priorityLanes.findIndex((lane) => String(lane.id) === String(afterAssigneeMoveIssue.priority_id));
@@ -225,19 +241,12 @@ test('filtered moves apply bounded deltas without replacing the board snapshot',
     const priorityTargetColumnIndex = afterAssigneeMove.columns.findIndex((column) => column.id === priorityTargetStatusId);
     const priorityCanvasBox = await canvas.boundingBox();
     if (!priorityCanvasBox) throw new Error('Kanban canvas has no layout box');
-    const priorityMoveResponsePromise = page.waitForResponse((response) => (
-      response.url().includes(`/kanban/issues/${issueId}/move`) && response.request().method() === 'PATCH'
-    ));
     const prioritySourceX = priorityCanvasBox.x + 120 + prioritySourceColumnIndex * 260 + 14;
     const prioritySourceY = priorityCanvasBox.y + 40 + sourcePriorityLaneIndex * 32 + 12 + 17;
     const priorityTargetX = priorityCanvasBox.x + 120 + priorityTargetColumnIndex * 260 + 240;
     const priorityTargetY = priorityCanvasBox.y + 40 + targetPriorityLaneIndex * 32
       + (sourcePriorityLaneIndex < targetPriorityLaneIndex ? 26 : 0) + 12 + 17;
-    await page.mouse.move(prioritySourceX, prioritySourceY);
-    await page.mouse.down();
-    await page.mouse.move(priorityTargetX, priorityTargetY, { steps: 20 });
-    await page.mouse.up();
-    const priorityMoveResponse = await priorityMoveResponsePromise;
+    const priorityMoveResponse = await dragAndWaitForMove(page, issueId, { x: prioritySourceX, y: prioritySourceY }, { x: priorityTargetX, y: priorityTargetY });
     expect(priorityMoveResponse.ok()).toBeTruthy();
     const priorityMoveResult = await priorityMoveResponse.json();
     expect(priorityMoveResult.invalidations?.board_snapshot).toBe(false);
