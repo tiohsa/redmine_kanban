@@ -226,8 +226,8 @@ test('filtered moves apply bounded deltas without replacing the board snapshot',
       has: page.locator('.rk-icon:text-is("tune")'),
     });
     await settingsButton.click();
-    const laneTypeSelect = page.locator('.rk-settings-menu select').first();
-    await laneTypeSelect.selectOption('priority');
+    const laneTypeSelect = page.locator('.rk-settings-menu select').filter({ has: page.locator('option[value="priority"]') }).first();
+    await laneTypeSelect.selectOption('priority', { timeout: 10_000 });
     await settingsButton.click();
     const priorityLanes = [...initialFiltered.lists.priorities].reverse();
     const sourcePriorityLaneIndex = priorityLanes.findIndex((lane) => String(lane.id) === String(afterAssigneeMoveIssue.priority_id));
