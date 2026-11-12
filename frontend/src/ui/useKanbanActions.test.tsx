@@ -505,10 +505,18 @@ describe('useKanbanActions nested toggle flow', () => {
       allowed_status_ids: [1, 2],
     }];
     queryClient.setQueryData(queryKey, initial);
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
-      JSON.stringify({ message }),
-      { status },
-    ));
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
+      if (url.includes('/issues/entities')) {
+        return new Response(JSON.stringify({
+          ok: true,
+          scope_fingerprint: initial.scope_fingerprint,
+          entities: [{ ...initial.issues[0].subtasks![0], lock_version: 3 }],
+          missing_issue_ids: [],
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ message }), { status });
+    });
 
     const { result } = renderHook(
       () => useKanbanActions({
@@ -566,6 +574,67 @@ describe('useKanbanActions snapshot-invalidated success', () => {
     expect(queryClient.getQueryData<BoardData>(['kanban', 'board'])?.issues[0]).toMatchObject({
       status_id: 1,
       allowed_status_ids: [1, 2],
+    });
+  });
+
+  it('reconciles the target entity after a 409 conflict error to synchronize latest lock_version', async () => {
+    const board = makeBoardData({ ...makeIssue(1), lock_version: 2 });
+    board.columns = [
+      { id: 1, name: 'Open', is_closed: false, count: 1 },
+      { id: 2, name: 'Review', is_closed: false, count: 0 },
+    ];
+    board.labels.conflict = '他のユーザーによって更新されました。';
+    const setError = vi.fn();
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        ok: false,
+        message: 'Conflict',
+      }), { status: 409 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        ok: true,
+        scope_fingerprint: 'project:1',
+        entities: [{ ...makeIssue(1), status_id: 1, lock_version: 3 }],
+        missing_issue_ids: [],
+      }), { status: 200 }));
+    const { result, queryClient } = renderActions({ data: board, setError });
+
+    await act(async () => { result.current.moveIssue(1, 2); });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    expect(fetchMock.mock.calls[0][0]).toContain('/issues/1/move');
+    expect(fetchMock.mock.calls[1][0]).toContain('/issues/entities');
+    expect(setError).toHaveBeenCalledWith('他のユーザーによって更新されました。');
+    expect(queryClient.getQueryData<BoardData>(['kanban', 'board'])?.issues[0]).toMatchObject({
+      status_id: 1,
+      lock_version: 3,
+    });
+  });
+
+  it('reconciles the target entity after updateIssue hits a 409 conflict error', async () => {
+    const board = makeBoardData({ ...makeIssue(1), lock_version: 2 });
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        ok: false,
+        message: 'Conflict',
+      }), { status: 409 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        ok: true,
+        scope_fingerprint: 'project:1',
+        entities: [{ ...makeIssue(1), lock_version: 3, subject: 'Updated remotely' }],
+        missing_issue_ids: [],
+      }), { status: 200 }));
+    const { result, queryClient } = renderActions({ data: board });
+
+    await act(async () => {
+      result.current.updateIssueMutation.mutate({ issueId: 1, patch: { subject: 'Local edit' }, lockVersion: 2 });
+    });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    expect(fetchMock.mock.calls[0][0]).toContain('/issues/1');
+    expect(fetchMock.mock.calls[1][0]).toContain('/issues/entities');
+    expect(queryClient.getQueryData<BoardData>(['kanban', 'board'])?.issues[0]).toMatchObject({
+      lock_version: 3,
+      subject: 'Updated remotely',
     });
   });
 

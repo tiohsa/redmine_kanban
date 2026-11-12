@@ -8,7 +8,7 @@ import { useMutationReconciler } from './useMutationReconciler';
 import { findIssueInBoard } from '../../model/board/selectors';
 import { applyLocalIssuePatch } from '../../model/board/state';
 import { findSubtask, resolveAssigneeName, resolvePriorityName, resolveSubtaskStatus, resolveBoardIssue } from '../../model/board/selectors';
-import { isWorkflowTransitionError, resolveMutationError } from '../../infrastructure/api/errors';
+import { isConflictError, isWorkflowTransitionError, resolveMutationError } from '../../infrastructure/api/errors';
 import type { IssueMutationResult, MovePayload, UpdatePayload } from '../../infrastructure/api/contracts';
 import { discardBulkIdempotencyKey, getOrCreateBulkIdempotencyKey, stableSerialize, storageKeyForBulkSignature } from '../../infrastructure/storage/bulkIdempotency';
 import { buildBulkCreateRequest, buildRestoreIssuePayload, isBulkCreateInput } from './kanbanActionPayloads';
@@ -163,7 +163,7 @@ export function useBoardActions({
     applyServer: applyIssueMutationResponse,
     onError: (error, payload) => {
       setError(resolveMutationError(error, data?.labels, data?.labels.move_failed));
-      if (isWorkflowTransitionError(error)) void reconcileIssueIds([payload.issueId]);
+      if (isWorkflowTransitionError(error) || isConflictError(error)) void reconcileIssueIds([payload.issueId]);
     },
     onSuccess: (result) => {
       if (result.warning) setNotice(result.warning);
@@ -203,7 +203,7 @@ export function useBoardActions({
       reconcileMutationResult(result, { responseHandled: true });
     },
     onError: (error, payload) => {
-      if (isWorkflowTransitionError(error)) void reconcileIssueIds([payload.issueId]);
+      if (isWorkflowTransitionError(error) || isConflictError(error)) void reconcileIssueIds([payload.issueId]);
     },
     onMutateIssue: beginIssueMutation,
     onSettledMutation: endIssueMutation,
