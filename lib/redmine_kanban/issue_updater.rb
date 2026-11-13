@@ -80,6 +80,8 @@ module RedmineKanban
       priority_updated = priority_id != :no_change
       priority_lock_versions = nil
       mutation_outcome = nil
+      status_was_closed = issue.status&.is_closed?
+      closed_state_changed = false
       parent_affecting_change = false
 
       Issue.transaction do
@@ -101,6 +103,7 @@ module RedmineKanban
         end
         changed_filter_fields << :priority_id if priority_updated
         mutation_outcome = mutation_outcome_for(issue)
+        closed_state_changed = mutation_outcome[:status_changed] && (status_was_closed != issue.status&.is_closed?)
         parent_affecting_change = issue.parent_id.present? && (
           mutation_outcome[:status_changed] ||
           mutation_outcome[:done_ratio_changed] ||
@@ -133,7 +136,14 @@ module RedmineKanban
       ancestor_updates = ancestor_updates_for(issue) if ancestor_updates_required
       ancestor_issues = ancestor_issues_for(issue) if ancestor_updates_required
       propagated_issues = priority_id.is_a?(Integer) ? issue.children.to_a : []
-      issue_updates = [issue, *(ancestor_issues || []), *propagated_issues].uniq { |item| item.id }
+      status_changed_children = if closed_state_changed
+        visible_children = Issue.visible(@user).where(parent_id: issue.id).to_a
+        member_child_ids = membership_resolver.member_ids(visible_children)
+        visible_children.select { |child| member_child_ids.include?(child.id) }
+      else
+        []
+      end
+      issue_updates = [issue, *(ancestor_issues || []), *propagated_issues, *status_changed_children].uniq { |item| item.id }
       membership_recheck_ids = if !filter_snapshot_invalidation && before_primary_member != after_primary_member
         membership_resolver.membership_candidate_ids([issue.id])
       else

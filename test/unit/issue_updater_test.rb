@@ -3,15 +3,21 @@ require_relative '../../lib/redmine_kanban/issue_updater'
 
 class RedmineKanbanIssueUpdaterTest < ActiveSupport::TestCase
   fixtures :projects, :users, :roles, :members, :member_roles, :enabled_modules, :issues, :issue_statuses, :trackers,
-           :projects_trackers, :enumerations
+           :projects_trackers, :enumerations, :workflows
 
   def setup
+    @previous_user = User.current
     @project = projects(:projects_001)
     @user = users(:users_002)
     @role = Role.find_by(name: 'Manager') || Role.givable.first || Role.first
     enable_kanban_module!
     grant_permissions!
     ensure_member!
+    User.current = @user
+  end
+
+  def teardown
+    User.current = @previous_user
   end
 
   def test_derived_parent_dates_include_reloaded_parent_and_grandparent
@@ -184,6 +190,161 @@ class RedmineKanbanIssueUpdaterTest < ActiveSupport::TestCase
     Setting.parent_issue_priority = previous_priority
   end
 
+  def test_reopening_closed_parent_includes_visible_direct_child_with_updated_allowed_status_ids
+    open_status = IssueStatus.where(is_closed: false).first
+    closed_status = IssueStatus.where(is_closed: true).first
+    skip 'Need both open and closed statuses' unless open_status && closed_status
+
+    ensure_workflow_transition!(old_status: closed_status, new_status: open_status)
+
+    parent = build_issue(subject: 'closed parent', status: closed_status)
+    child = build_issue(subject: 'closed child', parent_issue_id: parent.id, status: closed_status)
+    grandchild = build_issue(subject: 'closed grandchild', parent_issue_id: child.id, status: closed_status)
+
+    refute_includes child.reload.new_statuses_allowed_to(@user).map(&:id), open_status.id
+
+    result = issue_updater.update(
+      issue_id: parent.id,
+      params: {
+        status_id: open_status.id,
+        lock_version: parent.reload.lock_version
+      }
+    )
+
+    assert_equal true, result[:ok]
+    assert_equal open_status.id, parent.reload.status_id
+    assert_equal parent.id, child.reload.parent_id
+    assert child.visible?(@user)
+
+    update_by_id = result[:issue_updates].index_by { |item| item[:id] }
+    assert_includes update_by_id.keys, parent.id
+    assert_includes update_by_id.keys, child.id
+    refute_includes update_by_id.keys, grandchild.id
+    assert_includes update_by_id[child.id][:allowed_status_ids], open_status.id
+  end
+
+  def test_reopening_closed_parent_excludes_non_visible_child
+    open_status = IssueStatus.where(is_closed: false).first
+    closed_status = IssueStatus.where(is_closed: true).first
+    skip 'Need both open and closed statuses' unless open_status && closed_status
+
+    previous_visibility = @role.issues_visibility
+    @role.update!(issues_visibility: 'default')
+    ensure_workflow_transition!(old_status: closed_status, new_status: open_status)
+
+    other_user = users(:users_001)
+    parent = build_issue(subject: 'closed parent visibility', status: closed_status)
+    visible_child = build_issue(subject: 'visible closed child', parent_issue_id: parent.id, status: closed_status)
+    hidden_child = build_issue(
+      subject: 'private closed child',
+      parent_issue_id: parent.id,
+      status: closed_status,
+      author: other_user,
+      is_private: true
+    )
+
+    assert visible_child.visible?(@user)
+    refute hidden_child.visible?(@user)
+
+    result = issue_updater.update(
+      issue_id: parent.id,
+      params: {
+        status_id: open_status.id,
+        lock_version: parent.reload.lock_version
+      }
+    )
+
+    assert_equal true, result[:ok]
+
+    update_ids = result[:issue_updates].map { |item| item[:id] }
+    assert_includes update_ids, parent.id
+    assert_includes update_ids, visible_child.id
+    refute_includes update_ids, hidden_child.id
+  ensure
+    @role.update!(issues_visibility: previous_visibility) if defined?(previous_visibility) && previous_visibility
+  end
+
+  def test_updating_parent_without_status_change_does_not_include_children
+    parent = build_issue(subject: 'parent before')
+    child = build_issue(subject: 'child unchanged', parent_issue_id: parent.id)
+
+    result = issue_updater.update(
+      issue_id: parent.id,
+      params: {
+        subject: 'parent after',
+        lock_version: parent.reload.lock_version
+      }
+    )
+
+    assert_equal true, result[:ok]
+
+    update_ids = result[:issue_updates].map { |item| item[:id] }
+    assert_includes update_ids, parent.id
+    refute_includes update_ids, child.id
+  end
+
+  def test_open_to_open_status_change_does_not_include_children
+    open_statuses = IssueStatus.where(is_closed: false).order(:id).limit(2).to_a
+    skip 'Need at least 2 open statuses' if open_statuses.size < 2
+
+    first_open, second_open = open_statuses
+    ensure_workflow_transition!(old_status: first_open, new_status: second_open)
+
+    parent = build_issue(subject: 'open parent', status: first_open)
+    child = build_issue(subject: 'open child', parent_issue_id: parent.id, status: first_open)
+
+    result = issue_updater.update(
+      issue_id: parent.id,
+      params: {
+        status_id: second_open.id,
+        lock_version: parent.reload.lock_version
+      }
+    )
+
+    assert_equal true, result[:ok]
+
+    update_ids = result[:issue_updates].map { |item| item[:id] }
+    assert_includes update_ids, parent.id
+    refute_includes update_ids, child.id
+  end
+
+  def test_reopening_closed_parent_excludes_non_board_member_child_without_eviction
+    open_status = IssueStatus.where(is_closed: false).first
+    closed_statuses = IssueStatus.where(is_closed: true).order(:id).limit(2).to_a
+    skip 'Need an open status and at least 2 closed statuses' unless open_status && closed_statuses.size >= 2
+
+    board_closed, outside_closed = closed_statuses
+    ensure_workflow_transition!(old_status: board_closed, new_status: open_status)
+
+    parent = build_issue(subject: 'closed parent scope', status: board_closed)
+    board_child = build_issue(subject: 'board closed child', parent_issue_id: parent.id, status: board_closed)
+    outside_child = build_issue(subject: 'outside closed child', parent_issue_id: parent.id, status: outside_closed)
+
+    context = RedmineKanban::BoardContext.new(
+      project: @project,
+      user: @user,
+      scope_status_ids: [open_status.id, board_closed.id],
+      dependency_status_ids: [open_status.id, board_closed.id]
+    )
+    updater = RedmineKanban::IssueUpdater.new(project: @project, user: @user, board_context: context)
+
+    result = updater.update(
+      issue_id: parent.id,
+      params: {
+        status_id: open_status.id,
+        lock_version: parent.reload.lock_version
+      }
+    )
+
+    assert_equal true, result[:ok]
+
+    update_ids = result[:issue_updates].map { |item| item[:id] }
+    assert_includes update_ids, parent.id
+    assert_includes update_ids, board_child.id
+    refute_includes update_ids, outside_child.id
+    refute_includes result[:evicted_issue_ids], outside_child.id
+  end
+
   private
 
   def issue_updater(issue_filter: nil)
@@ -191,12 +352,12 @@ class RedmineKanbanIssueUpdaterTest < ActiveSupport::TestCase
     RedmineKanban::IssueUpdater.new(project: @project, user: @user, board_context: context)
   end
 
-  def build_issue(subject:, parent_issue_id: nil, priority: nil, author: @user, is_private: false)
+  def build_issue(subject:, parent_issue_id: nil, priority: nil, status: nil, author: @user, is_private: false)
     Issue.new(
       project: @project,
       tracker: @project.trackers.first,
       author: author,
-      status: IssueStatus.first,
+      status: status || IssueStatus.first,
       priority: priority || IssuePriority.active.first,
       subject: subject,
       parent_issue_id: parent_issue_id,
@@ -220,5 +381,14 @@ class RedmineKanbanIssueUpdaterTest < ActiveSupport::TestCase
   def ensure_member!
     member = Member.find_by(project_id: @project.id, user_id: @user.id) || Member.create!(project: @project, user: @user, role_ids: [@role.id])
     MemberRole.create!(member_id: member.id, role_id: @role.id) unless member.roles.include?(@role)
+  end
+
+  def ensure_workflow_transition!(old_status:, new_status:)
+    WorkflowTransition.find_or_create_by!(
+      tracker_id: @project.trackers.first.id,
+      role_id: @role.id,
+      old_status_id: old_status.id,
+      new_status_id: new_status.id
+    )
   end
 end
