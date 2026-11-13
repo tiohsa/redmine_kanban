@@ -114,13 +114,7 @@ module RedmineKanban
       ancestor_updates = ancestor_updates_for(@issue) if ancestor_updates_required
       ancestor_issues = ancestor_issues_for(@issue) if ancestor_updates_required
       propagated_issues = priority_id.is_a?(Integer) ? @issue.children.to_a : []
-      status_affected_children = if closed_state_changed
-        visible_children = Issue.visible(@user).where(parent_id: @issue.id).to_a
-        member_child_ids = membership_resolver.member_ids(visible_children)
-        visible_children.select { |child| member_child_ids.include?(child.id) }
-      else
-        []
-      end
+      status_affected_children = closed_state_changed ? membership_resolver.visible_member_children(@issue) : []
       issue_updates = [@issue, *(ancestor_issues || []), *propagated_issues, *status_affected_children].uniq { |item| item.id }
       tree_changes = []
       filter_snapshot_invalidation = false

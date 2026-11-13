@@ -105,6 +105,14 @@ module RedmineKanban
       visible_scope.where(id: candidate_ids).to_a
     end
 
+    def visible_member_children(parent_issue)
+      visible_children = (@visible_scope || Issue.visible(@context.user)).where(parent_id: parent_issue.id).to_a
+      return [] if visible_children.empty?
+
+      member_child_ids = member_ids(visible_children)
+      visible_children.select { |child| member_child_ids.include?(child.id) }
+    end
+
     private
 
     def primary_scope
