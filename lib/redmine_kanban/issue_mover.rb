@@ -57,6 +57,7 @@ module RedmineKanban
       parent_priority_before = nil
       priority_lock_versions = nil
       mutation_outcome = nil
+      priority_changed = false
       filtered_reconciliation = if @board_context.issue_filter.active?
         FilteredMoveReconciliation.new(board_context: @board_context, issue: @issue)
       end
@@ -77,6 +78,7 @@ module RedmineKanban
         end
 
         mutation_outcome = mutation_outcome_for(@issue)
+        priority_changed = @issue.saved_change_to_priority_id?
         priority_error = apply_priority_updates!(@issue, priority_id)
         if priority_error
           error_result = error_response(priority_error)
@@ -97,7 +99,9 @@ module RedmineKanban
 
       after_primary_member = membership_resolver.primary_member?(@issue.id) unless filtered_reconciliation
 
-      ancestor_updates_required = mutation_outcome[:status_changed] || mutation_outcome[:done_ratio_changed]
+      ancestor_updates_required = mutation_outcome[:status_changed] ||
+                                  mutation_outcome[:done_ratio_changed] ||
+                                  priority_changed
 
       if priority_id.is_a?(Integer)
         reconcile_error = reconcile_priorities_after_commit!(@issue, priority_id, priority_lock_versions)
