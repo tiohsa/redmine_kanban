@@ -21,6 +21,7 @@ class RedmineKanbanIssueMoverTest < ActiveSupport::TestCase
     @low_priority = priorities.first
     @high_priority = priorities.last
     @open_status = IssueStatus.where(is_closed: false).first || IssueStatus.first
+    @closed_status = IssueStatus.where(is_closed: true).first
   end
 
   def teardown
@@ -124,6 +125,86 @@ class RedmineKanbanIssueMoverTest < ActiveSupport::TestCase
     end
   end
 
+  def test_reopen_closed_parent_includes_visible_direct_children_with_updated_allowed_status_ids
+    skip 'A closed status is required for IssueMover reopen tests' unless @closed_status
+
+    ensure_workflow_transition!(@closed_status, @open_status)
+    parent = build_issue(subject: 'Closed Parent', priority: @low_priority, status: @closed_status)
+    child = build_issue(subject: 'Closed Child', parent_issue_id: parent.id, priority: @low_priority, status: @closed_status)
+    parent.reload
+
+    refute_includes child.new_statuses_allowed_to(@user).map(&:id), @open_status.id
+
+    result = mover(parent).move(
+      status_id: @open_status.id,
+      lock_version: parent.lock_version
+    )
+
+    assert_equal true, result[:ok], result.inspect
+    assert_equal @open_status.id, parent.reload.status_id
+
+    issue_update_ids = result[:issue_updates].map { |item| item[:id] }
+    assert_includes issue_update_ids, parent.id
+    assert_includes issue_update_ids, child.id
+
+    child_update = result[:issue_updates].find { |item| item[:id] == child.id }
+    assert_includes child_update[:allowed_status_ids], @open_status.id
+  end
+
+  def test_reopen_closed_parent_excludes_non_visible_children
+    skip 'A closed status is required for IssueMover reopen tests' unless @closed_status
+
+    ensure_workflow_transition!(@closed_status, @open_status)
+    other_author = users(:users_001)
+    @role.remove_permission!(:view_private_issues) if @role.permissions.include?(:view_private_issues)
+    @role.update!(issues_visibility: 'default')
+
+    parent = build_issue(subject: 'Closed Parent', priority: @low_priority, status: @closed_status)
+    visible_child = build_issue(subject: 'Visible Child', parent_issue_id: parent.id, priority: @low_priority, status: @closed_status)
+    private_child = build_issue(
+      subject: 'Private Child',
+      parent_issue_id: parent.id,
+      priority: @low_priority,
+      status: @closed_status,
+      author: other_author,
+      is_private: true
+    )
+    parent.reload
+
+    assert visible_child.visible?(@user), 'Expected visible child to be visible to @user'
+    refute private_child.visible?(@user), 'Expected private child to not be visible to @user'
+
+    result = mover(parent).move(
+      status_id: @open_status.id,
+      lock_version: parent.lock_version
+    )
+
+    assert_equal true, result[:ok], result.inspect
+    issue_update_ids = result[:issue_updates].map { |item| item[:id] }
+    assert_includes issue_update_ids, parent.id
+    assert_includes issue_update_ids, visible_child.id
+    assert_not_includes issue_update_ids, private_child.id
+  end
+
+  def test_move_parent_without_status_or_priority_change_does_not_include_children
+    parent = build_issue(subject: 'Parent', priority: @low_priority)
+    child = build_issue(subject: 'Child', parent_issue_id: parent.id, priority: @low_priority)
+    parent.reload
+
+    result = mover(parent).move(
+      status_id: parent.status_id,
+      assigned_to_id: @user.id,
+      assigned_to_provided: true,
+      priority_provided: false,
+      lock_version: parent.lock_version
+    )
+
+    assert_equal true, result[:ok], result.inspect
+    issue_update_ids = result[:issue_updates].map { |item| item[:id] }
+    assert_equal [parent.id], issue_update_ids
+    assert_not_includes issue_update_ids, child.id
+  end
+
   private
 
   def mover(issue)
@@ -138,18 +219,28 @@ class RedmineKanbanIssueMoverTest < ActiveSupport::TestCase
     Setting.parent_issue_priority = previous
   end
 
-  def build_issue(subject:, priority:, parent_issue_id: nil, author: @user, is_private: false)
+  def build_issue(subject:, priority:, parent_issue_id: nil, author: @user, is_private: false, status: @open_status)
     issue = Issue.create!(
       project: @project,
       tracker: @project.trackers.first || Tracker.first,
       author: author,
-      status: @open_status,
+      status: status,
       subject: subject,
       parent_issue_id: parent_issue_id,
       priority: priority,
       is_private: is_private
     )
     Issue.find(issue.id)
+  end
+
+  def ensure_workflow_transition!(old_status, new_status)
+    tracker = @project.trackers.first || Tracker.first
+    WorkflowTransition.find_or_create_by!(
+      tracker: tracker,
+      role: @role,
+      old_status: old_status,
+      new_status: new_status
+    )
   end
 
   def grant_permissions!
