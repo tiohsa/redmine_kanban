@@ -19,7 +19,11 @@ module RedmineKanban
       issue, error = persist_issue(params: params)
       return error if error
 
+      updated_parent = if issue.parent_id.present?
+                         Issue.visible(@user).find_by(id: issue.parent_id)
+                       end
       mutation = mutation_result_builder.build(
+        issue_updates: [updated_parent].compact,
         created_issues: [issue],
         tree_changes: issue.parent_id ? [{ type: 'attach', parent_id: issue.parent_id, child_id: issue.id }] : [],
         invalidations: { column_counts: true, board_snapshot: @board_context.issue_filter.active? }

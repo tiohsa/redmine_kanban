@@ -200,6 +200,27 @@ class RedmineKanbanIssueCreatorTest < ActiveSupport::TestCase
     assert_nil Issue.find_by(subject: 'bulk discarded status')
   end
 
+  def test_create_child_updates_parent_can_edit_done_ratio_when_derived
+    previous_issue_done_ratio = Setting.issue_done_ratio
+    previous_parent_done_ratio = Setting.parent_issue_done_ratio
+    Setting.issue_done_ratio = 'issue_field'
+    Setting.parent_issue_done_ratio = 'derived'
+
+    parent = build_issue(subject: 'Creator parent')
+    creator = RedmineKanban::IssueCreator.new(project: @project, user: @user)
+
+    result = creator.create(params: issue_params(subject: 'Creator first child', parent_issue_id: parent.id))
+
+    assert_equal true, result[:ok], result.inspect
+    parent_update = result[:issue_updates].find { |item| item[:id] == parent.id }
+    assert_not_nil parent_update, 'Expected parent issue in issue_updates'
+    assert_equal false, parent_update.dig(:permissions, :can_edit_done_ratio)
+    assert_equal true, result[:created_issues].first.dig(:permissions, :can_edit_done_ratio)
+  ensure
+    Setting.issue_done_ratio = previous_issue_done_ratio
+    Setting.parent_issue_done_ratio = previous_parent_done_ratio
+  end
+
   private
 
   def build_create_workflow_probe

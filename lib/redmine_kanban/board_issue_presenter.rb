@@ -143,11 +143,37 @@ module RedmineKanban
 
     def permissions_for(issue)
       project = issue.project
+      can_move = permission_policy.can_move_issue?(issue, @board_project || project)
+      can_edit = permission_policy.can_update_issue?(issue, @board_project || project)
       {
-        can_move: permission_policy.can_move_issue?(issue, @board_project || project),
-        can_edit: permission_policy.can_update_issue?(issue, @board_project || project),
+        can_move: can_move,
+        can_edit: can_edit,
+        can_edit_done_ratio: can_edit_done_ratio?(issue, can_edit),
         can_delete: permission_policy.can_delete_issue?(issue, @board_project || project),
       }
+    end
+
+    def can_edit_done_ratio?(issue, can_edit)
+      return false unless can_edit
+      return false unless done_ratio_field_enabled?
+
+      if @workflow_status_resolver&.respond_to?(:done_ratio_readonly?)
+        return false if issue.respond_to?(:done_ratio_derived?) && issue.done_ratio_derived?
+        return false if issue.respond_to?(:disabled_core_fields) && issue.disabled_core_fields.include?('done_ratio')
+        return false if @workflow_status_resolver.done_ratio_readonly?(issue)
+
+        true
+      elsif issue.respond_to?(:safe_attribute?)
+        issue.safe_attribute?('done_ratio', @user)
+      else
+        true
+      end
+    end
+
+    def done_ratio_field_enabled?
+      return true unless defined?(Issue) && Issue.respond_to?(:use_field_for_done_ratio?)
+
+      Issue.use_field_for_done_ratio?
     end
 
     def allowed_status_ids_for(issue)

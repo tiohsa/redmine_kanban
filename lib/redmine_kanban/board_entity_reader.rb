@@ -9,7 +9,7 @@ module RedmineKanban
       member_ids = BoardMembershipResolver.new(board_context: @board_context).member_ids(ids)
       issues = Issue.visible(@user)
                     .where(id: member_ids.to_a, project_id: @board_context.project_ids)
-                    .includes(:assigned_to, :priority, :status, :project)
+                    .includes(:assigned_to, :priority, :status, :project, :tracker)
                     .to_a
       presenter = IssueEntityPresenter.new(user: @user, board_project: @board_context.project)
       {

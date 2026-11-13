@@ -185,3 +185,122 @@ class RedmineKanbanBoardIssuePresenterTest < ActiveSupport::TestCase
     end
   end
 end
+
+class RedmineKanbanBoardIssuePresenterDoneRatioTest < ActiveSupport::TestCase
+  fixtures :projects, :users, :roles, :members, :member_roles, :enabled_modules, :issues, :issue_statuses, :trackers,
+           :projects_trackers, :enumerations
+
+  def setup
+    @previous_user = User.current
+    @previous_parent_done_ratio = Setting.parent_issue_done_ratio
+    @previous_issue_done_ratio = Setting.issue_done_ratio
+    @project = projects(:projects_001)
+    @user = users(:users_002)
+    User.current = @user
+    @role = Role.find_by(name: 'Manager') || Role.givable.first || Role.first
+    EnabledModule.find_or_create_by!(project_id: @project.id, name: 'redmine_kanban')
+    [:view_redmine_kanban, :manage_redmine_kanban, :edit_issues].each do |perm|
+      @role.add_permission!(perm) unless @role.permissions.include?(perm)
+    end
+    member = Member.find_by(project_id: @project.id, user_id: @user.id) || Member.create!(project: @project, user: @user, role_ids: [@role.id])
+    MemberRole.create!(member_id: member.id, role_id: @role.id) unless member.roles.include?(@role)
+    Setting.issue_done_ratio = 'issue_field'
+    Setting.parent_issue_done_ratio = 'derived'
+  end
+
+  def teardown
+    Setting.parent_issue_done_ratio = @previous_parent_done_ratio
+    Setting.issue_done_ratio = @previous_issue_done_ratio
+    User.current = @previous_user
+    super
+  end
+
+  def test_can_edit_done_ratio_true_for_leaf_issue_and_subtask_when_derived
+    parent = create_issue!(subject: 'Leaf parent')
+    subtask = create_issue!(subject: 'Leaf subtask', parent_issue_id: parent.id)
+    parent.reload
+
+    presenter = RedmineKanban::BoardIssuePresenter.new(
+      user: @user,
+      subtasks_by_parent_id: { parent.id => [subtask] },
+      board_project: @project
+    )
+
+    parent_payload = presenter.issue_to_h(parent)
+    assert_equal false, parent_payload.dig(:permissions, :can_edit_done_ratio)
+    assert_equal true, parent_payload[:subtasks].first.dig(:permissions, :can_edit_done_ratio)
+
+    standalone = create_issue!(subject: 'Standalone leaf')
+    standalone_payload = presenter.issue_to_h(standalone)
+    assert_equal true, standalone_payload.dig(:permissions, :can_edit_done_ratio)
+  end
+
+  def test_can_edit_done_ratio_true_for_parent_with_children_when_independent
+    Setting.parent_issue_done_ratio = 'independent'
+    parent = create_issue!(subject: 'Independent parent')
+    create_issue!(subject: 'Independent child', parent_issue_id: parent.id)
+    parent.reload
+
+    presenter = RedmineKanban::BoardIssuePresenter.new(user: @user, board_project: @project)
+    assert_equal true, presenter.issue_to_h(parent).dig(:permissions, :can_edit_done_ratio)
+  end
+
+  def test_can_edit_done_ratio_false_when_issue_done_ratio_is_issue_status
+    Setting.issue_done_ratio = 'issue_status'
+    issue = create_issue!(subject: 'Status-driven done_ratio')
+
+    presenter = RedmineKanban::BoardIssuePresenter.new(user: @user, board_project: @project)
+    assert_equal false, presenter.issue_to_h(issue).dig(:permissions, :can_edit_done_ratio)
+  end
+
+  def test_can_edit_done_ratio_false_without_edit_permission
+    issue = create_issue!(subject: 'No edit permission')
+    policy = RedmineKanban::PermissionPolicy.new(user: @user)
+    policy.stubs(:can_update_issue?).returns(false)
+
+    presenter = RedmineKanban::BoardIssuePresenter.new(
+      user: @user,
+      board_project: @project,
+      permission_policy: policy
+    )
+    payload = presenter.issue_to_h(issue)
+    assert_equal false, payload.dig(:permissions, :can_edit)
+    assert_equal false, payload.dig(:permissions, :can_edit_done_ratio)
+  end
+
+  def test_can_edit_done_ratio_respects_workflow_readonly_with_batch_resolver
+    issue = create_issue!(subject: 'Workflow readonly done_ratio')
+    member_roles = @user.roles_for_project(@project).select(&:consider_workflow?)
+    member_roles.each do |role|
+      WorkflowPermission.create!(
+        tracker_id: issue.tracker_id,
+        old_status_id: issue.status_id,
+        role_id: role.id,
+        field_name: 'done_ratio',
+        rule: 'readonly'
+      )
+    end
+
+    resolver = RedmineKanban::BoardWorkflowStatusResolver.new(user: @user, issues: [issue])
+    presenter = RedmineKanban::BoardIssuePresenter.new(
+      user: @user,
+      board_project: @project,
+      workflow_status_resolver: resolver
+    )
+    assert_equal false, presenter.issue_to_h(issue).dig(:permissions, :can_edit_done_ratio)
+  end
+
+  private
+
+  def create_issue!(subject:, parent_issue_id: nil)
+    Issue.create!(
+      project: @project,
+      tracker: @project.trackers.first || Tracker.first,
+      author: @user,
+      status: IssueStatus.first,
+      priority: IssuePriority.active.first,
+      subject: subject,
+      parent_issue_id: parent_issue_id
+    )
+  end
+end
