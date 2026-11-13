@@ -543,6 +543,120 @@ describe('useKanbanActions nested toggle flow', () => {
     });
     expect(queryClient.getQueryData<BoardData>(queryKey)?.columns.map((column) => column.count)).toEqual([100, 20]);
   });
+
+  it('allows toggling a parent subtask closed after a child close updates its allowed_status_ids at the same revision', async () => {
+    const queryKey = ['kanban', 'board', 'toggle-parent-same-revision'] as const;
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const initial = makeBoardData(makeIssue(1));
+    initial.columns = [
+      { id: 1, name: 'Open', is_closed: false, count: 1 },
+      { id: 2, name: 'Closed', is_closed: true, count: 0 },
+    ];
+    initial.labels = { ...initial.labels, subtask_update_failed: 'Failed to update subtask' };
+    initial.issues[0].subtasks = [{
+      id: 2,
+      subject: 'Parent Subtask',
+      status_id: 1,
+      is_closed: false,
+      lock_version: 3,
+      updated_on: '2026-01-01T00:00:00Z',
+      allowed_status_ids: [1],
+      subtasks: [{
+        id: 3,
+        subject: 'Child Subtask',
+        status_id: 1,
+        is_closed: false,
+        lock_version: 1,
+        updated_on: '2026-01-01T00:00:00Z',
+        allowed_status_ids: [1, 2],
+      }],
+    }];
+    queryClient.setQueryData(queryKey, initial);
+
+    const setError = vi.fn();
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        ok: true,
+        scope_fingerprint: initial.scope_fingerprint,
+        issue_updates: [
+          {
+            id: 3,
+            parent_id: 2,
+            subject: 'Child Subtask',
+            status_id: 2,
+            is_closed: true,
+            lock_version: 2,
+            updated_on: '2026-01-01T00:01:00Z',
+            allowed_status_ids: [1, 2],
+          },
+          {
+            id: 2,
+            parent_id: 1,
+            subject: 'Parent Subtask',
+            status_id: 1,
+            is_closed: false,
+            lock_version: 3,
+            updated_on: '2026-01-01T00:00:00Z',
+            allowed_status_ids: [1, 2],
+          },
+        ],
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        ok: true,
+        scope_fingerprint: initial.scope_fingerprint,
+        issue_updates: [
+          {
+            id: 2,
+            parent_id: 1,
+            subject: 'Parent Subtask',
+            status_id: 2,
+            is_closed: true,
+            lock_version: 4,
+            updated_on: '2026-01-01T00:02:00Z',
+            allowed_status_ids: [1, 2],
+          },
+        ],
+      }), { status: 200 }));
+
+    const { result, rerender } = renderHook(
+      ({ data }) => useKanbanActions({
+        baseUrl: '/projects/demo/kanban',
+        boardQueryKey: queryKey,
+        data,
+        refresh: vi.fn(async () => undefined),
+        timeEntryOnClose: false,
+        setNotice: vi.fn(),
+        setError,
+        setIframeTimeEntryOperation: vi.fn(),
+      }),
+      {
+        initialProps: { data: initial },
+        wrapper: createWrapper(queryClient),
+      },
+    );
+
+    act(() => { result.current.toggleSubtask(3, false); });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0].subtasks?.[0].allowed_status_ids).toEqual([1, 2]);
+    });
+
+    const afterChildClose = queryClient.getQueryData<BoardData>(queryKey)!;
+    rerender({ data: afterChildClose });
+    act(() => { result.current.toggleSubtask(2, false); });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(String(fetchMock.mock.calls[1][0])).toContain('/issues/2/move');
+    expect(setError).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0].subtasks?.[0]).toMatchObject({
+        id: 2,
+        status_id: 2,
+        is_closed: true,
+        lock_version: 4,
+      });
+    });
+  });
 });
 
 describe('useKanbanActions snapshot-invalidated success', () => {

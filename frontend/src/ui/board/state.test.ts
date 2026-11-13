@@ -246,4 +246,97 @@ describe('buildBoardState', () => {
 
     expect(state.lanes.map((lane) => lane.id)).toEqual([2, 1, 'no_priority']);
   });
+
+  it('updates allowed_status_ids and permissions on sameRevision while preserving non-empty regular fields', () => {
+    const data = makeBoardData('none');
+    data.issues = [
+      makeIssue(1, {
+        subject: 'Original Subject',
+        lock_version: 2,
+        updated_on: '2026-01-01T00:00:00Z',
+        allowed_status_ids: [1],
+        permissions: { can_move: true, can_edit: false, can_delete: false, can_edit_done_ratio: false },
+      }),
+    ];
+
+    const state = applyBoardResponse(createNormalizedBoardState(data), {
+      kind: 'mutation',
+      issue_updates: [
+        makeIssue(1, {
+          subject: 'Incoming Subject',
+          description: 'Filled description',
+          lock_version: 2,
+          updated_on: '2026-01-01T00:00:00Z',
+          allowed_status_ids: [1, 2],
+          permissions: { can_move: true, can_edit: true, can_delete: true, can_edit_done_ratio: true },
+        }),
+      ],
+    });
+
+    const updated = selectBoardData(state).issues[0];
+    expect(updated.subject).toBe('Original Subject');
+    expect(updated.description).toBe('Filled description');
+    expect(updated.allowed_status_ids).toEqual([1, 2]);
+    expect(updated.permissions).toEqual({ can_move: true, can_edit: true, can_delete: true, can_edit_done_ratio: true });
+  });
+
+  it('preserves existing allowed_status_ids and permissions on sameRevision when incoming omits them', () => {
+    const data = makeBoardData('none');
+    data.issues = [
+      makeIssue(1, {
+        lock_version: 2,
+        updated_on: '2026-01-01T00:00:00Z',
+        allowed_status_ids: [1, 2],
+        permissions: { can_move: true, can_edit: true, can_delete: false, can_edit_done_ratio: false },
+      }),
+    ];
+
+    const state = applyBoardResponse(createNormalizedBoardState(data), {
+      kind: 'mutation',
+      issue_updates: [
+        makeIssue(1, {
+          lock_version: 2,
+          updated_on: '2026-01-01T00:00:00Z',
+          allowed_status_ids: undefined,
+          permissions: undefined,
+        }),
+      ],
+    });
+
+    const updated = selectBoardData(state).issues[0];
+    expect(updated.allowed_status_ids).toEqual([1, 2]);
+    expect(updated.permissions).toEqual({ can_move: true, can_edit: true, can_delete: false, can_edit_done_ratio: false });
+  });
+
+  it('rejects older revisions completely including allowed_status_ids and permissions', () => {
+    const data = makeBoardData('none');
+    data.issues = [
+      makeIssue(1, {
+        subject: 'Current Subject',
+        lock_version: 5,
+        updated_on: '2026-01-02T00:00:00Z',
+        allowed_status_ids: [1],
+        permissions: { can_move: false, can_edit: false, can_delete: false, can_edit_done_ratio: false },
+      }),
+    ];
+
+    const state = applyBoardResponse(createNormalizedBoardState(data), {
+      kind: 'mutation',
+      issue_updates: [
+        makeIssue(1, {
+          subject: 'Stale Subject',
+          lock_version: 4,
+          updated_on: '2026-01-01T00:00:00Z',
+          allowed_status_ids: [1, 2],
+          permissions: { can_move: true, can_edit: true, can_delete: true, can_edit_done_ratio: true },
+        }),
+      ],
+    });
+
+    const updated = selectBoardData(state).issues[0];
+    expect(updated.subject).toBe('Current Subject');
+    expect(updated.lock_version).toBe(5);
+    expect(updated.allowed_status_ids).toEqual([1]);
+    expect(updated.permissions).toEqual({ can_move: false, can_edit: false, can_delete: false, can_edit_done_ratio: false });
+  });
 });
