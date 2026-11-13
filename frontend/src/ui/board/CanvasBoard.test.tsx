@@ -26,6 +26,7 @@ function makeIssue(id: number, attrs: Partial<Issue> = {}): Issue {
       can_move: true,
       can_edit: true,
       can_delete: true,
+      can_edit_done_ratio: true,
     },
     urls: { issue: `/issues/${id}`, issue_edit: `/issues/${id}/edit` },
     ...attrs,
@@ -298,7 +299,7 @@ afterEach(() => {
     vi.setSystemTime(new Date('2026-09-19T12:00:00'));
     const issue = makeIssue(14, {
       due_date: dueDate,
-      permissions: { can_move: true, can_edit: canEdit, can_delete: true },
+      permissions: { can_move: true, can_edit: canEdit, can_delete: true, can_edit_done_ratio: true },
     });
     const data = makeBoardData(issue);
     const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
@@ -1078,7 +1079,7 @@ afterEach(() => {
     { nested: false, permission: false, busy: false },
     { nested: false, permission: true, busy: true },
   ])('routes child worktime with its own permission and ID: %j', async ({ nested, permission, busy }) => {
-    const target = { id: 30, subject: 'Timer target', status_id: 1, is_closed: false, can_log_time: permission, permissions: { can_edit: true, can_delete: true, can_move: true } };
+    const target = { id: 30, subject: 'Timer target', status_id: 1, is_closed: false, can_log_time: permission, permissions: { can_edit: true, can_delete: true, can_move: true, can_edit_done_ratio: true } };
     const issue = makeIssue(2, { can_log_time: !permission, subtasks: nested
       ? [{ id: 20, subject: 'Middle', status_id: 1, is_closed: false, subtasks: [target] }] : [target] });
     const data = makeBoardData(issue);
@@ -1123,7 +1124,7 @@ afterEach(() => {
     ['running', 'timer'], ['expired', 'timer_off'], ['stopped_pending_record', 'pending_actions'],
   ] as const)('shows the active nested timer without hover: %s', async (timerState, icon) => {
     const issue = makeIssue(2, { subtasks: [{ id: 20, subject: 'Child', status_id: 1, is_closed: false,
-      subtasks: [{ id: 30, subject: 'Grandchild', status_id: 1, is_closed: false, can_log_time: true, permissions: { can_move: true, can_edit: true, can_delete: true } }] }] });
+      subtasks: [{ id: 30, subject: 'Grandchild', status_id: 1, is_closed: false, can_log_time: true, permissions: { can_move: true, can_edit: true, can_delete: true, can_edit_done_ratio: true } }] }] });
     const data = makeBoardData(issue);
     const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
     const context = createCanvasContextWithSpies();
@@ -1142,11 +1143,12 @@ afterEach(() => {
   });
 
   it.each([
-    { canEdit: true, doneRatio: 40, busy: false, expected: [[30, 40]] },
-    { canEdit: true, doneRatio: 40, busy: true, expected: [] },
-    { canEdit: false, doneRatio: 40, busy: false, expected: [] },
-    { canEdit: true, doneRatio: undefined, busy: false, expected: [] },
-  ])('handles subtask progress icon visibility and click: %j', async ({ canEdit, doneRatio, busy, expected }) => {
+    { canEdit: true, canEditDoneRatio: true, doneRatio: 40, busy: false, expected: [[30, 40]] },
+    { canEdit: true, canEditDoneRatio: true, doneRatio: 40, busy: true, expected: [] },
+    { canEdit: false, canEditDoneRatio: true, doneRatio: 40, busy: false, expected: [] },
+    { canEdit: true, canEditDoneRatio: false, doneRatio: 40, busy: false, expected: [] },
+    { canEdit: true, canEditDoneRatio: true, doneRatio: undefined, busy: false, expected: [] },
+  ])('handles subtask progress icon visibility and click: %j', async ({ canEdit, canEditDoneRatio, doneRatio, busy, expected }) => {
     const target = {
       id: 30,
       subject: 'Progress target',
@@ -1154,7 +1156,7 @@ afterEach(() => {
       is_closed: false,
       done_ratio: doneRatio,
       can_log_time: true,
-      permissions: { can_edit: canEdit, can_delete: true, can_move: true },
+      permissions: { can_edit: canEdit, can_delete: true, can_move: true, can_edit_done_ratio: canEditDoneRatio },
     };
     const issue = makeIssue(2, { subtasks: [target] });
     const data = makeBoardData(issue);
@@ -1176,7 +1178,7 @@ afterEach(() => {
       expect(context.arc).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), 7, 0, Math.PI * 2);
     }
 
-    if (canEdit && doneRatio !== undefined) {
+    if (canEdit && canEditDoneRatio && doneRatio !== undefined) {
       expect(rectMap.subtaskProgressButtons.has('2:30')).toBe(true);
       const progressRect = rectMap.subtaskProgressButtons.get('2:30')!;
       const cx = progressRect.x + progressRect.width / 2;
@@ -1206,9 +1208,73 @@ afterEach(() => {
       fireEvent.pointerMove(canvas, { clientX: x + 5, clientY: y + 5 });
       await waitFor(() => expect(context.fillText).toHaveBeenCalledWith('delete', expect.any(Number), expect.any(Number)));
       const card = rectMap.cards.get(2)!;
+      if (doneRatio !== undefined) {
+        fireEvent.pointerMove(canvas, { clientX: card.x + card.width - 16, clientY: y + 5 });
+        expect((container.querySelector('.rk-canvas-board') as HTMLElement).style.cursor).not.toBe('pointer');
+      }
       fireEvent.pointerDown(canvas, { clientX: card.x + card.width - 16, clientY: y + 5 });
       expect(onProgressClick).not.toHaveBeenCalled();
     }
+  });
+
+  it.each([
+    { canEditDoneRatio: true },
+    { canEditDoneRatio: false },
+  ])('respects permissions.can_edit_done_ratio=$canEditDoneRatio on top-level card progress donut', async ({ canEditDoneRatio }) => {
+    const issue = makeIssue(18, {
+      due_date: null,
+      priority_id: 2,
+      priority_name: 'Normal',
+      done_ratio: 60,
+      permissions: { can_move: true, can_edit: true, can_delete: true, can_edit_done_ratio: canEditDoneRatio },
+    });
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
+    const context = createCanvasContextWithSpies();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+    const rectMap = hitTestIndex.createRectMap();
+    vi.spyOn(hitTestIndex, 'createRectMap').mockReturnValue(rectMap);
+    const onProgressClick = vi.fn();
+    const { container, unmount } = render(
+      <CanvasBoard
+        data={data}
+        state={state}
+        canMove
+        canCreate
+        onCommand={vi.fn()}
+        onCreate={vi.fn()}
+        onEdit={vi.fn()}
+        onView={vi.fn()}
+        onDelete={vi.fn()}
+        onEditClick={vi.fn()}
+        labels={data.labels}
+        onProgressClick={onProgressClick}
+      />,
+    );
+    const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
+    await waitFor(() => expect(rectMap.dateBadges.has(issue.id)).toBe(true));
+
+    // Visual donut is still rendered regardless of can_edit_done_ratio
+    expect(context.arc).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), 7, 0, Math.PI * 2);
+
+    const card = rectMap.cards.get(issue.id)!;
+    const date = rectMap.dateBadges.get(issue.id)!;
+    const donutPoint = { clientX: card.x + card.width - 16, clientY: date.y + date.height / 2 };
+
+    if (canEditDoneRatio) {
+      expect(rectMap.progressDonuts.has(issue.id)).toBe(true);
+      fireEvent.pointerMove(canvas, donutPoint);
+      expect((container.querySelector('.rk-canvas-board') as HTMLElement).style.cursor).toBe('pointer');
+      fireEvent.pointerDown(canvas, donutPoint);
+      expect(onProgressClick).toHaveBeenCalledWith(issue.id, 60, donutPoint.clientX, donutPoint.clientY, canvas);
+    } else {
+      expect(rectMap.progressDonuts.has(issue.id)).toBe(false);
+      fireEvent.pointerMove(canvas, donutPoint);
+      expect((container.querySelector('.rk-canvas-board') as HTMLElement).style.cursor).not.toBe('pointer');
+      fireEvent.pointerDown(canvas, donutPoint);
+      expect(onProgressClick).not.toHaveBeenCalled();
+    }
+    unmount();
   });
 
   it('draws completed issue and subtask titles in canvas with strikethrough lines', async () => {

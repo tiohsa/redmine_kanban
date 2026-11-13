@@ -62,6 +62,7 @@ describe('parseBoardSnapshotV3', () => {
     ['entities.0.description', undefined], ['entities.0.description', 123],
     ['entities.0.parent_id', []], ['entities.0.due_date', {}], ['entities.0.lock_version', '1'],
     ['entities.0.project', {}], ['entities.0.permissions.can_edit', 'true'],
+    ['entities.0.permissions.can_edit_done_ratio', 'true'], ['entities.0.permissions.can_edit_done_ratio', undefined],
     ['entities.0.allowed_status_ids', {}], ['entities.0.status_is_closed', 'false'],
     ['entities.0.aging_days', NaN], ['entities.0.done_ratio', Infinity],
     ['columns.0', null], ['columns.0.name', 123], ['columns.0.is_closed', 'false'], ['columns.0.count', -1],

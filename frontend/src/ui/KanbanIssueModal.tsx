@@ -22,6 +22,7 @@ export function KanbanIssueModal({ data, baseUrl, ctx, onClose, onSaved, onDelet
   const [error, setError] = useState<string | null>(null);
   const issue = ctx.issueId ? findIssueInBoard(data, ctx.issueId) : null;
   const isEdit = !!issue;
+  const canEditDoneRatio = !isEdit || issue?.permissions?.can_edit_done_ratio === true;
   const labels = data.labels;
   const modalTitle = isEdit
     ? buildIssueTitle(data, issue.id, issue)
@@ -117,7 +118,7 @@ export function KanbanIssueModal({ data, baseUrl, ctx, onClose, onSaved, onDelet
         start_date: startDate.trim() ? startDate : null,
         due_date: dueDate.trim() ? dueDate : null,
         priority_id: priorityIdNum,
-        done_ratio: doneRatio,
+        ...(canEditDoneRatio ? { done_ratio: doneRatio } : {}),
         description,
         status_id: ctx.statusId,
         project_id: projectId,
@@ -184,7 +185,7 @@ export function KanbanIssueModal({ data, baseUrl, ctx, onClose, onSaved, onDelet
           <div className="rk-row2">
             <label className="rk-field">
               <span className="rk-label">{labels.issue_done_ratio}</span>
-              <select value={doneRatio} onChange={(event) => setDoneRatio(Number(event.target.value))}>
+              <select value={doneRatio} onChange={(event) => setDoneRatio(Number(event.target.value))} disabled={!canEditDoneRatio}>
                 {[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map((ratio) => (
                   <option key={ratio} value={ratio}>{ratio}%</option>
                 ))}

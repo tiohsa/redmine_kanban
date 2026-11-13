@@ -31,7 +31,7 @@ export function makeBoardSnapshot(): BoardSnapshotV3Dto {
       status_is_closed: false, can_log_time: true,
       done_ratio: 0, updated_on: '2026-09-23T10:00:00Z', aging_days: 0,
       project: { id: 4, name: 'Demo' },
-      permissions: { can_move: true, can_edit: true, can_delete: true },
+      permissions: { can_move: true, can_edit: true, can_delete: true, can_edit_done_ratio: true },
       allowed_status_ids: [2],
       urls: { issue: '/redmine/issues/9', issue_edit: '/redmine/issues/9/edit' },
     }],

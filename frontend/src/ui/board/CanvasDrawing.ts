@@ -873,7 +873,7 @@ function drawStandardCard(
     const donutCenterY = dueDateRowY - 1 + badgeHeight / 2;
     drawProgressDonut(ctx, donutRightX, donutCenterY, donutRadius, issue.done_ratio, theme);
 
-    if (rectMap) {
+    if (rectMap && issue.permissions?.can_edit && issue.permissions?.can_edit_done_ratio) {
       const hitRadius = 10;
       rectMap.progressDonuts.set(issue.id, {
         x: donutRightX - hitRadius,
@@ -1026,7 +1026,7 @@ function drawStandardCard(
           subtask.done_ratio ?? 0,
           theme,
         );
-        if (rectMap && subtask.permissions?.can_edit) {
+        if (rectMap && subtask.permissions?.can_edit && subtask.permissions?.can_edit_done_ratio) {
           rectMap.subtaskProgressButtons.set(subtaskKey, subtaskProgressRect);
         }
       }

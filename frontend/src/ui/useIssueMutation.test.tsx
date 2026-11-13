@@ -764,7 +764,7 @@ describe('replaceIssueInBoard', () => {
           is_closed: false,
           lock_version: 4,
           allowed_status_ids: [1, 2],
-          permissions: { can_move: true, can_edit: true, can_delete: false },
+          permissions: { can_move: true, can_edit: true, can_delete: false, can_edit_done_ratio: true },
           project: { id: 9, name: 'Subproject' },
           subtasks: [{ id: 30, subject: 'Grandchild', status_id: 1, is_closed: false }],
         }],
@@ -788,7 +788,7 @@ describe('replaceIssueInBoard', () => {
       is_closed: true,
       lock_version: 5,
       allowed_status_ids: [1, 2],
-      permissions: { can_move: true, can_edit: true, can_delete: false },
+      permissions: { can_move: true, can_edit: true, can_delete: false, can_edit_done_ratio: true },
       project: { id: 9, name: 'Subproject' },
     });
     expect(child?.subtasks?.map((subtask) => subtask.id)).toEqual([30]);
