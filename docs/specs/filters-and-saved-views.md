@@ -1,33 +1,33 @@
-# SPEC: フィルタ・検索・URLクエリパラメータ・保存ビュー（Saved Views）
+# SPEC: Filters, Search, URL Query Parameters & Saved Views
 
-## 1. Goal（目的）
-- キーワード（`q`）・担当者（`assignee_ids` / `include_unassigned`）・トラッカー（`tracker_ids`）・優先度（`priority_filter_enabled` / `priority_ids` / `include_no_priority`）・期日（`due` / `due_days` / `date_anchor`）・プロジェクト（`project_ids`）・ステータス列（`issue_status_ids` / `exclude_status_ids`）による SQL ベースの正規化されたフィルタリングを提供する。
-- フィルタやビュー設定を URL クエリパラメータおよび保存ビュー（Saved Views、最大 20 件）として保存・復元できるようにする。
+## 1. Goal
+- Provide SQL-backed board filtering by keyword (`q`), assignee (`assignee_ids`, `include_unassigned`), tracker (`tracker_ids`), priority (`priority_filter_enabled`, `priority_ids`, `include_no_priority`), due date (`due`, `due_days`, `date_anchor`), project (`project_ids`), and status columns (`issue_status_ids`, `exclude_status_ids`).
+- Support synchronizing filter/view state with URL query parameters (`boardQuery`) and saving/restoring up to 20 named Saved Views (`savedViews`).
 
-## 2. Non-goals / Out-of-scope（対象外・非目標）
-- 保存ビューのサーバーサイド DB テーブルへの永続化（現在は `savedViewsRepository.ts` によるスコープ付きブラウザストレージ保存）。
-- 複数ブラウザタブ間の分散トランザクション保証。
-- フィルタ変更による Redmine 上のチケット親子関係（`parent_id`）の書き換え。
+## 2. Non-goals / Out-of-scope
+- Server-side database persistence for Saved Views (currently stored in scoped browser storage via `savedViewsRepository.ts`).
+- Cross-tab distributed transaction guarantees for Saved Views.
+- Rewriting canonical Issue `parent_id` relations when filters or lanes change.
 
-## 3. Acceptance Criteria（受け入れ条件）
-- [ ] **Happy Path（ボードフィルタ適用）:** Given 有効なフィルタ条件（例: `filter_due=overdue|thisweek|3days|7days|1day|custom|none|all`、`filter_q`、`filter_assignee_ids`、`filter_tracker_ids`、`filter_priority_enabled` 等）, when `BoardIssueFilter` と `BoardData` を実行する, then `scope_fingerprint` にフィルタスコープが反映され、条件に一致するチケットおよび必要な親階層のみを含む完全スナップショットが返る。
-- [ ] **Happy Path（保存ビュー作成・適用・削除）:** Given 保存済みビューが 20 件未満の状態, when ユーザーがビューを保存・適用・削除する, then `model/view/savedViews.ts` のスキーマ検証（`version: 1`）を通過した内容が `savedViewsRepository.ts` に保存され、適用時にフィルタ・表示設定が復元される。
-- [ ] **Error / Boundary Case（不正フィルタパラメータ）:** Given `BoardIssueFilter::DUE_MODES` 外の `filter_due` や不正な `filter_due_days` / `filter_date_anchor` 等, when API を呼ぶ, then `INVALID_BOARD_FILTER`（HTTP 400）を返す。
-- [ ] **Error / Boundary Case（保存ビュー上限・破損データ）:** Given 保存ビュー数が `MAX_SAVED_VIEWS`（`20`）に達している状態での新規追加, then `saved_views_limit` エラーとなる。Given 破損したストレージ JSON（`version !== 1` や上限超過）, then `saved_views_unreadable` として安全に扱う。
-- [ ] **Backward Compatibility:** `BoardIssueFilterTest`・`boardFilters.test.ts`・`boardQuery.test.ts`・`savedViews.test.ts`・`savedViewTransitions.test.tsx`・`savedViews.multitab.test.tsx`・`kanban-recovery-views.spec.js` がパスする。
+## 3. Acceptance Criteria
+- [ ] **Happy Path (Board Filtering):** Given valid filter parameters (e.g., `filter_due` in `all | overdue | thisweek | 3days | 7days | 1day | custom | none`, `filter_q`, `filter_assignee_ids`, `filter_tracker_ids`, `filter_priority_enabled`), when `BoardIssueFilter` and `BoardData` run, then `scope_fingerprint` reflects the filter scope and a complete snapshot of matching issues and required ancestor hierarchy is returned.
+- [ ] **Happy Path (Saved Views):** Given fewer than 20 saved views, when creating, applying, or deleting a view, then `model/view/savedViews.ts` validates schema `version: 1`, `savedViewsRepository.ts` persists it, and applying a view restores its filters and display settings.
+- [ ] **Error / Boundary Case (Invalid Filter Parameters):** Given an unsupported `filter_due` mode or invalid `filter_due_days` / `filter_date_anchor`, when calling the API, then `INVALID_BOARD_FILTER` (HTTP 400) is returned.
+- [ ] **Error / Boundary Case (Saved View Limit / Corrupt Storage):** Given `MAX_SAVED_VIEWS` (`20`) already reached, adding a view throws `saved_views_limit`. Given corrupt JSON (`version !== 1` or exceeding limit), `saved_views_unreadable` is thrown and handled safely.
+- [ ] **Backward Compatibility:** `BoardIssueFilterTest`, `boardFilters.test.ts`, `boardQuery.test.ts`, `savedViews.test.ts`, `savedViewTransitions.test.tsx`, `savedViews.multitab.test.tsx`, and `kanban-recovery-views.spec.js` pass.
 
-## 4. Public API / DB Schema（公開API・DBスキーマ）
-- **Query Parameters（`GET /data`, `bootstrap`, `entities`, `counts`, 及びミューテーション時のスコープ連携）:**
+## 4. Public API / DB Schema
+- **Query Parameters (Snapshot & Mutation Scope Context):**
   - `project_ids[]`, `issue_status_ids[]`, `exclude_status_ids[]`
   - `filter_q`, `filter_assignee_ids[]`, `filter_include_unassigned`, `filter_tracker_ids[]`, `filter_priority_enabled`, `filter_priority_ids[]`, `filter_include_no_priority`, `filter_due`, `filter_due_days`, `filter_date_anchor`
-- **Client Storage Schema:** `SavedViewsDocument = { version: 1; views: SavedView[] }`（`MAX_SAVED_VIEWS = 20`）
-- **DB Schema:** 変更なし。
+- **Client Storage Schema:** `SavedViewsDocument = { version: 1; views: SavedView[] }` (`MAX_SAVED_VIEWS = 20`)
+- **DB Schema:** None.
 
-## 5. Constraints（制約事項）
-- **Security:** `BoardIssueFilter` は SQL インジェクションを防ぐためパラメータ化された ActiveRecord 条件のみを構築する。`project_ids` 指定時も `Project.visible(User.current)` かつ権限確認済みの範囲に制限する。
-- **Performance:** フィルタ有効時のミューテーションでは、差分計算コストや不整合を避けるため `invalidations.board_snapshot: true` による authoritative な再取得へフォールバックする。
+## 5. Constraints
+- **Security:** `BoardIssueFilter` constructs parameterized ActiveRecord predicates only; `project_ids` is intersected with `Project.visible(User.current)` and authorized projects.
+- **Performance:** Mutations executed while a filter is active return `invalidations.board_snapshot: true` to trigger an authoritative snapshot refresh rather than risking inconsistent partial filter deltas.
 
-## 6. Required Tests（必須テスト）
+## 6. Required Tests
 - **Unit:** `test/unit/board_issue_filter_test.rb`, `frontend/src/ui/boardFilters.test.ts`, `frontend/src/ui/boardQuery.test.ts`, `frontend/src/ui/savedViews.test.ts`, `frontend/src/ui/savedViewTransitions.test.tsx`, `frontend/src/ui/savedViews.multitab.test.tsx`, `frontend/src/ui/toolbar/SavedViewsPopover.test.tsx`
 - **Integration / E2E:** `test/functional/api_controller_test.rb`, `e2e/tests/kanban-recovery-views.spec.js`
-- **Regression:** ビュー切替時の非同期スナップショット競合（古いビューの応答で上書きされないこと）。
+- **Regression:** Switching views rapidly does not allow an older view's snapshot response to overwrite the newly selected view.

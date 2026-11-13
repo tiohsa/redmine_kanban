@@ -1,31 +1,31 @@
-# SPEC: 作業時間タイマー（Work Timer）と Time Entry 連携
+# SPEC: Work Timer & Time Entry Integration
 
-## 1. Goal（目的）
-- ボード上のチケットに対して作業時間計測タイマー（開始・延長・停止・記録）を提供し、経過時間から Redmine 標準の Time Entry 登録フォーム（iframe）へシームレスに連携できるようにする。
-- ブラウザ再読込・タブ間競合・通信結果不明（`unknown`）などの障害時にも、リカバリ処理によって**重複した Time Entry POST が発生しない**安全なセッション契約（`TIMER_SESSION_VERSION = 4`）を維持する。
+## 1. Goal
+- Provide an issue-level Work Timer (start, extend, stop, record) that connects elapsed time to Redmine's native Time Entry creation form (iframe).
+- Maintain a crash-safe session contract (`TIMER_SESSION_VERSION = 4`) across reloads, tab ownership changes, and uncertain submission outcomes (`unknown`) so recovery/reconciliation **never creates duplicate Time Entry POSTs**.
 
-## 2. Non-goals / Out-of-scope（対象外・非目標）
-- Redmine の `log_time` 権限・メンバーシップ・Time Entry バリデーションを迂回する独自時間登録 API の新設。
-- バックグラウンドでの自動 Time Entry 確定（常にユーザーの明示的なフォーム送信または確認を経る）。
+## 2. Non-goals / Out-of-scope
+- Adding a custom Time Entry API endpoint that bypasses Redmine's `log_time` permission, project membership, or native Time Entry validations.
+- Automatically committing Time Entries in the background without explicit user form submission or resolution.
 
-## 3. Acceptance Criteria（受け入れ条件）
-- [ ] **Happy Path（タイマー計測〜Time Entry 登録）:** Given `log_time` 権限と対象チケットの作業時間登録適格性を持つユーザー, when タイマーを開始（`createTimerSession`）し、停止（`stop` または `autoStop` による期限到達）後に記録を開始（`beginRecording` / `stopAndBeginRecording`）して Time Entry フォームを送信する, then `submitting` → `confirmed` を経てセッションがクリーンアップされる。
-- [ ] **Happy Path（期限到達時の自動停止 / 延長）:** Given `autoStop: true` で期限到達した場合, then `tick` により `stopped_pending_record` へ遷移し、`notifiedType: 'stopped'` が設定される。Given `autoStop: false` で期限到達した場合, then `expired`（`notifiedType: 'running_expired'`）へ遷移し、計測継続または `extend` が可能となる。
-- [ ] **Error / Boundary Case（バリデーションエラー）:** Given iframe 内の Time Entry フォーム送信で Redmine のバリデーションエラーが発生した場合, then `markValidationError` により `recordingAttempt.phase` が `'submitting'` から `'editing'` へ戻り、セッションは破棄されない。
-- [ ] **Error / Boundary Case（送信結果不明とリカバリ・重複 POST 防止）:** Given `'submitting'` 中に通信断やタブ閉鎖等で結果不明になった場合, then `markUnknown` により `phase: 'unknown'` へ遷移し、`PendingWorkModal` 等でユーザーに「記録済み（`recorded`） / 未登録（`unregistered`）」の確認（`resolveUnknown`）を求め、リカバリ時に自動再 POST を行わない。
-- [ ] **Error / Boundary Case（タブ間所有権競合）:** Given 別タブが記録セッション（`ownerTabId`）を保持している場合, then `takeOverRecording` 等の明示的操作なしに二重送信しない。
-- [ ] **Backward Compatibility:** `timerDomain.test.ts`・`timerSessionContract.test.ts`・`timerStorage.test.ts`・`timeEntryOperation.test.ts`・`WorkTimer.test.tsx`・`useWorkTimer.test.tsx`・`kanban-worktime.spec.js` がパスする。
+## 3. Acceptance Criteria
+- [ ] **Happy Path (Timer to Time Entry Recording):** Given a user with `log_time` permission and an eligible issue, when starting a timer (`createTimerSession`), stopping (`stop` or `autoStop` deadline), and recording (`beginRecording` / `stopAndBeginRecording`) via the Time Entry iframe form, then `recordingAttempt.phase` transitions `editing` -> `submitting` -> `confirmed` and the session is cleaned up.
+- [ ] **Happy Path (Deadline Expiry & Extension):** Given `autoStop: true` at deadline, `tick` transitions to `stopped_pending_record` with `notifiedType: 'stopped'`. Given `autoStop: false` at deadline, `tick` transitions to `expired` with `notifiedType: 'running_expired'` and allows continuing or `extend`.
+- [ ] **Error / Boundary Case (Validation Error):** Given a Redmine Time Entry validation error on submit, `markValidationError` transitions `recordingAttempt.phase` from `submitting` back to `editing` without discarding the timer session.
+- [ ] **Error / Boundary Case (Unknown Outcome & Duplicate POST Prevention):** Given a network failure or tab close during `submitting`, `markUnknown` transitions to `phase: 'unknown'`, prompting the user via `PendingWorkModal` to resolve (`resolveUnknown`) as `'recorded'` or `'unregistered'`, and recovery never automatically re-POSTs.
+- [ ] **Error / Boundary Case (Multi-Tab Ownership):** Given another tab owns `recordingAttempt.ownerTabId`, duplicate submission is blocked unless explicit `takeOverRecording` occurs.
+- [ ] **Backward Compatibility:** `timerDomain.test.ts`, `timerSessionContract.test.ts`, `timerStorage.test.ts`, `timeEntryOperation.test.ts`, `WorkTimer.test.tsx`, `useWorkTimer.test.tsx`, and `kanban-worktime.spec.js` pass.
 
-## 4. Public API / DB Schema（公開API・DBスキーマ）
-- **Client Session Contract:** `TimerSession`（`version: 4`, `state: 'running' | 'expired' | 'stopped_pending_record'`, `recordingAttempt.phase: 'editing' | 'submitting' | 'unknown' | 'confirmed'`）
-- **Redmine Integration:** Redmine 標準の Time Entry 作成 URL への iframe フォーム連携（`timeEntryUrl.ts` / `timeEntryOperation.ts`）
-- **DB Schema:** 変更なし（Redmine 標準の `time_entries` テーブルのみ利用）。
+## 4. Public API / DB Schema
+- **Client Session Contract:** `TimerSession` (`version: 4`, `state: 'running' | 'expired' | 'stopped_pending_record'`, `recordingAttempt.phase: 'editing' | 'submitting' | 'unknown' | 'confirmed'`).
+- **Redmine Integration:** Native Time Entry creation URL inside iframe (`timeEntryUrl.ts`, `timeEntryOperation.ts`).
+- **DB Schema:** None (uses standard Redmine `time_entries` table).
 
-## 5. Constraints（制約事項）
-- **Security:** `PermissionPolicy#can_log_time?`（`log_time` 権限）および Redmine ネイティブの Time Entry バリデーション・プロジェクトメンバーシップ検証を必須とする。タイマーストレージはユーザー単位スコープで分離する。
-- **Performance:** タイマーの `tick` 処理はクライアントローカル時刻差分で計算し、ポーリング API リクエストを発生させない。
+## 5. Constraints
+- **Security:** Requires `PermissionPolicy#can_log_time?` (`log_time` permission), issue eligibility, and native Redmine Time Entry validation/membership checks. Timer storage is scoped per user.
+- **Performance:** `tick` computes elapsed/remaining time from local timestamps without background API polling.
 
-## 6. Required Tests（必須テスト）
+## 6. Required Tests
 - **Unit:** `frontend/src/ui/workTimer/timerDomain.test.ts`, `frontend/src/ui/workTimer/timerSessionContract.test.ts`, `frontend/src/ui/workTimer/timerStorage.test.ts`, `frontend/src/ui/workTimer/recordingCommand.test.ts`, `frontend/src/ui/workTimer/timeEntryUrl.test.ts`, `frontend/src/ui/workTimer/WorkTimer.test.tsx`, `frontend/src/ui/workTimer/useWorkTimer.test.tsx`, `frontend/src/ui/iframe/timeEntryOperation.test.ts`
 - **Integration / E2E:** `e2e/tests/kanban-worktime.spec.js`
-- **Regression:** `phase: 'unknown'` および `phase: 'confirmed'` のリカバリ時に重複 Time Entry POST が発生しないこと。
+- **Regression:** Recovery from `phase: 'unknown'` and `phase: 'confirmed'` never triggers duplicate Time Entry POSTs.
