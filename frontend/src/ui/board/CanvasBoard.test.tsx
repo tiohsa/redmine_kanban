@@ -1141,6 +1141,76 @@ afterEach(() => {
     expect(onWorkTimer).toHaveBeenCalledWith(30);
   });
 
+  it.each([
+    { canEdit: true, doneRatio: 40, busy: false, expected: [[30, 40]] },
+    { canEdit: true, doneRatio: 40, busy: true, expected: [] },
+    { canEdit: false, doneRatio: 40, busy: false, expected: [] },
+    { canEdit: true, doneRatio: undefined, busy: false, expected: [] },
+  ])('handles subtask progress icon visibility and click: %j', async ({ canEdit, doneRatio, busy, expected }) => {
+    const target = {
+      id: 30,
+      subject: 'Progress target',
+      status_id: 1,
+      is_closed: false,
+      done_ratio: doneRatio,
+      can_log_time: true,
+      permissions: { can_edit: canEdit, can_delete: true, can_move: true },
+    };
+    const issue = makeIssue(2, { subtasks: [target] });
+    const data = makeBoardData(issue);
+    const state = buildBoardState(data, data.issues, [{ field: 'updated', direction: 'desc' }], new Map());
+    const context = createCanvasContextWithSpies();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => context);
+    const rectMap = hitTestIndex.createRectMap();
+    vi.spyOn(hitTestIndex, 'createRectMap').mockReturnValue(rectMap);
+    const onProgressClick = vi.fn();
+    const { container } = render(<CanvasBoard data={data} state={state} canMove canCreate
+      onCommand={vi.fn()} onCreate={vi.fn()} onEdit={vi.fn()} onView={vi.fn()} onDelete={vi.fn()}
+      onEditClick={vi.fn()} labels={data.labels} onProgressClick={onProgressClick}
+      busyIssueIds={busy ? new Set([30]) : undefined} />);
+    const canvas = container.querySelector('canvas.rk-canvas') as HTMLCanvasElement;
+    await waitFor(() => expect(context.fillText).toHaveBeenCalledWith('Progress target', expect.any(Number), expect.any(Number)));
+    expect(context.fillText.mock.calls.some(([text]) => text === 'percent')).toBe(false);
+
+    if (doneRatio !== undefined) {
+      expect(context.arc).toHaveBeenCalledWith(expect.any(Number), expect.any(Number), 7, 0, Math.PI * 2);
+    }
+
+    if (canEdit && doneRatio !== undefined) {
+      expect(rectMap.subtaskProgressButtons.has('2:30')).toBe(true);
+      const progressRect = rectMap.subtaskProgressButtons.get('2:30')!;
+      const cx = progressRect.x + progressRect.width / 2;
+      const cy = progressRect.y + progressRect.height / 2;
+      expect(context.arc).toHaveBeenCalledWith(cx, cy, 7, 0, Math.PI * 2);
+
+      const point = { clientX: cx, clientY: cy };
+      fireEvent.pointerMove(canvas, point);
+      await waitFor(() => expect(context.fillText).toHaveBeenCalledWith('delete', expect.any(Number), expect.any(Number)));
+      const deleteCall = context.fillText.mock.calls.find(([text]) => text === 'delete')!;
+      const editCall = context.fillText.mock.calls.find(([text]) => text === 'edit')!;
+      const timerCall = context.fillText.mock.calls.find(([text]) => text === 'play_arrow')!;
+      expect(deleteCall[1]).toBeLessThan(progressRect.x);
+      expect(editCall[1]).toBeLessThan(progressRect.x);
+      expect(timerCall[1]).toBeLessThan(progressRect.x);
+      expect((container.querySelector('.rk-canvas-board') as HTMLElement).style.cursor).toBe('pointer');
+      fireEvent.pointerDown(canvas, point);
+      if (expected.length > 0) {
+        expect(onProgressClick).toHaveBeenCalledWith(30, 40, point.clientX, point.clientY, canvas);
+      } else {
+        expect(onProgressClick).not.toHaveBeenCalled();
+      }
+    } else {
+      expect(rectMap.subtaskProgressButtons.has('2:30')).toBe(false);
+      const [, x, y] = context.fillText.mock.calls.find(([text]) => text === 'Progress target')!;
+      context.fillText.mockClear();
+      fireEvent.pointerMove(canvas, { clientX: x + 5, clientY: y + 5 });
+      await waitFor(() => expect(context.fillText).toHaveBeenCalledWith('delete', expect.any(Number), expect.any(Number)));
+      const card = rectMap.cards.get(2)!;
+      fireEvent.pointerDown(canvas, { clientX: card.x + card.width - 16, clientY: y + 5 });
+      expect(onProgressClick).not.toHaveBeenCalled();
+    }
+  });
+
   it('draws completed issue and subtask titles in canvas with strikethrough lines', async () => {
     const issue = makeIssue(2, {
       subject: 'Closed issue',

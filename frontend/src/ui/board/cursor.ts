@@ -12,6 +12,7 @@ export type BoardCursorHitKind =
   | 'subtask_subject'
   | 'subtask_row'
   | 'subtask_work_timer'
+  | 'subtask_progress'
   | 'subtask_edit'
   | 'subtask_delete'
   | 'subtask_area'
@@ -46,6 +47,7 @@ export function getBoardCursor({ phase, hitKind = 'empty', dropAssessment }: Cur
     case 'subtask_check':
     case 'subtask_subject':
     case 'subtask_work_timer':
+    case 'subtask_progress':
     case 'subtask_edit':
     case 'subtask_delete':
     case 'card_subject':
