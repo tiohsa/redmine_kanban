@@ -11,12 +11,13 @@ Redmine Kanban is a Redmine plugin for Kanban boards with WIP limits, aging visu
 
 Use the repository as the primary source of truth.
 
-Consult these only when relevant:
+Consult these as the canonical references:
 
+* `docs/specs/` (`docs/specs/README.md`) as the canonical per-feature specifications (`正本`).
 * `README.md` for current product behavior and API notes.
 * Existing tests for established executable behavior.
 
-If documentation and implementation disagree, determine whether the document describes a newer intended behavior before changing code.
+If documentation and implementation disagree, determine whether the document describes a newer intended behavior before changing code, and keep `docs/specs/` and implementation in sync.
 
 ## Non-Negotiable Invariants
 
@@ -143,6 +144,13 @@ Use the repository's existing aging source and update-time synchronization. Resp
 
 Work-time behavior must continue to respect permissions, membership, Issue eligibility, native Time Entry validation, timer lifecycle, and synchronization. Recovery/reconciliation must not create duplicate Time Entry POSTs.
 
+### Canonical specifications (`docs/specs/`)
+
+Per-feature specifications under `docs/specs/` are the canonical source of truth for feature behavior, acceptance criteria, public APIs, and constraints.
+
+* When implementing a new feature or changing existing behavior, public APIs, limits, permissions, or constraints, update the corresponding `docs/specs/*.md` file(s) (and `docs/specs/README.md` if adding/renaming a feature spec) in the same task.
+* Keep `docs/specs/` aligned with `spec-author-v2` structure and verified against actual code and tests; never leave stale or contradictory specs behind.
+
 ### Persistence
 
 Do not add database migrations or persistent support tables solely for transient client workflow state unless the requested feature genuinely requires server-side persistence and no existing Redmine mechanism fits.
@@ -168,7 +176,7 @@ For refactoring, preserve externally observable behavior unless the task explici
 When implementation details are unclear:
 
 1. inspect the relevant code and nearby tests;
-2. consult `README.md` or the relevant `spec-docs/` material if it can resolve the ambiguity;
+2. consult `docs/specs/` or `README.md` if it can resolve the ambiguity;
 3. make the smallest behavior-preserving choice if the repository still does not establish the answer;
 4. report any unresolved product decision as `要確認`.
 
@@ -217,6 +225,7 @@ A task is complete when:
 
 * the requested behavior is implemented;
 * affected repository invariants still hold;
+* affected canonical specifications under `docs/specs/` are updated when behavior or contracts changed;
 * regressions caused by the change are fixed;
 * relevant validation passes;
 * generated assets are current when required;
