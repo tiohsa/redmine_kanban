@@ -134,14 +134,65 @@ describe('KanbanPopupHost', () => {
     expect(onCloseNotice).toHaveBeenCalledTimes(1);
   });
 
-  it('does not automatically dismiss errors', () => {
+  it('automatically dismisses errors after eight seconds', () => {
     vi.useFakeTimers();
     const onCloseError = vi.fn();
     renderHost({ pendingDeleteIssue: null, error: '失敗しました', onCloseError });
 
-    vi.advanceTimersByTime(10_000);
-
+    vi.advanceTimersByTime(7_999);
     expect(onCloseError).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+
+    expect(onCloseError).toHaveBeenCalledTimes(1);
+  });
+
+  it('cleans up the old error timer when the error changes', () => {
+    vi.useFakeTimers();
+    const onCloseError = vi.fn();
+    const { rerender } = renderHost({ pendingDeleteIssue: null, error: '最初のエラー', onCloseError });
+
+    vi.advanceTimersByTime(7_000);
+    rerender(
+      <KanbanPopupHost
+        data={data}
+        loading={false}
+        notice={null}
+        error="次のエラー"
+        pendingDeleteIssue={null}
+        isRestoring={false}
+        onCloseNotice={vi.fn()}
+        onCloseError={onCloseError}
+        onDismissDeleteNotice={vi.fn()}
+        onUndoDelete={vi.fn()}
+      />
+    );
+    vi.advanceTimersByTime(1_000);
+    expect(onCloseError).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(7_000);
+    expect(onCloseError).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders compact toasts without title headers while preserving close buttons and variant classes', () => {
+    const onCloseNotice = vi.fn();
+    const onCloseError = vi.fn();
+    const { container } = renderHost({
+      pendingDeleteIssue: null,
+      notice: '保存しました',
+      error: '失敗しました',
+      onCloseNotice,
+      onCloseError,
+    });
+
+    expect(container.querySelector('.rk-popup-title')).toBeNull();
+    expect(container.querySelector('.rk-popup-info')).not.toBeNull();
+    expect(container.querySelector('.rk-popup-error')).not.toBeNull();
+
+    const closeButtons = screen.getAllByRole('button', { name: '閉じる' });
+    expect(closeButtons).toHaveLength(2);
+    fireEvent.click(closeButtons[0]);
+    fireEvent.click(closeButtons[1]);
+    expect(onCloseNotice).toHaveBeenCalledTimes(1);
+    expect(onCloseError).toHaveBeenCalledTimes(1);
   });
 
   it('cleans up the old notice timer when the notice changes', () => {
