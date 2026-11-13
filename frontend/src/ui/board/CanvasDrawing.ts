@@ -873,7 +873,7 @@ function drawStandardCard(
     const donutCenterY = dueDateRowY - 1 + badgeHeight / 2;
     drawProgressDonut(ctx, donutRightX, donutCenterY, donutRadius, issue.done_ratio, theme);
 
-    if (rectMap) {
+    if (rectMap && issue.permissions?.can_edit && issue.permissions?.can_edit_done_ratio) {
       const hitRadius = 10;
       rectMap.progressDonuts.set(issue.id, {
         x: donutRightX - hitRadius,
@@ -959,7 +959,10 @@ function drawStandardCard(
       // Text
       ctx.fillStyle = isStClosed ? theme.textSecondary : theme.textPrimary;
       ctx.font = `${isStClosed ? '400' : '500'} ${subtaskFontSize}px 'DM Sans Variable', 'Noto Sans JP Variable', sans-serif`;
-      const subjectMaxWidth = Math.max(24, contentW - indentX - checkSize - 8);
+      const actionIconSize = 20;
+      const hasSubtaskProgress = subtask.done_ratio !== undefined;
+      const progressReservedWidth = hasSubtaskProgress ? actionIconSize + 2 : 0;
+      const subjectMaxWidth = Math.max(24, contentW - indentX - checkSize - 8 - progressReservedWidth);
       const subjectText = truncateText(ctx, subtask.subject, subjectMaxWidth);
       const textMetrics = ctx.measureText(subjectText);
 
@@ -1008,11 +1011,30 @@ function drawStandardCard(
         ctx.stroke();
       }
 
+      if (hasSubtaskProgress) {
+        const subtaskProgressRect = {
+          x: x + w - 6 - actionIconSize,
+          y: sy - 2,
+          width: actionIconSize,
+          height: actionIconSize,
+        };
+        drawProgressDonut(
+          ctx,
+          subtaskProgressRect.x + subtaskProgressRect.width / 2,
+          subtaskProgressRect.y + subtaskProgressRect.height / 2,
+          7,
+          subtask.done_ratio ?? 0,
+          theme,
+        );
+        if (rectMap && subtask.permissions?.can_edit && subtask.permissions?.can_edit_done_ratio) {
+          rectMap.subtaskProgressButtons.set(subtaskKey, subtaskProgressRect);
+        }
+      }
+
       const isSubtaskActionVisible = hoveredSubtaskKey === subtaskKey;
       const isActiveSubtaskTimer = String(timerSession?.issueId) === String(subtask.id);
       const canLogSubtaskTime = subtask.can_log_time === true;
       if ((isSubtaskActionVisible || (isActiveSubtaskTimer && canLogSubtaskTime)) && rectMap) {
-        const actionIconSize = 20;
         const canEditSubtask = isSubtaskActionVisible && !!subtask.permissions?.can_edit;
         const canDeleteSubtask = isSubtaskActionVisible && !!subtask.permissions?.can_delete;
         const actionCount = Number(canLogSubtaskTime) + Number(canEditSubtask) + Number(canDeleteSubtask);
@@ -1020,7 +1042,8 @@ function drawStandardCard(
         const hiddenActionSlots = !isSubtaskActionVisible
           ? Number(!!subtask.permissions?.can_edit) + Number(!!subtask.permissions?.can_delete)
           : 0;
-        let subtaskButtonRightX = x + w - 6 - hiddenActionSlots * actionIconSize;
+        const progressSlotWidth = hasSubtaskProgress ? actionIconSize : 0;
+        let subtaskButtonRightX = x + w - 6 - progressSlotWidth - hiddenActionSlots * actionIconSize;
         const overlayPadX = 3;
         const overlayPadY = 2;
         const overlayRect = {

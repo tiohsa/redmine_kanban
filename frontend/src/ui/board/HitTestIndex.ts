@@ -14,6 +14,7 @@ export type RectMap = {
   subtaskChecks: Map<string, Rect>;
   subtaskSubjects: Map<string, Rect>;
   subtaskWorkTimerButtons: Map<string, Rect>;
+  subtaskProgressButtons: Map<string, Rect>;
   subtaskEditButtons: Map<string, Rect>;
   subtaskDeleteButtons: Map<string, Rect>;
   subtaskAreas: Map<number, Rect>;
@@ -37,6 +38,7 @@ export function createRectMap(): RectMap {
     subtaskChecks: new Map(),
     subtaskSubjects: new Map(),
     subtaskWorkTimerButtons: new Map(),
+    subtaskProgressButtons: new Map(),
     subtaskEditButtons: new Map(),
     subtaskDeleteButtons: new Map(),
     subtaskAreas: new Map(),
@@ -62,6 +64,12 @@ export function hitTest(
     if (pointInRect(point, rect)) {
       const { issueId, subtaskId } = parseSubtaskKey(key);
       return { kind: 'subtask_work_timer', issueId, subtaskId };
+    }
+  }
+  for (const [key, rect] of rectMap.subtaskProgressButtons) {
+    if (pointInRect(point, rect)) {
+      const { issueId, subtaskId } = parseSubtaskKey(key);
+      return { kind: 'subtask_progress', issueId, subtaskId };
     }
   }
   for (const [key, rect] of rectMap.subtaskEditButtons) {

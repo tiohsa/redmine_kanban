@@ -501,6 +501,17 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         onWorkTimer(hit.subtaskId);
         return;
       }
+      case 'subtask_progress': {
+        if (isBusy(hit.subtaskId)) return;
+        event.preventDefault();
+        const issue = state.cardsById.get(hit.issueId);
+        const perms = subtaskPermissions(issue, hit.subtaskId);
+        if (!perms?.can_edit || !perms?.can_edit_done_ratio || !onProgressClick) return;
+        const subtask = findSubtaskInTree(issue?.subtasks, hit.subtaskId);
+        if (!subtask) return;
+        onProgressClick(hit.subtaskId, subtask.done_ratio ?? 0, event.clientX, event.clientY, event.currentTarget);
+        return;
+      }
       case 'subtask_edit': {
         if (isBusy(hit.subtaskId)) return;
         const issue = state.cardsById.get(hit.issueId);
@@ -566,7 +577,7 @@ export const CanvasBoard = forwardRef<CanvasBoardHandle, Props>(function CanvasB
         if (isBusy(hit.issueId)) return;
         event.preventDefault();
         const issue = state.cardsById.get(hit.issueId);
-        if (!canEditIssue(issue) || !issue || !onProgressClick) return;
+        if (!canEditIssue(issue) || !issue?.permissions?.can_edit_done_ratio || !onProgressClick) return;
         onProgressClick(hit.issueId, issue.done_ratio ?? 0, event.clientX, event.clientY, event.currentTarget);
         return;
       }

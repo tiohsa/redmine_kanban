@@ -13,6 +13,8 @@ module RedmineKanban
       @workflow_transitions = []
       @not_closable_ids = Set.new
       @not_reopenable_ids = Set.new
+      @done_ratio_readonly_roles_by_key = {}
+      @done_ratio_readonly_by_key = {}
       preload_issue_constraints(issues)
       preload_workflow_transitions(issues)
     end
@@ -38,6 +40,23 @@ module RedmineKanban
       end
 
       statuses
+    end
+
+    def done_ratio_readonly?(issue)
+      return !issue.safe_attribute?('done_ratio', @user) if issue.new_record? || issue.tracker_id_changed? || issue.status_id_changed?
+
+      key = [issue.project_id, issue.tracker_id, issue.status_id]
+      return @done_ratio_readonly_by_key[key] if @done_ratio_readonly_by_key.key?(key)
+
+      @done_ratio_readonly_by_key[key] = begin
+        roles = roles_for_workflow(issue.project)
+        if roles.empty?
+          false
+        else
+          readonly_role_ids = @done_ratio_readonly_roles_by_key[[issue.tracker_id, issue.status_id]]
+          readonly_role_ids ? roles.all? { |role| readonly_role_ids.include?(role.id) } : false
+        end
+      end
     end
 
     private
@@ -120,8 +139,26 @@ module RedmineKanban
       tracker_ids = issue_list.map(&:tracker_id).compact.uniq
       return if role_ids.empty? || old_status_ids.empty? || tracker_ids.empty?
 
-      transitions = WorkflowTransition.where(old_status_id: old_status_ids, tracker_id: tracker_ids, role_id: role_ids)
-      @workflow_transitions = (@statuses_by_id ? transitions : transitions.includes(:new_status)).to_a
+      base = WorkflowRule.where(old_status_id: old_status_ids, tracker_id: tracker_ids, role_id: role_ids)
+      rules = if done_ratio_field_enabled?
+                base.where(type: 'WorkflowTransition').or(
+                  base.where(type: 'WorkflowPermission', field_name: 'done_ratio', rule: 'readonly')
+                )
+              else
+                base.where(type: 'WorkflowTransition')
+              end
+      records = (@statuses_by_id ? rules : rules.includes(:new_status)).to_a
+      @workflow_transitions = records.select { |record| record.is_a?(WorkflowTransition) }
+      records.each do |record|
+        next unless record.is_a?(WorkflowPermission)
+
+        key = [record.tracker_id, record.old_status_id]
+        (@done_ratio_readonly_roles_by_key[key] ||= Set.new).add(record.role_id)
+      end
+    end
+
+    def done_ratio_field_enabled?
+      !defined?(Issue) || !Issue.respond_to?(:use_field_for_done_ratio?) || Issue.use_field_for_done_ratio?
     end
 
     def transition_allowed_for_actor?(transition, author, assignee)

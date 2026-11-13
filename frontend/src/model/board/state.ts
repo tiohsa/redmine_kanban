@@ -88,6 +88,8 @@ function canApplyIssue(state: NormalizedBoardState, incoming: IssueEntity): bool
   return !state.deletedIssueIds.has(incoming.id) && isFresh(state.entitiesById.get(incoming.id), incoming);
 }
 
+const DERIVED_WORKFLOW_PERMISSION_KEYS = new Set<keyof IssueEntity>(['allowed_status_ids', 'permissions']);
+
 function mergeEntity(state: NormalizedBoardState, issue: Issue, incoming = entityOf(issue, state.board.columns)): boolean {
   if (!canApplyIssue(state, incoming)) return false;
   const current = state.entitiesById.get(incoming.id);
@@ -98,8 +100,10 @@ function mergeEntity(state: NormalizedBoardState, issue: Issue, incoming = entit
 
   const enriched = { ...current };
   for (const [key, value] of Object.entries(incoming)) {
-    const currentValue = enriched[key as keyof IssueEntity];
-    if ((currentValue === undefined || currentValue === null || currentValue === '') && value !== undefined) {
+    if (value === undefined) continue;
+    const typedKey = key as keyof IssueEntity;
+    const currentValue = enriched[typedKey];
+    if (DERIVED_WORKFLOW_PERMISSION_KEYS.has(typedKey) || currentValue === undefined || currentValue === null || currentValue === '') {
       (enriched as Record<string, unknown>)[key] = value;
     }
   }

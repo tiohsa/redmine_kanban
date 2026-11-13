@@ -310,6 +310,111 @@ describe('IframeEditDialog layout variants', () => {
     });
   });
 
+  it('intercepts native form submit in edit mode and triggers onNativeWriteComplete on completion', async () => {
+    const onClose = vi.fn();
+    const onSuccess = vi.fn();
+    const onNativeWriteComplete = vi.fn();
+    const { container } = render(
+      <IframeEditDialog
+        url="/issues/1/edit"
+        issueId={1}
+        issueTitle="Feature request"
+        labels={labels}
+        baseUrl=""
+        queryKey={['kanban', 'board']}
+        onClose={onClose}
+        onSuccess={onSuccess}
+        onNativeWriteComplete={onNativeWriteComplete}
+      />,
+    );
+
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    const doc = document.implementation.createHTMLDocument('iframe');
+    doc.body.innerHTML = '<div id="content"><form id="issue-form"><button type="submit">Submit</button></form></div>';
+    const iframeWindow = {
+      location: { href: 'http://example.com/issues/1/edit' },
+      document: doc,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      $: vi.fn(() => ({ off: vi.fn() })),
+    };
+    Object.defineProperty(iframe, 'contentWindow', {
+      value: iframeWindow,
+      configurable: true,
+    });
+    Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+    const form = doc.querySelector('#issue-form') as HTMLFormElement;
+    const submitBtn = doc.querySelector('button') as HTMLButtonElement;
+    const nativeClick = vi.spyOn(submitBtn, 'click').mockImplementation(() => undefined);
+
+    fireEvent.load(iframe);
+
+    const nativeSubmitEvent = new Event('submit', { bubbles: true, cancelable: true });
+    form.dispatchEvent(nativeSubmitEvent);
+
+    expect(nativeSubmitEvent.defaultPrevented).toBe(true);
+
+    await waitFor(() => {
+      expect(nativeClick).toHaveBeenCalledOnce();
+      expect(screen.getByRole('button', { name: '保存中' })).toBeTruthy();
+    });
+
+    iframeWindow.location.href = 'http://example.com/issues/1';
+    doc.body.innerHTML = '<div id="content"><div class="issue details">Saved issue</div></div>';
+    fireEvent.load(iframe);
+
+    await waitFor(() => {
+      expect(onClose).not.toHaveBeenCalled();
+      expect(onSuccess).toHaveBeenCalledWith('保存済み 1', 1);
+      expect(screen.queryByRole('button', { name: '保存' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'チケットを編集' })).toBeTruthy();
+      expect(onNativeWriteComplete).toHaveBeenCalledOnce();
+    });
+  });
+
+  it('triggers onNativeWriteComplete when show page loads with a Redmine success notice even without active submit', async () => {
+    const onClose = vi.fn();
+    const onSuccess = vi.fn();
+    const onNativeWriteComplete = vi.fn();
+    const { container } = render(
+      <IframeEditDialog
+        url="/issues/1/edit"
+        issueId={1}
+        issueTitle="Feature request"
+        labels={labels}
+        baseUrl=""
+        queryKey={['kanban', 'board']}
+        onClose={onClose}
+        onSuccess={onSuccess}
+        onNativeWriteComplete={onNativeWriteComplete}
+      />,
+    );
+
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    const doc = document.implementation.createHTMLDocument('iframe');
+    const iframeWindow = {
+      location: { href: 'http://example.com/issues/1' },
+      document: doc,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      $: vi.fn(() => ({ off: vi.fn() })),
+    };
+    Object.defineProperty(iframe, 'contentWindow', {
+      value: iframeWindow,
+      configurable: true,
+    });
+    Object.defineProperty(iframe, 'contentDocument', { value: doc, configurable: true });
+
+    doc.body.innerHTML = '<div id="content"><div id="flash_notice" class="flash notice">チケット #1 が更新されました。</div><div class="issue details">Issue details</div></div>';
+    fireEvent.load(iframe);
+
+    await waitFor(() => {
+      expect(onSuccess).toHaveBeenCalledWith('保存済み 1', 1);
+      expect(onNativeWriteComplete).toHaveBeenCalledOnce();
+      expect(screen.getByRole('button', { name: 'チケットを編集' })).toBeTruthy();
+    });
+  });
+
   it.each(['edit', 'create', 'journal'] as const)('decorates the new document after %s save and keeps its controls working', async (target) => {
     const onClose = vi.fn();
     const onSuccess = vi.fn();

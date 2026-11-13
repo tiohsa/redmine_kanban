@@ -57,6 +57,9 @@ module RedmineKanban
       parent_priority_before = nil
       priority_lock_versions = nil
       mutation_outcome = nil
+      priority_changed = false
+      status_was_closed = @issue.status&.is_closed?
+      closed_state_changed = false
       filtered_reconciliation = if @board_context.issue_filter.active?
         FilteredMoveReconciliation.new(board_context: @board_context, issue: @issue)
       end
@@ -77,6 +80,8 @@ module RedmineKanban
         end
 
         mutation_outcome = mutation_outcome_for(@issue)
+        priority_changed = @issue.saved_change_to_priority_id?
+        closed_state_changed = mutation_outcome[:status_changed] && status_was_closed != @issue.status&.is_closed?
         priority_error = apply_priority_updates!(@issue, priority_id)
         if priority_error
           error_result = error_response(priority_error)
@@ -97,7 +102,9 @@ module RedmineKanban
 
       after_primary_member = membership_resolver.primary_member?(@issue.id) unless filtered_reconciliation
 
-      ancestor_updates_required = mutation_outcome[:status_changed] || mutation_outcome[:done_ratio_changed]
+      ancestor_updates_required = mutation_outcome[:status_changed] ||
+                                  mutation_outcome[:done_ratio_changed] ||
+                                  priority_changed
 
       if priority_id.is_a?(Integer)
         reconcile_error = reconcile_priorities_after_commit!(@issue, priority_id, priority_lock_versions)
@@ -107,7 +114,8 @@ module RedmineKanban
       ancestor_updates = ancestor_updates_for(@issue) if ancestor_updates_required
       ancestor_issues = ancestor_issues_for(@issue) if ancestor_updates_required
       propagated_issues = priority_id.is_a?(Integer) ? @issue.children.to_a : []
-      issue_updates = [@issue, *(ancestor_issues || []), *propagated_issues].uniq { |item| item.id }
+      status_affected_children = closed_state_changed ? membership_resolver.visible_member_children(@issue) : []
+      issue_updates = [@issue, *(ancestor_issues || []), *propagated_issues, *status_affected_children].uniq { |item| item.id }
       tree_changes = []
       filter_snapshot_invalidation = false
       membership_recheck_ids = if !filtered_reconciliation && before_primary_member != after_primary_member

@@ -68,6 +68,27 @@ class RedmineKanbanIssueDestroyerTest < ActiveSupport::TestCase
     assert Issue.exists?(issue.id)
   end
 
+  def test_destroy_last_child_updates_parent_can_edit_done_ratio_when_derived
+    previous_issue_done_ratio = Setting.issue_done_ratio
+    previous_parent_done_ratio = Setting.parent_issue_done_ratio
+    Setting.issue_done_ratio = 'issue_field'
+    Setting.parent_issue_done_ratio = 'derived'
+
+    parent = build_issue(subject: 'Destroyer derived parent')
+    child = build_issue(subject: 'Destroyer last child', parent_issue_id: parent.id)
+    parent.reload
+
+    result = destroyer(child).destroy(lock_version: child.lock_version)
+
+    assert_equal true, result[:ok], result.inspect
+    parent_update = result[:issue_updates].find { |item| item[:id] == parent.id }
+    assert_not_nil parent_update, 'Expected parent issue in issue_updates'
+    assert_equal true, parent_update.dig(:permissions, :can_edit_done_ratio)
+  ensure
+    Setting.issue_done_ratio = previous_issue_done_ratio
+    Setting.parent_issue_done_ratio = previous_parent_done_ratio
+  end
+
   private
 
   def destroyer(issue)

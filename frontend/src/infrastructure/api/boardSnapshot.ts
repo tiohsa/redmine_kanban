@@ -112,7 +112,11 @@ function isIssueUrls(value: unknown): value is Issue['urls'] {
 }
 
 function isIssuePermissions(value: unknown): value is NonNullable<Issue['permissions']> {
-  return isRecord(value) && isBoolean(value.can_move) && isBoolean(value.can_edit) && isBoolean(value.can_delete);
+  return isRecord(value) &&
+    isBoolean(value.can_move) &&
+    isBoolean(value.can_edit) &&
+    isBoolean(value.can_delete) &&
+    isBoolean(value.can_edit_done_ratio);
 }
 
 function isIssueEntity(value: unknown): value is BoardIssueEntity {

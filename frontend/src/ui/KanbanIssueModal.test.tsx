@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
 import React from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KanbanIssueModal } from './KanbanIssueModal';
 import type { BoardData } from './types';
 
@@ -125,5 +125,98 @@ describe('KanbanIssueModal', () => {
     const tracker = screen.getByRole('combobox', { name: 'Tracker' }) as HTMLSelectElement;
     expect(tracker.value).toBe('');
     expect(screen.getByRole('option', { name: 'Select tracker' })).toBeTruthy();
+  });
+
+  it('disables done_ratio select and omits done_ratio from save payload when can_edit_done_ratio is false', async () => {
+    const onSaved = vi.fn().mockResolvedValue(undefined);
+    const editData = {
+      ...data,
+      issues: [{
+        ...data.issues[0],
+        tracker_id: 1,
+        done_ratio: 40,
+        permissions: { can_move: true, can_edit: true, can_delete: true, can_edit_done_ratio: false },
+      }],
+    } as BoardData;
+
+    render(
+      <KanbanIssueModal
+        data={editData}
+        baseUrl="/projects/demo/kanban"
+        ctx={{ statusId: 1, issueId: 7 }}
+        onClose={() => {}}
+        onSaved={onSaved}
+        onDeleted={async () => {}}
+      />,
+    );
+
+    const doneRatioSelect = screen.getByRole('combobox', { name: 'Done ratio' }) as HTMLSelectElement;
+    expect(doneRatioSelect.disabled).toBe(true);
+    expect(doneRatioSelect.value).toBe('40');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    const [payload, isEdit] = onSaved.mock.calls[0];
+    expect(isEdit).toBe(true);
+    expect('done_ratio' in payload).toBe(false);
+  });
+
+  it('enables done_ratio select and includes done_ratio in save payload when can_edit_done_ratio is true', async () => {
+    const onSaved = vi.fn().mockResolvedValue(undefined);
+    const editData = {
+      ...data,
+      issues: [{
+        ...data.issues[0],
+        tracker_id: 1,
+        done_ratio: 40,
+        permissions: { can_move: true, can_edit: true, can_delete: true, can_edit_done_ratio: true },
+      }],
+    } as BoardData;
+
+    render(
+      <KanbanIssueModal
+        data={editData}
+        baseUrl="/projects/demo/kanban"
+        ctx={{ statusId: 1, issueId: 7 }}
+        onClose={() => {}}
+        onSaved={onSaved}
+        onDeleted={async () => {}}
+      />,
+    );
+
+    const doneRatioSelect = screen.getByRole('combobox', { name: 'Done ratio' }) as HTMLSelectElement;
+    expect(doneRatioSelect.disabled).toBe(false);
+    fireEvent.change(doneRatioSelect, { target: { value: '70' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    const [payload, isEdit] = onSaved.mock.calls[0];
+    expect(isEdit).toBe(true);
+    expect(payload.done_ratio).toBe(70);
+  });
+
+  it('enables done_ratio select and includes done_ratio when creating a new issue', async () => {
+    const onSaved = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <KanbanIssueModal
+        data={data}
+        baseUrl="/projects/demo/kanban"
+        ctx={{ statusId: 1 }}
+        onClose={() => {}}
+        onSaved={onSaved}
+        onDeleted={async () => {}}
+      />,
+    );
+
+    const doneRatioSelect = screen.getByRole('combobox', { name: 'Done ratio' }) as HTMLSelectElement;
+    expect(doneRatioSelect.disabled).toBe(false);
+    fireEvent.change(doneRatioSelect, { target: { value: '30' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    const [payload, isEdit] = onSaved.mock.calls[0];
+    expect(isEdit).toBe(false);
+    expect(payload.done_ratio).toBe(30);
   });
 });

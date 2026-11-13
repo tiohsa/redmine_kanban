@@ -36,6 +36,10 @@ export function isWorkflowTransitionError(error: unknown): boolean {
   return errorPayload(error)?.error?.code === 'WORKFLOW_TRANSITION_NOT_ALLOWED';
 }
 
+export function isConflictError(error: unknown): boolean {
+  return isHttpError(error) && error.status === 409;
+}
+
 export function resolveMutationError(
   error: unknown,
   labels: Record<string, string> | undefined,

@@ -462,27 +462,41 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
 
         iframeSubmitCleanupRef.current?.();
         iframeSubmitCleanupRef.current = null;
-        if (mode === 'time_entry') {
-          const handleNativeSubmit = (event: Event) => {
-            // Native iframe forms belong to a different Window realm.
-            const form = event.target as HTMLFormElement | null;
-            if (!form || form.tagName !== 'FORM' || !isTimeEntryForm(form)) return;
-            if (nativeSubmitBypassRef.current) return;
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            if (isSubmittingRef.current || submitPreparationRef.current) return;
-            submitPreparationRef.current = true;
-            // Let the native submit task finish before submitting the form.
-            // A microtask is still re-entrant and can suppress navigation
-            // after an Enter-triggered implicit submission.
-            setTimeout(() => {
-              submitPreparationRef.current = false;
-              void submitIssueForm(form, 'time_entry');
-            }, 0);
-          };
-          doc.addEventListener('submit', handleNativeSubmit, true);
-          iframeSubmitCleanupRef.current = () => doc.removeEventListener('submit', handleNativeSubmit, true);
-        }
+        const handleNativeSubmit = (event: Event) => {
+          // Native iframe forms belong to a different Window realm.
+          const form = event.target as HTMLFormElement | null;
+          if (!form || form.tagName !== 'FORM') return;
+          if (nativeSubmitBypassRef.current) return;
+
+          let target: SaveTarget = null;
+          if (isTimeEntryForm(form)) {
+            target = 'time_entry';
+          } else if (form.id === 'issue-form' || form.matches('#issue-form')) {
+            target = mode === 'create' || nextCurrentUrl.includes('/issues/new') ? 'new-issue' : 'issue';
+          } else if (
+            form === findJournalEditForm(doc) ||
+            form.matches('form[action*="/journals/"], form[id^="journal-"][id$="-form"]') ||
+            Boolean(form.querySelector('textarea[name="journal[notes]"]'))
+          ) {
+            target = 'journal';
+          }
+
+          if (!target) return;
+
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          if (isSubmittingRef.current || submitPreparationRef.current) return;
+          submitPreparationRef.current = true;
+          // Let the native submit task finish before submitting the form.
+          // A microtask is still re-entrant and can suppress navigation
+          // after an Enter-triggered implicit submission.
+          setTimeout(() => {
+            submitPreparationRef.current = false;
+            void submitIssueForm(form, target);
+          }, 0);
+        };
+        doc.addEventListener('submit', handleNativeSubmit, true);
+        iframeSubmitCleanupRef.current = () => doc.removeEventListener('submit', handleNativeSubmit, true);
         const trackerSelect = doc.querySelector<HTMLSelectElement>('select[name="issue[tracker_id]"], select#issue_tracker_id');
         if (trackerSelect) {
           setTrackerOptions(Array.from(trackerSelect.options).map((option) => ({ id: Number(option.value), name: option.textContent?.trim() ?? option.value })).filter((option) => option.id > 0));
@@ -503,6 +517,9 @@ export function IframeEditDialog({ url: navigationUrl, issueId: targetIssueId, t
       const errorMessage = getRedmineFormErrorMessage(doc);
       setIframeError(errorMessage);
       if (!isSubmittingRef.current) {
+        if (isIssueShowUrl(nextCurrentUrl) && hasRedmineSuccessNotice(doc) && !successHandlingRef.current) {
+          void handleSuccess(extractIssueIdFromUrl(nextCurrentUrl) ?? issueId);
+        }
         const activeSaveForm = getSafeSaveForm(doc, nextCurrentUrl);
         setSaveTarget(activeSaveForm?.target ?? null);
         if (activeSaveForm?.target === 'issue' && submitSubtasksAfterEditLoadRef.current) {

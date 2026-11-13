@@ -200,6 +200,143 @@ class RedmineKanbanIssueCreatorTest < ActiveSupport::TestCase
     assert_nil Issue.find_by(subject: 'bulk discarded status')
   end
 
+  def test_create_child_updates_parent_can_edit_done_ratio_when_derived
+    previous_issue_done_ratio = Setting.issue_done_ratio
+    previous_parent_done_ratio = Setting.parent_issue_done_ratio
+    Setting.issue_done_ratio = 'issue_field'
+    Setting.parent_issue_done_ratio = 'derived'
+
+    parent = build_issue(subject: 'Creator parent')
+    creator = RedmineKanban::IssueCreator.new(project: @project, user: @user)
+
+    result = creator.create(params: issue_params(subject: 'Creator first child', parent_issue_id: parent.id))
+
+    assert_equal true, result[:ok], result.inspect
+    parent_update = result[:issue_updates].find { |item| item[:id] == parent.id }
+    assert_not_nil parent_update, 'Expected parent issue in issue_updates'
+    assert_equal false, parent_update.dig(:permissions, :can_edit_done_ratio)
+    assert_equal true, result[:created_issues].first.dig(:permissions, :can_edit_done_ratio)
+  ensure
+    Setting.issue_done_ratio = previous_issue_done_ratio
+    Setting.parent_issue_done_ratio = previous_parent_done_ratio
+  end
+
+  def test_create_grandchild_includes_parent_and_grandparent_in_issue_updates_when_derived
+    previous_issue_done_ratio = Setting.issue_done_ratio
+    previous_parent_done_ratio = Setting.parent_issue_done_ratio
+    Setting.issue_done_ratio = 'issue_field'
+    Setting.parent_issue_done_ratio = 'derived'
+
+    grandparent = build_issue(subject: 'Creator grandparent')
+    parent = build_issue(subject: 'Creator direct parent', parent_issue_id: grandparent.id)
+    grandparent.reload
+    parent.reload
+    initial_grandparent_lock_version = grandparent.lock_version
+    initial_parent_lock_version = parent.lock_version
+
+    creator, = issue_creator
+    result = creator.create(params: issue_params(subject: 'Creator grandchild', parent_issue_id: parent.id).merge(done_ratio: 50))
+
+    assert_equal true, result[:ok], result.inspect
+    parent.reload
+    grandparent.reload
+
+    parent_update = result[:issue_updates].find { |item| item[:id] == parent.id }
+    grandparent_update = result[:issue_updates].find { |item| item[:id] == grandparent.id }
+    assert_not_nil parent_update, 'Expected direct parent issue in issue_updates'
+    assert_not_nil grandparent_update, 'Expected grandparent issue in issue_updates'
+    assert_equal 50, parent_update[:done_ratio]
+    assert_equal 50, grandparent_update[:done_ratio]
+    assert_equal parent.lock_version, parent_update[:lock_version]
+    assert_equal grandparent.lock_version, grandparent_update[:lock_version]
+    assert_operator parent_update[:lock_version], :>, initial_parent_lock_version
+    assert_operator grandparent_update[:lock_version], :>, initial_grandparent_lock_version
+  ensure
+    Setting.issue_done_ratio = previous_issue_done_ratio
+    Setting.parent_issue_done_ratio = previous_parent_done_ratio
+  end
+
+  def test_create_with_subtasks_under_existing_child_includes_parent_and_grandparent_in_issue_updates
+    previous_issue_done_ratio = Setting.issue_done_ratio
+    previous_parent_done_ratio = Setting.parent_issue_done_ratio
+    Setting.issue_done_ratio = 'issue_field'
+    Setting.parent_issue_done_ratio = 'derived'
+
+    grandparent = build_issue(subject: 'Bulk grandparent')
+    parent = build_issue(subject: 'Bulk existing child parent', parent_issue_id: grandparent.id)
+    grandparent.reload
+    parent.reload
+    initial_grandparent_lock_version = grandparent.lock_version
+    initial_parent_lock_version = parent.lock_version
+
+    creator, = issue_creator
+    result = creator.create_with_subtasks(
+      parent_params: { parent_issue_id: parent.id },
+      subtasks: [
+        issue_params(subject: 'Bulk grandchild 1').merge(done_ratio: 100),
+        issue_params(subject: 'Bulk grandchild 2').merge(done_ratio: 0)
+      ],
+      idempotency_key: 'bulk-existing-child-ancestors'
+    )
+
+    assert_equal true, result[:ok], result.inspect
+    parent.reload
+    grandparent.reload
+
+    parent_update = result[:issue_updates].find { |item| item[:id] == parent.id }
+    grandparent_update = result[:issue_updates].find { |item| item[:id] == grandparent.id }
+    assert_not_nil parent_update, 'Expected direct parent issue in issue_updates'
+    assert_not_nil grandparent_update, 'Expected grandparent issue in issue_updates'
+    assert_equal 50, parent_update[:done_ratio]
+    assert_equal 50, grandparent_update[:done_ratio]
+    assert_equal parent.lock_version, parent_update[:lock_version]
+    assert_equal grandparent.lock_version, grandparent_update[:lock_version]
+    assert_operator parent_update[:lock_version], :>, initial_parent_lock_version
+    assert_operator grandparent_update[:lock_version], :>, initial_grandparent_lock_version
+  ensure
+    Setting.issue_done_ratio = previous_issue_done_ratio
+    Setting.parent_issue_done_ratio = previous_parent_done_ratio
+  end
+
+  def test_create_and_create_with_subtasks_exclude_non_visible_ancestors
+    previous_visibility = @role.issues_visibility
+    @role.update!(issues_visibility: 'default')
+    @user.reload
+
+    other_user = users(:users_001)
+    grandparent = Issue.create!(
+      project: @project,
+      tracker: @project.trackers.first,
+      author: other_user,
+      status: IssueStatus.first,
+      priority: IssuePriority.active.first,
+      subject: 'Private hidden grandparent',
+      is_private: true
+    )
+    parent = build_issue(subject: 'Visible child parent', parent_issue_id: grandparent.id)
+    refute grandparent.visible?(@user), 'Expected private grandparent to be non-visible to @user'
+    assert parent.visible?(@user), 'Expected direct parent to be visible to @user'
+
+    creator, = issue_creator
+    single_result = creator.create(params: issue_params(subject: 'Single grandchild under hidden grandparent', parent_issue_id: parent.id))
+    assert_equal true, single_result[:ok], single_result.inspect
+    assert_not_nil single_result[:issue_updates].find { |item| item[:id] == parent.id }
+    assert_nil single_result[:issue_updates].find { |item| item[:id] == grandparent.id }
+    refute_includes single_result[:evicted_issue_ids], grandparent.id
+
+    bulk_result = creator.create_with_subtasks(
+      parent_params: { parent_issue_id: parent.id },
+      subtasks: [issue_params(subject: 'Bulk grandchild under hidden grandparent')],
+      idempotency_key: 'bulk-hidden-grandparent'
+    )
+    assert_equal true, bulk_result[:ok], bulk_result.inspect
+    assert_not_nil bulk_result[:issue_updates].find { |item| item[:id] == parent.id }
+    assert_nil bulk_result[:issue_updates].find { |item| item[:id] == grandparent.id }
+    refute_includes bulk_result[:evicted_issue_ids], grandparent.id
+  ensure
+    @role.update!(issues_visibility: previous_visibility) if previous_visibility
+  end
+
   private
 
   def build_create_workflow_probe
@@ -241,14 +378,15 @@ class RedmineKanbanIssueCreatorTest < ActiveSupport::TestCase
     params
   end
 
-  def build_issue(subject:)
+  def build_issue(subject:, parent_issue_id: nil)
     Issue.new(
       project: @project,
       tracker: @project.trackers.first,
       author: @user,
       status: IssueStatus.first,
       priority: IssuePriority.active.first,
-      subject: subject
+      subject: subject,
+      parent_issue_id: parent_issue_id
     ).tap(&:save!)
   end
 

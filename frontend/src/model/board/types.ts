@@ -47,6 +47,7 @@ export type IssuePermissions = {
   can_move: boolean;
   can_edit: boolean;
   can_delete: boolean;
+  can_edit_done_ratio: boolean;
 };
 
 export type ProjectListItem = {

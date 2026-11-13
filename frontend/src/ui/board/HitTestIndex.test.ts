@@ -34,4 +34,15 @@ describe('HitTestIndex', () => {
     expect(hitTestCell({ x: 20, y: 30 }, index, data)).toEqual({ statusId: 3, laneId: 9 });
     expect(hitTest({ x: 20, y: 30 }, index, data)).toEqual({ kind: 'add', statusId: 4, laneId: 'no_category' });
   });
+
+  it('hits subtaskProgressButtons ahead of subtask rows and areas', () => {
+    const index = createRectMap();
+    index.subtaskAreas.set(7, rect);
+    index.subtaskRows.set('7:8', rect);
+    index.subtaskProgressButtons.set('7:8', rect);
+
+    expect(hitTest({ x: 20, y: 30 }, index, data)).toEqual({
+      kind: 'subtask_progress', issueId: 7, subtaskId: 8,
+    });
+  });
 });

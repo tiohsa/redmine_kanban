@@ -727,4 +727,89 @@ describe.each(['priority', 'progress'] as const)('%s popup keyboard access', (ki
     expect(progressPopup.style.background).not.toBe('white');
     expect(progressPopup.style.backgroundColor).not.toBe('white');
   });
+
+  describe('viewport clamping', () => {
+    const originalInnerWidth = window.innerWidth;
+    const originalInnerHeight = window.innerHeight;
+
+    afterEach(() => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: originalInnerWidth });
+      Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: originalInnerHeight });
+    });
+
+    function setupGeometry({
+      viewportWidth,
+      viewportHeight,
+      popupWidth,
+      popupHeight,
+    }: {
+      viewportWidth: number;
+      viewportHeight: number;
+      popupWidth: number;
+      popupHeight: number;
+    }) {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: viewportWidth });
+      Object.defineProperty(window, 'innerHeight', { configurable: true, writable: true, value: viewportHeight });
+      vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
+        right: popupWidth,
+        bottom: popupHeight,
+        width: popupWidth,
+        height: popupHeight,
+        toJSON: () => ({}),
+      });
+    }
+
+    it.each([
+      { name: 'ProgressPopup', renderPopup: (x: number, y: number, onChange = vi.fn()) => <ProgressPopup x={x} y={y} value={40} onClose={vi.fn()} onChange={onChange} /> },
+      {
+        name: 'PriorityPopup',
+        renderPopup: (x: number, y: number, onChange = vi.fn()) => (
+          <PriorityPopup
+            x={x}
+            y={y}
+            value="1"
+            options={[{ id: '1', name: 'Low' }, { id: '2', name: 'Normal' }]}
+            onClose={vi.fn()}
+            onChange={onChange}
+          />
+        ),
+      },
+    ])('$name clamps within viewport on middle-of-viewport, edge, and short-viewport clicks', ({ renderPopup }) => {
+      setupGeometry({ viewportWidth: 800, viewportHeight: 600, popupWidth: 160, popupHeight: 360 });
+
+      for (const y of [290, 310]) {
+        const { container, unmount } = render(renderPopup(100, y));
+        const popup = container.firstElementChild as HTMLElement;
+        const top = parseFloat(popup.style.top);
+        expect(top).toBeGreaterThanOrEqual(8);
+        expect(top + 360).toBeLessThanOrEqual(592);
+        unmount();
+      }
+
+      for (const x of [780, 2]) {
+        const { container, unmount } = render(renderPopup(x, 20));
+        const popup = container.firstElementChild as HTMLElement;
+        const left = parseFloat(popup.style.left);
+        expect(left).toBeGreaterThanOrEqual(8);
+        expect(left + 160).toBeLessThanOrEqual(792);
+        unmount();
+      }
+
+      setupGeometry({ viewportWidth: 800, viewportHeight: 240, popupWidth: 160, popupHeight: 360 });
+      const onChange = vi.fn();
+      const { container } = render(renderPopup(100, 100, onChange));
+      const popup = container.firstElementChild as HTMLElement;
+      expect(parseFloat(popup.style.top)).toBe(8);
+      expect(popup.style.maxHeight).toBe('224px');
+      expect(popup.style.overflowY).toBe('auto');
+
+      const buttons = popup.querySelectorAll('button');
+      fireEvent.click(buttons[buttons.length - 1]);
+      expect(onChange).toHaveBeenCalledTimes(1);
+    });
+  });
 });

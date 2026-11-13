@@ -11,12 +11,13 @@ Redmine Kanban is a Redmine plugin for Kanban boards with WIP limits, aging visu
 
 Use the repository as the primary source of truth.
 
-Consult these only when relevant:
+Consult these as the canonical references:
 
+* `docs/specs/` (`docs/specs/README.md`) as the canonical per-feature specifications (`正本`).
 * `README.md` for current product behavior and API notes.
 * Existing tests for established executable behavior.
 
-If documentation and implementation disagree, determine whether the document describes a newer intended behavior before changing code.
+If documentation and implementation disagree, determine whether the document describes a newer intended behavior before changing code, and keep `docs/specs/` and implementation in sync.
 
 ## Non-Negotiable Invariants
 
@@ -110,7 +111,7 @@ Assignee and priority swimlanes retain their existing lane-changing behavior.
 
 Use Redmine permission, visibility, workflow, membership, and Time Entry validation APIs.
 
-Frontend permission checks are usability controls, not security boundaries. Server mutation paths must enforce permissions independently.
+Frontend permission checks are usability controls, not security boundaries. Server mutation paths must enforce permissions independently. Never bypass authentication/authorization checks or log secrets or credentials.
 
 Preserve the distinction between board viewing, issue mutation, issue creation/deletion, and work-time logging.
 
@@ -143,6 +144,13 @@ Use the repository's existing aging source and update-time synchronization. Resp
 
 Work-time behavior must continue to respect permissions, membership, Issue eligibility, native Time Entry validation, timer lifecycle, and synchronization. Recovery/reconciliation must not create duplicate Time Entry POSTs.
 
+### Canonical specifications (`docs/specs/`)
+
+Per-feature specifications under `docs/specs/` are the canonical source of truth for feature behavior, acceptance criteria, public APIs, and constraints.
+
+* When implementing a new feature or changing existing behavior, public APIs, limits, permissions, or constraints, update the corresponding `docs/specs/*.md` file(s) (and `docs/specs/README.md` if adding/renaming a feature spec) in the same task.
+* Keep `docs/specs/` aligned with `spec-author-v2` structure and verified against actual code and tests; never leave stale or contradictory specs behind.
+
 ### Persistence
 
 Do not add database migrations or persistent support tables solely for transient client workflow state unless the requested feature genuinely requires server-side persistence and no existing Redmine mechanism fits.
@@ -151,7 +159,7 @@ Do not add database migrations or persistent support tables solely for transient
 
 Resource protection around board snapshots is intentional. Do not remove resource gates merely to make tests pass.
 
-When performance work is required, measure first and preserve API/compatibility contracts.
+When performance work is required, measure first. Do not break existing public API contracts or database schema backward compatibility.
 
 All changes must remain compatible with Redmine 6.0, 6.1, and 7.0. Do not remove compatibility code based only on behavior of the newest supported version.
 
@@ -159,14 +167,16 @@ All changes must remain compatible with Redmine 6.0, 6.1, and 7.0. Do not remove
 
 Keep the change focused on the requested task. Small adjacent changes are acceptable when required for correctness, consistency, generated output, or validation.
 
-Do not expand the task into unrelated refactoring, cleanup, dependency upgrades, migrations, UI/API redesign, state-library replacement, or broad formatting changes.
+* **Scope Lock:** When working from `SPEC.md`, modify only files directly required by the stated Goal and Acceptance Criteria (AC). Do not touch items listed under `Non-goals / Out-of-scope`.
+* **Minimal Fixes:** When fixing review findings, address only the specified `Scope` of `Blocker` and `Major` items without expanding the blast radius.
+* Do not expand the task into unrelated refactoring, cleanup, dependency upgrades, migrations, UI/API redesign, state-library replacement, or broad formatting changes.
 
 For refactoring, preserve externally observable behavior unless the task explicitly changes it. Prefer focused extraction and composition over subsystem rewrites. Do not replace working freshness/concurrency logic merely to reduce line count.
 
 When implementation details are unclear:
 
 1. inspect the relevant code and nearby tests;
-2. consult `README.md` or the relevant `spec-docs/` material if it can resolve the ambiguity;
+2. consult `docs/specs/` or `README.md` if it can resolve the ambiguity;
 3. make the smallest behavior-preserving choice if the repository still does not establish the answer;
 4. report any unresolved product decision as `要確認`.
 
@@ -176,11 +186,22 @@ Do not invent new product behavior.
 
 Use the smallest validation set that can reliably detect regressions in the changed area, then expand only where the risk warrants it.
 
-Typical frontend checks include focused Vitest tests, typecheck/lint, and a production build when the bundle changes.
+Before requesting or concluding any code review, run the applicable local checks and ensure exit code `0`:
+
+* Format / Lint: `npm --prefix frontend run lint`
+* Typecheck: `npm --prefix frontend run typecheck`
+* Production Build (when the bundle changes): `npm --prefix frontend run build`
+* Unit / Integration Tests (Vitest): `npm --prefix frontend test -- --run`
+* E2E Browser Tests (Headless): `npm --prefix e2e test` (runs `playwright test` in `e2e/`)
 
 Typical backend checks include the directly affected Rails Minitest suites.
 
-Use Playwright when the behavior depends on cross-layer or real interaction semantics that unit/integration tests cannot adequately cover.
+Use Playwright when the behavior depends on cross-layer or real interaction semantics that unit/integration tests cannot adequately cover. For E2E tests:
+
+* Run headlessly and clean up any test data created during the browser session.
+* Locate elements via user-facing attributes (`getByRole`, `getByLabel`, `getByTestId`) rather than brittle CSS classes, and never use arbitrary `page.waitForTimeout()` sleeps.
+
+Tests must validate actual Acceptance Criteria and edge cases (no test overfitting).
 
 For Canvas/drop work, directly validate the interaction layers affected by the change, especially eligibility, cursor/preview state, and command dispatch.
 
@@ -204,6 +225,7 @@ A task is complete when:
 
 * the requested behavior is implemented;
 * affected repository invariants still hold;
+* affected canonical specifications under `docs/specs/` are updated when behavior or contracts changed;
 * regressions caused by the change are fixed;
 * relevant validation passes;
 * generated assets are current when required;

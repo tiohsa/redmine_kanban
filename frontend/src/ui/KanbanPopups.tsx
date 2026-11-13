@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { format as formatMonthName } from 'date-fns';
@@ -185,6 +185,7 @@ function useChoicePopup(onClose: () => void, restoreFocusTo?: HTMLElement | null
   useEffect(() => {
     const selected = menuRef.current?.querySelector<HTMLElement>('[aria-pressed="true"]');
     (selected ?? menuRef.current?.querySelector<HTMLElement>('button'))?.focus({ preventScroll: true });
+    selected?.scrollIntoView?.({ block: 'nearest' });
   }, []);
 
   useEffect(() => {
@@ -213,6 +214,78 @@ function useChoicePopup(onClose: () => void, restoreFocusTo?: HTMLElement | null
   return { menuRef, restoreFocus, close };
 }
 
+type ClampedPopupPosition = {
+  left: number;
+  top: number;
+  maxHeight: number;
+};
+
+function computeClampedAxis(coord: number, size: number, viewportSize: number, margin: number): number {
+  const available = Math.max(0, viewportSize - margin * 2);
+  const effectiveSize = Math.min(size, available);
+  if (coord + effectiveSize <= viewportSize - margin) return Math.max(margin, coord);
+  if (coord - effectiveSize >= margin) return coord - effectiveSize;
+  return Math.max(margin, Math.min(coord, viewportSize - margin - effectiveSize));
+}
+
+function computeClampedPopupPosition({
+  x,
+  y,
+  width,
+  height,
+  viewportWidth,
+  viewportHeight,
+  margin = 8,
+}: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  margin?: number;
+}): ClampedPopupPosition {
+  const maxHeight = Math.max(0, viewportHeight - margin * 2);
+  return {
+    left: computeClampedAxis(x, width, viewportWidth, margin),
+    top: computeClampedAxis(y, height, viewportHeight, margin),
+    maxHeight,
+  };
+}
+
+function useViewportClampedPosition(
+  menuRef: React.RefObject<HTMLDivElement | null>,
+  x: number,
+  y: number,
+): ClampedPopupPosition {
+  const [position, setPosition] = useState<ClampedPopupPosition>(() => ({
+    left: Math.max(8, x),
+    top: Math.max(8, y),
+    maxHeight: Math.max(0, window.innerHeight - 16),
+  }));
+
+  useLayoutEffect(() => {
+    const updatePosition = () => {
+      const rect = menuRef.current?.getBoundingClientRect();
+      setPosition(
+        computeClampedPopupPosition({
+          x,
+          y,
+          width: rect?.width ?? 0,
+          height: rect?.height ?? 0,
+          viewportWidth: window.innerWidth,
+          viewportHeight: window.innerHeight,
+        }),
+      );
+    };
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    return () => window.removeEventListener('resize', updatePosition);
+  }, [menuRef, x, y]);
+
+  return position;
+}
+
 export function PriorityPopup({
   x,
   y,
@@ -233,6 +306,7 @@ export function PriorityPopup({
   ariaLabel?: string;
 }) {
   const { menuRef, restoreFocus, close } = useChoicePopup(onClose, restoreFocusTo);
+  const position = useViewportClampedPosition(menuRef, x, y);
   const selected = useRef(false);
   const choose = (id: string) => {
     if (selected.current) return;
@@ -253,8 +327,11 @@ export function PriorityPopup({
       className="rk-priority-popup rk-dropdown-menu"
       style={{
         position: 'fixed',
-        left: x,
-        top: y,
+        left: position.left,
+        top: position.top,
+        maxHeight: position.maxHeight,
+        overflowY: 'auto',
+        marginTop: 0,
         zIndex: 1000,
         minWidth: '160px',
         padding: '4px 0',
@@ -506,14 +583,9 @@ export function ProgressPopup({
   ariaLabel?: string;
 }) {
   const { menuRef, restoreFocus, close } = useChoicePopup(onClose, restoreFocusTo);
+  const position = useViewportClampedPosition(menuRef, x, y);
   const selected = useRef(false);
   const options = Array.from({ length: 11 }, (_, i) => i * 10);
-  const showUpward = y > window.innerHeight / 2;
-  const showLeftward = x > window.innerWidth - 120;
-  const transformStyle = [
-    showLeftward ? 'translateX(-100%)' : 'translateX(0)',
-    showUpward ? 'translateY(-100%)' : 'translateY(0)',
-  ].join(' ');
   const choose = (next: number) => {
     if (selected.current) return;
     selected.current = true;
@@ -533,9 +605,11 @@ export function ProgressPopup({
       className="rk-progress-popup rk-dropdown-menu"
       style={{
         position: 'fixed',
-        left: x,
-        top: y,
-        transform: transformStyle,
+        left: position.left,
+        top: position.top,
+        maxHeight: position.maxHeight,
+        overflowY: 'auto',
+        marginTop: 0,
         zIndex: 1000,
         minWidth: '100px',
         padding: '4px 0',

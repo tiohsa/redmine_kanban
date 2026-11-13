@@ -80,6 +80,9 @@ module RedmineKanban
       priority_updated = priority_id != :no_change
       priority_lock_versions = nil
       mutation_outcome = nil
+      status_was_closed = issue.status&.is_closed?
+      closed_state_changed = false
+      parent_affecting_change = false
 
       Issue.transaction do
         issue.send(:safe_attributes=, attributes, @user)
@@ -100,6 +103,14 @@ module RedmineKanban
         end
         changed_filter_fields << :priority_id if priority_updated
         mutation_outcome = mutation_outcome_for(issue)
+        closed_state_changed = mutation_outcome[:status_changed] && (status_was_closed != issue.status&.is_closed?)
+        parent_affecting_change = issue.parent_id.present? && (
+          mutation_outcome[:status_changed] ||
+          mutation_outcome[:done_ratio_changed] ||
+          issue.saved_change_to_start_date? ||
+          issue.saved_change_to_due_date? ||
+          issue.saved_change_to_priority_id?
+        )
         if priority_updated
           priority_error = apply_priority_updates!(issue, priority_id)
           if priority_error
@@ -115,7 +126,7 @@ module RedmineKanban
       filter_snapshot_invalidation = @board_context.filter_membership_changed?(changed_filter_fields)
       after_primary_member = membership_resolver.primary_member?(issue.id) unless filter_snapshot_invalidation || @board_context.issue_filter.active?
 
-      ancestor_updates_required = mutation_outcome[:status_changed] || mutation_outcome[:done_ratio_changed]
+      ancestor_updates_required = parent_affecting_change
 
       if priority_id.is_a?(Integer)
         reconcile_error = reconcile_priorities_after_commit!(issue, priority_id, priority_lock_versions)
@@ -125,7 +136,8 @@ module RedmineKanban
       ancestor_updates = ancestor_updates_for(issue) if ancestor_updates_required
       ancestor_issues = ancestor_issues_for(issue) if ancestor_updates_required
       propagated_issues = priority_id.is_a?(Integer) ? issue.children.to_a : []
-      issue_updates = [issue, *(ancestor_issues || []), *propagated_issues].uniq { |item| item.id }
+      status_changed_children = closed_state_changed ? membership_resolver.visible_member_children(issue) : []
+      issue_updates = [issue, *(ancestor_issues || []), *propagated_issues, *status_changed_children].uniq { |item| item.id }
       membership_recheck_ids = if !filter_snapshot_invalidation && before_primary_member != after_primary_member
         membership_resolver.membership_candidate_ids([issue.id])
       else

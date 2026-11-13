@@ -1,9 +1,11 @@
+require_relative 'ancestor_issue_updates'
 require_relative 'board_context'
 
 module RedmineKanban
   class IssueCreator
     include ParamNormalizer
     include IssueParentAttributes
+    include AncestorIssueUpdates
     include ServiceResponse
 
     MAX_BULK_SUBTASKS = 50
@@ -19,7 +21,9 @@ module RedmineKanban
       issue, error = persist_issue(params: params)
       return error if error
 
+      updated_ancestors = issue.parent_id.present? ? ancestor_issues_for(issue) : []
       mutation = mutation_result_builder.build(
+        issue_updates: updated_ancestors,
         created_issues: [issue],
         tree_changes: issue.parent_id ? [{ type: 'attach', parent_id: issue.parent_id, child_id: issue.id }] : [],
         invalidations: { column_counts: true, board_snapshot: @board_context.issue_filter.active? }
@@ -84,11 +88,14 @@ module RedmineKanban
         next result unless result&.dig(:ok)
 
         created_issues = Issue.where(id: created_issue_ids.compact).to_a
-        updated_parent = if parent_issue_id.present?
-                           Issue.visible(@user).find_by(id: parent_issue_id)
-                         end
+        updated_ancestors = if parent_issue_id.present?
+                              reloaded_parent = Issue.visible(@user).find_by(id: parent_issue_id)
+                              reloaded_parent ? [reloaded_parent, *ancestor_issues_for(reloaded_parent)].uniq(&:id) : []
+                            else
+                              []
+                            end
         mutation = mutation_result_builder.build(
-          issue_updates: [updated_parent].compact,
+          issue_updates: updated_ancestors,
           created_issues: created_issues,
           tree_changes: created_issues.filter_map do |created_issue|
             next unless created_issue.parent_id

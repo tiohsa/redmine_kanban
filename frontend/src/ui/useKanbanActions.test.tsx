@@ -505,10 +505,18 @@ describe('useKanbanActions nested toggle flow', () => {
       allowed_status_ids: [1, 2],
     }];
     queryClient.setQueryData(queryKey, initial);
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
-      JSON.stringify({ message }),
-      { status },
-    ));
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
+      if (url.includes('/issues/entities')) {
+        return new Response(JSON.stringify({
+          ok: true,
+          scope_fingerprint: initial.scope_fingerprint,
+          entities: [{ ...initial.issues[0].subtasks![0], lock_version: 3 }],
+          missing_issue_ids: [],
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ message }), { status });
+    });
 
     const { result } = renderHook(
       () => useKanbanActions({
@@ -534,6 +542,120 @@ describe('useKanbanActions nested toggle flow', () => {
       });
     });
     expect(queryClient.getQueryData<BoardData>(queryKey)?.columns.map((column) => column.count)).toEqual([100, 20]);
+  });
+
+  it('allows toggling a parent subtask closed after a child close updates its allowed_status_ids at the same revision', async () => {
+    const queryKey = ['kanban', 'board', 'toggle-parent-same-revision'] as const;
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const initial = makeBoardData(makeIssue(1));
+    initial.columns = [
+      { id: 1, name: 'Open', is_closed: false, count: 1 },
+      { id: 2, name: 'Closed', is_closed: true, count: 0 },
+    ];
+    initial.labels = { ...initial.labels, subtask_update_failed: 'Failed to update subtask' };
+    initial.issues[0].subtasks = [{
+      id: 2,
+      subject: 'Parent Subtask',
+      status_id: 1,
+      is_closed: false,
+      lock_version: 3,
+      updated_on: '2026-01-01T00:00:00Z',
+      allowed_status_ids: [1],
+      subtasks: [{
+        id: 3,
+        subject: 'Child Subtask',
+        status_id: 1,
+        is_closed: false,
+        lock_version: 1,
+        updated_on: '2026-01-01T00:00:00Z',
+        allowed_status_ids: [1, 2],
+      }],
+    }];
+    queryClient.setQueryData(queryKey, initial);
+
+    const setError = vi.fn();
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        ok: true,
+        scope_fingerprint: initial.scope_fingerprint,
+        issue_updates: [
+          {
+            id: 3,
+            parent_id: 2,
+            subject: 'Child Subtask',
+            status_id: 2,
+            is_closed: true,
+            lock_version: 2,
+            updated_on: '2026-01-01T00:01:00Z',
+            allowed_status_ids: [1, 2],
+          },
+          {
+            id: 2,
+            parent_id: 1,
+            subject: 'Parent Subtask',
+            status_id: 1,
+            is_closed: false,
+            lock_version: 3,
+            updated_on: '2026-01-01T00:00:00Z',
+            allowed_status_ids: [1, 2],
+          },
+        ],
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        ok: true,
+        scope_fingerprint: initial.scope_fingerprint,
+        issue_updates: [
+          {
+            id: 2,
+            parent_id: 1,
+            subject: 'Parent Subtask',
+            status_id: 2,
+            is_closed: true,
+            lock_version: 4,
+            updated_on: '2026-01-01T00:02:00Z',
+            allowed_status_ids: [1, 2],
+          },
+        ],
+      }), { status: 200 }));
+
+    const { result, rerender } = renderHook(
+      ({ data }) => useKanbanActions({
+        baseUrl: '/projects/demo/kanban',
+        boardQueryKey: queryKey,
+        data,
+        refresh: vi.fn(async () => undefined),
+        timeEntryOnClose: false,
+        setNotice: vi.fn(),
+        setError,
+        setIframeTimeEntryOperation: vi.fn(),
+      }),
+      {
+        initialProps: { data: initial },
+        wrapper: createWrapper(queryClient),
+      },
+    );
+
+    act(() => { result.current.toggleSubtask(3, false); });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0].subtasks?.[0].allowed_status_ids).toEqual([1, 2]);
+    });
+
+    const afterChildClose = queryClient.getQueryData<BoardData>(queryKey)!;
+    rerender({ data: afterChildClose });
+    act(() => { result.current.toggleSubtask(2, false); });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(String(fetchMock.mock.calls[1][0])).toContain('/issues/2/move');
+    expect(setError).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(queryClient.getQueryData<BoardData>(queryKey)?.issues[0].subtasks?.[0]).toMatchObject({
+        id: 2,
+        status_id: 2,
+        is_closed: true,
+        lock_version: 4,
+      });
+    });
   });
 });
 
@@ -566,6 +688,67 @@ describe('useKanbanActions snapshot-invalidated success', () => {
     expect(queryClient.getQueryData<BoardData>(['kanban', 'board'])?.issues[0]).toMatchObject({
       status_id: 1,
       allowed_status_ids: [1, 2],
+    });
+  });
+
+  it('reconciles the target entity after a 409 conflict error to synchronize latest lock_version', async () => {
+    const board = makeBoardData({ ...makeIssue(1), lock_version: 2 });
+    board.columns = [
+      { id: 1, name: 'Open', is_closed: false, count: 1 },
+      { id: 2, name: 'Review', is_closed: false, count: 0 },
+    ];
+    board.labels.conflict = '他のユーザーによって更新されました。';
+    const setError = vi.fn();
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        ok: false,
+        message: 'Conflict',
+      }), { status: 409 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        ok: true,
+        scope_fingerprint: 'project:1',
+        entities: [{ ...makeIssue(1), status_id: 1, lock_version: 3 }],
+        missing_issue_ids: [],
+      }), { status: 200 }));
+    const { result, queryClient } = renderActions({ data: board, setError });
+
+    await act(async () => { result.current.moveIssue(1, 2); });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    expect(fetchMock.mock.calls[0][0]).toContain('/issues/1/move');
+    expect(fetchMock.mock.calls[1][0]).toContain('/issues/entities');
+    expect(setError).toHaveBeenCalledWith('他のユーザーによって更新されました。');
+    expect(queryClient.getQueryData<BoardData>(['kanban', 'board'])?.issues[0]).toMatchObject({
+      status_id: 1,
+      lock_version: 3,
+    });
+  });
+
+  it('reconciles the target entity after updateIssue hits a 409 conflict error', async () => {
+    const board = makeBoardData({ ...makeIssue(1), lock_version: 2 });
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        ok: false,
+        message: 'Conflict',
+      }), { status: 409 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        ok: true,
+        scope_fingerprint: 'project:1',
+        entities: [{ ...makeIssue(1), lock_version: 3, subject: 'Updated remotely' }],
+        missing_issue_ids: [],
+      }), { status: 200 }));
+    const { result, queryClient } = renderActions({ data: board });
+
+    await act(async () => {
+      result.current.updateIssueMutation.mutate({ issueId: 1, patch: { subject: 'Local edit' }, lockVersion: 2 });
+    });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    expect(fetchMock.mock.calls[0][0]).toContain('/issues/1');
+    expect(fetchMock.mock.calls[1][0]).toContain('/issues/entities');
+    expect(queryClient.getQueryData<BoardData>(['kanban', 'board'])?.issues[0]).toMatchObject({
+      lock_version: 3,
+      subject: 'Updated remotely',
     });
   });
 

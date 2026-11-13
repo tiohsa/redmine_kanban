@@ -17,6 +17,7 @@ describe('getBoardCursor', () => {
     expect(getBoardCursor({ phase: 'idle', hitKind: 'subtask_subject' })).toBe('pointer');
     expect(getBoardCursor({ phase: 'idle', hitKind: 'edit' })).toBe('pointer');
     expect(getBoardCursor({ phase: 'idle', hitKind: 'add' })).toBe('pointer');
+    expect(getBoardCursor({ phase: 'idle', hitKind: 'subtask_progress' })).toBe('pointer');
   });
 
   it('returns default for cell areas', () => {

@@ -490,7 +490,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
             setNotice(message);
           }}
           onNativeWriteComplete={() => {
-            invalidateBoardSnapshot(queryClient, dialogs.iframeEditContext!.boardQueryKey);
+            void invalidateBoardSnapshot(queryClient, dialogs.iframeEditContext!.boardQueryKey, { preserveDisplay: true });
           }}
         />
       ) : null}
@@ -515,7 +515,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
             setNotice(message);
           }}
           onNativeWriteComplete={() => {
-            invalidateBoardSnapshot(queryClient, dialogs.iframeCreateContext!.boardQueryKey);
+            void invalidateBoardSnapshot(queryClient, dialogs.iframeCreateContext!.boardQueryKey, { preserveDisplay: true });
           }}
         />
       ) : null}
