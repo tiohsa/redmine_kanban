@@ -110,7 +110,7 @@ Assignee and priority swimlanes retain their existing lane-changing behavior.
 
 Use Redmine permission, visibility, workflow, membership, and Time Entry validation APIs.
 
-Frontend permission checks are usability controls, not security boundaries. Server mutation paths must enforce permissions independently.
+Frontend permission checks are usability controls, not security boundaries. Server mutation paths must enforce permissions independently. Never bypass authentication/authorization checks or log secrets or credentials.
 
 Preserve the distinction between board viewing, issue mutation, issue creation/deletion, and work-time logging.
 
@@ -151,7 +151,7 @@ Do not add database migrations or persistent support tables solely for transient
 
 Resource protection around board snapshots is intentional. Do not remove resource gates merely to make tests pass.
 
-When performance work is required, measure first and preserve API/compatibility contracts.
+When performance work is required, measure first. Do not break existing public API contracts or database schema backward compatibility.
 
 All changes must remain compatible with Redmine 6.0, 6.1, and 7.0. Do not remove compatibility code based only on behavior of the newest supported version.
 
@@ -159,7 +159,9 @@ All changes must remain compatible with Redmine 6.0, 6.1, and 7.0. Do not remove
 
 Keep the change focused on the requested task. Small adjacent changes are acceptable when required for correctness, consistency, generated output, or validation.
 
-Do not expand the task into unrelated refactoring, cleanup, dependency upgrades, migrations, UI/API redesign, state-library replacement, or broad formatting changes.
+* **Scope Lock:** When working from `SPEC.md`, modify only files directly required by the stated Goal and Acceptance Criteria (AC). Do not touch items listed under `Non-goals / Out-of-scope`.
+* **Minimal Fixes:** When fixing review findings, address only the specified `Scope` of `Blocker` and `Major` items without expanding the blast radius.
+* Do not expand the task into unrelated refactoring, cleanup, dependency upgrades, migrations, UI/API redesign, state-library replacement, or broad formatting changes.
 
 For refactoring, preserve externally observable behavior unless the task explicitly changes it. Prefer focused extraction and composition over subsystem rewrites. Do not replace working freshness/concurrency logic merely to reduce line count.
 
@@ -176,11 +178,22 @@ Do not invent new product behavior.
 
 Use the smallest validation set that can reliably detect regressions in the changed area, then expand only where the risk warrants it.
 
-Typical frontend checks include focused Vitest tests, typecheck/lint, and a production build when the bundle changes.
+Before requesting or concluding any code review, run the applicable local checks and ensure exit code `0`:
+
+* Format / Lint: `npm --prefix frontend run lint`
+* Typecheck: `npm --prefix frontend run typecheck`
+* Production Build (when the bundle changes): `npm --prefix frontend run build`
+* Unit / Integration Tests (Vitest): `npm --prefix frontend test -- --run`
+* E2E Browser Tests (Headless): `npm --prefix e2e test` (runs `playwright test` in `e2e/`)
 
 Typical backend checks include the directly affected Rails Minitest suites.
 
-Use Playwright when the behavior depends on cross-layer or real interaction semantics that unit/integration tests cannot adequately cover.
+Use Playwright when the behavior depends on cross-layer or real interaction semantics that unit/integration tests cannot adequately cover. For E2E tests:
+
+* Run headlessly and clean up any test data created during the browser session.
+* Locate elements via user-facing attributes (`getByRole`, `getByLabel`, `getByTestId`) rather than brittle CSS classes, and never use arbitrary `page.waitForTimeout()` sleeps.
+
+Tests must validate actual Acceptance Criteria and edge cases (no test overfitting).
 
 For Canvas/drop work, directly validate the interaction layers affected by the change, especially eligibility, cursor/preview state, and command dispatch.
 

@@ -33,7 +33,7 @@ const snapshot = {
     tracker_id: 1, description: '', assigned_to_id: null, assigned_to_name: null,
     start_date: null, due_date: null, priority_id: 1, priority_name: 'Normal', category_id: null, category_name: null,
     lock_version: 0, done_ratio: 0, updated_on: '2026-10-20T00:00:00Z', aging_days: 0, can_log_time: true,
-    project: { id: 4, name: 'Demo' }, permissions: { can_move: true, can_edit: true, can_delete: true },
+    project: { id: 4, name: 'Demo' }, permissions: { can_move: true, can_edit: true, can_delete: true, can_edit_done_ratio: true },
     allowed_status_ids: [2], urls: { issue: '/issues/1', issue_edit: '/issues/1/edit' } }],
   tree: { root_ids: [1], children_by_parent_id: {} }, labels,
 };
