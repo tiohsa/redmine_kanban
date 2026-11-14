@@ -32,7 +32,7 @@ describe('saved view operations', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'saved_views_new' }));
     createView('A'); createView('B'); createView('C');
     expect(trigger.querySelector('.rk-indicator-dot')).toBeTruthy();
-    click('close'); click('saved_views');
+    click('saved_views'); click('saved_views');
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'C', pressed: true }));
     const clear = screen.getByRole('button', { name: 'saved_views_clear' });
     const manage = screen.getByRole('button', { name: 'saved_views_manage' });
@@ -70,14 +70,17 @@ describe('saved view operations', () => {
     click('saved_views_clear'); click('saved_views'); click('A');
     expect(view.onApply).toHaveBeenCalledExactlyOnceWith(current);
   });
-  it('shows saved conditions as an accessible description and a close control that restores focus', () => {
+  it('shows saved conditions as an accessible description, omits the close button, and closes on Escape', () => {
     localStorage.setItem(key, JSON.stringify({ version: 1, views: [
       { id: 'a', name: 'A', settings: { ...current, filters: { ...current.filters, due: 'custom', dueDays: 14 }, laneType: 'category' } },
     ] }));
     const view = setup();
     const row = screen.getByRole('button', { name: 'A' });
     expect(document.getElementById(row.getAttribute('aria-describedby')!)?.textContent).toBe('due: Within 14 days / lane_type: category');
-    click('close');
+    expect(screen.queryByRole('button', { name: 'close' })).toBeNull();
+    const dialog = screen.getByRole('dialog', { name: 'saved_views' });
+    expect(dialog.querySelector('.rk-settings-title.rk-saved-views-heading')).toBeTruthy();
+    fireEvent.keyDown(document.activeElement ?? document, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'saved_views' }));
     expect(view.onApply).not.toHaveBeenCalled();
@@ -109,7 +112,7 @@ describe('saved view operations', () => {
     expect(screen.getByRole('button', { name: 'A', pressed: false })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'B', pressed: true })).toBeTruthy();
     expect(screen.getByRole('dialog', { name: 'saved_views' })).toBeTruthy();
-    click('close');
+    fireEvent.keyDown(document.activeElement ?? document, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'saved_views' }));
   });

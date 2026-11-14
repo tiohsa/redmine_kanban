@@ -2622,7 +2622,7 @@ body.rk-kanban-fullwindow #redmine-kanban-root {
 .rk-saved-views .rk-btn.rk-btn-ghost { border-color: transparent; background: transparent; padding: 0; }
 .rk-saved-views .rk-btn.rk-btn-ghost:hover { background: var(--rk-bg-secondary); }
 .rk-saved-views button:disabled { cursor: not-allowed; opacity: .5; }
-.rk-saved-views-heading { display: flex; align-items: center; gap: 4px; margin: 0; padding: 2px 2px 10px; border: 0; font-size: 14px; }
+.rk-saved-views-heading { display: flex; align-items: center; gap: 4px; }
 .rk-saved-views-title { flex: 1; }
 .rk-saved-views-list-heading { padding: 4px 8px; color: var(--rk-text-secondary); font-size: 11px; font-weight: 600; }
 .rk-saved-views-clear { align-self: flex-start; margin: 4px 10px 0; padding: 4px 0; border: 0; border-radius: 4px; background: transparent; color: var(--rk-text-secondary); font: 12px/1.5 var(--rk-font-main); cursor: pointer; }

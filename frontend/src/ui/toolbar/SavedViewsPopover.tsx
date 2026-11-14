@@ -39,7 +39,7 @@ export function SavedViewsPopover({ storageKey, current, onApply, labels, valida
     else {
       const activeView = mode === 'list' ? menuRef.current?.querySelector<HTMLButtonElement>('[aria-pressed="true"]') : null;
       const firstView = mode === 'list' ? menuRef.current?.querySelector<HTMLButtonElement>('[aria-pressed]') : null;
-      (activeView ?? firstView ?? menuRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled):not(.rk-saved-views-close)'))?.focus();
+      (activeView ?? firstView ?? menuRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)'))?.focus();
     }
   }, [mode, open, menuRef]);
   const triggerLabel = `${labels.saved_views}${views.changed ? ` (${labels.saved_views_changed})` : ''}`;
@@ -57,7 +57,6 @@ export function SavedViewsPopover({ storageKey, current, onApply, labels, valida
         <div className="rk-settings-title rk-saved-views-heading">
           {mode === 'manage' ? <button type="button" className="rk-btn rk-btn-sm rk-btn-ghost" aria-label={labels.saved_views_back} onClick={() => changeMode('list')}><span className="rk-icon" aria-hidden="true">arrow_back</span></button> : null}
           <span className="rk-saved-views-title">{title}</span>
-          <button type="button" className="rk-btn rk-btn-sm rk-btn-ghost rk-saved-views-close" aria-label={labels.close} onClick={closeAndFocus}><span className="rk-icon" aria-hidden="true">close</span></button>
         </div>
         {mode === 'list' || mode === 'manage' ? <>
           {mode === 'list' ? <div className="rk-saved-views-list-heading">{labels.saved_views_switch}</div> : null}
