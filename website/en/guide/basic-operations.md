@@ -37,7 +37,7 @@ When you drag a card past the movement threshold, target cells display visual gu
 
 ### Dragging from Subtask Areas
 
-Subtasks displayed inside parent cards can be dragged directly out of the parent card into another status column or swimlane.
+You can also grab the subtask area inside a parent card (such as the empty space of a subtask row) to drag and move the parent card to another status column or swimlane. Individual subtasks displayed inside a parent card cannot be dragged separately.
 
 ---
 
