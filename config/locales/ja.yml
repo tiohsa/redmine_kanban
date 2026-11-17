@@ -232,6 +232,7 @@ ja:
     label_card_display_standard: "標準"
     label_card_display_single_line: "1行"
     label_show_subtasks_short: "子チケットを表示"
+    label_show_all_subtasks_on_parent_assignee: "親が担当者に一致したら子をすべて表示"
     label_viewable_projects_short: "閲覧可能プロジェクトを表示"
     label_time_entry_short: "完了時に工数入力"
     label_display_width: "表示幅"

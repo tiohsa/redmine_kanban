@@ -46,6 +46,7 @@ vi.mock('../infrastructure/api/http', () => ({
       fit_width: '幅に合わせる',
       font_size: 'フォントサイズ',
       show_subtasks_short: '子チケットを表示',
+      show_all_subtasks_on_parent_assignee: '親が担当者フィルタに一致したら子チケットをすべて表示',
       issue_dialog_settings: 'チケットダイアログ',
       issue_dialog_width: '幅',
       issue_dialog_width_compact: 'コンパクト (900px)',
@@ -298,5 +299,46 @@ describe('App display settings', () => {
         dynamicPortal.remove();
       }
     });
+  });
+
+  it('toggles, persists, and disables show_all_subtasks_on_parent_assignee when subtasks are hidden or in single-line mode', async () => {
+    const view = await openDisplaySettings();
+    const showSubtasksSwitch = screen.getByRole('switch', { name: '子チケットを表示' }) as HTMLButtonElement;
+    const showAllSubtasksSwitch = screen.getByRole('switch', {
+      name: '親が担当者フィルタに一致したら子チケットをすべて表示',
+    }) as HTMLButtonElement;
+
+    expect(showAllSubtasksSwitch.disabled).toBe(false);
+    expect(showAllSubtasksSwitch.getAttribute('aria-checked')).toBe('false');
+
+    fireEvent.click(showAllSubtasksSwitch);
+    expect(showAllSubtasksSwitch.getAttribute('aria-checked')).toBe('true');
+    expect(localStorage.getItem('rk_show_all_subtasks_on_parent_assignee:user:7')).toBe('1');
+
+    // Disabling showSubtasks disables and unchecks the option visually while preserving stored preference.
+    fireEvent.click(showSubtasksSwitch);
+    expect(showAllSubtasksSwitch.disabled).toBe(true);
+    expect(showAllSubtasksSwitch.getAttribute('aria-checked')).toBe('false');
+
+    fireEvent.click(showSubtasksSwitch);
+    expect(showAllSubtasksSwitch.disabled).toBe(false);
+    expect(showAllSubtasksSwitch.getAttribute('aria-checked')).toBe('true');
+
+    // Switching to single_line mode also disables and unchecks it visually.
+    const cardDisplaySelect = screen.getByRole<HTMLSelectElement>('combobox', { name: 'カード表示' });
+    fireEvent.change(cardDisplaySelect, { target: { value: 'single_line' } });
+    expect(showAllSubtasksSwitch.disabled).toBe(true);
+    expect(showAllSubtasksSwitch.getAttribute('aria-checked')).toBe('false');
+
+    fireEvent.change(cardDisplaySelect, { target: { value: 'standard' } });
+    expect(showAllSubtasksSwitch.disabled).toBe(false);
+    expect(showAllSubtasksSwitch.getAttribute('aria-checked')).toBe('true');
+
+    view.unmount();
+    await openDisplaySettings();
+    const restoredSwitch = screen.getByRole('switch', {
+      name: '親が担当者フィルタに一致したら子チケットをすべて表示',
+    }) as HTMLButtonElement;
+    expect(restoredSwitch.getAttribute('aria-checked')).toBe('true');
   });
 });

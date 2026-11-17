@@ -37,6 +37,8 @@ class RedmineKanbanBoardLabelsTest < ActiveSupport::TestCase
     assert_equal 'ライト', japanese[:color_theme_light]
     assert_equal 'Dark', english[:color_theme_dark]
     assert_equal 'ダーク', japanese[:color_theme_dark]
+    assert_equal 'Show all subtasks when parent matches assignee', english[:show_all_subtasks_on_parent_assignee]
+    assert_equal '親が担当者に一致したら子をすべて表示', japanese[:show_all_subtasks_on_parent_assignee]
     assert_equal english, I18n.with_locale(:en) { build_labels }
   end
 

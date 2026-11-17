@@ -31,6 +31,8 @@ type ToolbarProps = {
   onChangeColorTheme?: (value: KanbanColorTheme) => void;
   showSubtasks: boolean;
   onToggleShowSubtasks: () => void;
+  showAllSubtasksOnParentAssignee?: boolean;
+  onToggleShowAllSubtasksOnParentAssignee?: () => void;
   fontSize: number;
   onChangeFontSize: (size: number) => void;
   issueDialogSize?: IssueDialogSizeSettings;
@@ -73,6 +75,8 @@ export function KanbanToolbar({
   onChangeColorTheme,
   showSubtasks,
   onToggleShowSubtasks,
+  showAllSubtasksOnParentAssignee = false,
+  onToggleShowAllSubtasksOnParentAssignee = () => {},
   fontSize,
   onChangeFontSize,
   issueDialogSize,
@@ -299,6 +303,8 @@ export function KanbanToolbar({
           onChangeColorTheme={onChangeColorTheme}
           showSubtasks={showSubtasks}
           onToggleShowSubtasks={onToggleShowSubtasks}
+          showAllSubtasksOnParentAssignee={showAllSubtasksOnParentAssignee}
+          onToggleShowAllSubtasksOnParentAssignee={onToggleShowAllSubtasksOnParentAssignee}
           laneType={laneType}
           onChangeLaneType={onChangeLaneType}
           agingWarnDays={agingWarnDays}

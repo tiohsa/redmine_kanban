@@ -513,4 +513,62 @@ describe('useKanbanPreferences', () => {
       expect(result.current.colorTheme).toBe('dark');
     });
   });
+
+  describe('showAllSubtasksOnParentAssignee preference', () => {
+    it('defaults to false without writing before user discovery, persists per user across projects, and ignores non-1 values', () => {
+      const unhydrated = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data'));
+      expect(unhydrated.result.current.showAllSubtasksOnParentAssignee).toBe(false);
+      expect(localStorage.length).toBe(0);
+      unhydrated.unmount();
+
+      localStorage.setItem('rk_show_all_subtasks_on_parent_assignee:user:7', 'true');
+      const invalidHydration = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data', 7));
+      expect(invalidHydration.result.current.showAllSubtasksOnParentAssignee).toBe(false);
+      expect(localStorage.getItem('rk_show_all_subtasks_on_parent_assignee:user:7')).toBe('0');
+
+      act(() => {
+        invalidHydration.result.current.setShowAllSubtasksOnParentAssignee(true);
+      });
+      expect(invalidHydration.result.current.showAllSubtasksOnParentAssignee).toBe(true);
+      expect(localStorage.getItem('rk_show_all_subtasks_on_parent_assignee:user:7')).toBe('1');
+      invalidHydration.unmount();
+
+      const otherProjectSameUser = renderHook(() => useKanbanPreferences('/projects/other/kanban/data', 7));
+      expect(otherProjectSameUser.result.current.showAllSubtasksOnParentAssignee).toBe(true);
+      otherProjectSameUser.unmount();
+
+      const differentUser = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data', 8));
+      expect(differentUser.result.current.showAllSubtasksOnParentAssignee).toBe(false);
+    });
+
+    it('is preserved when applyViewSettings is called', () => {
+      localStorage.setItem('rk_show_all_subtasks_on_parent_assignee:user:7', '1');
+      const { result } = renderHook(() => useKanbanPreferences('/projects/demo/kanban/data', 7));
+      expect(result.current.showAllSubtasksOnParentAssignee).toBe(true);
+
+      const saved: SavedViewSettings = {
+        filters: {
+          assigneeIds: ['12'],
+          q: 'saved',
+          due: 'custom',
+          dueDays: 5,
+          priority: [],
+          priorityFilterEnabled: true,
+          projectIds: [4],
+          statusIds: [2],
+          trackerIds: [3],
+        },
+        sortConfig: [{ field: 'due', direction: 'asc' }],
+        laneType: 'category',
+        hiddenStatusIds: [],
+        viewableProjectsEnabled: true,
+      };
+
+      act(() => {
+        result.current.applyViewSettings(saved);
+      });
+
+      expect(result.current.showAllSubtasksOnParentAssignee).toBe(true);
+    });
+  });
 });

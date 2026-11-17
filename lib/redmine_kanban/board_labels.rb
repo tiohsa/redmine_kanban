@@ -219,6 +219,7 @@ module RedmineKanban
       aging_danger_days: "redmine_kanban.label_aging_danger_days",
       aging_exclude_closed: "redmine_kanban.label_aging_exclude_closed",
       show_subtasks_short: "redmine_kanban.label_show_subtasks_short",
+      show_all_subtasks_on_parent_assignee: "redmine_kanban.label_show_all_subtasks_on_parent_assignee",
       priority_lane_short: "redmine_kanban.label_priority_lane_short",
       viewable_projects_short: "redmine_kanban.label_viewable_projects_short",
       time_entry_short: "redmine_kanban.label_time_entry_short",

@@ -232,6 +232,7 @@ en:
     label_card_display_standard: "Standard"
     label_card_display_single_line: "Single line"
     label_show_subtasks_short: "Show subtasks"
+    label_show_all_subtasks_on_parent_assignee: "Show all subtasks when parent matches assignee"
     label_viewable_projects_short: "Show viewable projects"
     label_time_entry_short: "Time entry on close"
     label_display_width: "Display width"
