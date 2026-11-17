@@ -34,6 +34,8 @@ export function DisplaySettingsPopover({
   onChangeColorTheme,
   showSubtasks,
   onToggleShowSubtasks,
+  showAllSubtasksOnParentAssignee = false,
+  onToggleShowAllSubtasksOnParentAssignee = () => {},
   laneType,
   onChangeLaneType,
   agingWarnDays,
@@ -58,6 +60,8 @@ export function DisplaySettingsPopover({
   onChangeColorTheme?: (value: KanbanColorTheme) => void;
   showSubtasks: boolean;
   onToggleShowSubtasks: () => void;
+  showAllSubtasksOnParentAssignee?: boolean;
+  onToggleShowAllSubtasksOnParentAssignee?: () => void;
   laneType: LaneType;
   onChangeLaneType: (value: LaneType) => void;
   agingWarnDays: number;
@@ -108,6 +112,12 @@ export function DisplaySettingsPopover({
             />
           ) : null}
           <SettingsToggle label={labels.show_subtasks_short} checked={isSingleLineMode ? false : showSubtasks} onChange={onToggleShowSubtasks} disabled={isSingleLineMode} />
+          <SettingsToggle
+            label={labels.show_all_subtasks_on_parent_assignee ?? 'Show all subtasks when parent matches assignee'}
+            checked={isSingleLineMode || !showSubtasks ? false : showAllSubtasksOnParentAssignee}
+            onChange={onToggleShowAllSubtasksOnParentAssignee}
+            disabled={isSingleLineMode || !showSubtasks}
+          />
           <SettingsSelect label={labels.lane_type} value={laneType} options={[
             { id: 'none', name: labels.none },
             { id: 'assignee', name: labels.assignee },

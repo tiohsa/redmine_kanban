@@ -610,4 +610,131 @@ describe('buildVisibleIssues', () => {
 
     expect(issues.map((issue) => issue.id)).toEqual([1, 2]);
   });
+
+  describe('showAllSubtasksOnParentAssignee', () => {
+    const makeSubtask = (id: number, statusId: number, subject: string, attrs: Partial<Issue> = {}) => ({
+      ...makeIssue(id, statusId, subject, { is_closed: false, ...attrs }),
+      is_closed: attrs.is_closed ?? false,
+    });
+
+    it('keeps only matching subtasks by default when option is omitted or false', () => {
+      const data = makeBoardData([
+        makeIssue(1, 1, 'Parent', {
+          assigned_to_id: 7,
+          subtasks: [
+            makeSubtask(2, 1, 'Subtask mine', { assigned_to_id: 7 }),
+            makeSubtask(3, 1, 'Subtask other', { assigned_to_id: 8 }),
+            makeSubtask(4, 1, 'Subtask unassigned', { assigned_to_id: null }),
+          ],
+        }),
+      ]);
+
+      const defaultIssues = buildVisibleIssues(data, makeFilters({ assigneeIds: ['7'] }), new Set(), null);
+      expect(defaultIssues[0].subtasks?.map((s) => s.id)).toEqual([2]);
+
+      const falseIssues = buildVisibleIssues(
+        data,
+        makeFilters({ assigneeIds: ['7'] }),
+        new Set(),
+        null,
+        { showAllSubtasksOnParentAssignee: false },
+      );
+      expect(falseIssues[0].subtasks?.map((s) => s.id)).toEqual([2]);
+    });
+
+    it('shows all subtasks and nested descendants when parent matches assignee filter', () => {
+      const data = makeBoardData([
+        makeIssue(1, 1, 'Parent', {
+          assigned_to_id: 7,
+          subtasks: [
+            makeSubtask(2, 1, 'Subtask mine', { assigned_to_id: 7 }),
+            makeSubtask(3, 1, 'Subtask other', {
+              assigned_to_id: 8,
+              subtasks: [
+                makeSubtask(5, 1, 'Grandchild unassigned', { assigned_to_id: null }),
+              ],
+            }),
+            makeSubtask(4, 1, 'Subtask unassigned', { assigned_to_id: null }),
+          ],
+        }),
+      ]);
+
+      const issues = buildVisibleIssues(
+        data,
+        makeFilters({ assigneeIds: ['7'] }),
+        new Set(),
+        null,
+        { showAllSubtasksOnParentAssignee: true },
+      );
+
+      expect(issues).toHaveLength(1);
+      expect(issues[0].subtasks?.map((s) => s.id)).toEqual([2, 3, 4]);
+      expect(issues[0].subtasks?.[1].subtasks?.map((s) => s.id)).toEqual([5]);
+    });
+
+    it('still applies non-assignee filters (q, trackerIds, priority, statusIds, projectIds, due) to subtasks', () => {
+      const data = makeBoardData([
+        makeIssue(1, 1, 'Alpha parent', {
+          assigned_to_id: 7,
+          tracker_id: 1,
+          priority_id: 1,
+          due_date: null,
+          project: { id: 1, name: 'Demo' },
+          subtasks: [
+            makeSubtask(2, 1, 'Alpha matching child', { assigned_to_id: 8, tracker_id: 1, priority_id: 1, due_date: null, project: { id: 1, name: 'Demo' } }),
+            makeSubtask(3, 1, 'Other text child', { assigned_to_id: 8, tracker_id: 1, priority_id: 1, due_date: null, project: { id: 1, name: 'Demo' } }),
+            makeSubtask(4, 1, 'Alpha wrong tracker', { assigned_to_id: 8, tracker_id: 2, priority_id: 1, due_date: null, project: { id: 1, name: 'Demo' } }),
+            makeSubtask(5, 1, 'Alpha wrong priority', { assigned_to_id: 8, tracker_id: 1, priority_id: 2, due_date: null, project: { id: 1, name: 'Demo' } }),
+            makeSubtask(6, 2, 'Alpha wrong status', { assigned_to_id: 8, tracker_id: 1, priority_id: 1, due_date: null, project: { id: 1, name: 'Demo' } }),
+            makeSubtask(7, 1, 'Alpha wrong project', { assigned_to_id: 8, tracker_id: 1, priority_id: 1, due_date: null, project: { id: 2, name: 'Other' } }),
+            makeSubtask(8, 1, 'Alpha wrong due', { assigned_to_id: 8, tracker_id: 1, priority_id: 1, due_date: '2026-01-01', project: { id: 1, name: 'Demo' } }),
+          ],
+        }),
+      ]);
+
+      const issues = buildVisibleIssues(
+        data,
+        makeFilters({
+          assigneeIds: ['7'],
+          q: 'Alpha',
+          trackerIds: [1],
+          priority: ['1'],
+          priorityFilterEnabled: true,
+          statusIds: [1],
+          projectIds: [1],
+          due: 'none',
+        }),
+        new Set(),
+        null,
+        { showAllSubtasksOnParentAssignee: true },
+      );
+
+      expect(issues).toHaveLength(1);
+      expect(issues[0].subtasks?.map((s) => s.id)).toEqual([2]);
+    });
+
+    it('keeps applying assignee filter to subtasks when parent does not match self', () => {
+      const data = makeBoardData([
+        makeIssue(1, 1, 'Context parent', {
+          assigned_to_id: 9,
+          subtasks: [
+            makeSubtask(2, 1, 'Matching child', { assigned_to_id: 7 }),
+            makeSubtask(3, 1, 'Non-matching sibling', { assigned_to_id: 8 }),
+          ],
+        }),
+      ]);
+
+      const issues = buildVisibleIssues(
+        data,
+        makeFilters({ assigneeIds: ['7'] }),
+        new Set(),
+        null,
+        { showAllSubtasksOnParentAssignee: true },
+      );
+
+      expect(issues).toHaveLength(1);
+      expect(issues[0].id).toBe(1);
+      expect(issues[0].subtasks?.map((s) => s.id)).toEqual([2]);
+    });
+  });
 });

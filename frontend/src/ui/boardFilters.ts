@@ -133,13 +133,19 @@ export function resolveCreateStatusId(
   return defaultCreateStatusId(candidateColumns, preferredStatusId);
 }
 
+export type BuildVisibleIssuesOptions = {
+  showAllSubtasksOnParentAssignee?: boolean;
+};
+
 export function buildVisibleIssues(
   filteredData: BoardData | null,
   filters: Filters,
   hiddenStatusIds: Set<number>,
   pendingDeleteIssue: Issue | null,
+  options: BuildVisibleIssuesOptions = {},
 ): Issue[] {
-  let visible = filterIssues(filteredData?.issues ?? [], filteredData, filters)
+  const showAllSubtasksOnParentAssignee = options.showAllSubtasksOnParentAssignee ?? false;
+  let visible = filterIssues(filteredData?.issues ?? [], filteredData, filters, showAllSubtasksOnParentAssignee)
     .filter((issue) => !hiddenStatusIds.has(issue.status_id) || hasVisibleDescendant(issue, hiddenStatusIds));
 
   if (pendingDeleteIssue) {
@@ -171,7 +177,12 @@ function endOfWeek(date: Date): Date {
   return e;
 }
 
-function filterIssues(issues: Issue[], data: BoardData | null, filters: Filters): Issue[] {
+function filterIssues(
+  issues: Issue[],
+  data: BoardData | null,
+  filters: Filters,
+  showAllSubtasksOnParentAssignee: boolean,
+): Issue[] {
   const q = filters.q.trim().toLowerCase();
   const anchor = data?.meta.filter_scope?.date_anchor ?? localDateAnchor();
   const now0 = parseISODate(anchor) ?? parseISODate(localDateAnchor())!;
@@ -179,8 +190,11 @@ function filterIssues(issues: Issue[], data: BoardData | null, filters: Filters)
   const end = endOfWeek(now0);
 
   return issues.flatMap((issue) => {
-    const filteredSubtasks = filterSubtasks(issue.subtasks, filters, now0, start, end);
     const matchesSelf = matchesIssue(issue, data, filters, q, now0, start, end);
+    const subtaskFilters = showAllSubtasksOnParentAssignee && matchesSelf && filters.assigneeIds.length > 0
+      ? { ...filters, assigneeIds: [] }
+      : filters;
+    const filteredSubtasks = filterSubtasks(issue.subtasks, subtaskFilters, now0, start, end);
     if (!matchesSelf && filteredSubtasks.length === 0) return [];
     return [{ ...issue, subtasks: filteredSubtasks }];
   });

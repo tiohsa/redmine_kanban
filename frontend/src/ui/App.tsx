@@ -64,6 +64,8 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     setCardDisplayMode,
     showSubtasks,
     setShowSubtasks,
+    showAllSubtasksOnParentAssignee,
+    setShowAllSubtasksOnParentAssignee,
     sortConfig,
     setSortConfig,
     hiddenStatusIds,
@@ -185,6 +187,7 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
     agingDangerDays,
     agingExcludeClosed,
     showSubtasks: effectiveShowSubtasks,
+    showAllSubtasksOnParentAssignee,
     filters,
     hiddenStatusIds,
     pendingDeleteIssue: actions.pendingDeleteIssue,
@@ -257,6 +260,8 @@ export function App({ dataUrl, initialCurrentUserId, initialLabels = {} }: Props
           onChangeCardDisplayMode={setCardDisplayMode}
           showSubtasks={showSubtasks}
           onToggleShowSubtasks={() => setShowSubtasks((value) => !value)}
+          showAllSubtasksOnParentAssignee={showAllSubtasksOnParentAssignee}
+          onToggleShowAllSubtasksOnParentAssignee={() => setShowAllSubtasksOnParentAssignee((value) => !value)}
           fontSize={fontSize}
           onChangeFontSize={setFontSize}
           issueDialogSize={issueDialogSize}

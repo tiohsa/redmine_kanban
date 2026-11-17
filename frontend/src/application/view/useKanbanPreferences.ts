@@ -45,6 +45,7 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
   const fitModeStorageKey = userKey('rk_fit_mode');
   const cardDisplayModeStorageKey = userKey('rk_card_display_mode');
   const showSubtasksStorageKey = userKey('rk_show_subtasks');
+  const showAllSubtasksOnParentAssigneeStorageKey = userKey('rk_show_all_subtasks_on_parent_assignee');
   const sortConfigStorageKey = userKey('rk_sortkey');
   const fontSizeStorageKey = userKey('rk_font_size');
   const timeEntryStorageKey = userKey('rk_time_entry_on_close');
@@ -74,6 +75,7 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
   const [fitMode, setFitMode] = useState<FitMode>('none');
   const [cardDisplayMode, setCardDisplayMode] = useState<CardDisplayMode>('standard');
   const [showSubtasks, setShowSubtasks] = useState(true);
+  const [showAllSubtasksOnParentAssignee, setShowAllSubtasksOnParentAssignee] = useState(false);
   const setHiddenStatusIds = useCallback((action: SetStateAction<Set<number>>) => {
     setViewSettings((previous) => ({ ...previous, hiddenStatusIds: Array.from(typeof action === 'function' ? action(new Set(previous.hiddenStatusIds)) : action) }));
   }, []);
@@ -117,6 +119,7 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
     setFitMode(fitMode === 'width' || (fitMode === null && legacyFitToScreen === '1') ? 'width' : 'none');
     setCardDisplayMode(readStorageValue(cardDisplayModeStorageKey!) === 'single_line' ? 'single_line' : 'standard');
     setShowSubtasks(readScopedValueWithLegacy(showSubtasksStorageKey!, 'rk_show_subtasks') !== '0');
+    setShowAllSubtasksOnParentAssignee(readStorageValue(showAllSubtasksOnParentAssigneeStorageKey!) === '1');
     const savedSortConfig = readScopedValueWithLegacy(sortConfigStorageKey!, 'rk_sortkey');
     setSortConfig(parseSortConfig(savedSortConfig));
     setHiddenStatusIds(readScopedNumberSetWithLegacy(hiddenStatusStorageKey!, makeScopedStorageKey('rk_hidden_status_ids', projectScope), new Set()));
@@ -144,7 +147,7 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
     setAgingExcludeClosed(readScopedBooleanWithLegacy(agingExcludeClosedStorageKey!, makeScopedStorageKey('rk_aging_exclude_closed', projectScope), true));
     setViewableProjectsEnabled(readScopedBooleanWithLegacy(viewableProjectsStorageKey!, makeScopedStorageKey('rk_viewable_projects_enabled', projectScope), false));
     setHydratedScope(hydrationScope);
-  }, [hydrationScope, setFilters, setSortConfig, setHiddenStatusIds, setLaneType, setViewableProjectsEnabled, agingDangerDaysStorageKey, agingExcludeClosedStorageKey, agingWarnDaysStorageKey, cardDisplayModeStorageKey, filtersStorageKey, fitModeStorageKey, fontSizeStorageKey, fullWindowStorageKey, hiddenStatusStorageKey, issueDialogSizeStorageKey, laneTypeStorageKey, priorityLaneStorageKey, projectScope, showSubtasksStorageKey, sortConfigStorageKey, timeEntryStorageKey, userScope, viewableProjectsStorageKey]);
+  }, [hydrationScope, setFilters, setSortConfig, setHiddenStatusIds, setLaneType, setViewableProjectsEnabled, agingDangerDaysStorageKey, agingExcludeClosedStorageKey, agingWarnDaysStorageKey, cardDisplayModeStorageKey, filtersStorageKey, fitModeStorageKey, fontSizeStorageKey, fullWindowStorageKey, hiddenStatusStorageKey, issueDialogSizeStorageKey, laneTypeStorageKey, priorityLaneStorageKey, projectScope, showAllSubtasksOnParentAssigneeStorageKey, showSubtasksStorageKey, sortConfigStorageKey, timeEntryStorageKey, userScope, viewableProjectsStorageKey]);
 
   useEffect(() => {
     if (!preferencesReady) return;
@@ -194,6 +197,12 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
   }, [preferencesReady, showSubtasks, showSubtasksStorageKey]);
 
   useEffect(() => {
+    if (preferencesReady && showAllSubtasksOnParentAssigneeStorageKey) {
+      writeStorageValue(showAllSubtasksOnParentAssigneeStorageKey, showAllSubtasksOnParentAssignee ? '1' : '0');
+    }
+  }, [preferencesReady, showAllSubtasksOnParentAssignee, showAllSubtasksOnParentAssigneeStorageKey]);
+
+  useEffect(() => {
     if (preferencesReady && fontSizeStorageKey) writeStorageValue(fontSizeStorageKey, String(fontSize));
   }, [fontSize, fontSizeStorageKey, preferencesReady]);
 
@@ -241,6 +250,8 @@ export function useKanbanPreferences(dataUrl: string, initialCurrentUserId?: num
     setCardDisplayMode,
     showSubtasks,
     setShowSubtasks,
+    showAllSubtasksOnParentAssignee,
+    setShowAllSubtasksOnParentAssignee,
     sortConfig,
     setSortConfig,
     hiddenStatusIds,

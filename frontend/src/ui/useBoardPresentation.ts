@@ -12,6 +12,7 @@ type Args = {
   agingDangerDays: number;
   agingExcludeClosed: boolean;
   showSubtasks: boolean;
+  showAllSubtasksOnParentAssignee?: boolean;
   filters: Filters;
   hiddenStatusIds: Set<number>;
   pendingDeleteIssue: Issue | null;
@@ -25,6 +26,7 @@ export function useBoardPresentation({
   agingDangerDays,
   agingExcludeClosed,
   showSubtasks,
+  showAllSubtasksOnParentAssignee = false,
   filters,
   hiddenStatusIds,
   pendingDeleteIssue,
@@ -40,8 +42,10 @@ export function useBoardPresentation({
     [displayData, filters.statusIds, showSubtasks],
   );
   const issues = useMemo(
-    () => buildVisibleIssues(primaryFilteredData, filters, hiddenStatusIds, pendingDeleteIssue),
-    [filters, hiddenStatusIds, pendingDeleteIssue, primaryFilteredData],
+    () => buildVisibleIssues(primaryFilteredData, filters, hiddenStatusIds, pendingDeleteIssue, {
+      showAllSubtasksOnParentAssignee: showSubtasks && showAllSubtasksOnParentAssignee,
+    }),
+    [filters, hiddenStatusIds, pendingDeleteIssue, primaryFilteredData, showAllSubtasksOnParentAssignee, showSubtasks],
   );
   const presentation = useMemo(
     () => {
