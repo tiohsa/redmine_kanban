@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BoardData, Issue } from './types';
 import { applyMutationResponse, invalidateBoardSnapshot, useIssueMutation } from './useIssueMutation';
 import { useKanbanActions } from './useKanbanActions';
-import { applyLocalIssuePatch } from './boardState';
+import { applyLocalIssuePatch } from '../model/board/state';
 import { getBoardFreshnessAuthority, releaseBoardFreshnessAuthority } from './asyncFreshness';
 
 const getJsonMock = vi.hoisted(() => vi.fn());

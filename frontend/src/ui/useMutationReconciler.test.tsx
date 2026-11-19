@@ -8,7 +8,7 @@ import type { BoardData, Issue } from './types';
 import { findIssueInBoard } from '../model/board/selectors';
 import type { IssueMutationResult } from '../infrastructure/api/contracts';
 import { getBoardFreshnessAuthority } from './asyncFreshness';
-import { applyIssueMutationResponse, useMutationReconciler } from './useMutationReconciler';
+import { applyIssueMutationResponse, useMutationReconciler } from '../application/board/useMutationReconciler';
 
 const getJsonMock = vi.hoisted(() => vi.fn());
 vi.mock('../infrastructure/api/http', async (importOriginal) => ({

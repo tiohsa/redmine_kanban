@@ -5,7 +5,7 @@ import {
   selectBoardData,
   type BoardResponse,
   type NormalizedBoardState,
-} from './boardState';
+} from '../model/board/state';
 import type { BoardData, Issue } from './types';
 
 type ModelEntity = {

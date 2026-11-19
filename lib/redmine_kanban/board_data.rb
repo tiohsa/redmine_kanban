@@ -183,13 +183,6 @@ module RedmineKanban
       visible_scope.where(project_id: @project_ids, status_id: status_ids).group(:status_id).count
     end
 
-    def filtered_status_ids(status_ids)
-      ids = status_ids.uniq
-      ids &= @issue_status_ids if @issue_status_ids.any?
-      ids -= @exclude_status_ids if @exclude_status_ids.any?
-      ids
-    end
-
     def normalize_ids(values)
       Array(values).filter_map do |value|
         id = value.to_i
