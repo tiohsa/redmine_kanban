@@ -22,7 +22,7 @@ application（操作と結果の取りまとめ）
 ui（入力、表示、Canvas、ダイアログ）
 ```
 
-`model/` は React、DOM、HTTP、Storage に依存しない。lint でこの境界への新しい違反を禁止する。既存の `ui/boardState.ts`、`ui/types.ts`、`ui/http.ts`、`ui/subtasksTree.ts`、`ui/board/sort.ts`、`ui/useKanbanPreferences.ts`、`ui/utils/storage.ts` は import 互換のための再エクスポートであり、実装はそれぞれの所有層に置く。
+`model/` は React、DOM、HTTP、Storage に依存しない。lint でこの境界への新しい違反を禁止する。既存の `ui/types.ts`、`ui/http.ts`、`ui/subtasksTree.ts`、`ui/board/sort.ts`、`ui/useKanbanPreferences.ts` は import 互換のための再エクスポートであり、実装はそれぞれの所有層に置く。
 
 保存ビューの設定検証と更新規則は `model/view/savedViews.ts`、保存キー・書込み前の再読込・最終文書検証は `infrastructure/storage/savedViewsRepository.ts`、適用中ビューと操作結果は `application/savedViews/useSavedViews.ts` が担当する。Popover は入力と表示を担当する。再読込は複数タブ間のトランザクション保証ではない。
 

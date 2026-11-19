@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BoardData, Issue } from '../types';
 import { buildBoardState, cellKey, resolveLaneId } from './state';
-import { applyBoardResponse, createNormalizedBoardState, selectBoardData } from '../boardState';
+import { applyBoardResponse, createNormalizedBoardState, selectBoardData } from '../../model/board/state';
 
 function makeBoardData(laneType: BoardData['meta']['lane_type']): BoardData {
   return {

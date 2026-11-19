@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildBulkCreateRequest, buildRestoreIssuePayload } from './kanbanActionPayloads';
+import { buildBulkCreateRequest, buildRestoreIssuePayload } from '../application/board/kanbanActionPayloads';
 
 describe('buildBulkCreateRequest', () => {
   it('builds one canonical parent and subtask request payload', () => {

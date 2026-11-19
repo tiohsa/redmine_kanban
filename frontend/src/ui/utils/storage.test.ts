@@ -10,7 +10,7 @@ import {
   readScopedBooleanWithLegacy,
   readScopedNumberSetWithLegacy,
   writeColorTheme,
-} from './storage';
+} from '../../infrastructure/storage/scopedStorage';
 
 describe('storage utils', () => {
   beforeEach(() => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyBoardResponse, createNormalizedBoardState, selectBoardData } from './boardState';
+import { applyBoardResponse, createNormalizedBoardState, selectBoardData } from '../model/board/state';
 import type { BoardData, Issue } from './types';
 
 const issue = (id: number, parent_id: number | null = null): Issue => ({
